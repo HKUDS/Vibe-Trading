@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.constraints import apply_constraints_frame, load_constraints
+from backtest.loaders.base import ohlc_price_policy
 from backtest.loaders.rsshub_events import (
     FeedSpec,
     RSSHubEventProvider,
@@ -1014,8 +1015,10 @@ class BaseEngine(ABC):
         if not data_map:
             print(json.dumps({"error": "No data fetched"}))
             sys.exit(1)
-        data_map = _maybe_enrich_fundamentals(data_map, config)
-        data_map = _maybe_enrich_events(data_map, config)
+        # Frozen run artifacts already contain the enrichment seen by the strategy.
+        if not config.get("frozen_data_manifest"):
+            data_map = _maybe_enrich_fundamentals(data_map, config)
+            data_map = _maybe_enrich_events(data_map, config)
         data_map = self.prepare_market_data(data_map)
 
         # 2. Generate signals
@@ -1088,13 +1091,17 @@ class BaseEngine(ABC):
         ticker = default_benchmark(basket_codes, source) if requested == "auto" else requested
         reason = "no default benchmark for the evaluated symbols" if requested == "auto" else "no benchmark requested"
         if ticker:
-            result = resolve_benchmark(
-                strategy_codes=basket_codes,
-                source="local" if config.get("frozen_data_manifest") else source,
-                explicit=ticker,
-                start_date=config.get("start_date", ""), end_date=config.get("end_date", ""),
-                interval=interval, loader=loader if source != "auto" or config.get("frozen_data_manifest") else None,
-            )
+            # The benchmark may fetch bars after the strategy's loader scope has ended.
+            with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
+                result = resolve_benchmark(
+                    strategy_codes=basket_codes,
+                    source="local" if config.get("frozen_data_manifest") else source,
+                    explicit=ticker,
+                    start_date=config.get("start_date", ""),
+                    end_date=config.get("end_date", ""),
+                    interval=interval,
+                    loader=loader if source != "auto" or config.get("frozen_data_manifest") else None,
+                )
             window_return = result.total_return_over(dates) if result is not None else None
             if result is not None and window_return is not None:
                 bench_ret = result.returns_over(dates)

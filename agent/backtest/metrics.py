@@ -603,6 +603,65 @@ def period_returns(equity_curve: pd.Series, initial_cash: float) -> pd.Series:
     return ret
 
 
+def _tail_shape_metrics(
+    port_ret: pd.Series, *, returns_finite: bool, threshold: float = 0.0
+) -> Dict[str, Any]:
+    """Omega ratio, tail ratio and return-distribution moments.
+
+    Options and tail-sensitive research read the shape of the return
+    distribution, not just its mean and variance. The Omega ratio is the gain
+    mass above ``threshold`` over the loss mass below it; the tail ratio is the
+    right-tail magnitude over the left-tail magnitude. Skew and excess kurtosis
+    describe the asymmetry and tail weight that govern option-seller risk.
+
+    Ratios that need a positive denominator (Omega's loss mass, the tail
+    ratio's left tail) report ``None`` when that side is empty, matching the
+    profit-factor convention. The sample moments report ``0.0`` when the sample
+    is degenerate or too small, matching Sharpe/Sortino's non-finite handling.
+    """
+    if not returns_finite:
+        return {
+            "omega_ratio": None,
+            "tail_ratio": None,
+            "return_skew": 0.0,
+            "return_kurtosis": 0.0,
+        }
+
+    ret = port_ret.to_numpy(dtype=float, copy=False)
+    excess = ret - threshold
+    gain_mass = float(excess[excess > 0].sum())
+    loss_mass = float(-excess[excess < 0].sum())
+    omega = gain_mass / loss_mass if loss_mass > 1e-12 else None
+
+    if len(ret) >= 2:
+        right_tail = abs(float(np.percentile(ret, 95)))
+        left_tail = abs(float(np.percentile(ret, 5)))
+        tail_ratio = right_tail / left_tail if left_tail > 1e-12 else None
+    else:
+        tail_ratio = None
+
+    spread = float(np.std(ret))
+    if len(ret) >= 3 and spread > 0:
+        skew = float(pd.Series(ret).skew())
+    else:
+        skew = 0.0
+    if len(ret) >= 4 and spread > 0:
+        kurt = float(pd.Series(ret).kurt())
+    else:
+        kurt = 0.0
+    if not np.isfinite(skew):
+        skew = 0.0
+    if not np.isfinite(kurt):
+        kurt = 0.0
+
+    return {
+        "omega_ratio": omega,
+        "tail_ratio": tail_ratio,
+        "return_skew": skew,
+        "return_kurtosis": kurt,
+    }
+
+
 def calc_metrics(
     equity_curve: pd.Series,
     trades: List[TradeRecord],
@@ -749,6 +808,8 @@ def calc_metrics(
             if not np.isfinite(bench_beta):
                 bench_beta = 0.0
 
+    tail_shape = _tail_shape_metrics(port_ret, returns_finite=returns_finite)
+
     return {
         "final_value": float(equity_curve.iloc[-1]),
         "total_return": total_ret,
@@ -770,6 +831,10 @@ def calc_metrics(
         "benchmark_beta": round(float(bench_beta), 4),
         "avg_turnover": round(avg_turnover, 6),
         "total_turnover": round(total_turnover, 6),
+        "omega_ratio": tail_shape["omega_ratio"],
+        "tail_ratio": tail_shape["tail_ratio"],
+        "return_skew": tail_shape["return_skew"],
+        "return_kurtosis": tail_shape["return_kurtosis"],
     }
 
 
@@ -784,4 +849,6 @@ def _empty_metrics(initial_cash: float) -> Dict[str, Any]:
         "benchmark_return": 0, "excess_return": 0, "information_ratio": 0,
         "tracking_error": 0.0, "benchmark_beta": 0.0,
         "avg_turnover": 0.0, "total_turnover": 0.0,
+        "omega_ratio": 0, "tail_ratio": 0,
+        "return_skew": 0.0, "return_kurtosis": 0.0,
     }

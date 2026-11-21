@@ -66,6 +66,8 @@
 
 ## 📰 News
 
+- **2026-11-21** 🛠️ **Research replay, backtest routing and channel reliability** — Frozen Research Lab studies now replay saved fundamental and event columns without refetching providers ([#2296](https://github.com/HKUDS/Vibe-Trading/pull/2296)), and backtests retry symbols whose returned bars fail validation while benchmarks inherit the run's signed-price policy ([#2294](https://github.com/HKUDS/Vibe-Trading/pull/2294), [#2292](https://github.com/HKUDS/Vibe-Trading/pull/2292)). Swarm deadlines stop overdue workers and clean completed run handles ([#2285](https://github.com/HKUDS/Vibe-Trading/pull/2285), [#2279](https://github.com/HKUDS/Vibe-Trading/pull/2279)); Research Lab reports recover after worker exit, backtests expose return-distribution shape metrics, and Options Lab overlays alternative payoff curves ([#2260](https://github.com/HKUDS/Vibe-Trading/pull/2260), [#2264](https://github.com/HKUDS/Vibe-Trading/pull/2264), [#2242](https://github.com/HKUDS/Vibe-Trading/pull/2242)). Session cancellation, Mochat delivery, Feishu completion reactions and DingTalk image downloads now handle their edge cases safely ([#2284](https://github.com/HKUDS/Vibe-Trading/pull/2284), [#2283](https://github.com/HKUDS/Vibe-Trading/pull/2283), [#2251](https://github.com/HKUDS/Vibe-Trading/pull/2251), [#2250](https://github.com/HKUDS/Vibe-Trading/pull/2250)). Strategy adaptation documentation now states its required inputs and scoped evidence refresh contract ([#2299](https://github.com/HKUDS/Vibe-Trading/pull/2299)). **On `main`, for the next pip release.**
+
 - **2026-11-20** 📈 **US share classes and Tencent price history** — Eastmoney and Yahoo search now agree on `BRK-B.US`. Eastmoney checks the ticker before loading prices, keeping listings such as `BW-A.US` and `BWA.US` distinct. Tencent now returns all pages of daily bars when dates are entered as `2023-1-5`. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   Strategy Comparison ranks a −10% drawdown above −30%. Backtests retain negative prices only with `allow_nonpositive_prices: true`. CLI users can resume a saved chat with its history. **On `main`, for the next pip release.**
 
@@ -164,6 +166,8 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trades behind a drawdown and check the data source on the run card. In **Strategy Comparison**, drawdown is shown as a signed loss: a run at −10% fares better on this metric than one at −30%.
 
+In backtests with `allow_nonpositive_prices: true`, a separately loaded benchmark uses the same price policy as the strategy. Local benchmark data still comes only from the configured local source.
+
 ### Portfolio drawdown periods
 
 In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.
@@ -184,7 +188,7 @@ A missing interior return or non-positive/non-finite model wealth makes the peri
 
 ## 📡 Data Sources & Smart Fallback
 
-The loader supports **28 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries the configured sources in order.
+The loader supports **28 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries the configured sources in order. A backtest retries only symbols with no bars left after price validation and aggregation. An explicit `local` source or a `local:` symbol never falls back to the network.
 
 | Market | How a request is filled |
 |---|---|
@@ -212,7 +216,7 @@ You can also choose a source explicitly. For example, installing `vibe-trading-a
 |---|---|
 | Alpha Zoo | Benchmark signals from Qlib, Alpha101, GTJA and the academic and fundamental libraries. Compare information coefficients across horizons, then check whether the result survives a walk-forward test. |
 | Backtest engines | Model A-share price limits, crypto funding or futures margin. Use a shared capital pool for a cross-market strategy and inspect the individual fills behind its returns. |
-| Options Lab | Build a spread leg by leg. Compare its expiry payoff with the Greeks and see how the position responds to a change in spot price and implied volatility. Export the exact analysis request and result as JSON or the full expiry and scenario grid as CSV. The `options_strategy_compare` Agent/MCP tool compares up to four strategies on a shared spot/IV grid with baseline-relative P&L. |
+| Options Lab | Build a spread leg by leg. Save named alternatives to overlay their backend-computed expiry curves with distinct colors on the same spot axis, then compare return metrics. Inspect the Greeks and see how each position responds to a change in spot price and implied volatility. Export the exact analysis request and result as JSON or the full expiry and scenario grid as CSV. The `options_strategy_compare` Agent/MCP tool compares up to four strategies on a shared spot/IV grid with baseline-relative P&L. |
 | Portfolio risk | Inspect drawdowns, estimate value at risk and expected shortfall, or use Brinson attribution to separate allocation from stock selection. Risk X-Ray reports each holding's signed contribution to portfolio volatility, including hedges that offset risk. The correlation view shows when markets start moving together. |
 | Strategy tracking | Register a strategy with its evidence and track how its Sharpe ratio or factor information coefficient changes as new results come in. |
 

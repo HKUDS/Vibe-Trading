@@ -9,11 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, NamedTuple, Protocol
 
 from src.agent.context import ContextBuilder
 from src.agent.llm_usage import _normalize_llm_usage
@@ -42,6 +41,13 @@ from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import redact_payload, redact_tool_result
 
 logger = logging.getLogger(__name__)
+
+
+class _CancellationSignal(Protocol):
+    def is_set(self) -> bool: ...
+
+    def wait(self, timeout: float | None = None) -> bool: ...
+
 
 def _default_max_iterations() -> int:
     from src.config.accessor import get_env_config
@@ -483,7 +489,7 @@ def run_worker(
     include_shell_tools: bool = False,
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
-    cancel_event: threading.Event | None = None,
+    cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
@@ -510,13 +516,9 @@ def run_worker(
             consumed by :func:`build_swarm_registry` to merge remote MCP
             tools with the local-tool pool before applying the agent's
             whitelist. ``None`` preserves the prior local-only behavior.
-        cancel_event: Optional cancellation signal from
-            :meth:`SwarmRuntime.cancel_run`. Checked at the top of each
-            ReAct iteration and passed into the LLM stream as
-            ``should_cancel``, mirroring ``AgentLoop``'s cooperative
-            cancellation contract: an in-flight LLM stream stops promptly
-            and that turn's tool calls are skipped; a tool call already
-            executing is not interrupted.
+        cancel_event: Cooperative stop signal for the run or its layer.
+            Passed to streaming as ``should_cancel`` and checked before tool
+            dispatch. A tool call already executing is not interrupted.
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -566,7 +568,7 @@ def _run_worker_impl(
     agent_config: AgentConfig | None = None,
     *,
     llm: ChatLLM,
-    cancel_event: threading.Event | None = None,
+    cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
 ) -> WorkerResult:
     """Execute a single worker task using a lightweight ReAct loop.
@@ -597,13 +599,9 @@ def _run_worker_impl(
             consumed by :func:`build_swarm_registry` to merge remote MCP
             tools with the local-tool pool before applying the agent's
             whitelist. ``None`` preserves the prior local-only behavior.
-        cancel_event: Optional cancellation signal from
-            :meth:`SwarmRuntime.cancel_run`. Checked at the top of each
-            ReAct iteration and passed into the LLM stream as
-            ``should_cancel``, mirroring ``AgentLoop``'s cooperative
-            cancellation contract: an in-flight LLM stream stops promptly
-            and that turn's tool calls are skipped; a tool call already
-            executing is not interrupted.
+        cancel_event: Cooperative stop signal for the run or its layer.
+            Passed to streaming as ``should_cancel`` and checked before tool
+            dispatch. A tool call already executing is not interrupted.
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -740,6 +738,26 @@ def _run_worker_impl(
     consecutive_content_filter_count = 0
     stream_failure_streak = 0
 
+    def stop_requested() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    def finish_cancelled(iterations: int) -> WorkerResult:
+        summary = _resolve_summary(artifact_dir, last_assistant_content)
+        _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iterations})
+        _finalize_run(artifact_dir, summary, messages)
+        return WorkerResult(
+            status="cancelled",
+            summary=summary,
+            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+            iterations=iterations,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            cache_read_tokens=total_cache_read_tokens,
+            cache_creation_tokens=total_cache_creation_tokens,
+            token_source=token_source,
+            content_filter_warnings=compute_content_filter_warnings(content_filter_count, iteration + 1),
+        )
+
     for iteration in range(max_iterations):
         save_checkpoint()
         # Check timeout
@@ -764,27 +782,8 @@ def _run_worker_impl(
                 ),
             )
 
-        # Check cancellation — before dispatching this iteration's LLM call,
-        # so a cancel signalled between iterations never starts new work.
-        if cancel_event is not None and cancel_event.is_set():
-            cancelled_summary = last_assistant_content
-            summary = _resolve_summary(artifact_dir, cancelled_summary)
-            _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
-            _finalize_run(artifact_dir, summary, messages)
-            return WorkerResult(
-                status="cancelled",
-                summary=summary,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+        if stop_requested():
+            return finish_cancelled(iteration)
 
         # Inject wrap-up nudge when approaching iteration limit
         if iteration == wrap_up_at:
@@ -830,6 +829,9 @@ def _run_worker_impl(
                 ),
             )
 
+
+        if stop_requested():
+            return finish_cancelled(iteration)
 
         # Stream the LLM — moonshot/kimi non-streaming invoke is unreliable
         # (issue #42), and streaming also feeds dashboard live progress.
@@ -943,27 +945,10 @@ def _run_worker_impl(
 
             # Preserve streamed prose on cancellation, but never execute
             # unfinished tool calls from an interrupted provider response.
-            if cancel_event is not None and cancel_event.is_set():
+            if stop_requested():
                 last_assistant_content = "".join(streamed_text) or last_assistant_content
                 save_checkpoint()
-                cancelled_summary = last_assistant_content
-                summary = _resolve_summary(artifact_dir, cancelled_summary)
-                _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
-                _finalize_run(artifact_dir, summary, messages)
-                return WorkerResult(
-                    status="cancelled",
-                    summary=summary,
-                    artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                    iterations=iteration,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cache_read_tokens=total_cache_read_tokens,
-                    cache_creation_tokens=total_cache_creation_tokens,
-                    token_source=token_source,
-                    content_filter_warnings=compute_content_filter_warnings(
-                        content_filter_count, iteration + 1,
-                    ),
-                )
+                return finish_cancelled(iteration)
         except Exception as exc:
             last_assistant_content = "".join(streamed_text) or last_assistant_content
             error_msg = f"LLM call failed at iteration {iteration}: {exc}"
@@ -1131,6 +1116,8 @@ def _run_worker_impl(
         # Execute each tool call — inject run_dir so tools write inside artifact_dir
         save_checkpoint()
         for tc in response.tool_calls:
+            if stop_requested():
+                break
             mcp_meta = _remote_tool_metadata(registry, tc.name)
             _emit(
                 event_callback, "tool_call", agent_id, task_id,
@@ -1162,6 +1149,8 @@ def _run_worker_impl(
                 interval=_HEARTBEAT_INTERVAL_S,
                 emit=_on_heartbeat,
             ):
+                if stop_requested():
+                    break
                 if run_dir_refusal is not None:
                     result = json.dumps(
                         {"status": "error", "error": run_dir_refusal},
@@ -1196,6 +1185,9 @@ def _run_worker_impl(
             )
             worker_context.pending.add(tc.id)
             save_checkpoint()
+
+        if stop_requested():
+            return finish_cancelled(iteration + 1)
 
     # Content filter ratio tracking
     content_filter_warnings = compute_content_filter_warnings(

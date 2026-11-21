@@ -1665,6 +1665,8 @@ def get_strategy_evidence(strategy_id: str, regime: str | None = None) -> str:
 def adapt_strategy(strategy_id: str, name: str, universe: str, config: dict, position_sizing: str | None = None) -> str:
     """Prepare a child from fresh adequate SDM evidence, preserving signal logic.
 
+    config must contain explicit ``codes``, ``source``, ``start_date`` and
+    ``end_date`` values. Nothing is inferred or defaulted.
     Returns description and a bound run_dir. Load strategy-generate, write the
     child's code, backtest there, then refresh its evidence with scope=strategies.
     Does not generate code or run a backtest by itself, or copy parent metrics.
@@ -1680,9 +1682,12 @@ def refresh_strategy_evidence(manifest_path: str | None = None, runs: list | Non
     """Rebuild the strategy-discovery evidence cache from backtest run artifacts.
 
     WRITE tool with disposable-cache-only scope: it replaces the facade-owned
-    strategy-evidence cache (drop-and-rebuild by contract) from local run
-    artifacts and NEVER touches the Alpha Zoo or SDM sources of truth. No
-    network access, no credentials, no broker paths.
+    strategy-evidence cache from local run artifacts and NEVER touches the
+    Alpha Zoo or SDM sources of truth. No network access, credentials, or
+    broker paths. ``adapt_strategy`` is the other write and updates the SDM
+    store. ``scope=all`` replaces the whole cache. ``scope=strategies``
+    replaces only successfully refreshed named strategies and is required
+    after adaptation.
 
     Provide EXACTLY ONE of the two parameters:
     - manifest_path: path to a JSON manifest — an object with a "runs" array

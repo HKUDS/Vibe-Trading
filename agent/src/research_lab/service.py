@@ -111,11 +111,24 @@ def get_job(identifier: str) -> dict:
         try:
             os.kill(state["owner_pid"], 0)
         except ProcessLookupError:
-            state.update(
-                status="failed",
-                error="Research worker was interrupted; start a new job to rerun the saved request.",
-                finished_at=datetime.now(timezone.utc).isoformat(),
-            )
+            latest = json.loads(path.read_text())
+            if latest["status"] not in {"pending", "running"} or latest["owner_pid"] != state["owner_pid"]:
+                return latest
+            state = latest
+            report_path = path.with_name("report.json")
+            # The worker commits the report before updating the job status.
+            if state["status"] == "running" and report_path.is_file():
+                state.update(
+                    status="completed",
+                    result=json.loads(report_path.read_text(encoding="utf-8")),
+                    finished_at=datetime.fromtimestamp(report_path.stat().st_mtime, timezone.utc).isoformat(),
+                )
+            else:
+                state.update(
+                    status="failed",
+                    error="Research worker was interrupted; start a new job to rerun the saved request.",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
             _write(path, state)
         except PermissionError:
             pass
