@@ -768,11 +768,12 @@ def test_a_child_tool_pointed_outside_its_workspace_does_not_run(run_root: Path)
 
 
 @pytest.mark.parametrize("stop", ["timeout", "parent_cancel"])
-def test_a_stop_waits_for_the_running_tool_call_then_ends_the_child(
+def test_a_stop_ends_the_wait_for_a_running_tool_call_then_ends_the_child(
     run_root: Path, monkeypatch: pytest.MonkeyPatch, stop: str
 ) -> None:
-    # SUBAGENT_TIMEOUT and a parent stop are cooperative: the write the child
-    # is running finishes, and the child asks its model nothing after it.
+    # The child is cancelled and the parent stops waiting at the hard tool
+    # boundary. The in-process write worker may finish in the background, but
+    # the child asks its model nothing after cancellation.
     parent_cancel = threading.Event()
     if stop == "timeout":
         monkeypatch.setenv("SUBAGENT_TIMEOUT", "0.2")
@@ -786,7 +787,7 @@ def test_a_stop_waits_for_the_running_tool_call_then_ends_the_child(
     started = time.monotonic()
     payload = json.loads(registry.get("spawn_agent").execute(task="Write slowly.", run_dir=str(run_root)))
 
-    assert time.monotonic() - started >= 1.0
+    assert time.monotonic() - started < 1.0
     assert len(slow.calls) == 1
     assert len(child_llm.requests) == 1
     assert payload["error_code"] == ("subagent_timeout" if stop == "timeout" else "subagent_cancelled")

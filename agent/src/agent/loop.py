@@ -36,7 +36,7 @@ from src.agent.tuning import (
     _stall_timeout_seconds as _stall_timeout_seconds,
 )
 
-from src.agent.loop_streaming import TurnStream
+from src.agent.loop_streaming import TurnStream, repair_provider_messages
 from src.agent.context import ContextBuilder
 from src.agent.tool_loading import prepare_registry, request_definitions
 from src.agent.instrument_identity import IdentityLedger
@@ -740,12 +740,18 @@ class AgentLoop(ToolCallLifecycle):
 
                 _llm_timeout_s = _llm_timeout_seconds()
                 llm_timeout = _llm_timeout_s if _llm_timeout_s > 0 else None
+                # Pairing repair belongs to the provider request, not the
+                # durable conversation. This also covers a cancellation or
+                # partial tool batch that left an unanswered call behind.
+                request_messages: list[dict[str, Any]] = []
 
                 def stream_request():
                     """Count usage from a failed request before any retry."""
+                    nonlocal request_messages
+                    request_messages = repair_provider_messages(messages)
                     try:
                         return self.llm.stream_chat(
-                            messages,
+                            request_messages,
                             tools=tool_defs,
                             on_text_chunk=stream.on_text,
                             on_reasoning_chunk=stream.on_reasoning,
@@ -829,7 +835,7 @@ class AgentLoop(ToolCallLifecycle):
                 # `messages` is still exactly what this request sent.
                 self._context_meter.observe(
                     usage.get("context_input_tokens", usage.get("input_tokens")) if isinstance(usage, dict) else None,
-                    messages,
+                    request_messages,
                     tool_schema_tokens=estimate_tokens(tool_defs) if tool_defs else 0,
                 )
                 if current_response_model:

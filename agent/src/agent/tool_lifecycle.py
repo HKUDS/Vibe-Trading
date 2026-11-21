@@ -1,12 +1,13 @@
 """Tool-call lifecycle extracted verbatim from AgentLoop (#1624).
 
 Owns authorization, deduplication/replay, ordered read/write batches, bounded
-readonly execution and result recording. The mixin uses the existing loop's
+tool execution and result recording. The mixin uses the existing loop's
 run-scoped state and callback methods; it creates no second state owner.
 """
 from __future__ import annotations
 
 import concurrent.futures
+import contextvars
 import json
 import logging
 import queue
@@ -264,6 +265,9 @@ class ToolCallLifecycle:
 
         # Cancelled before this turn's tools ran — skip execution entirely.
         if self._cancel_event.is_set():
+            self._record_unstarted_calls(
+                tool_calls, context, messages, trace, react_trace, iteration
+            )
             return compact_requested, focus_topic
 
         for tc in tool_calls:
@@ -504,7 +508,16 @@ class ToolCallLifecycle:
         def flush_authorized_segment() -> None:
             if not authorized_segment:
                 return
-            if len(authorized_segment) == 1:
+            if self._cancel_event.is_set():
+                self._record_unstarted_calls(
+                    authorized_segment,
+                    context,
+                    messages,
+                    trace,
+                    react_trace,
+                    iteration,
+                )
+            elif len(authorized_segment) == 1:
                 self._execute_single(
                     authorized_segment[0],
                     context,
@@ -551,6 +564,8 @@ class ToolCallLifecycle:
         trace: TraceWriter,
         react_trace: list,
         iteration: int,
+        *,
+        blocked: bool = True,
     ) -> None:
         """Record a blocked call without invoking its implementation.
 
@@ -574,7 +589,7 @@ class ToolCallLifecycle:
                 "arguments": event_args,
                 "iter": iteration,
                 "call_id": tc.id,
-                "blocked": True,
+                **({"blocked": True} if blocked else {}),
             },
         )
         trace.write(
@@ -584,7 +599,7 @@ class ToolCallLifecycle:
                 "tool": tc.name,
                 "call_id": tc.id,
                 "args": redacted_args,
-                "blocked": True,
+                **({"blocked": True} if blocked else {}),
             }
         )
         self._finalize_tool_result(
@@ -598,6 +613,36 @@ class ToolCallLifecycle:
             iteration,
             update_memory=False,
         )
+
+    def _record_unstarted_calls(
+        self,
+        tool_calls: list[Any],
+        context: ContextBuilder,
+        messages: list,
+        trace: TraceWriter,
+        react_trace: list,
+        iteration: int,
+    ) -> None:
+        """Record calls skipped after cancellation as explicit tool errors."""
+        result = json.dumps(
+            {
+                "status": "error",
+                "error_code": "tool_cancelled",
+                "message": "Run stopped before this tool started; no action was performed.",
+            },
+            ensure_ascii=False,
+        )
+        for tc in tool_calls:
+            self._record_blocked_tool_call(
+                tc,
+                result,
+                context,
+                messages,
+                trace,
+                react_trace,
+                iteration,
+                blocked=False,
+            )
 
     def _batch_execute(
         self,
@@ -641,11 +686,19 @@ class ToolCallLifecycle:
             # Stop launching further tool batches once cancelled — the current
             # batch (if any) finishes, but no new work starts.
             if self._cancel_event.is_set():
-                break
+                self._record_unstarted_calls(
+                    batch, context, messages, trace, react_trace, iteration
+                )
+                continue
             if mode == "parallel" and len(batch) > 1:
                 self._execute_parallel(batch, context, messages, trace, react_trace, iteration)
             else:
-                for tc in batch:
+                for index, tc in enumerate(batch):
+                    if self._cancel_event.is_set():
+                        self._record_unstarted_calls(
+                            batch[index:], context, messages, trace, react_trace, iteration
+                        )
+                        break
                     self._execute_single(tc, context, messages, trace, react_trace, iteration)
 
     def _execute_parallel(
@@ -833,41 +886,12 @@ class ToolCallLifecycle:
             self._emit("tool_progress", payload)
             return elapsed_ms
 
-        if not readonly:
-            # Write tools are never killed: a watchdog warns once past the
-            # timeout, then the result is awaited to completion.
-            finished = threading.Event()
-
-            def _warn_if_stale() -> None:
-                if timeout is None or finished.wait(timeout):
-                    return
-                _emit_timeout_progress(
-                    "timeout_warning",
-                    (
-                        f"Write tool exceeded {timeout_label} timeout; "
-                        "waiting for completion because it cannot be safely cancelled"
-                    ),
-                    readonly=False,
-                )
-
-            watchdog = threading.Thread(
-                target=_warn_if_stale,
-                name=f"tool-watchdog-{tool_name}",
-                daemon=True,
-            )
-            watchdog.start()
-            _set_emitter(_on_progress)
-            try:
-                with _heartbeat_timer():
-                    result = self.registry.execute(tool_name, args)
-            finally:
-                finished.set()
-                _set_emitter(None)
-            return result or "", _elapsed_ms()
-
-        # Readonly tools run in a worker thread so a hung tool becomes a
-        # bounded error: late results are discarded and the emitters are
-        # suppressed via the timed_out event.
+        # Every tool runs in a daemon worker. Python cannot safely kill an
+        # arbitrary thread, so the caller stops waiting at the deadline or
+        # cancellation point, records an explicit result, and discards any
+        # late worker value. Subprocess-backed tools retain their own tree-kill
+        # guarantees. A still-running in-process worker is orphaned and ends
+        # on its own without emitting after this invocation is terminal.
         result_queue: queue.Queue[tuple[str | None, BaseException | None]] = queue.Queue(maxsize=1)
 
         def _worker() -> None:
@@ -879,33 +903,64 @@ class ToolCallLifecycle:
             finally:
                 _set_emitter(None)
 
+        worker_context = contextvars.copy_context()
+
+        def _run_in_context() -> None:
+            worker_context.run(_worker)
+
         worker = threading.Thread(
-            target=_worker,
+            target=_run_in_context,
             name=f"tool-{tool_name}",
             daemon=True,
         )
         worker.start()
+
+        def _terminal_error(error_code: str, message: str) -> tuple[str, int]:
+            timed_out.set()
+            elapsed_ms = _emit_timeout_progress(
+                "cancelled" if error_code == "tool_cancelled" else "timeout",
+                message,
+                readonly=readonly,
+                orphaned_worker=worker.is_alive(),
+            )
+            return (
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error_code": error_code,
+                        "tool": tool_name,
+                        **({"timeout_seconds": timeout} if error_code == "tool_timeout" else {}),
+                        "message": message,
+                        "orphaned_worker": worker.is_alive(),
+                    },
+                    ensure_ascii=False,
+                ),
+                elapsed_ms,
+            )
+
         with _heartbeat_timer():
-            try:
-                result, exc = result_queue.get(timeout=timeout)
-            except queue.Empty:
-                timed_out.set()
-                elapsed_ms = _emit_timeout_progress(
-                    "timeout", f"Tool exceeded {timeout_label} timeout"
-                )
-                return (
-                    json.dumps(
-                        {
-                            "status": "error",
-                            "error_code": "tool_timeout",
-                            "tool": tool_name,
-                            "timeout_seconds": timeout,
-                            "message": f"Tool exceeded {timeout_label} timeout",
-                        },
-                        ensure_ascii=False,
-                    ),
-                    elapsed_ms,
-                )
+            deadline = None if timeout is None else _time.monotonic() + timeout
+            while True:
+                if self._cancel_event.is_set():
+                    return _terminal_error(
+                        "tool_cancelled",
+                        "Run was cancelled while this tool was running",
+                    )
+                if deadline is not None:
+                    remaining = deadline - _time.monotonic()
+                    if remaining <= 0:
+                        return _terminal_error(
+                            "tool_timeout",
+                            f"Tool exceeded {timeout_label} timeout",
+                        )
+                    wait = min(0.05, remaining)
+                else:
+                    wait = 0.05
+                try:
+                    result, exc = result_queue.get(timeout=wait)
+                    break
+                except queue.Empty:
+                    continue
         if exc is not None:
             raise exc
         return result or "", _elapsed_ms()
