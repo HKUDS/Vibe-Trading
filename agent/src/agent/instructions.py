@@ -48,9 +48,20 @@ _warned: set[tuple[str, str]] = set()
 _warned_lock = threading.Lock()
 
 
+def _warning_key(path: Path, reason: str) -> tuple[str, str]:
+    """Return a stable warning key for one path and reason.
+
+    Normalize ``..`` and relative spellings, while keeping distinct symlink
+    paths distinct. The warning contract is per candidate path, whereas file
+    identity deduplication is handled separately below.
+    """
+    identity = os.path.normcase(os.path.abspath(os.fspath(path)))
+    return identity, reason
+
+
 def _warn_once(path: Path, reason: str, message: str) -> None:
     """Log ``message`` as a warning the first time ``(path, reason)`` is seen."""
-    key = (str(path), reason)
+    key = _warning_key(path, reason)
     with _warned_lock:
         if key in _warned:
             return
@@ -71,15 +82,21 @@ def _decode_capped(data: bytes, limit: int) -> tuple[str, bool]:
     Raises:
         UnicodeDecodeError: When the bytes are not valid UTF-8.
     """
+    if limit <= 0:
+        raise ValueError("instruction byte limit must be positive")
     if len(data) <= limit:
         return data.decode("utf-8-sig"), False
-    for back in range(4):
-        try:
-            return data[: limit - back].decode("utf-8-sig"), True
-        except UnicodeDecodeError as exc:
-            if back == 3:
-                raise exc
-    raise AssertionError("unreachable")
+
+    prefix = data[:limit]
+    try:
+        return prefix.decode("utf-8-sig"), True
+    except UnicodeDecodeError as exc:
+        # A cap may land in the middle of one UTF-8 code point. The decoder's
+        # only valid truncation error is an incomplete sequence at the end.
+        # Invalid bytes earlier in the capped prefix must still reject the file.
+        if exc.reason != "unexpected end of data" or exc.end != len(prefix):
+            raise
+        return prefix[:exc.start].decode("utf-8-sig"), True
 
 
 def _read_source(path: Path, loaded: set[str], limit: int) -> Optional[str]:
@@ -108,8 +125,12 @@ def _read_source(path: Path, loaded: set[str], limit: int) -> Optional[str]:
             "instruction file skipped: its directory is the root of a git work tree",
         )
         return None
-    real = os.path.realpath(path)
-    if real in loaded:
+    try:
+        stat = path.stat()
+        identity = f"{stat.st_dev}:{stat.st_ino}"
+    except OSError:
+        identity = "path:" + os.path.normcase(os.path.realpath(path))
+    if identity in loaded:
         _warn_once(path, "duplicate", "instruction file skipped: same file as one already loaded")
         return None
     try:
@@ -128,7 +149,7 @@ def _read_source(path: Path, loaded: set[str], limit: int) -> Optional[str]:
     text = text.strip()
     if not text:
         return None
-    loaded.add(real)
+    loaded.add(identity)
     if cut:
         text += _TRUNCATION_MARKER.format(name=INSTRUCTION_FILE_NAME, limit=limit)
     return text
