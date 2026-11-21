@@ -105,11 +105,37 @@ class ToolCallRequest:
 
 @dataclass(frozen=True)
 class LLMRuntimeSnapshot:
-    """Immutable identity of the model configuration used by one ChatLLM."""
+    """Immutable identity of the model configuration used by one ChatLLM.
+
+    Attributes:
+        provider: Provider the client sends to.
+        configured_model: Model the client asks for.
+        reasoning_effort: Effort level the client sends, or "" when unset.
+        selection: Who chose the model: ``"configured"`` for the server's
+            settings, ``"session"`` for a selection stored on the session.
+    """
 
     provider: str
     configured_model: str
     reasoning_effort: str
+    selection: str = "configured"
+
+
+def reported_model_source(runtime: LLMRuntimeSnapshot, response_model: Optional[str]) -> str:
+    """Name where a reported model id came from.
+
+    Args:
+        runtime: Snapshot of the client that made the request.
+        response_model: Model the provider response named, if any.
+
+    Returns:
+        ``provider_response`` / ``configured`` for the server's settings, and
+        ``session_provider_response`` / ``session`` when the session chose the
+        model, so a reader can always tell a session selection apart.
+    """
+    if runtime.selection == "session":
+        return "session_provider_response" if response_model else "session"
+    return "provider_response" if response_model else "configured"
 
 
 @dataclass
@@ -351,11 +377,19 @@ class ChatLLM:
         model_name: Model name.
     """
 
-    def __init__(self, model_name: Optional[str] = None, *, snapshot: ProviderConfig | None = None) -> None:
+    def __init__(
+        self,
+        model_name: Optional[str] = None,
+        *,
+        snapshot: ProviderConfig | None = None,
+        selection: str = "configured",
+    ) -> None:
         """Initialize ChatLLM.
 
         Args:
             model_name: Model name; defaults to the environment variable value.
+            snapshot: Resolved connection settings; defaults to the current ones.
+            selection: Who chose this model, recorded on ``runtime_snapshot``.
         """
         self.config = snapshot or resolve_config(model_name=model_name)
         self._llm = build_llm(model_name=model_name, snapshot=self.config)
@@ -364,6 +398,7 @@ class ChatLLM:
             provider=self.config.provider or "openai",
             configured_model=self.model_name,
             reasoning_effort=self.config.options.langchain_reasoning_effort.strip().lower(),
+            selection=selection,
         )
 
     def close(self) -> None:

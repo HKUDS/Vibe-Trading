@@ -92,6 +92,18 @@ class CreateSessionRequest(BaseModel):
     config: Optional[Dict[str, Any]] = Field(None, description="Session config")
 
 
+class ModelSelectionResponse(BaseModel):
+    """The model a session's next turn asks for, and where that choice comes from."""
+    session_id: str
+    source: str = Field(..., description="'session' (its own selection) or 'inherited' (server settings)")
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    error: Optional[str] = Field(None, description="Why a stored selection is unreadable")
+    turn_running: bool = False
+    applies_from: str = Field("next_turn", description="A change never reaches a turn already running")
+
+
 class SessionResponse(BaseModel):
     """Session record."""
     session_id: str
@@ -104,7 +116,7 @@ class SessionResponse(BaseModel):
 
 # Bound interactive request size. This character limit is independent of the
 # selected model's token window, which the runtime manages separately.
-MAX_MESSAGE_CHARS = 100_000
+from src.session.input_rules import MAX_MESSAGE_CHARS  # noqa: E402
 
 
 class SendMessageRequest(BaseModel):
@@ -449,6 +461,43 @@ def register_sessions_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         return svc, session
 
+    async def _validated_model_selection(raw: Any):
+        """Validate a caller-written selection off the event loop, or raise 400."""
+        from src.providers.selection import ModelSelectionError, validate_model_selection
+
+        try:
+            selection, _config = await asyncio.to_thread(validate_model_selection, raw)
+        except ModelSelectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return selection
+
+    async def _validated_session_config(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Hold a model selection written at creation to the same rules as PUT."""
+        from src.providers.selection import SESSION_CONFIG_KEY
+
+        if not config or SESSION_CONFIG_KEY not in config:
+            return config
+        checked = {key: value for key, value in config.items() if key != SESSION_CONFIG_KEY}
+        if config[SESSION_CONFIG_KEY] is not None:
+            selection = await _validated_model_selection(config[SESSION_CONFIG_KEY])
+            checked[SESSION_CONFIG_KEY] = selection.to_dict()
+        return checked
+
+    def _model_selection_response(svc, session) -> ModelSelectionResponse:
+        from src.session.model_selection import effective_model_selection
+
+        attempt = (
+            svc.store.get_attempt(session.session_id, session.last_attempt_id)
+            if session.last_attempt_id else None
+        )
+        attempt_status = getattr(attempt.status, "value", attempt.status) if attempt else None
+        return ModelSelectionResponse(
+            session_id=session.session_id,
+            # A pending attempt already holds the session it was sent with.
+            turn_running=attempt_status in {"pending", "running"},
+            **effective_model_selection(session),
+        )
+
     # -----------------------------------------------------------------------
     # Session CRUD routes
     # -----------------------------------------------------------------------
@@ -470,8 +519,9 @@ def register_sessions_routes(app: FastAPI) -> None:
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        config = await _validated_session_config(request.config)
         session = svc.create_session(
-            title=request.title, config=request.config, owner=principal
+            title=request.title, config=config, owner=principal
         )
         return SessionResponse(
             session_id=session.session_id,
@@ -754,6 +804,56 @@ def register_sessions_routes(app: FastAPI) -> None:
         session.updated_at = datetime.now(timezone.utc).isoformat()
         svc.update_session(session)
         return {"status": "updated", "session_id": session_id}
+
+    @app.get(
+        "/sessions/{session_id}/model",
+        response_model=ModelSelectionResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def get_session_model(session_id: str):
+        """Return the model the session's next turn asks for."""
+        _host_validate_path_param(session_id, "session_id")
+        svc, session = _get_existing_session_or_404(session_id)
+        return _model_selection_response(svc, session)
+
+    @app.put(
+        "/sessions/{session_id}/model",
+        response_model=ModelSelectionResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def set_session_model(session_id: str, payload: Dict[str, Any]):
+        """Select one of the server's configured providers and a model for this session.
+
+        Accepts only ``provider``, ``model`` and ``reasoning_effort``; endpoints,
+        keys and headers always come from the server's settings. A turn that is
+        already running keeps its model; the selection applies from the next turn.
+        """
+        from src.session.model_selection import set_model_selection
+
+        _host_validate_path_param(session_id, "session_id")
+        _get_existing_session_or_404(session_id)
+        selection = await _validated_model_selection(payload)
+        svc, session = _get_existing_session_or_404(session_id)
+        set_model_selection(session, selection)
+        session.updated_at = datetime.now(timezone.utc).isoformat()
+        svc.update_session(session)
+        return _model_selection_response(svc, session)
+
+    @app.delete(
+        "/sessions/{session_id}/model",
+        response_model=ModelSelectionResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def clear_session_model(session_id: str):
+        """Clear the session's selection so its next turn uses the server's settings."""
+        from src.session.model_selection import set_model_selection
+
+        _host_validate_path_param(session_id, "session_id")
+        svc, session = _get_existing_session_or_404(session_id)
+        set_model_selection(session, None)
+        session.updated_at = datetime.now(timezone.utc).isoformat()
+        svc.update_session(session)
+        return _model_selection_response(svc, session)
 
     @app.post("/sessions/{session_id}/title/auto", dependencies=[Depends(require_auth)])
     async def auto_title_session(session_id: str):

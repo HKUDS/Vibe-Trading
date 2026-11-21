@@ -1050,12 +1050,12 @@ class SessionService:
         """
         from src.tools import build_registry
         from src.tools.background_tools import BackgroundScope, get_background_manager
-        from src.providers.chat import ChatLLM
+        from src.session.model_selection import chat_llm_for_session
         from src.agent.loop import AgentLoop
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
-        llm = ChatLLM()
+        llm = chat_llm_for_session(session_config)
         try:
             pm = PersistentMemory()
 

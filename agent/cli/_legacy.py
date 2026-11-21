@@ -1106,7 +1106,11 @@ def _run_agent(
             call (SPEC.md Consent §2).
     """
     from src.tools import build_registry
-    from src.providers.chat import ChatLLM
+    from src.session.model_selection import (
+        ModelSelectionError,
+        chat_llm_for_stored_session,
+        unavailable_selection_result,
+    )
     from src.agent.loop import AgentLoop
 
     # Closure-level state for the no-rich path so dots and progress lines
@@ -1277,7 +1281,10 @@ def _run_agent(
         background_scope=background_scope,
         cancel_event=cancel_event,
     )
-    llm = ChatLLM()
+    try:
+        llm = chat_llm_for_stored_session(SESSIONS_DIR, session_id)
+    except ModelSelectionError as exc:
+        return unavailable_selection_result(exc)
 
     # Opened only once the agent can run: it writes the user's message and
     # replays the session's history, and a turn left open would be replayed

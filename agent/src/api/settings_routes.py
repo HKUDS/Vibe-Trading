@@ -48,7 +48,16 @@ from src.providers.discovery import (
     _list_provider_models,
     _validate_model_base_url,
 )
-from src.providers.registry import CATALOG_PATH, provider_catalog
+from src.providers.registry import CATALOG_PATH
+from src.providers.selection import (
+    LLM_API_KEY_PLACEHOLDERS as LLM_API_KEY_PLACEHOLDERS,
+    LLM_PROVIDER_BY_NAME as LLM_PROVIDER_BY_NAME,
+    LLM_PROVIDERS as LLM_PROVIDERS,
+    ModelSelectionError,
+    check_provider_choice,
+    credential_status,
+    custom_provider_option,
+)
 
 
 class LLMSettingsResponse(BaseModel):
@@ -142,16 +151,6 @@ class UpdateDataSourceSettingsRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 LLM_PROVIDER_CONFIG_PATH = CATALOG_PATH
-
-
-def _load_llm_providers() -> List[LLMProviderOption]:
-    """Expose the same catalog used by the in-process gateway and CLI."""
-    return [LLMProviderOption(**item) for item in provider_catalog()]
-
-
-LLM_PROVIDERS = _load_llm_providers()
-LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
-LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
 GILDATA_TOKEN_PLACEHOLDERS = {"", "your-gildata-token"}
 
@@ -209,35 +208,7 @@ def _build_llm_settings_response(
     provider_name = env_values.get("LANGCHAIN_PROVIDER", "openai").strip().lower()
     provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
     api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
-    api_key_configured = host._is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS)
-    api_key_hint = None
-    if provider.auth_type == "oauth":
-        try:
-            from src.providers.openai_codex import get_openai_codex_login_status
-
-            token = get_openai_codex_login_status()
-        except Exception:
-            token = None
-        api_key_configured = bool(token)
-        api_key_hint = None
-    elif provider.auth_type == "gh_cli":
-        try:
-            from src.providers.copilot_auth import get_copilot_auth_status
-
-            authenticated, auth_status = get_copilot_auth_status()
-        except Exception:
-            authenticated, auth_status = False, ""
-        api_key_configured = authenticated
-        api_key_hint = auth_status if authenticated else None
-    elif provider.auth_type == "claude_cli":
-        try:
-            from src.providers.claude_cli import get_claude_cli_auth_status
-
-            authenticated, auth_status = get_claude_cli_auth_status()
-        except Exception:
-            authenticated, auth_status = False, ""
-        api_key_configured = authenticated
-        api_key_hint = auth_status if authenticated else None
+    api_key_configured, api_key_hint = credential_status(provider, api_key)
     options = LLM_PROVIDERS
     if provider_name == "custom":
         from src.providers.custom_profiles import CustomProviderStore
@@ -245,9 +216,7 @@ def _build_llm_settings_response(
         active = next((p for p in CustomProviderStore().list_public() if p["active"]), None)
         active_model = active["model"] if active else env_values.get("LANGCHAIN_MODEL_NAME", "")
         active_url = active["base_url"] if active else ""
-        provider = LLMProviderOption(name="custom", label="Custom (credential vault)",
-            api_key_env=None, base_url_env="OPENAI_BASE_URL", default_model=active_model,
-            default_base_url=active_url, auth_type="credential_vault", reasoning_efforts=[])
+        provider = custom_provider_option({"model": active_model, "base_url": active_url})
         env_values = {**env_values, "LANGCHAIN_MODEL_NAME": active_model, "OPENAI_BASE_URL": active_url}
         api_key_configured, api_key_hint = bool(active and active["api_key_configured"]), None
         options = [*LLM_PROVIDERS, provider]
@@ -426,44 +395,22 @@ def register_settings_routes(
     async def update_llm_settings(payload: UpdateLLMSettingsRequest):
         """Persist project-local LLM settings and update the running process."""
         host_ref = _host()
-        provider_name = payload.provider.strip().lower()
-        provider = LLM_PROVIDER_BY_NAME.get(provider_name)
-        if provider_name == "custom":
-            from src.providers.custom_profiles import active_provider_credentials
-
-            active = active_provider_credentials()
-            if (payload.model_name.strip() != active["model"]
-                    or payload.base_url not in (None, active["base_url"])
-                    or payload.api_key or payload.clear_api_key):
-                raise HTTPException(status_code=400, detail="Edit and test a custom provider in the provider manager before activating it")
-            provider = LLMProviderOption(name="custom", label="Custom (credential vault)", api_key_env=None,
-                base_url_env="OPENAI_BASE_URL", default_model=active["model"], default_base_url=active["base_url"],
-                auth_type="credential_vault", reasoning_efforts=[])
-        if provider is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported LLM provider"
+        try:
+            provider, model_name, reasoning_effort = check_provider_choice(
+                payload.provider, payload.model_name, payload.reasoning_effort
             )
-
-        model_name = payload.model_name.strip()
-        if not model_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Model name is required"
-            )
+        except ModelSelectionError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        if provider.name == "custom" and (
+            payload.base_url not in (None, provider.default_base_url)
+            or payload.api_key or payload.clear_api_key
+        ):
+            raise HTTPException(status_code=400, detail="Edit and test a custom provider in the provider manager before activating it")
 
         if payload.temperature < 0 or payload.temperature > 2:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Temperature must be between 0 and 2",
-            )
-
-        reasoning_effort = (payload.reasoning_effort or "").strip().lower()
-        if reasoning_effort and reasoning_effort not in provider.reasoning_efforts:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Reasoning effort must be one of {', '.join(provider.reasoning_efforts)}, "
-                    "or empty to leave it unset"
-                ),
             )
 
         current_values = _settings_store().read()

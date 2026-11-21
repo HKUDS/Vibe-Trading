@@ -170,7 +170,8 @@ class TestBuildEndEvent:
 class TestBuildResultDict:
     def _runtime(self) -> SimpleNamespace:
         return SimpleNamespace(
-            provider="openai", configured_model="gpt-test", reasoning_effort="low"
+            provider="openai", configured_model="gpt-test", reasoning_effort="low",
+            selection="configured",
         )
 
     def test_fields_and_model_source(self) -> None:

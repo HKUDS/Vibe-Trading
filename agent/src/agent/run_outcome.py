@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from src.providers.chat import LLMRuntimeSnapshot
+from src.providers.chat import LLMRuntimeSnapshot, reported_model_source
 from src.providers.content_filter import (
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
     compute_content_filter_warnings,
@@ -221,7 +221,7 @@ def build_result_dict(
             "provider": runtime.provider,
             "configured_model": configured_model,
             "model": last_response_model or configured_model,
-            "model_source": "provider_response" if last_response_model else "configured",
+            "model_source": reported_model_source(runtime, last_response_model),
             "reasoning_effort": runtime.reasoning_effort,
         }
     )

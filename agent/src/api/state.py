@@ -45,6 +45,7 @@ def _get_session_service():
     import asyncio
 
     from src.session.events import EventBus
+    from src.session.runtime_lock import HTTP_SERVER_OWNER, claim_sessions_dir
     from src.session.service import SessionService
     from src.session.store import SessionStore
 
@@ -53,6 +54,7 @@ def _get_session_service():
     runs_dir = _host_attr("RUNS_DIR", RUNS_DIR)
 
     store = SessionStore(base_dir=sessions_dir)
+    claim_sessions_dir(sessions_dir, HTTP_SERVER_OWNER)
     event_bus = EventBus()
 
     try:
