@@ -82,13 +82,26 @@ def test_round_trip_keeps_every_field_and_type(tmp_path: Path) -> None:
     }
     assert items[4].get("tool_calls") == []
     assert items[5].data == {"loaded_tools": ["get_market_data"]}
-    assert items[6].data == {"status": "completed", "usage": {"input_tokens": 10}, "elapsed_ms": 40}
+    assert items[6].data == {
+        "status": "completed",
+        "usage": {"input_tokens": 10},
+        "elapsed_ms": 40,
+        "summary": None,
+        "error": None,
+        "run_dir": None,
+        "provider": None,
+        "model": None,
+        "pending_inputs": None,
+    }
     assert items[7].data == {"content": "<system>go on</system>", "role": "user"}
     assert items[8].data == {"summary": "sum", "replaces_through_seq": 3}
     # On disk each line is the flat shape, one object per line.
     lines = log.path.read_text(encoding="utf-8").splitlines()
     assert json.loads(lines[0])["prompt"] == "AAPL drawdown?"
-    assert set(json.loads(lines[6])) == {"seq", "ts", "turn_id", "type", "status", "usage", "elapsed_ms"}
+    assert set(json.loads(lines[6])) == {
+        "seq", "ts", "turn_id", "type", "status", "usage", "elapsed_ms",
+        "summary", "error", "run_dir", "provider", "model", "pending_inputs",
+    }
 
 
 @pytest.mark.parametrize(
