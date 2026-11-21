@@ -18,6 +18,7 @@ from src.tools import web_reader_tool, web_search_tool
 def _disable_optional_search(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep scanner tests offline even when the developer enabled Parallel."""
     monkeypatch.delenv("VIBE_TRADING_SEARCH_PARALLEL", raising=False)
+    monkeypatch.delenv("SPECSTREAM_API_KEY", raising=False)
 
 
 def test_scan_prompt_injection_detects_instruction_override() -> None:

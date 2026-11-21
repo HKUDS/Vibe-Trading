@@ -93,6 +93,17 @@ capped at 300 characters. Unset `VIBE_TRADING_SEARCH_PARALLEL` or set it to `0`
 to restore the existing search path. `VIBE_TRADING_SEARCH_BACKENDS` still controls
 only the ddgs engine list.
 
+To use the [SpecStream Search API](https://specstream.ai/search-api) inside `web_search`,
+set `SPECSTREAM_API_KEY` (a key is made at https://specstream.ai). Without a key
+nothing changes. When a key is set, searches try IQS first if `ALIYUN_IQS_API_KEY`
+is set, then SpecStream, then Parallel if enabled, then the existing ddgs and
+regional fallbacks. SpecStream receives the search query and the key; a search costs
+$5 per 1,000 searches. Each result keeps the same title, URL, snippet and
+security-warning format, with snippets capped at 300 characters. The request has a
+10 second timeout and no retry. Errors, invalid responses and empty results fall
+through to the existing sources, and the error text never includes the key. Unset
+`SPECSTREAM_API_KEY` to restore the existing search path.
+
 `quantlib_call` attribution requires finite sector weights and returns, finite Carino return inputs, and a finite non-negative weight-sum tolerance. Invalid data is rejected explicitly rather than returned as an attribution result containing `NaN`. Missing returns for a zero-weight sector may still be inferred from the other side.
 
 `quantlib_call` maximum-drawdown analysis measures underwater duration from the latest visit to the peak before the worst trough. An earlier drawdown that already recovered is excluded from that duration.
