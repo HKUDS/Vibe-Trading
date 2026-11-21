@@ -20,11 +20,13 @@ def validate_rebalance_mask(value: RebalanceMask) -> RebalanceMask:
         if not value.strip():
             raise ValueError("rebalance_mask offset alias must not be empty")
         try:
-            _ = to_offset(value)
+            offset = to_offset(value)
         except ValueError:
             raise ValueError(
                 f"rebalance_mask must be a pandas offset alias or ISO date list, got {value!r}"
             ) from None
+        if offset.n <= 0:
+            raise ValueError(f"rebalance_mask offset must be positive, got {value!r}")
         return value
     if not isinstance(value, list) or not value:
         raise ValueError(
