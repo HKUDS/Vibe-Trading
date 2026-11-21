@@ -37,6 +37,7 @@ class _DummyAgentLoop:
         cancel_event=None,
         background_manager=None,
         thread_recorder=None,
+        queued_inputs=None,
     ) -> None:
         del registry, llm, event_callback, max_iterations, persistent_memory
 

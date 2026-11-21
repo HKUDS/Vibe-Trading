@@ -4,6 +4,10 @@ The conversation, not the attempt, is the unit: each session has one
 :class:`~src.session.runtime.SessionRuntime` whose ``thread.jsonl`` records
 every turn in full. A turn's model input is replayed from it, and the
 ``messages.jsonl`` display row is projected from it when the turn ends.
+
+A caller that opts in (``queue_if_busy``, the web send route) may send while a
+turn runs: the message waits in :mod:`src.session.pending_inputs` and joins
+the running turn after its current tool batch, or starts the next turn.
 """
 
 from __future__ import annotations
@@ -19,6 +23,12 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.session.checkpoint import ResponseCheckpoint
 from src.session.events import EventBus, ThreadEvents
+from src.session.pending_inputs import (
+    PENDING_INPUTS_FILENAME,
+    PendingInput,
+    PendingInputQueue,
+    QueuedInputDelivery,
+)
 from src.session.models import (
     Attempt,
     AttemptStatus,
@@ -76,10 +86,11 @@ def _cancel_session_swarm_runs(session_id: str) -> int:
 class SessionBusyError(RuntimeError):
     """Raised when a session already has an in-flight run.
 
-    One AgentLoop per session: a second concurrent send is rejected rather
-    than queued, because two loops writing the same session would interleave
-    their messages and attempts. Callers surface this as HTTP 409 so the user
-    can wait for the running attempt or cancel it first.
+    One AgentLoop per session: two loops writing the same session would
+    interleave their messages and attempts. A second concurrent send is
+    therefore rejected unless its caller opted in to queueing
+    (``send_message(queue_if_busy=True)``). Callers surface this as HTTP 409
+    so the user can wait for the running attempt or cancel it first.
     """
 
 
@@ -140,7 +151,12 @@ class SessionService:
         from src.tools.background_tools import init_background_store
 
         self._background_store = init_background_store(Path(runs_dir).parent)
+        # Messages sent while a turn runs, durable per session directory.
+        self.pending_inputs = PendingInputQueue(
+            lambda session_id: store.thread_path(session_id).parent / PENDING_INPUTS_FILENAME
+        )
         self._recover_interrupted_attempts()
+        self._recover_pending_inputs()
 
     def _recover_interrupted_attempts(self) -> None:
         """Finalize attempts that could not outlive the previous process.
@@ -213,6 +229,44 @@ class SessionService:
                     )
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(attempt.session_id, attempt.attempt_id)
+
+    def _recover_pending_inputs(self) -> None:
+        """Settle queued inputs a previous process was writing when it stopped.
+
+        Runs after the attempts are reconciled, so a turn the process lost is
+        already closed in the thread. An input whose claimed turn holds it is
+        delivered: it leaves the queue, and gets its ``messages.jsonl`` row if
+        the process stopped before writing one. Any other claimed input waits
+        again. Waiting inputs are kept and do not start a turn on their own:
+        a restart must not spend tokens nobody asked for now; the next
+        message sent to the session, or a discard, settles them.
+        """
+        for path in sorted(self.store.base_dir.glob(f"*/{PENDING_INPUTS_FILENAME}")):
+            session_id = path.parent.name
+
+            def turn_prompt(turn_id: str, session_id: str = session_id) -> Optional[str]:
+                attempt = self.store.get_attempt(session_id, turn_id)
+                return attempt.prompt if attempt is not None else None
+
+            try:
+                delivered = self.pending_inputs.reconcile(
+                    session_id,
+                    self.store.thread_log(session_id).read(),
+                    turn_prompt=turn_prompt,
+                )
+            except OSError as exc:
+                logger.warning("Could not reconcile pending inputs of %s: %s", session_id, exc)
+                continue
+            if not delivered:
+                continue
+            recorded = {
+                message.metadata.get("queued_input_id")
+                for message in self.store.get_messages(session_id, limit=None)
+                if message.role == "user"
+            }
+            for pending in delivered:
+                if pending.input_id not in recorded:
+                    self._append_user_row(session_id, pending, pending.claimed_by)
 
     def _close_recovered_turn(
         self, attempt: Attempt, status: str
@@ -422,23 +476,38 @@ class SessionService:
         role: str = "user",
         *,
         include_shell_tools: bool = False,
+        queue_if_busy: bool = False,
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
         Args:
             session_id: Session ID.
-            content: Message content.
+            content: Message content, already validated by the caller exactly
+                as for any message (a queued one included).
             role: Message role.
             include_shell_tools: Whether this attempt may use shell tools.
+            queue_if_busy: Accept a user message for a session whose turn is
+                running instead of refusing it. It waits durably and joins the
+                running turn after its current tool batch, or starts the next
+                turn when that turn ends first. While earlier queued messages
+                still wait, a new one goes behind them and the oldest starts
+                the turn. Callers that do not opt in (channels, scheduler,
+                bridges) are refused as before.
 
         Returns:
-            Dictionary containing message_id and attempt_id.
+            ``message_id`` and ``attempt_id`` for a message that started its
+            own turn. A queued message returns ``status: "queued"``, its
+            ``input_id``, its 1-based ``position`` among waiting messages and
+            ``attempt_id``: the turn running now or just started.
 
         Raises:
             ValueError: If the session does not exist.
-            SessionBusyError: If the session already has a run in progress.
-                Callers surface this as HTTP 409; the user can wait for the
-                running attempt or cancel it first.
+            SessionBusyError: If the session already has a run in progress
+                and the caller did not opt in, or the service is shutting
+                down. Callers surface this as HTTP 409; the user can wait for
+                the running attempt or cancel it first.
+            PendingInputLimitError: If the message would be queued but the
+                session already holds the maximum number of waiting messages.
         """
         session = self.store.get_session(session_id)
         if not session:
@@ -446,43 +515,275 @@ class SessionService:
         if self._shutting_down:
             raise SessionBusyError("shutting down; no new runs are accepted")
 
-        # Claim the session before persisting anything. Reserving after the
-        # user message is appended (or relying on _active_loops, which is only
-        # populated once the registry is built) lets two concurrent sends both
-        # store a message and create an attempt.
-        if role == "user":
-            self._reserve_session(session_id)
-        handed_off = False
-
-        try:
+        if role != "user":
             message = Message(session_id=session_id, role=role, content=content)
             self.store.append_message(message)
             self._search_index.index_message(session_id, role, content)
             self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
+            return {"message_id": message.message_id}
 
-            if role != "user":
-                return {"message_id": message.message_id}
-
-            attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
-            self.store.create_attempt(attempt)
-            session.config["include_shell_tools"] = include_shell_tools
-            session.last_attempt_id = attempt.attempt_id
-            session.updated_at = datetime.now(timezone.utc).isoformat()
-            self.store.update_session(session)
-            # Through thread_events: the session's thread is read from here on,
-            # before this turn records anything.
-            self.thread_events.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
-
-            task = asyncio.create_task(
-                self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
+        # Claim the session before persisting anything. Reserving after the
+        # user message is appended (or relying on _active_loops, which is only
+        # populated once the registry is built) lets two concurrent sends both
+        # store a message and create an attempt.
+        try:
+            self._reserve_session(session_id)
+        except SessionBusyError:
+            if not queue_if_busy or self._shutting_down:
+                raise
+            return self._queue_input(
+                session_id, content,
+                running_turn=session.last_attempt_id,
+                include_shell_tools=include_shell_tools,
             )
-            self._active_tasks[session_id] = task
+        handed_off = False
+        try:
+            if queue_if_busy and self.pending_inputs.waiting(session_id):
+                # Messages queued earlier still wait (a stop or a restart kept
+                # them): they go first, so the conversation keeps send order.
+                started = self._start_queued_turn(session)
+                handed_off = started is not None
+                return self._queue_input(
+                    session_id, content,
+                    running_turn=started["attempt_id"] if started else None,
+                    include_shell_tools=include_shell_tools,
+                )
+            result = self._start_turn(session, content, include_shell_tools=include_shell_tools)
             # _run_attempt now owns the claim and releases it in its finally.
             handed_off = True
-            return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+            return result
         finally:
-            if role == "user" and not handed_off:
+            if not handed_off:
                 self._release_session(session_id)
+
+    def _start_turn(
+        self,
+        session: Session,
+        content: str,
+        *,
+        include_shell_tools: bool,
+        attempt: Optional[Attempt] = None,
+        queued: Optional[PendingInput] = None,
+    ) -> Dict[str, Any]:
+        """Record the user message and schedule its turn.
+
+        The caller holds the session claim; once the task is scheduled,
+        :meth:`_run_attempt` owns it.
+
+        Args:
+            session: The session.
+            content: The user's message.
+            include_shell_tools: Whether the turn may use shell tools.
+            attempt: A prepared attempt (a queued input claimed it already).
+            queued: The queued input this turn delivers, if any.
+
+        Returns:
+            ``message_id`` and ``attempt_id``.
+        """
+        session_id = session.session_id
+        message = Message(
+            session_id=session_id,
+            role="user",
+            content=content,
+            metadata={"queued_input_id": queued.input_id} if queued is not None else {},
+        )
+        self.store.append_message(message)
+        self._search_index.index_message(session_id, "user", content)
+        self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": "user", "content": content})
+
+        if attempt is None:
+            attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+        self.store.create_attempt(attempt)
+        session.config["include_shell_tools"] = include_shell_tools
+        session.last_attempt_id = attempt.attempt_id
+        session.updated_at = datetime.now(timezone.utc).isoformat()
+        self.store.update_session(session)
+        # Through thread_events: the session's thread is read from here on,
+        # before this turn records anything.
+        self.thread_events.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
+        if queued is not None:
+            self.thread_events.emit(
+                session_id, "input.delivered",
+                {"attempt_id": attempt.attempt_id, "input_id": queued.input_id,
+                 "message_id": message.message_id},
+            )
+
+        task = asyncio.create_task(
+            self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
+        )
+        self._active_tasks[session_id] = task
+        return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+
+    def _start_queued_turn(self, session: Session) -> Optional[Dict[str, Any]]:
+        """Start a turn from the oldest waiting input. The caller holds the claim.
+
+        The input is claimed for the new attempt before anything is written
+        and removed from the queue only once that attempt exists, so a crash
+        in between is settled by :meth:`_recover_pending_inputs`.
+
+        Args:
+            session: The session.
+
+        Returns:
+            The started turn's ``message_id`` / ``attempt_id``, or None when
+            no input was waiting.
+        """
+        session_id = session.session_id
+        attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id)
+        pending = self.pending_inputs.claim_next(session_id, attempt.attempt_id, after_seq=0)
+        if pending is None:
+            return None
+        attempt.prompt = pending.content
+        try:
+            result = self._start_turn(
+                session, pending.content,
+                include_shell_tools=pending.include_shell_tools,
+                attempt=attempt, queued=pending,
+            )
+        except BaseException:
+            if self.store.get_attempt(session_id, attempt.attempt_id) is None:
+                self.pending_inputs.release(session_id, pending.input_id)
+            raise
+        self.pending_inputs.complete(session_id, pending.input_id)
+        return result
+
+    def _start_next_input(self, session_id: str) -> None:
+        """After a turn ended on its own, let the oldest waiting input start one.
+
+        Never raises: it runs in the finally of the turn that just ended.
+
+        Args:
+            session_id: Session ID.
+        """
+        try:
+            if self._shutting_down or not self.pending_inputs.waiting(session_id):
+                return
+            session = self.store.get_session(session_id)
+            if session is None:
+                return
+            try:
+                self._reserve_session(session_id)
+            except SessionBusyError:
+                return  # Another send started a turn; it takes the queue.
+            started = None
+            try:
+                started = self._start_queued_turn(session)
+            finally:
+                if started is None:
+                    self._release_session(session_id)
+        except Exception:  # noqa: BLE001 - the inputs stay queued and listed
+            logger.warning("Could not start a turn from the queue of %s", session_id, exc_info=True)
+
+    def _queue_input(
+        self,
+        session_id: str,
+        content: str,
+        *,
+        running_turn: Optional[str],
+        include_shell_tools: bool,
+    ) -> Dict[str, Any]:
+        """Accept a message for a busy session and announce it.
+
+        Args:
+            session_id: Session ID.
+            content: The user's message.
+            running_turn: The turn running now, which may take it.
+            include_shell_tools: The sending request's shell-tool entitlement.
+
+        Returns:
+            The queued receipt.
+        """
+        pending = self.pending_inputs.add(
+            session_id, content,
+            queued_during=running_turn,
+            include_shell_tools=include_shell_tools,
+        )
+        waiting = self.pending_inputs.waiting(session_id)
+        position = next(
+            (index for index, item in enumerate(waiting, start=1) if item.input_id == pending.input_id),
+            len(waiting),
+        )
+        self.thread_events.emit(
+            session_id, "input.queued",
+            {"attempt_id": running_turn, "input_id": pending.input_id,
+             "content": content, "position": position},
+        )
+        return {
+            "status": "queued",
+            "input_id": pending.input_id,
+            "attempt_id": running_turn,
+            "position": position,
+        }
+
+    def _append_user_row(self, session_id: str, pending: PendingInput, turn_id: Optional[str]) -> Message:
+        """Write the display row of a queued input that joined a running turn.
+
+        Args:
+            session_id: Session ID.
+            pending: The delivered input.
+            turn_id: The turn it joined.
+
+        Returns:
+            The appended message.
+        """
+        message = Message(
+            session_id=session_id,
+            role="user",
+            content=pending.content,
+            metadata={"queued_input_id": pending.input_id, "delivered_to_attempt_id": turn_id},
+        )
+        self.store.append_message(message)
+        self._search_index.index_message(session_id, "user", pending.content)
+        return message
+
+    def _input_joined_turn(self, session_id: str, turn_id: str, pending: PendingInput, item: Any) -> None:
+        """Show a queued input that the running turn just took.
+
+        Args:
+            session_id: Session ID.
+            turn_id: The running turn.
+            pending: The input.
+            item: Its recorded ``user`` thread item.
+        """
+        message = self._append_user_row(session_id, pending, turn_id)
+        # Publishes the recorded user item (completing the queued live item)
+        # before the legacy event.
+        self.thread_events.emit(
+            session_id, "input.delivered",
+            {"attempt_id": turn_id, "input_id": pending.input_id,
+             "message_id": message.message_id, "seq": item.seq},
+        )
+
+    def list_pending_inputs(self, session_id: str) -> list[Dict[str, Any]]:
+        """Return the messages waiting to join a session, oldest first.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            Client views of the pending inputs.
+        """
+        return [item.public() for item in self.pending_inputs.list(session_id)]
+
+    def discard_pending_input(self, session_id: str, input_id: str) -> Optional[Dict[str, Any]]:
+        """Remove a waiting message at the user's request.
+
+        Args:
+            session_id: Session ID.
+            input_id: The input to remove.
+
+        Returns:
+            The removed input's view, or None when it is not waiting (unknown,
+            or being written into a turn right now).
+        """
+        removed = self.pending_inputs.discard(session_id, input_id)
+        if removed is None:
+            return None
+        self.thread_events.emit(
+            session_id, "input.discarded",
+            {"attempt_id": removed.queued_during, "input_id": removed.input_id},
+        )
+        return removed.public()
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
@@ -634,6 +935,7 @@ class SessionService:
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
                  "summary": reply.content, "error": attempt.error, "run_dir": attempt.run_dir,
                  "started_at": wall_started_at, "ended_at": time.time(),
+                 **self._pending_report(session.session_id, attempt),
                  **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
             )
 
@@ -651,7 +953,8 @@ class SessionService:
                 self.thread_events.emit(
                     session.session_id,
                     "attempt.cancelled",
-                    {"attempt_id": attempt.attempt_id, "status": attempt.status.value},
+                    {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
+                     **self._pending_report(session.session_id, attempt)},
                 )
             else:
                 logger.info(
@@ -674,6 +977,30 @@ class SessionService:
             self._active_tasks.pop(session.session_id, None)
             self._user_cancel_requests.discard(session.session_id)
             self._release_session(session.session_id)
+            # A turn that ended on its own hands over to the oldest message
+            # sent while it ran. A stop does not: those messages stay queued
+            # and are reported with the cancellation.
+            if attempt.status in (AttemptStatus.COMPLETED, AttemptStatus.FAILED):
+                self._start_next_input(session.session_id)
+
+    def _pending_report(self, session_id: str, attempt: Attempt) -> Dict[str, Any]:
+        """Name the queued messages a stopped turn left waiting.
+
+        Args:
+            session_id: Session ID.
+            attempt: The terminal attempt.
+
+        Returns:
+            ``{"pending_inputs": [...]}`` for a cancelled turn with messages
+            waiting, else an empty dict.
+        """
+        if attempt.status != AttemptStatus.CANCELLED:
+            return {}
+        try:
+            pending = self.list_pending_inputs(session_id)
+        except OSError:
+            return {}
+        return {"pending_inputs": pending} if pending else {}
 
     def _finish_thread_turn_quietly(self, session_id: str, attempt: Attempt) -> None:
         """Close the turn in the thread on an error path, never raising.
@@ -794,6 +1121,16 @@ class SessionService:
             from src.config.accessor import get_env_config
 
             recorder = self.runtime(session_id).begin_turn(attempt_id, messages or [])
+            queued_inputs = QueuedInputDelivery(
+                self.pending_inputs,
+                session_id=session_id,
+                turn_id=attempt_id,
+                recorder=recorder,
+                shell_tools=include_shell_tools,
+                on_delivered=lambda pending, item: self._input_joined_turn(
+                    session_id, attempt_id, pending, item
+                ),
+            )
             agent = AgentLoop(
                 registry=registry,
                 llm=llm,
@@ -803,6 +1140,7 @@ class SessionService:
                 cancel_event=turn_cancel,
                 background_manager=background,
                 thread_recorder=recorder,
+                queued_inputs=queued_inputs,
             )
             self._active_loops[session_id] = agent
 

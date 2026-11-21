@@ -334,6 +334,22 @@ class TurnRecorder:
         self._write("turn_start", None, prompt=prompt, model=model, provider=provider)
         self._write("user", message, content=prompt, llm_content=message.get("content"))
 
+    def user(self, message: Dict[str, Any], *, content: str) -> Optional[ThreadItem]:
+        """Record a user message that joined the turn after it started.
+
+        A message sent while the turn was running (``src.session.pending_inputs``)
+        enters the model input between a tool batch and the next model call.
+
+        Args:
+            message: The user message the model receives.
+            content: The user's text as typed.
+
+        Returns:
+            The recorded item, or None when the write failed or the turn has
+            already finished; the caller must then keep the input pending.
+        """
+        return self._write("user", message, content=content, llm_content=message.get("content"))
+
     def assistant(self, message: Dict[str, Any], *, phase: str) -> None:
         """Record one model response as it enters the model's messages.
 

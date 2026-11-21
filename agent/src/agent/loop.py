@@ -175,6 +175,8 @@ class AgentLoop(ToolCallLifecycle):
         max_iterations: Maximum research iterations, plus one text-only answer retry.
     """
 
+    _queued_inputs: Optional[Any] = None
+
     def __init__(
         self,
         registry: ToolRegistry,
@@ -186,6 +188,7 @@ class AgentLoop(ToolCallLifecycle):
         cancel_event: Optional[threading.Event] = None,
         background_manager: Optional[Any] = None,
         thread_recorder: Optional[Any] = None,
+        queued_inputs: Optional[Any] = None,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -211,8 +214,15 @@ class AgentLoop(ToolCallLifecycle):
                 names earlier turns left, and brings their offloaded tool
                 results into this run. ``None`` (CLI, tests) records nothing
                 and starts every run fresh, as before.
+            queued_inputs: Source of user messages sent while this turn runs
+                (``src.session.pending_inputs.QueuedInputDelivery``). Its
+                ``deliver()`` records each one in the thread and returns the
+                user messages to append; the loop takes them only after a
+                tool batch finished, before the next model call. ``None``
+                takes none.
         """
         self._thread = thread_recorder
+        self._queued_inputs = queued_inputs
         self.registry = prepare_registry(registry)
         self.llm = llm
         runtime_snapshot = getattr(llm, "runtime_snapshot", None)
@@ -1101,6 +1111,8 @@ class AgentLoop(ToolCallLifecycle):
                     logger.info("Manual compact triggered by model")
                     self._auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=current_iter)
 
+                self._take_queued_inputs(messages, trace, current_iter)
+
         except Exception as exc:
             logger.exception(f"AgentLoop error: {exc}")
             error_code = (
@@ -1194,6 +1206,35 @@ class AgentLoop(ToolCallLifecycle):
         messages.append(message)
         if self._records_into(messages):
             self._thread.inject(message)
+
+    def _take_queued_inputs(self, messages: list, trace: TraceWriter, current_iter: int) -> None:
+        """Append the user messages sent while this turn was running.
+
+        The one point a queued input enters a running turn: its tool batch has
+        finished and the next model call has not been made. A stop or a spent
+        budget takes nothing, so those inputs stay pending. Taking an input
+        changes only what the model reads next, never the turn's tools,
+        identity ledger, iteration cap or no-progress budget.
+
+        Args:
+            messages: The turn's messages (appended in place).
+            trace: The run's trace.
+            current_iter: Session-wide iteration number.
+        """
+        if (
+            self._queued_inputs is None
+            or self._cancel_event.is_set()
+            or self._budget_stop_reason is not None
+        ):
+            return
+        for index, message in enumerate(self._queued_inputs.deliver(), start=1):
+            messages.append(message)
+            trace.write_text_entry(
+                {"type": "message", "iter": current_iter, "role": "user", "queued": True},
+                field="content",
+                value=message.get("content") or "",
+                offload_kind=f"queued-user-message-{current_iter}-{index}",
+            )
 
     def _append_assistant(self, messages: list, message: Dict[str, Any], *, phase: str) -> None:
         """Append a model response to the turn's messages and record it.

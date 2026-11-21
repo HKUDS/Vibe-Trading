@@ -623,6 +623,10 @@ class _Tail:
     last_seq: int = 0
     assistant: Optional[_LiveItem] = None
     tools: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
+    # Queued user inputs, oldest first: (input_id, content, live item). Each
+    # stays until its ``user`` item is recorded or it is discarded; it
+    # outlives the turn it was sent during.
+    inputs: List[Tuple[str, str, _LiveItem]] = field(default_factory=list)
     counter: int = 0
     live_by_seq: "OrderedDict[int, str]" = field(default_factory=OrderedDict)
 
@@ -663,6 +667,11 @@ class ThreadEvents:
       from ``turn_start`` / ``turn_end`` (an ``interrupted`` turn is
       ``run.failed`` with that status). A run event names its ``turn_id``: a
       stale turn closed when the next turn begins is reported live too.
+    * A message sent while a turn runs (legacy ``input.queued``) is a live
+      ``item.started`` of type ``user`` with ``status: queued`` and its
+      ``input_id``; the ``user`` item recorded when it joins the conversation
+      completes it under the same ``live_id`` (the oldest queued input with
+      that text), and ``input.discarded`` ends it as ``item.discarded``.
 
     An event derived from a recorded item has ``SSEEvent.seq`` set and a
     durable id (:func:`durable_event_id`); it can be rebuilt from disk at any
@@ -980,6 +989,13 @@ class ThreadEvents:
                 live = pending.pop(0)
                 if not pending:
                     tail.tools.pop(key, None)
+        elif item.type == "user":
+            content = item.get("content")
+            for index, (_, queued_content, queued) in enumerate(tail.inputs):
+                if queued_content == content:
+                    live = queued
+                    del tail.inputs[index]
+                    break
         elif item.type == "turn_end":
             self._discard_live(session_id, tail, item.turn_id)
 
@@ -1118,3 +1134,20 @@ class ThreadEvents:
                 session_id, tail, pending[-1], "tool.progress",
                 {"progress": progress, "heartbeat": event_type == "tool_heartbeat"},
             )
+        elif event_type == "input.queued":
+            input_id, content = data.get("input_id"), data.get("content")
+            if not isinstance(input_id, str) or not isinstance(content, str):
+                return
+            live = self._new_live(tail, "user", turn_id)
+            tail.inputs.append((input_id, content, live))
+            self._start_live(
+                session_id, tail, live,
+                {"input_id": input_id, "content": content, "status": "queued"},
+                "item.started",
+            )
+        elif event_type == "input.discarded":
+            for index, (input_id, _, queued) in enumerate(tail.inputs):
+                if input_id == data.get("input_id"):
+                    del tail.inputs[index]
+                    self._discard(session_id, tail, queued)
+                    break

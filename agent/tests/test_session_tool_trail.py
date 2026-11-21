@@ -181,6 +181,7 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
             cancel_event=None,
             background_manager=None,
             thread_recorder=None,
+            queued_inputs=None,
         ) -> None:
             del registry, llm, event_callback, max_iterations, persistent_memory, cancel_event
             self._thread = thread_recorder

@@ -424,7 +424,8 @@ class _ScriptedLoop:
     """AgentLoop stand-in that streams and records like the real loop."""
 
     def __init__(self, *, registry, llm, event_callback, max_iterations, persistent_memory,
-                 cancel_event=None, background_manager=None, thread_recorder=None) -> None:
+                 cancel_event=None, background_manager=None, thread_recorder=None,
+                 queued_inputs=None) -> None:
         del registry, llm, max_iterations, persistent_memory, cancel_event, background_manager
         self._emit = event_callback
         self._thread = thread_recorder

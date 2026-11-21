@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.session.events import SSEEvent, display_page
+from src.session.pending_inputs import PendingInputLimitError
 from src.session.service import SessionBusyError
 
 logger = logging.getLogger(__name__)
@@ -832,7 +833,14 @@ def register_sessions_routes(app: FastAPI) -> None:
 
     @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth)])
     async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
-        """Send a user message and start the agent loop (natural language strategy)."""
+        """Send a user message and start the agent loop (natural language strategy).
+
+        A session whose turn is running accepts the message too: it waits and
+        joins that turn after its current tool batch, or starts the next turn.
+        That answer is HTTP 202 with ``status: "queued"``, ``input_id``,
+        ``position`` and the ``attempt_id`` of the turn that will take it. The
+        same validation and size limit apply either way.
+        """
         _host_validate_path_param(session_id, "session_id")
         svc = _host_get_session_service()
         if not svc:
@@ -842,14 +850,38 @@ def register_sessions_routes(app: FastAPI) -> None:
                 session_id=session_id,
                 content=payload.content,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                queue_if_busy=True,
             )
-            return result
-        except SessionBusyError as exc:
+        except (SessionBusyError, PendingInputLimitError) as exc:
             # Must precede ValueError-style handling and stay distinct from 404:
-            # the session exists, it is simply already running.
+            # the session exists, it is shutting down or its queue is full.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        if result.get("status") == "queued":
+            return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=result)
+        return result
+
+    @app.get("/sessions/{session_id}/pending-inputs", dependencies=[Depends(require_auth)])
+    async def list_pending_inputs(session_id: str):
+        """List the messages waiting to join a session's conversation, oldest first."""
+        _host_validate_path_param(session_id, "session_id")
+        svc, _ = _get_existing_session_or_404(session_id)
+        return {"session_id": session_id, "items": svc.list_pending_inputs(session_id)}
+
+    @app.delete("/sessions/{session_id}/pending-inputs/{input_id}", dependencies=[Depends(require_auth)])
+    async def discard_pending_input(session_id: str, input_id: str):
+        """Discard a waiting message before any turn takes it."""
+        _host_validate_path_param(session_id, "session_id")
+        _host_validate_path_param(input_id, "input_id")
+        svc, _ = _get_existing_session_or_404(session_id)
+        removed = svc.discard_pending_input(session_id, input_id)
+        if removed is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No waiting message {input_id} in session {session_id}",
+            )
+        return {"status": "discarded", "session_id": session_id, "input": removed}
 
     @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth)])
     async def cancel_session(session_id: str):
@@ -859,9 +891,12 @@ def register_sessions_routes(app: FastAPI) -> None:
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
         cancelled = svc.cancel_current(session_id)
-        if not cancelled:
-            return {"status": "no_active_loop"}
-        return {"status": "cancelled"}
+        # A stop keeps the messages queued behind it; say which are waiting.
+        pending = svc.list_pending_inputs(session_id)
+        body: Dict[str, Any] = {"status": "cancelled" if cancelled else "no_active_loop"}
+        if pending:
+            body["pending_inputs"] = pending
+        return body
 
     @app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
     async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
