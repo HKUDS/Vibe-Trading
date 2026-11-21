@@ -881,7 +881,7 @@ def backtest(run_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3, VD-12 hand-written wrapper)
+# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3/pt-v1.4, VD-12 hand-written wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -900,13 +900,14 @@ def paper_trade_step(
     path_model: str | None = None,
     fill_model: str | None = None,
     order_volume_ratio: float | None = None,
+    cancel_schedule: _lenient_dict_list_opt = None,
 ) -> str:
     """Run one step of the deterministic paper-trading matching engine; never places real orders.
 
     Matches the injected ``orders`` (or, in Step 7, a ``strategy_path``'s
     per-day orders) against bars under the market's frozen rules (T+1, price
     limits, board lots, fees) and returns ONE in-band JSON document on
-    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3 success result, or an AM-5
+    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3/pt-v1.4 success result, or an AM-5
     error envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
     non-retryable) on the SAME channel — never a transport error. Research-only:
     it reads market data and the injected ledger, matches on paper, and writes
@@ -921,8 +922,9 @@ def paper_trade_step(
             ``from_date == to_date`` (single day); multi-day ranges are
             strategy_path mode only.
         to_date: Inclusive range end ``YYYY-MM-DD`` (the target trading day).
-        orders: Orders mode — array of ``{symbol, side, qty, limit?}``. Exactly
-            one of ``orders`` / ``strategy_path`` must be given; an empty array
+        orders: Orders-mode array of ``{symbol, side, qty, limit?, order_id?}``.
+            Non-null ids select v1.4 (single-day 5m cn_a only). Exactly one of
+            ``orders`` / ``strategy_path`` must be given; an empty array
             is the zero-order pure-valuation path.
         strategy_path: Strategy mode — path to an AST-hardened strategy whose
             per-day orders are matched. Exactly one of ``orders`` /
@@ -940,6 +942,11 @@ def paper_trade_step(
         order_volume_ratio: Optional pt-v1.3 per-order share of available
             volume, ``0 < r <= 1``; only with ``fill_model='volume_share'``.
             Omitted means 1.0.
+        cancel_schedule: Optional pt-v1.4 ``[{order_id, at}]`` for single-day
+            5m cn_a orders mode. Times are same-day five-minute session boundaries
+            in ``YYYY-MM-DDTHH:MM:00+08:00``. Cancels precede same-label matching,
+            stop further fills as pending_cancel and settle at day end. Omitted
+            or null keeps the legacy model; [] selects v1.4. No broker writes.
     """
     from src.tools.paper_trade.tool import run_paper_trade_step
 
@@ -966,6 +973,8 @@ def paper_trade_step(
         payload["fill_model"] = fill_model
     if order_volume_ratio is not None:
         payload["order_volume_ratio"] = order_volume_ratio
+    if cancel_schedule is not None:
+        payload["cancel_schedule"] = cancel_schedule
     return run_paper_trade_step(payload)
 
 

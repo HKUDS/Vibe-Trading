@@ -304,6 +304,37 @@ def _execute_step(
             raw_payload,
         ), None
 
+    if request.uses_v1_4 and orders_at_end:
+        return (
+            _error_document(
+                "INVALID_REQUEST",
+                request.account_id,
+                request.market,
+                request.from_date,
+                request.to_date,
+                "caller cancellation is supported only by the stateless paper step, not saved accounts",
+                raw_payload,
+            ),
+            None,
+        )
+    from .cancellation import validate_request
+
+    try:
+        validate_request(request)
+    except ValueError as exc:
+        return (
+            _error_document(
+                "INVALID_REQUEST",
+                request.account_id,
+                request.market,
+                request.from_date,
+                request.to_date,
+                str(exc),
+                raw_payload,
+            ),
+            None,
+        )
+
     # 3. Market data over the frozen window (universe = positions ∪ orders;
     #    strategy_path mode ALSO unions the strategy file's declared UNIVERSE
     #    literal — a cash-only account carries no position symbols and there
@@ -507,10 +538,25 @@ class PaperTradeStepTool(BaseTool):
             "orders": {
                 "type": "array",
                 "description": (
-                    "Orders mode: array of {symbol, side, qty, limit?}. XOR with "
-                    "strategy_path; an empty array is the pure-valuation path."
+                    "Orders mode: array of {symbol, side, qty, limit?, order_id?}. XOR with "
+                    "strategy_path; an empty array is the pure-valuation path. A non-null "
+                    "order_id selects pt-v1.4, only for single-day 5m cn_a research."
                 ),
-                "items": {"type": "object"},
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string"},
+                        "side": {"type": "string", "enum": ["buy", "sell"]},
+                        "qty": {"type": "number"},
+                        "limit": {"type": ["number", "null"]},
+                        "order_id": {
+                            "type": ["string", "null"],
+                            "minLength": 1,
+                            "maxLength": 128,
+                        },
+                    },
+                    "required": ["symbol", "side", "qty"],
+                },
             },
             "strategy_path": {
                 "type": "string",
@@ -532,8 +578,8 @@ class PaperTradeStepTool(BaseTool):
                 "default": "1d",
                 "description": (
                     "Optional pt-v1.2 bar interval. '1d' (default) keeps the pt-v1.1 "
-                    "daily close-price path; '5m' is cn_a-only and matches the whole "
-                    "continuous session as one bar (D1)."
+                    "daily close-price path; '5m' is cn_a-only and matches each "
+                    "continuous bar in chronological order."
                 ),
             },
             "session": {
@@ -564,6 +610,29 @@ class PaperTradeStepTool(BaseTool):
                     "per-order partial fills capped by each order's own share of "
                     "the matched volume; it requires interval='5m' and market='cn_a'."
                 ),
+            },
+            "cancel_schedule": {
+                "type": ["array", "null"],
+                "description": (
+                    "Optional pt-v1.4 [{order_id, at}] for single-day 5m cn_a orders mode. "
+                    "Use same-day YYYY-MM-DDTHH:MM:00+08:00 session boundaries. "
+                    "Cancellation precedes matching at that bar label, stops future fills "
+                    "as pending_cancel, and settles at day end. Null/omitted keeps the "
+                    "legacy model; [] explicitly selects v1.4. No broker orders are sent."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "order_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                        },
+                        "at": {"type": "string"},
+                    },
+                    "required": ["order_id", "at"],
+                    "additionalProperties": False,
+                },
             },
             "order_volume_ratio": {
                 "type": "number",
