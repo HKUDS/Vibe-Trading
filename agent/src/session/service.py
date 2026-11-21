@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.session.checkpoint import ResponseCheckpoint
-from src.session.events import EventBus
+from src.session.events import EventBus, ThreadEvents
 from src.session.models import (
     Attempt,
     AttemptStatus,
@@ -107,6 +107,9 @@ class SessionService:
         """
         self.store = store
         self.event_bus = event_bus
+        # Every event of a running turn is published through this, so item
+        # and run events derived from thread.jsonl precede the legacy event.
+        self.thread_events = ThreadEvents(event_bus, store.thread_path)
         self.runs_dir = runs_dir
         # _active_loops is the cancellation handle only. It is populated after
         # the registry is built, which is far too late to serve as the
@@ -466,7 +469,9 @@ class SessionService:
             session.last_attempt_id = attempt.attempt_id
             session.updated_at = datetime.now(timezone.utc).isoformat()
             self.store.update_session(session)
-            self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
+            # Through thread_events: the session's thread is read from here on,
+            # before this turn records anything.
+            self.thread_events.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
 
             task = asyncio.create_task(
                 self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
@@ -623,7 +628,7 @@ class SessionService:
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
             self._search_index.index_message(session.session_id, "assistant", reply.content)
-            self.event_bus.emit(
+            self.thread_events.emit(
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
@@ -643,7 +648,7 @@ class SessionService:
                 self.store.delete_partial_response(
                     session.session_id, attempt.attempt_id
                 )
-                self.event_bus.emit(
+                self.thread_events.emit(
                     session.session_id,
                     "attempt.cancelled",
                     {"attempt_id": attempt.attempt_id, "status": attempt.status.value},
@@ -659,7 +664,7 @@ class SessionService:
             self._finish_thread_turn_quietly(session.session_id, attempt)
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
-            self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
+            self.thread_events.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
         finally:
             if attempt.status != AttemptStatus.COMPLETED:
                 background = self._background_handles.get(session.session_id)
@@ -748,7 +753,7 @@ class SessionService:
                         exc,
                     )
                 data["attempt_id"] = attempt_id
-                self.event_bus.emit(session_id, event_type, data)
+                self.thread_events.emit(session_id, event_type, data)
 
             def _mcp_collision_warn(msg: str) -> None:
                 """Forward MCP server-name collision warnings to the operator event channel."""

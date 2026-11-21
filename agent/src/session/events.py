@@ -1,4 +1,10 @@
-"""SSE event bus with support for last_event_id recovery and buffering.
+"""Session SSE events: the in-memory bus and the durable item stream.
+
+:class:`EventBus` keeps a bounded per-session buffer of every event and fans
+live events out to subscribers. :class:`ThreadEvents` derives typed item events
+from the session's ``thread.jsonl`` and uses each item's ``seq`` as a durable
+cursor, so a client that reconnects with a cursor reads every completed item
+after it from disk instead of from the 500-event buffer.
 
 V5: Fixes the thread-safety issue caused by calling queue.put_nowait() on asyncio.Queue from a background thread.
 """
@@ -8,13 +14,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import threading
 import time
 import uuid
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+
+from src.session.thread import ThreadItem, ThreadItemError, ThreadLog
 
 logger = logging.getLogger(__name__)
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -27,6 +38,8 @@ class SSEEvent:
         data: Event payload.
         session_id: Owning session ID.
         timestamp: Event timestamp.
+        seq: Thread item seq for an event derived from a recorded item (it can
+            be rebuilt from disk); None for a live-only event.
     """
 
     event_id: Optional[str] = field(default_factory=lambda: uuid.uuid4().hex[:16])
@@ -34,6 +47,7 @@ class SSEEvent:
     data: Dict[str, Any] = field(default_factory=dict)
     session_id: str = ""
     timestamp: float = field(default_factory=time.time)
+    seq: Optional[int] = None
 
     def to_sse(self) -> str:
         """Format the event as an SSE text frame.
@@ -52,6 +66,56 @@ class SSEEvent:
             "",
         ])
         return "\n".join(lines)
+
+
+class SubscriberQueue(asyncio.Queue):
+    """Subscriber queue that remembers whether it ever dropped an event.
+
+    Attributes:
+        overflowed: Set when an event was dropped because the queue was full.
+            A durable-stream reader clears it after re-reading the log.
+    """
+
+    def __init__(self, maxsize: int = 0) -> None:
+        super().__init__(maxsize=maxsize)
+        self.overflowed = False
+
+
+def _mark_overflow(queue: asyncio.Queue) -> None:
+    if isinstance(queue, SubscriberQueue):
+        queue.overflowed = True
+
+
+def select_replay(
+    buffer: List[SSEEvent],
+    last_event_id: Optional[str] = None,
+    *,
+    replay_all: bool = False,
+) -> List[SSEEvent]:
+    """Choose the buffered events a reconnecting subscriber gets.
+
+    Args:
+        buffer: The session's buffered events, oldest first.
+        last_event_id: Last event ID the client received.
+        replay_all: Return the whole buffer when ``last_event_id`` is absent
+            or not buffered (active-run hydration).
+
+    Returns:
+        Events after ``last_event_id``; the whole buffer or nothing when it is
+        absent, per ``replay_all``.
+    """
+    if not last_event_id:
+        return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
+    found = False
+    result: List[SSEEvent] = []
+    for event in buffer:
+        if found:
+            result.append(event)
+        elif event.event_id == last_event_id:
+            found = True
+    if not found and replay_all:
+        return list(buffer)
+    return result
 
 
 class EventBus:
@@ -126,7 +190,7 @@ class EventBus:
                 try:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
-                    pass
+                    _mark_overflow(queue)
 
     def add_listener(self, listener: Callable[[SSEEvent], None]) -> None:
         """Register a callback invoked for every published event.
@@ -166,6 +230,7 @@ class EventBus:
         try:
             queue.put_nowait(event)
         except asyncio.QueueFull:
+            _mark_overflow(queue)
             logger.warning("EventBus queue full, dropping %s event for session %s", event.event_type, event.session_id)
 
     def emit(
@@ -222,19 +287,72 @@ class EventBus:
         replay_all: bool = False,
     ) -> List[SSEEvent]:
         """Compute the replay list. Caller must already hold ``self._lock``."""
-        buffer = self._buffers.get(session_id, [])
-        if not last_event_id:
-            return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
-        found = False
-        result: List[SSEEvent] = []
-        for event in buffer:
-            if found:
-                result.append(event)
-            elif event.event_id == last_event_id:
-                found = True
-        if not found and replay_all:
-            return list(buffer)
-        return result
+        return select_replay(
+            self._buffers.get(session_id, []), last_event_id, replay_all=replay_all
+        )
+
+    def attach(self, session_id: str) -> Tuple["SubscriberQueue", List[SSEEvent]]:
+        """Register a subscriber queue and snapshot the buffer atomically.
+
+        The snapshot and the registration share one lock acquisition, so every
+        event is either in the snapshot or delivered to the queue, never both
+        and never neither. The caller must hand the queue to :meth:`listen`
+        (which unregisters it) or call :meth:`detach`.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            ``(queue, buffered events)``.
+        """
+        queue = SubscriberQueue(maxsize=200)
+        with self._lock:
+            buffer = list(self._buffers.get(session_id, []))
+            self._subscribers.setdefault(session_id, []).append(queue)
+        return queue, buffer
+
+    def detach(self, session_id: str, queue: asyncio.Queue) -> None:
+        """Unregister a queue added by :meth:`attach`. Unknown queues are ignored.
+
+        Args:
+            session_id: Session ID.
+            queue: The subscriber queue.
+        """
+        with self._lock:
+            subs = self._subscribers.get(session_id, [])
+            if queue in subs:
+                subs.remove(queue)
+
+    async def listen(self, session_id: str, queue: asyncio.Queue) -> AsyncIterator[SSEEvent]:
+        """Yield live events from an attached queue, with idle heartbeats.
+
+        Ends after a ``session_cleared`` sentinel and always detaches the queue.
+
+        Args:
+            session_id: Session ID.
+            queue: Queue returned by :meth:`attach`.
+
+        Yields:
+            SSEEvent objects.
+        """
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=self.heartbeat_interval_s)
+                except asyncio.TimeoutError:
+                    yield SSEEvent(
+                        event_id=None,
+                        event_type="heartbeat",
+                        data={"ts": time.time()},
+                        session_id=session_id,
+                    )
+                    continue
+                if event.event_type == "session_cleared":
+                    yield event
+                    break
+                yield event
+        finally:
+            self.detach(session_id, queue)
 
     async def subscribe(
         self,
@@ -254,42 +372,14 @@ class EventBus:
         Yields:
             SSEEvent objects.
         """
-        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=200)
-
-        # The replay snapshot and queue registration must happen under the
-        # same lock acquisition: otherwise a publish() landing between them
-        # would land in both the replay buffer and the live queue, and the
-        # subscriber would see that event delivered twice.
-        with self._lock:
-            replay_events = self._replay_locked(session_id, last_event_id, replay_all=replay_all)
-            if session_id not in self._subscribers:
-                self._subscribers[session_id] = []
-            self._subscribers[session_id].append(queue)
-
+        queue, buffer = self.attach(session_id)
         try:
-            for event in replay_events:
+            for event in select_replay(buffer, last_event_id, replay_all=replay_all):
                 yield event
-
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=self.heartbeat_interval_s)
-                except asyncio.TimeoutError:
-                    yield SSEEvent(
-                        event_id=None,
-                        event_type="heartbeat",
-                        data={"ts": time.time()},
-                        session_id=session_id,
-                    )
-                    continue
-                if event.event_type == "session_cleared":
-                    yield event
-                    break
+            async for event in self.listen(session_id, queue):
                 yield event
         finally:
-            with self._lock:
-                subs = self._subscribers.get(session_id, [])
-                if queue in subs:
-                    subs.remove(queue)
+            self.detach(session_id, queue)
 
     def clear(self, session_id: str) -> None:
         """Clear the buffered events and notify subscribers for a session.
@@ -320,3 +410,711 @@ class EventBus:
                     queue.put_nowait(sentinel)
                 except asyncio.QueueFull:
                     pass
+
+
+# ============================================================================
+# Durable item stream derived from thread.jsonl
+# ============================================================================
+
+#: Thread item types a client is shown. ``state`` (identity ledger records,
+#: loaded tools, workspace) and ``inject`` (the loop's own ``<system>``
+#: directives) are runtime internals: they advance the cursor but are never
+#: sent, by event or by the thread endpoint.
+DISPLAY_ITEM_TYPES = frozenset(
+    {"turn_start", "user", "assistant", "tool_result", "compaction", "turn_end"}
+)
+
+ITEM_STARTED = "item.started"
+ITEM_DELTA = "item.delta"
+ITEM_COMPLETED = "item.completed"
+ITEM_EVENT_TYPES = frozenset({ITEM_STARTED, ITEM_DELTA, ITEM_COMPLETED})
+
+RUN_STARTED = "run.started"
+#: ``turn_end`` status -> run event. A turn the process lost (``interrupted``)
+#: is reported as a failure whose ``status`` says so.
+RUN_TERMINAL_EVENTS: Dict[str, str] = {
+    "completed": "run.completed",
+    "failed": "run.failed",
+    "cancelled": "run.cancelled",
+    "interrupted": "run.failed",
+}
+RUN_EVENT_TYPES = frozenset({RUN_STARTED, *RUN_TERMINAL_EVENTS.values()})
+
+#: Kind of a live item that the thread never recorded (a response the loop
+#: dropped, a call cut off by the end of its turn).
+DISCARDED_KIND = "item.discarded"
+
+# Rank of each event derived from one item, in emission order.
+_STARTED, _COMPLETED, _RUN = 0, 1, 2
+_DURABLE_SUFFIX = {_STARTED: "-started", _COMPLETED: "", _RUN: "-run"}
+_DURABLE_ID_RE = re.compile(r"item-([1-9][0-9]*)(-started|-run)?")
+# Seq -> live id of items this process streamed live, so a client resuming
+# from disk can still match its in-progress item to the completed one.
+_LIVE_ID_MEMORY = 4096
+
+
+def durable_event_id(seq: int, rank: int = _COMPLETED) -> str:
+    """Return the SSE id of an event derived from one thread item.
+
+    The id depends only on the item, so the live event and the copy rebuilt
+    from disk carry the same id and a client deduplicates them by id.
+
+    Args:
+        seq: Item seq.
+        rank: 0 for ``item.started``, 1 for ``item.completed``, 2 for the run
+            event of a turn boundary.
+
+    Returns:
+        ``item-<seq>``, ``item-<seq>-started`` or ``item-<seq>-run``.
+    """
+    return f"item-{seq}{_DURABLE_SUFFIX[rank]}"
+
+
+def cursor_from_event_id(event_id: Optional[str]) -> Optional[int]:
+    """Read the cursor a durable event id stands for.
+
+    Args:
+        event_id: A ``Last-Event-ID`` value.
+
+    Returns:
+        The seq through which the client has every completed item, or None
+        when the id is not a durable one (a live event's random id).
+    """
+    if not event_id:
+        return None
+    match = _DURABLE_ID_RE.fullmatch(event_id)
+    if match is None:
+        return None
+    seq = int(match.group(1))
+    return seq - 1 if match.group(2) == "-started" else seq
+
+
+def _event_key(event: SSEEvent) -> Tuple[int, int]:
+    rank = _COMPLETED
+    if event.event_type == ITEM_STARTED:
+        rank = _STARTED
+    elif event.event_type in RUN_EVENT_TYPES:
+        rank = _RUN
+    return (event.seq or 0, rank)
+
+
+def _display_arguments(raw: Any) -> Dict[str, Any]:
+    # Same redaction and 200-character cut as the live ``tool_call`` event and
+    # the projected tool trail.
+    from src.session.thread import _trail_arguments
+
+    return _trail_arguments(raw, None)
+
+
+def display_item(item: ThreadItem) -> Optional[Dict[str, Any]]:
+    """Return the client view of one thread item.
+
+    The view carries what the log holds for display and nothing the model
+    alone needs: never a user item's ``llm_content`` (the ``<agent-state>``
+    envelope and recalled memories), an assistant item's ``provider_items``
+    or thought signatures, or any ``state`` / ``inject`` item. Tool results
+    are the delivered content the log holds, which is already redacted;
+    tool-call arguments are redacted here, as the live event does.
+
+    Args:
+        item: A thread item.
+
+    Returns:
+        The display dict, or None for an item type clients are not shown.
+    """
+    if item.type not in DISPLAY_ITEM_TYPES:
+        return None
+    view: Dict[str, Any] = {
+        "seq": item.seq,
+        "ts": item.ts,
+        "turn_id": item.turn_id,
+        "type": item.type,
+    }
+    if item.type == "turn_start":
+        view.update(prompt=item.get("prompt"), model=item.get("model"), provider=item.get("provider"))
+    elif item.type == "user":
+        view["content"] = item.get("content")
+    elif item.type == "assistant":
+        view.update(
+            content=item.get("content"),
+            phase=item.get("phase"),
+            reasoning_content=item.get("reasoning_content"),
+            tool_calls=[
+                {
+                    "id": call.get("id"),
+                    "name": (call.get("function") or {}).get("name"),
+                    "arguments": _display_arguments((call.get("function") or {}).get("arguments")),
+                }
+                for call in item.get("tool_calls") or []
+            ],
+        )
+    elif item.type == "tool_result":
+        view.update(
+            tool_call_id=item.get("tool_call_id"),
+            name=item.get("name"),
+            content=item.get("content"),
+            status=item.get("status"),
+            elapsed_ms=item.get("elapsed_ms"),
+            artifact=item.get("artifact"),
+        )
+    elif item.type == "compaction":
+        view.update(summary=item.get("summary"), replaces_through_seq=item.get("replaces_through_seq"))
+    elif item.type == "turn_end":
+        view.update(status=item.get("status"), usage=item.get("usage"), elapsed_ms=item.get("elapsed_ms"))
+    return view
+
+
+def display_page(
+    items: List[ThreadItem],
+    *,
+    after: int = 0,
+    before: Optional[int] = None,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    """Page a thread's display items by seq.
+
+    Args:
+        items: The thread's items in write order.
+        after: Return items with ``seq > after``, oldest first.
+        before: When given, return the ``limit`` newest items with
+            ``after < seq < before`` instead (for loading history backwards).
+        limit: Maximum number of items.
+
+    Returns:
+        ``items``, ``has_more`` (more items beyond the page in the paging
+        direction) and ``cursor``: the highest seq in the log, which a client
+        passes to the event stream to continue live from this read.
+    """
+    shown = [
+        view for view in (display_item(item) for item in items if item.seq > after)
+        if view is not None and (before is None or view["seq"] < before)
+    ]
+    if before is None:
+        page, has_more = shown[:limit], len(shown) > limit
+    else:
+        page, has_more = shown[-limit:], len(shown) > limit
+    return {
+        "items": page,
+        "has_more": has_more,
+        "cursor": max((item.seq for item in items), default=0),
+    }
+
+
+def _type_kinds(item_type: str, status: Optional[str]) -> Tuple[str, str]:
+    if item_type == "tool_result":
+        return "tool.started", "tool.completed" if status == "ok" else "tool.failed"
+    return "item.started", "item.completed"
+
+
+@dataclass
+class _LiveItem:
+    live_id: str
+    type: str
+    turn_id: str
+    iteration: Any = None
+
+
+@dataclass
+class _Tail:
+    """Read position and live-item state of one session's thread."""
+
+    path: Path
+    offset: int = 0
+    last_seq: int = 0
+    assistant: Optional[_LiveItem] = None
+    tools: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
+    counter: int = 0
+    live_by_seq: "OrderedDict[int, str]" = field(default_factory=OrderedDict)
+
+
+def _parse_line(raw_line: bytes) -> Optional[ThreadItem]:
+    if not raw_line.strip():
+        return None
+    try:
+        record = json.loads(raw_line.decode("utf-8"))
+        if not isinstance(record, dict):
+            return None
+        return ThreadItem.from_dict(record)
+    except (json.JSONDecodeError, UnicodeDecodeError, ThreadItemError):
+        return None
+
+
+class ThreadEvents:
+    """Item and run events derived from each session's ``thread.jsonl``.
+
+    Every event the session publishes goes through :meth:`emit`, which first
+    reads the items appended to the thread since the last call and publishes
+    their events, then publishes the legacy event unchanged, then the live
+    item event it implies. Item events are additive: the legacy events keep
+    their names, payloads and random ids.
+
+    Vocabulary (``data["kind"]`` names the lifecycle step inside the item
+    envelope):
+
+    * ``item.started`` — ``item.started`` / ``tool.started``.
+    * ``item.delta`` — ``text.delta``, ``reasoning.delta`` (the throttled
+      reasoning tail and character count, not every chunk), ``text.reset``
+      (the streamed text was withdrawn), ``tool.progress``.
+    * ``item.completed`` — ``item.completed`` / ``tool.completed`` /
+      ``tool.failed`` with the recorded ``item`` and its ``seq``; or
+      ``item.discarded`` (no ``seq``) for a live item the thread never
+      recorded.
+    * ``run.started`` / ``run.completed`` / ``run.failed`` / ``run.cancelled``
+      from ``turn_start`` / ``turn_end`` (an ``interrupted`` turn is
+      ``run.failed`` with that status). A run event names its ``turn_id``: a
+      stale turn closed when the next turn begins is reported live too.
+
+    An event derived from a recorded item has ``SSEEvent.seq`` set and a
+    durable id (:func:`durable_event_id`); it can be rebuilt from disk at any
+    time, also after a restart. Live-only events (``item.started`` of an
+    in-progress response or call, every ``item.delta``, ``item.discarded``)
+    exist in memory only. Every item and run event carries ``cursor``: the
+    highest seq read from the thread when it was published.
+
+    Attributes:
+        bus: The event bus events are published on.
+    """
+
+    def __init__(self, bus: EventBus, thread_path: Callable[[str], Path]) -> None:
+        """Create the stream.
+
+        Args:
+            bus: The session event bus.
+            thread_path: Maps a session id to its ``thread.jsonl`` path.
+        """
+        self.bus = bus
+        self._thread_path = thread_path
+        # Re-entrant: a bus listener may publish through this object from
+        # inside a publish this object made.
+        self._lock = threading.RLock()
+        self._tails: Dict[str, _Tail] = {}
+
+    # ---- Publishing ----
+
+    def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> SSEEvent:
+        """Publish a legacy event, preceded by any newly recorded items.
+
+        Args:
+            session_id: Session ID.
+            event_type: Legacy event type.
+            data: Legacy payload, published as given.
+
+        Returns:
+            The published legacy event.
+        """
+        payload = data if data is not None else {}
+        with self._lock:
+            tail = self._tail(session_id)
+            self._pump(session_id, tail)
+            event = self.bus.emit(session_id, event_type, payload)
+            self._translate(session_id, tail, event_type, payload)
+        return event
+
+    def sync(self, session_id: str) -> int:
+        """Publish the events of items recorded since the last read.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The highest seq read from the thread.
+        """
+        with self._lock:
+            tail = self._tail(session_id)
+            self._pump(session_id, tail)
+            return tail.last_seq
+
+    # ---- Subscribing ----
+
+    async def stream(
+        self,
+        session_id: str,
+        *,
+        cursor: Optional[int] = None,
+        last_event_id: Optional[str] = None,
+        replay_all: bool = False,
+        active_turn_id: Optional[str] = None,
+    ) -> AsyncIterator[SSEEvent]:
+        """Subscribe to a session, resuming durable items from disk.
+
+        * ``cursor`` given (or a durable ``Last-Event-ID``): every recorded
+          item after it is read from ``thread.jsonl`` and sent as
+          ``item.completed`` (plus the run event of a turn boundary), however
+          old the cursor; then the buffered live-only events after the
+          client's position (its ``last_event_id`` if buffered, else the last
+          buffered item at or before the cursor), leaving out the live events
+          of items that have since completed; then live events.
+        * no cursor, ``replay_all`` and an ``active_turn_id``: that turn's
+          recorded items from disk, then the buffer as before minus its
+          item-derived events, then live events.
+        * otherwise: exactly the legacy buffer replay, then live events.
+
+        Each recorded item reaches the client once: events are ordered by
+        (seq, started < completed < run) and anything at or below what was
+        already sent is skipped. If the subscriber queue ever dropped events,
+        the missing recorded items are re-read from disk; dropped live-only
+        events are lost.
+
+        Args:
+            session_id: Session ID.
+            cursor: Highest seq the client already has.
+            last_event_id: Last event id the client received.
+            replay_all: Active-run hydration requested with no cursor.
+            active_turn_id: The running turn, for ``replay_all``.
+
+        Yields:
+            SSE events.
+        """
+        if cursor is None:
+            cursor = cursor_from_event_id(last_event_id)
+        with self._lock:
+            tail = self._tail(session_id)
+            self._pump(session_id, tail)
+            high = tail.last_seq
+            live_ids = dict(tail.live_by_seq)
+            queue, buffer = self.bus.attach(session_id)
+        try:
+            durable = cursor is not None or (replay_all and bool(active_turn_id))
+            last_key: Tuple[int, int] = (-1, _RUN)
+            if durable:
+                items = await asyncio.to_thread(self._read, session_id)
+                if cursor is not None:
+                    chosen = [item for item in items if cursor < item.seq <= high]
+                    last_key = (cursor, _RUN)
+                else:
+                    chosen = [
+                        item for item in items
+                        if item.turn_id == active_turn_id and item.seq <= high
+                    ]
+                for item in chosen:
+                    for event in self._recorded_events(session_id, item, live_ids.get(item.seq)):
+                        yield event
+                replayed = self._buffered_live(buffer, cursor, last_event_id)
+            else:
+                replayed = select_replay(buffer, last_event_id, replay_all=replay_all)
+            for event in replayed:
+                yield event
+            last_key = max(last_key, (high, _RUN))
+
+            async for event in self.bus.listen(session_id, queue):
+                if isinstance(queue, SubscriberQueue) and queue.overflowed:
+                    queue.overflowed = False
+                    async for missed in self._recover(session_id, last_key):
+                        last_key = _event_key(missed)
+                        yield missed
+                if event.seq is not None:
+                    key = _event_key(event)
+                    if key <= last_key:
+                        continue
+                    last_key = key
+                yield event
+        finally:
+            self.bus.detach(session_id, queue)
+
+    async def _recover(self, session_id: str, last_key: Tuple[int, int]) -> AsyncIterator[SSEEvent]:
+        """Re-read recorded items a full subscriber queue dropped."""
+        with self._lock:
+            tail = self._tail(session_id)
+            self._pump(session_id, tail)
+            high = tail.last_seq
+            live_ids = dict(tail.live_by_seq)
+        items = await asyncio.to_thread(self._read, session_id)
+        for item in items:
+            if item.seq < last_key[0] or item.seq > high:
+                continue
+            for event in self._recorded_events(session_id, item, live_ids.get(item.seq)):
+                if _event_key(event) > last_key:
+                    yield event
+
+    @staticmethod
+    def _buffered_live(
+        buffer: List[SSEEvent], cursor: Optional[int], last_event_id: Optional[str]
+    ) -> List[SSEEvent]:
+        """Buffered live-only events a resuming client still needs."""
+        anchor = 0
+        found = False
+        if last_event_id:
+            for index, event in enumerate(buffer):
+                if event.event_id == last_event_id:
+                    anchor, found = index + 1, True
+                    break
+        if not found and cursor is not None:
+            for index, event in enumerate(buffer):
+                if event.seq is not None and event.seq <= cursor:
+                    anchor = index + 1
+        finished = {
+            event.data.get("live_id")
+            for event in buffer
+            if event.event_type == ITEM_COMPLETED and event.data.get("live_id")
+        }
+        return [
+            event for event in buffer[anchor:]
+            if event.seq is None
+            and not (
+                event.event_type in (ITEM_STARTED, ITEM_DELTA)
+                and event.data.get("live_id") in finished
+            )
+        ]
+
+    # ---- Reading the thread ----
+
+    def _read(self, session_id: str) -> List[ThreadItem]:
+        return ThreadLog(self._thread_path(session_id)).read()
+
+    def _tail(self, session_id: str) -> _Tail:
+        tail = self._tails.get(session_id)
+        if tail is None:
+            # First touch in this process: items already on disk are history
+            # (served from disk), not news, so reading starts at the end.
+            tail = _Tail(path=Path(self._thread_path(session_id)))
+            for item in self._read_new(tail):
+                tail.last_seq = max(tail.last_seq, item.seq)
+            self._tails[session_id] = tail
+        return tail
+
+    @staticmethod
+    def _read_new(tail: _Tail) -> List[ThreadItem]:
+        """Read complete lines appended since the last read."""
+        try:
+            size = tail.path.stat().st_size
+        except FileNotFoundError:
+            tail.offset = 0
+            return []
+        if size < tail.offset:
+            tail.offset = 0  # Replaced file; seqs below last_seq are skipped.
+        if size == tail.offset:
+            return []
+        with tail.path.open("rb") as log:
+            log.seek(tail.offset)
+            chunk = log.read(size - tail.offset)
+        end = chunk.rfind(b"\n")
+        if end < 0:
+            return []  # A line still being written.
+        tail.offset += end + 1
+        return [item for item in map(_parse_line, chunk[: end + 1].split(b"\n")) if item is not None]
+
+    def _pump(self, session_id: str, tail: _Tail) -> None:
+        for item in self._read_new(tail):
+            if item.seq <= tail.last_seq:
+                continue
+            tail.last_seq = item.seq
+            self._publish_item(session_id, tail, item)
+
+    # ---- Event construction ----
+
+    def _publish(
+        self,
+        session_id: str,
+        event_type: str,
+        data: Dict[str, Any],
+        *,
+        seq: Optional[int] = None,
+        rank: int = _COMPLETED,
+    ) -> None:
+        event = SSEEvent(event_type=event_type, data=data, session_id=session_id, seq=seq)
+        if seq is not None:
+            event.event_id = durable_event_id(seq, rank)
+        self.bus.publish(event)
+
+    def _recorded_events(
+        self, session_id: str, item: ThreadItem, live_id: Optional[str]
+    ) -> List[SSEEvent]:
+        """The completion (and run) events of one recorded item."""
+        view = display_item(item)
+        if view is None:
+            return []
+        _, completed_kind = _type_kinds(item.type, item.get("status"))
+        data: Dict[str, Any] = {
+            "kind": completed_kind,
+            "seq": item.seq,
+            "turn_id": item.turn_id,
+            "item": view,
+            "cursor": item.seq,
+        }
+        if live_id:
+            data["live_id"] = live_id
+        events = [
+            SSEEvent(
+                event_id=durable_event_id(item.seq, _COMPLETED),
+                event_type=ITEM_COMPLETED,
+                data=data,
+                session_id=session_id,
+                seq=item.seq,
+            )
+        ]
+        run_type = None
+        run: Dict[str, Any] = {"turn_id": item.turn_id, "seq": item.seq, "cursor": item.seq}
+        if item.type == "turn_start":
+            run_type = RUN_STARTED
+            run.update(status="running", model=item.get("model"), provider=item.get("provider"))
+        elif item.type == "turn_end":
+            status = item.get("status")
+            run_type = RUN_TERMINAL_EVENTS.get(status, "run.failed")
+            run.update(status=status, usage=item.get("usage"), elapsed_ms=item.get("elapsed_ms"))
+        if run_type is not None:
+            events.append(
+                SSEEvent(
+                    event_id=durable_event_id(item.seq, _RUN),
+                    event_type=run_type,
+                    data=run,
+                    session_id=session_id,
+                    seq=item.seq,
+                )
+            )
+        return events
+
+    def _publish_item(self, session_id: str, tail: _Tail, item: ThreadItem) -> None:
+        view = display_item(item)
+        if view is None:
+            return
+        live: Optional[_LiveItem] = None
+        if item.type == "turn_start":
+            self._discard_live(session_id, tail, None)
+        elif item.type == "assistant":
+            if tail.assistant is not None and tail.assistant.turn_id == item.turn_id:
+                live, tail.assistant = tail.assistant, None
+        elif item.type == "tool_result":
+            key = (item.turn_id, item.get("tool_call_id"))
+            pending = tail.tools.get(key)
+            if pending:
+                live = pending.pop(0)
+                if not pending:
+                    tail.tools.pop(key, None)
+        elif item.type == "turn_end":
+            self._discard_live(session_id, tail, item.turn_id)
+
+        started_kind, _ = _type_kinds(item.type, item.get("status"))
+        if live is None:
+            self._publish(
+                session_id,
+                ITEM_STARTED,
+                {
+                    "kind": started_kind,
+                    "seq": item.seq,
+                    "turn_id": item.turn_id,
+                    "item": view,
+                    "cursor": item.seq,
+                },
+                seq=item.seq,
+                rank=_STARTED,
+            )
+        else:
+            tail.live_by_seq[item.seq] = live.live_id
+            while len(tail.live_by_seq) > _LIVE_ID_MEMORY:
+                tail.live_by_seq.popitem(last=False)
+        for event in self._recorded_events(session_id, item, live.live_id if live else None):
+            self.bus.publish(event)
+
+    def _new_live(self, tail: _Tail, item_type: str, turn_id: str, iteration: Any = None) -> _LiveItem:
+        tail.counter += 1
+        return _LiveItem(
+            live_id=f"{turn_id}:live:{tail.counter}",
+            type=item_type,
+            turn_id=turn_id,
+            iteration=iteration,
+        )
+
+    def _start_live(self, session_id: str, tail: _Tail, live: _LiveItem, item: Dict[str, Any], kind: str) -> None:
+        self._publish(
+            session_id,
+            ITEM_STARTED,
+            {
+                "kind": kind,
+                "live_id": live.live_id,
+                "turn_id": live.turn_id,
+                "item": {"type": live.type, "turn_id": live.turn_id, "status": "in_progress", **item},
+                "cursor": tail.last_seq,
+            },
+        )
+
+    def _delta(self, session_id: str, tail: _Tail, live: _LiveItem, kind: str, payload: Dict[str, Any]) -> None:
+        self._publish(
+            session_id,
+            ITEM_DELTA,
+            {
+                "kind": kind,
+                "live_id": live.live_id,
+                "turn_id": live.turn_id,
+                **payload,
+                "cursor": tail.last_seq,
+            },
+        )
+
+    def _discard(self, session_id: str, tail: _Tail, live: _LiveItem) -> None:
+        self._publish(
+            session_id,
+            ITEM_COMPLETED,
+            {
+                "kind": DISCARDED_KIND,
+                "live_id": live.live_id,
+                "turn_id": live.turn_id,
+                "item": {"type": live.type, "turn_id": live.turn_id, "status": "discarded"},
+                "cursor": tail.last_seq,
+            },
+        )
+
+    def _discard_live(self, session_id: str, tail: _Tail, turn_id: Optional[str]) -> None:
+        """Close the live items of a turn (or all) that were never recorded."""
+        if tail.assistant is not None and turn_id in (None, tail.assistant.turn_id):
+            self._discard(session_id, tail, tail.assistant)
+            tail.assistant = None
+        for key in [key for key in tail.tools if turn_id in (None, key[0])]:
+            for live in tail.tools.pop(key):
+                self._discard(session_id, tail, live)
+
+    def _assistant(self, session_id: str, tail: _Tail, turn_id: str, iteration: Any) -> _LiveItem:
+        current = tail.assistant
+        if current is not None and current.turn_id == turn_id and current.iteration == iteration:
+            return current
+        if current is not None:
+            # A new response began and the previous one was never recorded.
+            self._discard(session_id, tail, current)
+        live = self._new_live(tail, "assistant", turn_id, iteration)
+        tail.assistant = live
+        self._start_live(session_id, tail, live, {}, "item.started")
+        return live
+
+    def _translate(self, session_id: str, tail: _Tail, event_type: str, data: Dict[str, Any]) -> None:
+        """Publish the live item event a legacy agent event implies."""
+        turn_id = data.get("attempt_id")
+        if not isinstance(turn_id, str) or not turn_id:
+            return
+        if event_type == "text_delta":
+            live = self._assistant(session_id, tail, turn_id, data.get("iter"))
+            payload = {"delta": data.get("delta") or ""}
+            if data.get("phase"):
+                payload["phase"] = data["phase"]
+            self._delta(session_id, tail, live, "text.delta", payload)
+        elif event_type == "reasoning_delta":
+            live = self._assistant(session_id, tail, turn_id, data.get("iter"))
+            self._delta(
+                session_id, tail, live, "reasoning.delta",
+                {"chars": data.get("chars"), "tail": data.get("tail")},
+            )
+        elif event_type == "stream_reset":
+            live = tail.assistant
+            if live is not None and live.turn_id == turn_id:
+                self._delta(session_id, tail, live, "text.reset", {"reason": data.get("reason")})
+        elif event_type == "tool_call":
+            call_id = data.get("call_id")
+            if not isinstance(call_id, str) or not call_id:
+                return
+            live = self._new_live(tail, "tool_result", turn_id)
+            tail.tools.setdefault((turn_id, call_id), []).append(live)
+            item = {
+                "tool_call_id": call_id,
+                "name": data.get("tool"),
+                "arguments": data.get("arguments") or {},
+            }
+            if data.get("blocked"):
+                item["blocked"] = True
+            self._start_live(session_id, tail, live, item, "tool.started")
+        elif event_type in ("tool_progress", "tool_heartbeat"):
+            pending = tail.tools.get((turn_id, data.get("call_id")))
+            if not pending:
+                return
+            progress = {key: value for key, value in data.items() if key != "attempt_id"}
+            self._delta(
+                session_id, tail, pending[-1], "tool.progress",
+                {"progress": progress, "heartbeat": event_type == "tool_heartbeat"},
+            )

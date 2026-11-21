@@ -18,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.session.events import SSEEvent
+from src.session.events import SSEEvent, display_page
 from src.session.service import SessionBusyError
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,18 @@ class MessageResponse(BaseModel):
     linked_attempt_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
     tool_trail: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ThreadPageResponse(BaseModel):
+    """One page of a session's conversation thread, as display items."""
+    session_id: str
+    items: List[Dict[str, Any]]
+    has_more: bool
+    cursor: int = Field(..., description="Highest seq in the thread; pass it as the event stream's cursor to continue live")
+
+
+# Upper bound on one page of the thread endpoint.
+MAX_THREAD_PAGE = 500
 
 
 class CreateGoalRequest(BaseModel):
@@ -873,14 +885,48 @@ def register_sessions_routes(app: FastAPI) -> None:
             for m in messages
         ]
 
+    @app.get(
+        "/sessions/{session_id}/thread",
+        response_model=ThreadPageResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def get_thread(
+        session_id: str,
+        after: int = Query(0, ge=0, description="Return items with seq greater than this"),
+        before: Optional[int] = Query(None, ge=1, description="Return the newest items with seq below this"),
+        limit: int = Query(200, ge=1, le=MAX_THREAD_PAGE),
+    ):
+        """Return a session's thread as display items, paged by seq.
+
+        The items are what ``thread.jsonl`` records, in the client view of
+        ``display_item``: tool results as delivered (redacted), tool-call
+        arguments redacted, and no model-only envelopes or state records.
+        A session recorded before the thread log existed has no items here;
+        ``GET /sessions/{id}/messages`` still serves it.
+        """
+        _host_validate_path_param(session_id, "session_id")
+        svc, _session = _get_existing_session_or_404(session_id)
+        items = await asyncio.to_thread(svc.store.thread_log(session_id).read)
+        page = display_page(items, after=after, before=before, limit=limit)
+        return ThreadPageResponse(session_id=session_id, **page)
+
     @app.get("/sessions/{session_id}/events", dependencies=[Depends(require_event_stream_auth)])
     async def session_events(
         session_id: str,
         request: Request,
         last_event_id: Optional[str] = Query(None, alias="Last-Event-ID"),
         replay: Optional[str] = Query(None),
+        cursor: Optional[int] = Query(None, ge=0),
     ):
-        """SSE stream for agent events."""
+        """SSE stream for agent events.
+
+        Without ``cursor`` the legacy contract holds: ``Last-Event-ID`` resumes
+        from the in-memory buffer and ``replay=active`` hydrates a running
+        attempt (its recorded items now come from the thread log). With
+        ``cursor`` (a thread seq, from an event's ``cursor`` field or the
+        thread endpoint), or a durable ``Last-Event-ID`` such as ``item-42``,
+        every recorded item after it is read from disk first.
+        """
         _host_validate_path_param(session_id, "session_id")
         svc = _host_get_session_service()
         if not svc:
@@ -918,10 +964,12 @@ def register_sessions_routes(app: FastAPI) -> None:
                     },
                     session_id=session_id,
                 ).to_sse()
-            async for event in svc.event_bus.subscribe(
+            async for event in svc.thread_events.stream(
                 session_id,
+                cursor=cursor,
                 last_event_id=event_id,
                 replay_all=replay_all,
+                active_turn_id=running_attempt.attempt_id if running_attempt is not None else None,
             ):
                 if await request.is_disconnected():
                     break
