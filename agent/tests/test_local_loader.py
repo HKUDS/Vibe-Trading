@@ -352,3 +352,35 @@ def test_parquet_explicit_date_column_wins_over_datetime_index(
     assert result is not None
     assert result.index.tolist() == list(pd.date_range("2026-02-01", periods=2))
     assert columns["date"] == "date"  # the caller's mapping is never mutated
+
+
+def test_parquet_datetime_index_can_share_name_with_unused_column(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("pyarrow")
+    dates = pd.date_range("2026-01-01", periods=2, name="timestamp")
+    frame = pd.DataFrame(
+        {
+            "timestamp": [1, 2],
+            "open": [10.0, 11.0],
+            "high": [12.0, 13.0],
+            "low": [9.0, 10.0],
+            "close": [11.0, 12.0],
+        },
+        index=dates,
+    )
+    path = tmp_path / "bars.parquet"
+    frame.to_parquet(path, engine="pyarrow")
+    _configure(
+        monkeypatch,
+        tmp_path,
+        [{"symbol": "AAA.US", "type": "parquet", "path": str(path)}],
+    )
+
+    bars = local_loader.DataLoader().fetch(
+        ["AAA.US"], "2026-01-01", "2026-01-02"
+    )["AAA.US"]
+
+    assert_loader_contract(bars, context="local parquet index")
+    pd.testing.assert_index_equal(bars.index, dates.rename("trade_date"))
+    assert bars["close"].tolist() == [11.0, 12.0]
