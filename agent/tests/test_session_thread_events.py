@@ -78,7 +78,7 @@ def _write_turn(thread: ThreadLog, turn: str, calls: int) -> None:
 
 def _display_seqs(thread: ThreadLog, after: int = 0) -> List[int]:
     return [item.seq for item in thread.read()
-            if item.seq > after and item.type not in {"state", "inject"}]
+            if item.seq > after and item.type not in {"state", "inject", "checkpoint"}]
 
 
 def _collect(events: ThreadEvents, session_id: str = SESSION, **kwargs) -> List[SSEEvent]:
@@ -420,8 +420,8 @@ class _ScriptedLoop:
 
     def __init__(self, *, registry, llm, event_callback, max_iterations, persistent_memory,
                  cancel_event=None, background_manager=None, thread_recorder=None,
-                 queued_inputs=None) -> None:
-        del registry, llm, max_iterations, persistent_memory, cancel_event, background_manager
+                 queued_inputs=None, memory=None) -> None:
+        del registry, llm, max_iterations, persistent_memory, cancel_event, background_manager, memory
         self._emit = event_callback
         self._thread = thread_recorder
 

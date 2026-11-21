@@ -970,7 +970,9 @@ class SessionService:
                 # the model forgot to include them in its final answer.
                 links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
                          for report in reports]
-                reply.content += "\n\n" + "\n\n".join(dict.fromkeys(links))
+                link_text = "\n\n" + "\n\n".join(dict.fromkeys(links))
+                if link_text.strip() not in reply.content:
+                    reply.content += link_text
             self.store.append_message(reply)
             # The append-only transcript is the user-visible source of truth.
             # Commit it before attempt.json so startup recovery can finish a

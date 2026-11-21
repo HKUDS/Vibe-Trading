@@ -182,8 +182,9 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
             background_manager=None,
             thread_recorder=None,
             queued_inputs=None,
+            memory=None,
         ) -> None:
-            del registry, llm, event_callback, max_iterations, persistent_memory, cancel_event
+            del registry, llm, event_callback, max_iterations, persistent_memory, cancel_event, memory
             self._thread = thread_recorder
 
         def run(self, *, user_message: str, history, session_id: str):

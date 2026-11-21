@@ -38,8 +38,9 @@ class _DummyAgentLoop:
         background_manager=None,
         thread_recorder=None,
         queued_inputs=None,
+        memory=None,
     ) -> None:
-        del registry, llm, event_callback, max_iterations, persistent_memory
+        del registry, llm, event_callback, max_iterations, persistent_memory, memory
 
     def run(self, *, user_message: str, history, session_id: str) -> dict[str, str]:
         del user_message, history, session_id
