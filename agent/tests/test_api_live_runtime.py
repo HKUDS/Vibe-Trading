@@ -953,8 +953,7 @@ def test_live_runner_owns_its_actual_background_session_attempt(tmp_path, monkey
                 if fails:
                     return {"status": "failed", "reason": "execution failed"}
                 if not cancelled:
-                    bus.emit(attempt.session_id, "item.delta", {"kind": "run.usage", 
-                        
+                    bus.emit(attempt.session_id, "item.delta", {"kind": "run.usage",
                         "iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110,
                     })
                 return {"status": "cancelled" if cancelled else "success", "content": "completed analysis"}

@@ -10,8 +10,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from src.scheduled_research.executor import ScheduledResearchExecutor
 from src.scheduled_research.models import DeliveryStatus, ScheduledResearchJob
 from src.scheduled_research.store import ScheduledResearchJobStore

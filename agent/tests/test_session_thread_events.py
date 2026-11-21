@@ -26,7 +26,6 @@ from src.session.events import (
     ThreadEvents,
     cursor_from_event_id,
     display_item,
-    select_replay,
 )
 from src.session.models import Session
 from src.session.service import SessionService
@@ -492,7 +491,7 @@ def test_a_service_turn_emits_only_item_and_run_events(
     assert [item["type"] for item in completed] == [
         "turn_start", "user", "assistant", "tool_result", "assistant", "turn_end",
     ]
-    tool_done = next(e for e in events if e.data.get("kind") == "tool.completed")
+    assert any(e.data.get("kind") == "tool.completed" for e in events)
     thread_seqs = _display_seqs(service.store.thread_log(session.session_id))
     assert [e.seq for e in events if e.event_type == "item.completed" and e.seq] == thread_seqs
 
