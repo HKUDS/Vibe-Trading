@@ -89,6 +89,14 @@ export function OptionsLab() {
   const currentSignature = useRef(signature);
   currentSignature.current = signature;
   const fresh = signature !== null && signature === JSON.stringify(resultRequest);
+  const comparisonCurves = useMemo(
+    () => result?.alternatives?.flatMap((alternative) =>
+      alternative.status === "ok" && alternative.expiry_curve
+        ? [{ label: alternative.label, curve: alternative.expiry_curve }]
+        : [],
+    ) ?? [],
+    [result?.alternatives],
+  );
 
   useEffect(() => {
     const gen = ++generation.current;
@@ -256,6 +264,7 @@ export function OptionsLab() {
               curve={result?.expiry_curve ?? { spot: [], pnl: [] }}
               entrySpot={resultRequest?.entry_spot ?? params.entry_spot}
               breakevens={summary?.breakevens ?? []}
+              comparisonCurves={comparisonCurves}
             />
           </section>
         </div>
