@@ -485,7 +485,10 @@ class AgentTuningConfig(_EnvBase):
     # swarm worker, so it gets a swarm worker's budget (SWARM_WORKER_MAX_ITER
     # and SWARM_WORKER_TIMEOUT; every shipped preset agent declares 50).
     subagent_max_iter: int = Field(alias="SUBAGENT_MAX_ITER", default=50, ge=1)
-    # Wall-clock seconds before the child is cancelled; 0 disables.
+    # Seconds after which the child is cancelled; 0 disables. Cooperative: the
+    # child stops at its next checkpoint, so a tool call it is running finishes
+    # first (a read-only one within VIBE_TRADING_TOOL_TIMEOUT_SECONDS, a write
+    # such as a backtest only when it returns). A parent cancel waits the same.
     subagent_timeout: float = Field(alias="SUBAGENT_TIMEOUT", default=300.0, ge=0)
     vibe_trading_tool_loading: Literal["eager", "lazy"] = Field(
         alias="VIBE_TRADING_TOOL_LOADING", default="lazy",

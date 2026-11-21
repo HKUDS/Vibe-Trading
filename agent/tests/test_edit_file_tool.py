@@ -60,6 +60,42 @@ def test_multiple_matches_without_replace_all_is_refused_and_file_unchanged(run_
     assert target.read_text(encoding="utf-8") == "x = 1\ny = 1\nz = 1\n"
 
 
+@pytest.mark.parametrize(
+    ("text", "old_text"),
+    [("aaa", "aa"), ("    \n    \n    \n", "    \n    \n")],
+    ids=["letters", "repeated-indented-blank-lines"],
+)
+def test_overlapping_matches_are_ambiguous_and_refused(run_dir: Path, text: str, old_text: str) -> None:
+    # Two start offsets, one non-overlapping occurrence: str.count says 1.
+    target = _write(run_dir, text)
+
+    body = _edit(run_dir, old_text=old_text, new_text="X")
+
+    assert body["status"] == "error"
+    assert "2 places" in body["error"]
+    assert target.read_text(encoding="utf-8") == text
+
+
+def test_replace_all_on_overlapping_matches_replaces_left_to_right(run_dir: Path) -> None:
+    target = _write(run_dir, "aaaa")
+
+    body = _edit(run_dir, old_text="aa", new_text="b", replace_all=True)
+
+    assert body["status"] == "ok"
+    assert body["replacements"] == 2
+    assert target.read_text(encoding="utf-8") == "bb"
+
+
+def test_line_endings_outside_the_edit_are_kept_byte_for_byte(run_dir: Path) -> None:
+    target = run_dir / "notes.md"
+    target.write_bytes(b"line1\r\nline2\r\nline3\n")
+
+    body = _edit(run_dir, old_text="line1\r\nline2", new_text="LINE1\r\nline2")
+
+    assert body["status"] == "ok"
+    assert target.read_bytes() == b"LINE1\r\nline2\r\nline3\n"
+
+
 def test_multiple_matches_with_replace_all_replaces_every_one_and_reports_count(run_dir: Path) -> None:
     target = _write(run_dir, "x = 1\ny = 1\nz = 1\n")
 

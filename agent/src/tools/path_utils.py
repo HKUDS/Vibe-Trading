@@ -12,12 +12,19 @@ Three helpers, three threat models:
 * `safe_document_path(p)` — document-reader inputs. Uses the same import-root
   boundary as `safe_user_path()`.
 
+`confined_write_roots(root)` narrows `allowed_write_roots()` to one directory
+for the calls made inside it (a spawned child agent's workspace). It only ever
+narrows: the configured write roots do not apply while it is active.
+
 All helpers raise ``ValueError`` on rejection — callers already expect this.
 """
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from typing import Iterator
 
 from src.config.accessor import get_env_config
 
@@ -31,6 +38,9 @@ _ENV_SCOPE_HINT = (
     "in the MCP client's server env block — exporting it in a shell does not "
     "reach a spawned MCP server."
 )
+
+#: The only write root while a confinement is active; ``None`` means none is.
+_CONFINED_WRITE_ROOT: ContextVar[Path | None] = ContextVar("vibe_confined_write_root", default=None)
 
 # The env var that widens each resolve_safe_path purpose; rejections name it
 # so the escape hatch is discoverable from the error itself.
@@ -170,8 +180,35 @@ def allowed_file_roots() -> list[Path]:
     return roots
 
 
+@contextmanager
+def confined_write_roots(root: Path) -> Iterator[None]:
+    """Make ``root`` the only write root for calls made inside the block.
+
+    The binding is a context variable, so it covers exactly the thread (and
+    context) that entered the block; enter it in the thread that runs the
+    tool.
+
+    Args:
+        root: The directory writes and edits must stay inside.
+
+    Yields:
+        None.
+    """
+    token = _CONFINED_WRITE_ROOT.set(Path(root).resolve())
+    try:
+        yield
+    finally:
+        _CONFINED_WRITE_ROOT.reset(token)
+
+
 def allowed_write_roots() -> list[Path]:
-    """Return all roots allowed for file writes and edits."""
+    """Return all roots allowed for file writes and edits.
+
+    Inside :func:`confined_write_roots` this is only the confined directory.
+    """
+    confined = _CONFINED_WRITE_ROOT.get()
+    if confined is not None:
+        return [confined]
     raw = get_env_config().api.vibe_trading_allowed_write_roots
     configured: list[Path] = []
     for item in raw.split(","):
@@ -235,6 +272,9 @@ def resolve_safe_path(
     _rejects_unc(file_path)
 
     hint_env = _PURPOSE_ENV_HINTS.get(purpose)
+    if purpose == "write" and _CONFINED_WRITE_ROOT.get() is not None:
+        # No setting widens a confinement, so none is suggested.
+        hint_env = None
     hint = f"\nSet {hint_env} to add a directory. {_ENV_SCOPE_HINT}" if hint_env else ""
 
     # Try resolving against run_dir if provided

@@ -16,6 +16,28 @@ def _error(message: str) -> str:
     return json.dumps({"status": "error", "error": message}, ensure_ascii=False)
 
 
+def _match_positions(content: str, old_text: str) -> int:
+    """Count every position where ``old_text`` starts, overlapping ones included.
+
+    ``str.count`` skips a match that overlaps the previous one, so ``"aa"`` in
+    ``"aaa"`` counts once although it starts at two offsets. Uniqueness is
+    about where the edit could apply, so it is decided on all start offsets.
+
+    Args:
+        content: The file text.
+        old_text: The non-empty text to find.
+
+    Returns:
+        The number of start offsets of ``old_text`` in ``content``.
+    """
+    count = 0
+    start = content.find(old_text)
+    while start != -1:
+        count += 1
+        start = content.find(old_text, start + 1)
+    return count
+
+
 class EditFileTool(BaseTool):
     """Replace one exact, unique occurrence of a string in a workspace file."""
 
@@ -99,18 +121,25 @@ class EditFileTool(BaseTool):
             )
 
         try:
-            content = resolved.read_text(encoding="utf-8")
-            count = content.count(old_text)
-            if count == 0:
+            # newline="" keeps every line ending as it is on disk: universal
+            # newlines would rewrite a whole CRLF file as LF on any edit and
+            # make an old_text containing "\r\n" unmatchable.
+            with resolved.open(encoding="utf-8", newline="") as handle:
+                content = handle.read()
+            positions = _match_positions(content, old_text)
+            if positions == 0:
                 return _error(f"old_text not found in {file_path}")
-            if count > 1 and not replace_all:
+            if positions > 1 and not replace_all:
                 return _error(
-                    f"old_text matches {count} places in {file_path}; the edit was not applied. "
+                    f"old_text matches {positions} places in {file_path}; the edit was not applied. "
                     "Add surrounding context so old_text matches exactly once, "
                     "or pass replace_all=true to replace every occurrence."
                 )
-            new_content = content.replace(old_text, new_text)
-            resolved.write_text(new_content, encoding="utf-8")
+            # replace_all replaces non-overlapping occurrences left to right.
+            count = content.count(old_text) if replace_all else 1
+            new_content = content.replace(old_text, new_text, count)
+            with resolved.open("w", encoding="utf-8", newline="") as handle:
+                handle.write(new_content)
             return json.dumps(
                 {
                     "status": "ok",
