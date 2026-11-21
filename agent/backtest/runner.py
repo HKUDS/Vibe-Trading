@@ -1971,17 +1971,18 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             instead of the symbol-pattern guess (``_group_codes_by_source``
             names the *head* of each chain, which lies whenever that head is an
             optional package that is not installed).
-        interval: Bar interval string.
+        interval: Requested bar interval, before conversion to a loader interval.
 
     Returns:
-        Merged ``code -> DataFrame`` map, keyed by bare symbol: a ``local:``
-        code is served only by the local loader and keyed without the prefix.
+        Merged ``code -> DataFrame`` map of usable bars, keyed by bare symbol:
+        a ``local:`` code is served only by the local loader.
     """
     merged = {}
     served_by: set[str] = set()
     caliber_stamps: dict[str, tuple[str, str]] = {}
     start_date = config.get("start_date", "")
     end_date = config.get("end_date", "")
+    fetch_interval = source_interval(interval)
 
     # A ``local:`` code names the user's own dataset. It is served by the local
     # loader or not at all: routing it by market would send ``local:AAPL.US``
@@ -1992,7 +1993,10 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         # Bridge raises here with its own hint.
         local_loader = get_loader_cls_with_fallback("local")()
         stripped = [strip_local_prefix(code) for code in local_codes]
-        local_result = local_loader.fetch(stripped, start_date, end_date, interval=interval)
+        local_result = _prepare_data_map(
+            local_loader.fetch(stripped, start_date, end_date, interval=fetch_interval),
+            interval,
+        )
         missing_local = [code for code in local_codes if strip_local_prefix(code) not in local_result]
         if missing_local:
             raise NoAvailableSourceError(
@@ -2026,19 +2030,18 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             start_date,
             end_date,
             fields=fields,
-            interval=interval,
+            interval=fetch_interval,
         )
-        market_result = _restore_original_codes(
-            result, market_codes, normalized_codes
-        )
+        restored = _restore_original_codes(result, market_codes, normalized_codes)
+        market_result = _prepare_data_map(restored, interval)
         if market_result:
             served_by.add(src_name)
             for code in market_result:
                 caliber_stamps[code] = (src_name, frame_caliber(market_result[code], src_name, market, code))
         missing = [code for code in market_codes if code not in market_result]
 
-        # Retry only missing symbols so a partial primary response does not
-        # silently shrink the requested universe or refetch successful data.
+        # Retry only symbols without usable bars. A returned key alone does
+        # not serve the symbol if validation or resampling removes every bar.
         for fb_name in FALLBACK_CHAINS.get(market, []):
             if not missing:
                 break
@@ -2049,9 +2052,10 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 continue
             fb_codes = _normalize_codes(missing, fb_name)
             fallback_result = fb_loader.fetch(
-                fb_codes, start_date, end_date, interval=interval
+                fb_codes, start_date, end_date, interval=fetch_interval
             )
-            mapped = _restore_original_codes(fallback_result, missing, fb_codes)
+            restored = _restore_original_codes(fallback_result, missing, fb_codes)
+            mapped = _prepare_data_map(restored, interval)
             if mapped:
                 market_result.update(mapped)
                 missing = [code for code in missing if code not in mapped]
@@ -2064,7 +2068,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 )
 
         if missing:
-            served = sorted(set(merged) - set(missing))
+            served = sorted(set(merged) | set(market_result))
             raise NoAvailableSourceError(
                 f"incomplete data for {market}; missing symbols: {missing}; "
                 f"served symbols: {served}"
@@ -2113,10 +2117,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
 def _fetch_source_data_map(config: dict) -> DataFetchResult:
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
-    # Weekly and monthly bars are built from daily ones after the fetch, so
-    # every loader below is asked for daily bars (#1479).
     requested_interval = str(config.get("interval") or "1D")
-    interval = source_interval(requested_interval)
 
     # ``local:`` picks the loader; the instrument is the bare symbol. Everything
     # downstream (engine, signals, artifacts, run card) sees the bare symbol, so
@@ -2133,7 +2134,7 @@ def _fetch_source_data_map(config: dict) -> DataFetchResult:
 
     caliber_stamps: dict[str, tuple[str, str]] = {}
     if source == "auto":
-        data_map = _fetch_auto(codes, config, interval)
+        data_map = _fetch_auto(codes, config, requested_interval)
         codes = bare
         loader: Any = _AutoLoader(data_map)
         # Prefer the loaders that actually served rows; the symbol-pattern guess
@@ -2144,6 +2145,7 @@ def _fetch_source_data_map(config: dict) -> DataFetchResult:
             str(name) for name in recorded or [] if str(name).strip()
         ] or sorted(_group_codes_by_source(codes))
     else:
+        fetch_interval = source_interval(requested_interval)
         codes = _normalize_codes(codes, source)
         primary_source = source
         loader = _get_loader(source)()
@@ -2159,12 +2161,15 @@ def _fetch_source_data_map(config: dict) -> DataFetchResult:
                 source,
                 served_by,
             )
-        data_map = loader.fetch(
-            codes,
-            config.get("start_date", ""),
-            config.get("end_date", ""),
-            fields=config.get("extra_fields") or None,
-            interval=interval,
+        data_map = _prepare_data_map(
+            loader.fetch(
+                codes,
+                config.get("start_date", ""),
+                config.get("end_date", ""),
+                fields=config.get("extra_fields") or None,
+                interval=fetch_interval,
+            ),
+            requested_interval,
         )
         # The local loader keys ``local:AAPL.US`` by ``AAPL.US``. Compare and
         # continue with the bare symbol, or a served symbol is counted as
@@ -2220,11 +2225,12 @@ def _fetch_source_data_map(config: dict) -> DataFetchResult:
                         fallback_codes,
                         config.get("start_date", ""),
                         config.get("end_date", ""),
-                        interval=interval,
+                        interval=fetch_interval,
                     )
-                    mapped = _restore_original_codes(
+                    restored = _restore_original_codes(
                         fallback_result, market_missing, fallback_codes
                     )
+                    mapped = _prepare_data_map(restored, requested_interval)
                     if mapped:
                         data_map.update(mapped)
                         market_missing = [code for code in market_missing if code not in mapped]
@@ -2252,13 +2258,6 @@ def _fetch_source_data_map(config: dict) -> DataFetchResult:
                 f"served symbols: {sorted(data_map)}"
             )
 
-    data_map = {
-        code: resample_bars(frame, requested_interval)
-        for code, frame in _sanitize_data_map(data_map).items()
-    }
-    caliber_stamps = {
-        code: stamp for code, stamp in caliber_stamps.items() if code in data_map
-    }
     # Both warnings can apply at once (a tencent+baostock basket mixes calibers
     # *and* serves an additive one), and each says something the other does not,
     # so they are reported together rather than one shadowing the other.
@@ -2285,23 +2284,18 @@ def _fetch_source_data_map(config: dict) -> DataFetchResult:
     )
 
 
+def _prepare_data_map(data_map: dict, interval: str) -> dict:
+    """Return the symbols that have bars left at the requested interval."""
+    prepared = {}
+    for code, frame in _sanitize_data_map(data_map).items():
+        bars = resample_bars(frame, interval)
+        if not bars.empty:
+            prepared[code] = bars
+    return prepared
+
+
 def _sanitize_data_map(data_map: dict) -> dict:
-    """Drop structurally-invalid OHLC bars from every fetched frame.
-
-    Each loader only drops NaN rows, so a bar that violates the OHLC
-    invariants (``high < low``, a non-positive price, or a high/low that fails
-    to bracket open/close) can still reach the backtest and surface as NaN/inf
-    metrics. Applying :func:`validate_ohlc` here — the single point every
-    fetched map converges through — guards every source uniformly (``auto``,
-    single-source, runtime fallback, and any future loader), so the per-loader
-    checks no longer have to be added one at a time.
-
-    Args:
-        data_map: ``code -> DataFrame`` map as returned by a loader fetch.
-
-    Returns:
-        The same mapping with each frame's invalid bars removed.
-    """
+    """Apply the same OHLC validation to all strategy and benchmark feeds."""
     return {code: validate_ohlc(frame) for code, frame in data_map.items()}
 
 
