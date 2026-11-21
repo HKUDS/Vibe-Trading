@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from src.agent import tuning as tuning_mod
+from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
+from src.agent.trace import TraceWriter
 
 
 class _SlowRegistry:
@@ -71,8 +74,8 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     assert timeout_event["call_id"] == "slow-call"
 
 
-def test_write_tool_timeout_warns_but_does_not_return_before_completion(monkeypatch) -> None:
-    """Write tools must not report failure while their side effect continues."""
+def test_write_tool_timeout_returns_before_orphaned_worker_finishes(monkeypatch) -> None:
+    """Every tool has a hard wait bound, including writes."""
     monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.02, raising=False)
     monkeypatch.setattr(tuning_mod, "HEARTBEAT_INTERVAL_S", 0.01, raising=False)
     events: list[tuple[str, dict[str, Any]]] = []
@@ -88,12 +91,69 @@ def test_write_tool_timeout_warns_but_does_not_return_before_completion(monkeypa
         "place_order", {}, call_id="write-call"
     )
 
-    assert json.loads(result) == {"status": "ok"}
-    assert registry.completed is True
-    assert elapsed_ms >= 70
+    payload = json.loads(result)
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "tool_timeout"
+    assert payload["orphaned_worker"] is True
+    assert registry.completed is False
+    assert elapsed_ms < 70
     assert any(
         event_type == "tool_progress"
         and data.get("stage") == "timeout_warning"
         and data.get("call_id") == "write-call"
         for event_type, data in events
+    ) is False
+
+    # The worker cannot be killed safely from Python. It finishes its side
+    # effect in the background, while the loop has already recorded timeout.
+    time.sleep(0.1)
+    assert registry.completed is True
+
+
+def test_cancel_returns_explicit_result_for_running_write(monkeypatch) -> None:
+    """Parent cancellation ends the wait before a tool that ignores it."""
+    monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 5.0, raising=False)
+    registry = _SlowWriteRegistry()
+    agent = AgentLoop(
+        registry=registry,  # type: ignore[arg-type]
+        llm=SimpleNamespace(),
+        max_iterations=1,
     )
+
+    def cancel() -> None:
+        time.sleep(0.02)
+        agent.cancel()
+
+    import threading
+
+    threading.Thread(target=cancel, daemon=True).start()
+    result, elapsed_ms = agent._invoke_tool("place_order", {}, call_id="cancel-call")
+
+    payload = json.loads(result)
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "tool_cancelled"
+    assert elapsed_ms < 70
+
+
+def test_cancelled_queued_tool_is_recorded_as_a_result(tmp_path: Path) -> None:
+    """A call skipped before launch still closes its provider tool block."""
+    registry = _SlowWriteRegistry()
+    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+    agent.memory.run_dir = str(tmp_path)
+    agent.cancel()
+    messages: list[dict[str, Any]] = []
+    trace = TraceWriter(tmp_path)
+
+    agent._process_tool_calls(
+        [SimpleNamespace(id="queued-call", name="place_order", arguments={})],
+        ContextBuilder,
+        messages,
+        trace,
+        [],
+        1,
+    )
+    trace.close()
+
+    payload = json.loads(messages[-1]["content"])
+    assert payload["error_code"] == "tool_cancelled"
+    assert registry.completed is False
