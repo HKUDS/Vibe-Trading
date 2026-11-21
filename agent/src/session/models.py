@@ -165,6 +165,8 @@ class Session:
     last_attempt_id: Optional[str] = None
     config: Dict[str, Any] = field(default_factory=dict)
     owner: Optional[Principal] = None
+    forked_from_session_id: Optional[str] = None
+    forked_from_turn_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the session to a dictionary.

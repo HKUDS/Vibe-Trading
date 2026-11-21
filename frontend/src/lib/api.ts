@@ -738,11 +738,16 @@ export const api = {
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
   listSessions: () => request<SessionItem[]>("/sessions", undefined, METADATA_TIMEOUT_MS),
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
+  forkSession: (sid: string, turnId: string, title?: string) => request<SessionItem>(`/sessions/${encodeURIComponent(sid)}/fork`, { method: "POST", body: JSON.stringify({ turn_id: turnId, title: title || "" }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
   // Codex-style LLM summary title from the first exchange; backend refuses to
   // overwrite a manual rename, so this is safe to fire-and-forget.
   autoTitleSession: (sid: string) => request<{ status: string; title: string }>(`/sessions/${sid}/title/auto`, { method: "POST" }),
+  getSessionModel: (sid: string) => request<SessionModelSelection>(`/sessions/${encodeURIComponent(sid)}/model`),
+  setSessionModel: (sid: string, selection: { provider: string; model: string; reasoning_effort?: string }) => request<SessionModelSelection>(`/sessions/${encodeURIComponent(sid)}/model`, { method: "PUT", body: JSON.stringify(selection) }),
+  clearSessionModel: (sid: string) => request<SessionModelSelection>(`/sessions/${encodeURIComponent(sid)}/model`, { method: "DELETE" }),
+  compactSession: (sid: string, focus = "") => request<{ session_id: string; summary: string; seq: number; focus: string }>(`/sessions/${encodeURIComponent(sid)}/compact`, { method: "POST", body: JSON.stringify({ focus }) }),
   // Scheduled research: cadence + timezone are stored as authored (local
   // wall-clock cron + IANA key), so list rows render without any UTC math.
   listScheduledRuns: (signal?: AbortSignal) => request<ScheduledRun[]>("/scheduled-runs", { signal }),
@@ -1856,6 +1861,19 @@ export interface SessionItem {
   created_at?: string;
   updated_at?: string;
   last_attempt_id?: string;
+  forked_from_session_id?: string | null;
+  forked_from_turn_id?: string | null;
+}
+
+export interface SessionModelSelection {
+  session_id: string;
+  source: "session" | "inherited";
+  provider: string | null;
+  model: string | null;
+  reasoning_effort: string | null;
+  error: string | null;
+  turn_running: boolean;
+  applies_from: "next_turn";
 }
 
 // --- Goal types ---

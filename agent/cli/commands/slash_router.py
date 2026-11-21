@@ -39,6 +39,7 @@ class Command:
 SLASH_COMMANDS: tuple[Command, ...] = (
     Command("help",    "Show keyboard shortcuts and command list",   "cli.commands.help"),
     Command("model",   "Switch LLM provider and model",              "cli.commands.chat"),
+    Command("compact", "Summarize the current session context",       "cli.commands.chat"),
     Command("memory",  "Show / manage persistent memory",            "cli.commands.memory"),
     Command("history", "Browse and resume prior sessions",           "cli.commands.session"),
     Command("goal",    "Start / inspect a finance research goal",    "cli.commands.goal"),
@@ -51,6 +52,7 @@ SLASH_COMMANDS: tuple[Command, ...] = (
     Command("journal", "Analyze trade journal CSV",                  "cli.commands.chat"),
     Command("shadow",  "Train / view shadow account",                "cli.commands.chat"),
     Command("export",  "Export current session (md / json)",         "cli.commands.session"),
+    Command("fork",    "Fork the current session from a turn",        "cli.commands.session"),
     Command("debug",   "Toggle debug panel (token usage / latency)", "cli.commands.chat"),
     Command("quit",    "Exit (also: q, exit, :q)",                   "cli.commands.chat"),
 )

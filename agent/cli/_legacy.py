@@ -1113,7 +1113,12 @@ def _run_agent(
         from cli.conversation import open_turn
         from src.session.store import SessionStore
 
-        turn = open_turn(SessionStore(base_dir=SESSIONS_DIR), session_id, prompt)
+        snapshot = getattr(llm, "runtime_snapshot", None)
+        turn = open_turn(
+            SessionStore(base_dir=SESSIONS_DIR), session_id, prompt,
+            provider=getattr(snapshot, "provider", None),
+            model=getattr(snapshot, "configured_model", None),
+        )
 
     try:
         agent = AgentLoop(
