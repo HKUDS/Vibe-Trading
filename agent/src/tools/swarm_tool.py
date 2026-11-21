@@ -557,7 +557,7 @@ class SwarmTool(BaseTool):
             )
 
         from src.config import load_swarm_agent_config
-        from src.swarm.runtime import SwarmRuntime, register_active_run, unregister_active_run
+        from src.swarm.runtime import SwarmRuntime
         from src.swarm.store import SwarmStore, swarm_runs_root
 
         swarm_base_dir = swarm_runs_root()
@@ -632,6 +632,7 @@ class SwarmTool(BaseTool):
                 live_callback=_live_callback if self._event_callback is not None else None,
                 include_shell_tools=self.include_shell_tools,
                 **({"resume_from": resume_from} if resume_from is not None else {}),
+                **({"session_id": self._session_id} if self._session_id is not None else {}),
             )
         except FileNotFoundError as exc:
             return json.dumps(
@@ -672,59 +673,38 @@ class SwarmTool(BaseTool):
 
         t0 = time.monotonic()
         max_wait = _max_wait_seconds()
-        # Index the run so a user stop arriving after this call returns (budget
-        # exhausted, or from the HTTP cancel endpoint holding a different
-        # runtime) can still reach it.
-        if self._session_id is not None:
-            register_active_run(run_id, self._session_id, lambda: runtime.cancel_run(run_id))
-        # Only a terminal run leaves the index. On the timeout path the worker
-        # threads are still alive, so dropping the entry there would make a
-        # later user stop unable to reach them.
-        settled = False
-        try:
-            while time.monotonic() - t0 < max_wait:
-                if self._cancel_event is not None:
-                    # wait() returns as soon as the flag is set, so a stop does
-                    # not have to sit out the poll interval.
-                    if self._cancel_event.wait(_POLL_INTERVAL_SECONDS):
-                        settled = True
-                        return self._stop_cancelled_run(
-                            runtime, store, run_id, preset, variables
-                        )
-                else:
-                    time.sleep(_POLL_INTERVAL_SECONDS)
-
-                loaded = store.load_run(run_id)
-                if loaded is None:
-                    settled = True
-                    return json.dumps(
-                        {"status": "error", "error": f"Run {run_id} disappeared"},
-                        ensure_ascii=False,
+        while time.monotonic() - t0 < max_wait:
+            if self._cancel_event is not None:
+                # A stop does not have to sit out the poll interval.
+                if self._cancel_event.wait(_POLL_INTERVAL_SECONDS):
+                    return self._stop_cancelled_run(
+                        runtime, store, run_id, preset, variables
                     )
+            else:
+                time.sleep(_POLL_INTERVAL_SECONDS)
 
-                reconciled = store.reconcile_run(loaded, write=True)
-                if reconciled.status.value in ("completed", "failed", "cancelled"):
-                    settled = True
-                    return _format_result(reconciled, preset, variables)
-
-            # Wait budget elapsed but the run is still in flight. Do NOT cancel —
-            # the daemon thread keeps working and the agent can decide to wait
-            # more (re-invoke with the returned run_id) or hand off partial state
-            # to the user. Cancelling here used to throw away minutes of LLM cost
-            # whenever a preset legitimately ran past the budget.
             loaded = store.load_run(run_id)
-            if loaded is not None:
-                return _format_result(
-                    store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
+            if loaded is None:
+                return json.dumps(
+                    {"status": "error", "error": f"Run {run_id} disappeared"},
+                    ensure_ascii=False,
                 )
 
-            return json.dumps(
-                {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},
-                ensure_ascii=False,
+            reconciled = store.reconcile_run(loaded, write=True)
+            if reconciled.status.value in ("completed", "failed", "cancelled"):
+                return _format_result(reconciled, preset, variables)
+
+        # Wait budget elapsed. Return the run ID without cancelling the run.
+        loaded = store.load_run(run_id)
+        if loaded is not None:
+            return _format_result(
+                store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
             )
-        finally:
-            if settled:
-                unregister_active_run(run_id)
+
+        return json.dumps(
+            {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},
+            ensure_ascii=False,
+        )
 
     def _stop_cancelled_run(
         self,
