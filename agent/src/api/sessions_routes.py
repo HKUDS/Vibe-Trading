@@ -92,6 +92,17 @@ class CreateSessionRequest(BaseModel):
     config: Optional[Dict[str, Any]] = Field(None, description="Session config")
 
 
+class ForkSessionRequest(BaseModel):
+    """Fork a session through a completed turn."""
+    turn_id: str = Field(..., min_length=1)
+    title: str = Field("", max_length=200)
+
+
+class CompactSessionRequest(BaseModel):
+    """Request a user-triggered context compaction."""
+    focus: str = Field("", max_length=2000)
+
+
 class ModelSelectionResponse(BaseModel):
     """The model a session's next turn asks for, and where that choice comes from."""
     session_id: str
@@ -112,6 +123,8 @@ class SessionResponse(BaseModel):
     created_at: str
     updated_at: str
     last_attempt_id: Optional[str] = None
+    forked_from_session_id: Optional[str] = None
+    forked_from_turn_id: Optional[str] = None
 
 
 # Bound interactive request size. This character limit is independent of the
@@ -545,6 +558,8 @@ def register_sessions_routes(app: FastAPI) -> None:
             created_at=session.created_at,
             updated_at=session.updated_at,
             last_attempt_id=session.last_attempt_id,
+            forked_from_session_id=session.forked_from_session_id,
+            forked_from_turn_id=session.forked_from_turn_id,
         )
 
     @app.get("/sessions", response_model=List[SessionResponse], dependencies=[Depends(require_auth)])
@@ -562,6 +577,8 @@ def register_sessions_routes(app: FastAPI) -> None:
                 created_at=s.created_at,
                 updated_at=s.updated_at,
                 last_attempt_id=s.last_attempt_id,
+                forked_from_session_id=s.forked_from_session_id,
+                forked_from_turn_id=s.forked_from_turn_id,
             )
             for s in sessions
         ]
@@ -583,6 +600,39 @@ def register_sessions_routes(app: FastAPI) -> None:
             created_at=session.created_at,
             updated_at=session.updated_at,
             last_attempt_id=session.last_attempt_id,
+            forked_from_session_id=session.forked_from_session_id,
+            forked_from_turn_id=session.forked_from_turn_id,
+        )
+
+    @app.post(
+        "/sessions/{session_id}/fork",
+        response_model=SessionResponse,
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(require_auth)],
+    )
+    async def fork_session(session_id: str, request: ForkSessionRequest):
+        """Create an independent conversation copied through one turn."""
+        _host_validate_path_param(session_id, "session_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        try:
+            session = svc.fork_session(
+                session_id, request.turn_id, title=request.title.strip()
+            )
+        except SessionBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return SessionResponse(
+            session_id=session.session_id,
+            title=session.title,
+            status=session.status.value,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            last_attempt_id=session.last_attempt_id,
+            forked_from_session_id=session.forked_from_session_id,
+            forked_from_turn_id=session.forked_from_turn_id,
         )
 
     # -----------------------------------------------------------------------
@@ -976,6 +1026,24 @@ def register_sessions_routes(app: FastAPI) -> None:
         if result.get("status") == "queued":
             return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=result)
         return result
+
+    @app.post("/sessions/{session_id}/compact", dependencies=[Depends(require_auth)])
+    async def compact_session(
+        session_id: str, request: Optional[CompactSessionRequest] = None
+    ):
+        """Compact replayed session history when no turn or queue is active."""
+        _host_validate_path_param(session_id, "session_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        try:
+            return await svc.compact_session(session_id, request.focus if request else "")
+        except SessionBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            if "not found" in str(exc).lower():
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/sessions/{session_id}/pending-inputs", dependencies=[Depends(require_auth)])
     async def list_pending_inputs(session_id: str):

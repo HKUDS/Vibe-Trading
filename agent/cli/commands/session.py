@@ -78,10 +78,38 @@ def cmd_export(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
     return 0
 
 
+def cmd_fork(ctx: Any = None, *args: str) -> int:
+    """Fork the active session at ``/fork <turn-id> [title]``."""
+    console = _resolve_console()
+    session_id = getattr(ctx, "session_id", None)
+    if not session_id or not args:
+        console.print(Text("Usage: /fork <turn-id> [title]", style="bold red"))
+        return 1
+    try:
+        from cli.main import _session_store
+        from src.config.paths import get_runs_dir
+        from src.session.events import EventBus
+        from src.session.service import SessionService
+
+        turn_id, *title_parts = args
+        session = SessionService(
+            store=_session_store(), event_bus=EventBus(), runs_dir=get_runs_dir()
+        ).fork_session(session_id, turn_id, title=" ".join(title_parts))
+        ctx.session_id = session.session_id
+        if hasattr(ctx, "transcript"):
+            ctx.transcript = []
+    except Exception as exc:  # noqa: BLE001 - preserve the REPL on refusal
+        console.print(Text(f"/fork failed: {exc}", style="bold red"))
+        return 1
+    console.print(Text(f"Forked session {session.session_id} from turn {turn_id}.", style="bold"))
+    return 0
+
+
 _DISPATCH = {
     "history": cmd_history,
     "search": cmd_search,
     "export": cmd_export,
+    "fork": cmd_fork,
 }
 
 
@@ -95,4 +123,4 @@ def run(ctx: Any = None, command: str = "history", *args: str) -> int:
     return handler(ctx, *args)
 
 
-__all__ = ["run", "cmd_history", "cmd_search", "cmd_export"]
+__all__ = ["run", "cmd_history", "cmd_search", "cmd_export", "cmd_fork"]

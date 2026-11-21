@@ -181,7 +181,14 @@ class CliTurn:
         self.finish({"status": status, "reason": reason})
 
 
-def open_turn(store: SessionStore, session_id: str, prompt: str) -> Optional[CliTurn]:
+def open_turn(
+    store: SessionStore,
+    session_id: str,
+    prompt: str,
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Optional[CliTurn]:
     """Start a recorded turn in a session.
 
     Replays the session's history and opens the turn's recorder. A new session id gets a thread on
@@ -200,7 +207,8 @@ def open_turn(store: SessionStore, session_id: str, prompt: str) -> Optional[Cli
     try:
         runtime = SessionRuntime(store.thread_log(session_id), session_id)
         recorder = runtime.begin_turn(
-            uuid.uuid4().hex[:12], store.get_messages(session_id, limit=None)
+            uuid.uuid4().hex[:12], store.get_messages(session_id, limit=None),
+            provider=provider, model=model,
         )
     except Exception:  # noqa: BLE001 - an unusable store must not block the turn
         logger.warning("Could not open a recorded turn for session %s", session_id, exc_info=True)

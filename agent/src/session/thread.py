@@ -154,6 +154,8 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "tool_calls": _Field(_is_tool_calls, default=[]),
         "reasoning_content": _Field(_optional(_is_str)),
         "provider_items": _Field(_optional(_is_list)),
+        "provider": _Field(_optional(_is_str)),
+        "model": _Field(_optional(_is_str)),
         "phase": _Field(_optional(lambda v: v in ASSISTANT_PHASES)),
     },
     "tool_result": {
@@ -249,6 +251,12 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
     if item_type == "user" and result.get("input_id") is None:
         # Preserve the legacy user-item shape. Queued inputs carry a real id.
         result.pop("input_id", None)
+    if item_type == "assistant":
+        # Older thread records did not identify the provider/model. Keep their
+        # on-disk shape stable while new responses record both fields.
+        for name in ("provider", "model"):
+            if name not in payload:
+                result.pop(name, None)
     return result
 
 
@@ -610,7 +618,12 @@ def open_turns(items: Iterable[ThreadItem]) -> List[str]:
 # ---- Replay ----
 
 
-def _assistant_message(item: ThreadItem) -> Dict[str, Any]:
+def _assistant_message(
+    item: ThreadItem,
+    *,
+    target_provider: Optional[str] = None,
+    target_model: Optional[str] = None,
+) -> Dict[str, Any]:
     """Rebuild the assistant message the loop sent, in the loop's key order.
 
     Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
@@ -622,9 +635,19 @@ def _assistant_message(item: ThreadItem) -> Dict[str, Any]:
         message["tool_calls"] = copy.deepcopy(tool_calls)
         if any(call.get("extra_content") for call in tool_calls):
             message["additional_kwargs"] = {"tool_calls": copy.deepcopy(tool_calls)}
-    if item.get("reasoning_content") is not None:
+    source_provider = item.get("provider")
+    source_model = item.get("model")
+    same_runtime = (
+        target_provider is None and target_model is None
+    ) or (
+        isinstance(source_provider, str)
+        and isinstance(source_model, str)
+        and source_provider == target_provider
+        and source_model == target_model
+    )
+    if same_runtime and item.get("reasoning_content") is not None:
         message["reasoning_content"] = item.get("reasoning_content")
-    if item.get("provider_items"):
+    if same_runtime and item.get("provider_items"):
         message["provider_items"] = copy.deepcopy(item.get("provider_items"))
     return message
 
@@ -701,12 +724,19 @@ class _Replayer:
         self._held = []
 
 
-def _item_message(item: ThreadItem) -> Optional[Dict[str, Any]]:
+def _item_message(
+    item: ThreadItem,
+    *,
+    target_provider: Optional[str] = None,
+    target_model: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     """Build the provider message represented by one thread item."""
     if item.type == "user":
         return {"role": "user", "content": copy.deepcopy(item.get("llm_content"))}
     if item.type == "assistant":
-        return _assistant_message(item)
+        return _assistant_message(
+            item, target_provider=target_provider, target_model=target_model
+        )
     if item.type == "tool_result":
         return {
             "role": "tool",
@@ -719,7 +749,12 @@ def _item_message(item: ThreadItem) -> Optional[Dict[str, Any]]:
     return None
 
 
-def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
+def replay(
+    items: Iterable[ThreadItem],
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """Build the OpenAI-format history a new turn sends to the model.
 
     1. Start after the last ``compaction``'s ``replaces_through_seq``, with
@@ -752,10 +787,12 @@ def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
     # exact message that was sent after the in-memory mutation, while layer 3
     # starts a new replay view at its summary boundary.
     message_by_seq: Dict[int, Dict[str, Any]] = {}
+    source_by_seq: Dict[int, ThreadItem] = {}
     for item in items:
-        message = _item_message(item)
+        message = _item_message(item, target_provider=provider, target_model=model)
         if message is not None:
             message_by_seq[item.seq] = message
+            source_by_seq[item.seq] = item
     for event in items:
         if event.type != "compaction":
             continue
@@ -806,6 +843,11 @@ def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
         effective = message_by_seq.get(item.seq)
         if effective is not None:
             if effective.get("role") == "assistant":
+                source = source_by_seq.get(item.seq)
+                if source is not None:
+                    effective = _assistant_message(
+                        source, target_provider=provider, target_model=model
+                    )
                 replayer.assistant_message(copy.deepcopy(effective))
             elif effective.get("role") == "tool":
                 replayer.tool_result_message(copy.deepcopy(effective))
@@ -815,7 +857,11 @@ def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
         if item.type == "user":
             replayer.other({"role": "user", "content": copy.deepcopy(item.get("llm_content"))})
         elif item.type == "assistant":
-            replayer.assistant(item)
+            replayer.assistant_message(
+                _assistant_message(
+                    item, target_provider=provider, target_model=model
+                )
+            )
         elif item.type == "tool_result":
             replayer.tool_result(item)
         elif item.type == "inject":

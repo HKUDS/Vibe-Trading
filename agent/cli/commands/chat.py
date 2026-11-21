@@ -145,6 +145,34 @@ def cmd_model(ctx: Any = None, *args: str) -> int:
     return 0
 
 
+def cmd_compact(ctx: Any = None, *args: str) -> int:
+    """Compact the active session, optionally prioritising a focus topic."""
+    console = _resolve_console()
+    session_id = getattr(ctx, "session_id", None)
+    if not session_id:
+        console.print(Text("Start or resume a session before using /compact.", style="bold red"))
+        return 1
+    try:
+        import asyncio
+        from src.session.events import EventBus
+        from src.session.service import SessionService
+        from src.config.paths import get_runs_dir
+        from cli.main import _session_store
+
+        store = _session_store()
+        result = asyncio.run(
+            SessionService(store=store, event_bus=EventBus(), runs_dir=get_runs_dir())
+            .compact_session(session_id, " ".join(args))
+        )
+    except Exception as exc:  # noqa: BLE001 - keep the REPL alive on refusal
+        console.print(Text(f"/compact failed: {exc}", style="bold red"))
+        return 1
+    console.print(Text("Session context compacted.", style="bold"))
+    if result.get("summary"):
+        console.print(Text(str(result["summary"]), style="dim"))
+    return 0
+
+
 # --- /clear, /journal, /shadow, /swarm, /debug, /quit ----------------------
 
 
@@ -306,6 +334,7 @@ def cmd_quit(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 _DISPATCH = {
     "model": cmd_model,
+    "compact": cmd_compact,
     "clear": cmd_clear,
     "journal": cmd_journal,
     "shadow": cmd_shadow,
@@ -328,6 +357,7 @@ def run(ctx: Any = None, command: str = "model", *args: str) -> int:
 __all__ = [
     "run",
     "cmd_model",
+    "cmd_compact",
     "cmd_clear",
     "cmd_journal",
     "cmd_shadow",

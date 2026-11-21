@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import copy
 import logging
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -473,6 +475,162 @@ class SessionService:
         """Persist session metadata and refresh its search label."""
         self.store.update_session(session)
         self._search_index.index_session(session.session_id, session.title)
+
+    def fork_session(
+        self,
+        source_session_id: str,
+        turn_id: str,
+        *,
+        title: str = "",
+    ) -> Session:
+        """Create an independent session copied through one completed turn.
+
+        The source thread is read once and appended to a fresh log. State
+        snapshots are copied only through the selected turn, so identity and
+        loaded-tool state cannot include authorisations earned later.
+        """
+        source = self.store.get_session(source_session_id)
+        if source is None:
+            raise ValueError(f"Session {source_session_id} not found")
+        source_items = self.store.thread_log(source_session_id).read()
+        turn_items = [item for item in source_items if item.turn_id == turn_id]
+        if not turn_items or not any(item.type == "turn_start" for item in turn_items):
+            raise ValueError(f"Turn {turn_id} not found in session {source_session_id}")
+        end = next((item for item in turn_items if item.type == "turn_end"), None)
+        if end is None:
+            raise SessionBusyError("Cannot fork from a turn that is still running")
+        if end.get("status") != "completed":
+            raise ValueError(f"Turn {turn_id} is not completed")
+        copied = [item for item in source_items if item.seq <= end.seq]
+        fork = Session(
+            title=title or f"{source.title or source_session_id} (fork)",
+            config=copy.deepcopy(source.config),
+            owner=source.owner,
+            forked_from_session_id=source_session_id,
+            forked_from_turn_id=turn_id,
+        )
+        self.store.create_session(fork)
+        target_log = self.store.thread_log(fork.session_id)
+        workspace_dir = str(target_log.path.parent / "workspace")
+        try:
+            for item in copied:
+                payload = copy.deepcopy(item.data)
+                if item.type == "state":
+                    payload["workspace_dir"] = workspace_dir
+                    payload["workspace"] = workspace_dir
+                target_log.append(item.type, item.turn_id, **payload)
+        except BaseException:
+            self.store.delete_session(fork.session_id)
+            raise
+        self._search_index.index_session(fork.session_id, fork.title)
+        self.event_bus.emit(
+            fork.session_id,
+            "session.forked",
+            {
+                "session_id": fork.session_id,
+                "source_session_id": source_session_id,
+                "source_turn_id": turn_id,
+            },
+        )
+        return fork
+
+    def _maintenance_busy(self, session_id: str) -> bool:
+        """Return whether a turn or queued input makes maintenance unsafe."""
+        with self._inflight_lock:
+            if session_id in self._inflight:
+                return True
+        task = self._active_tasks.get(session_id)
+        return bool(
+            (task is not None and not task.done())
+            or session_id in self._active_loops
+            or self.pending_inputs.waiting(session_id)
+        )
+
+    async def compact_session(self, session_id: str, focus: str = "") -> Dict[str, Any]:
+        """Compact a session's replayed history through the existing L3 path."""
+        session = self.store.get_session(session_id)
+        if session is None:
+            raise ValueError(f"Session {session_id} not found")
+        if self._maintenance_busy(session_id):
+            raise SessionBusyError(
+                "Cannot compact while a turn is running or queued input is waiting"
+            )
+        from src.agent.loop import AgentLoop
+        from src.agent.memory import WorkspaceMemory
+        from src.agent.tools import ToolRegistry
+        from src.agent.trace import TraceWriter
+        from src.session.model_selection import chat_llm_for_session
+        from src.session.runtime import TurnRecorder
+
+        llm = chat_llm_for_session(session.config)
+        compact_id = f"compact-{uuid.uuid4().hex[:12]}"
+        runtime = self.runtime(session_id)
+        snapshot = getattr(llm, "runtime_snapshot", None)
+        provider = getattr(snapshot, "provider", None)
+        model = getattr(snapshot, "configured_model", None)
+        history, history_seqs, user_history = runtime.replay_history(
+            self.store.get_messages(session_id, limit=None),
+            provider=provider,
+            model=model,
+        )
+        if not history:
+            await llm.aclose()
+            raise ValueError("Session has no conversation history to compact")
+        recorder = TurnRecorder(
+            runtime,
+            compact_id,
+            history,
+            history_seqs,
+            user_history,
+            provider=provider,
+            model=model,
+        )
+        run_dir = Path(self.runs_dir) / "compactions" / compact_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        trace = TraceWriter(run_dir)
+        messages = [{"role": "system", "content": ""}, *copy.deepcopy(history)]
+        agent = AgentLoop(
+            registry=ToolRegistry(),
+            llm=llm,
+            memory=WorkspaceMemory(session_workspace=str(runtime.workspace_path)),
+            thread_recorder=recorder,
+        )
+        agent.memory.run_dir = str(run_dir)
+        agent._turn_messages = messages
+        try:
+            await asyncio.to_thread(
+                agent._auto_compact,
+                messages,
+                run_dir,
+                trace,
+                focus.strip()[:2000],
+                0,
+            )
+        finally:
+            recorder.close()
+            trace.close()
+            await llm.aclose()
+        compacted = next(
+            (
+                item for item in reversed(runtime.thread.read())
+                if item.turn_id == compact_id and item.type == "compaction"
+            ),
+            None,
+        )
+        if compacted is None:
+            raise ValueError("Conversation is too short to compact")
+        self.thread_events.sync(session_id)
+        self.event_bus.emit(
+            session_id,
+            "session.compacted",
+            {"summary": compacted.get("summary"), "seq": compacted.seq},
+        )
+        return {
+            "session_id": session_id,
+            "summary": compacted.get("summary") or "",
+            "seq": compacted.seq,
+            "focus": focus.strip(),
+        }
 
     def list_sessions(self, limit: int = 50) -> list[Session]:
         """List all sessions."""
@@ -1143,7 +1301,13 @@ class SessionService:
 
             from src.config.accessor import get_env_config
 
-            recorder = runtime.begin_turn(attempt_id, messages or [])
+            runtime_snapshot = getattr(llm, "runtime_snapshot", None)
+            recorder = runtime.begin_turn(
+                attempt_id,
+                messages or [],
+                provider=getattr(runtime_snapshot, "provider", None),
+                model=getattr(runtime_snapshot, "configured_model", None),
+            )
             queued_inputs = QueuedInputDelivery(
                 self.pending_inputs,
                 session_id=session_id,

@@ -136,12 +136,17 @@ def _message_key(message: Mapping[str, Any]) -> str:
     return json.dumps(message, sort_keys=True, ensure_ascii=False, default=str)
 
 
-def _item_message(item: ThreadItem) -> Optional[Dict[str, Any]]:
+def _item_message(
+    item: ThreadItem,
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     """The message replay builds from one item, or None for non-model items."""
     if item.type == "user":
         return {"role": "user", "content": item.get("llm_content")}
     if item.type == "assistant":
-        return _assistant_message(item)
+        return _assistant_message(item, target_provider=provider, target_model=model)
     if item.type == "tool_result":
         return {
             "role": "tool",
@@ -154,7 +159,12 @@ def _item_message(item: ThreadItem) -> Optional[Dict[str, Any]]:
     return None
 
 
-def replay_with_seqs(items: Sequence[ThreadItem]) -> Tuple[List[Dict[str, Any]], List[Optional[int]]]:
+def replay_with_seqs(
+    items: Sequence[ThreadItem],
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], List[Optional[int]]]:
     """Replay the thread and name the item each replayed message came from.
 
     A compaction recorded mid-turn has to say which items its summary
@@ -168,14 +178,14 @@ def replay_with_seqs(items: Sequence[ThreadItem]) -> Tuple[List[Dict[str, Any]],
     Returns:
         ``(messages, seqs)`` of equal length.
     """
-    messages = replay(items)
+    messages = replay(items, provider=provider, model=model)
     compaction = last_compaction(items)
     start_after = compaction.get("replaces_through_seq") if compaction is not None else 0
     pool: Dict[str, List[int]] = {}
     for item in items:
         if item.seq <= start_after:
             continue
-        message = _item_message(item)
+        message = _item_message(item, provider=provider, model=model)
         if message is not None:
             pool.setdefault(_message_key(message), []).append(item.seq)
     for item in items:
@@ -232,6 +242,9 @@ class TurnRecorder:
         history: List[Dict[str, Any]],
         history_seqs: List[Optional[int]],
         user_history: List[Dict[str, Any]],
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> None:
         """Create a recorder for one turn.
 
@@ -246,6 +259,8 @@ class TurnRecorder:
         self.turn_id = turn_id
         self.history = history
         self.user_history = user_history
+        self.provider = provider
+        self.model = model
         state = runtime.state
         self.identity_state = copy.deepcopy(state.get("identity"))
         loaded = state.get("loaded_tools")
@@ -327,6 +342,8 @@ class TurnRecorder:
             tool_calls=list(message.get("tool_calls") or []),
             reasoning_content=message.get("reasoning_content"),
             provider_items=message.get("provider_items") or None,
+            provider=self.provider,
+            model=self.model,
             phase=phase,
         )
 
@@ -551,7 +568,37 @@ class SessionRuntime:
         with self._lock:
             self.state.update(copy.deepcopy(dict(snapshot)))
 
-    def begin_turn(self, turn_id: str, rows: Sequence[Any]) -> TurnRecorder:
+    def replay_history(
+        self,
+        rows: Sequence[Any],
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], List[Optional[int]], List[Dict[str, Any]]]:
+        """Return replayed messages, source seqs, and earlier user messages.
+
+        Provider-native reasoning metadata is retained only when the recorded
+        assistant item came from the same provider and model as the request.
+        """
+        items = self.thread.read()
+        prefix_rows = [] if last_compaction(items) is not None else _rows_before_thread(rows, items)
+        prefix = legacy_history(prefix_rows)
+        replayed, seqs = replay_with_seqs(items, provider=provider, model=model)
+        user_history = [m for m in prefix if m["role"] == "user"] + [
+            {"role": "user", "content": item.get("content")}
+            for item in items
+            if item.type == "user" and isinstance(item.get("content"), str)
+        ]
+        return prefix + replayed, [None] * len(prefix) + seqs, user_history
+
+    def begin_turn(
+        self,
+        turn_id: str,
+        rows: Sequence[Any],
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> TurnRecorder:
         """Prepare one turn: close stale turns, replay history, open a recorder.
 
         A turn that started in this thread and never ended belongs to a run the
@@ -572,20 +619,17 @@ class SessionRuntime:
             if stale != turn_id:
                 self._append_safely("turn_end", stale, status="interrupted")
         items = self.thread.read()
-        prefix_rows = [] if last_compaction(items) is not None else _rows_before_thread(rows, items)
-        prefix = legacy_history(prefix_rows)
-        replayed, seqs = replay_with_seqs(items)
-        user_history = [m for m in prefix if m["role"] == "user"] + [
-            {"role": "user", "content": item.get("content")}
-            for item in items
-            if item.type == "user" and isinstance(item.get("content"), str)
-        ]
+        history, history_seqs, user_history = self.replay_history(
+            rows, provider=provider, model=model
+        )
         recorder = TurnRecorder(
             self,
             turn_id,
-            history=prefix + replayed,
-            history_seqs=[None] * len(prefix) + seqs,
+            history=history,
+            history_seqs=history_seqs,
             user_history=user_history,
+            provider=provider,
+            model=model,
         )
         with self._lock:
             self._recorders[turn_id] = recorder
