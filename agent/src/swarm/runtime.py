@@ -50,7 +50,7 @@ from src.swarm.task_store import (
 )
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
-from src.swarm.worker import agent_artifact_dir, clear_agent_artifacts, run_worker
+from src.swarm.worker import _CancellationSignal, agent_artifact_dir, clear_agent_artifacts, run_worker
 
 logger = logging.getLogger(__name__)
 
@@ -162,9 +162,40 @@ def _worker_retry_budget_s(max_retries: int) -> float:
     )
 
 
+_LAYER_STOP_POLL_S = 0.05
+
+
+class _LayerStop:
+    def __init__(self, run_cancel: threading.Event) -> None:
+        self._run_cancel = run_cancel
+        self._expired = threading.Event()
+
+    def expire(self) -> None:
+        self._expired.set()
+
+    def accepts_events(self) -> bool:
+        return not self._expired.is_set()
+
+    def is_set(self) -> bool:
+        return self._run_cancel.is_set() or self._expired.is_set()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not self.is_set():
+            interval = _LAYER_STOP_POLL_S
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return self.is_set()
+                interval = min(interval, remaining)
+            if self._run_cancel.wait(interval):
+                return True
+        return True
+
+
 def _wait_for_worker_retry(
     delay_s: float,
-    cancel_event: threading.Event | None,
+    cancel_event: _CancellationSignal | None,
 ) -> bool:
     """Wait before a retry and return whether cancellation interrupted it."""
     if cancel_event is not None:
@@ -472,20 +503,22 @@ class SwarmRuntime:
         cancel_event.set()
         return True
 
-    def _emit_event(self, run_id: str, event: SwarmEvent) -> None:
-        """Persist an event and forward to live callback if registered.
-
-        Args:
-            run_id: Run identifier.
-            event: Event to persist.
-        """
+    def _emit_event(
+        self, run_id: str, event: SwarmEvent, *, accept: Callable[[], bool] | None = None,
+    ) -> None:
+        """Persist an event and forward it if the source is still active."""
+        if accept is not None and not accept():
+            return
         try:
-            self._store.append_event(run_id, event)
+            if accept is None:
+                self._store.append_event(run_id, event)
+            elif not self._store.append_event_if(run_id, event, accept):
+                return
         except Exception:
             logger.warning("Failed to persist event for run %s", run_id, exc_info=True)
         with self._lock:
             cb = self._live_callbacks.get(run_id)
-        if cb is not None:
+        if cb is not None and (accept is None or accept()):
             try:
                 cb(event)
             except Exception:
@@ -1021,14 +1054,12 @@ class SwarmRuntime:
             Mapping of task_id -> WorkerResult for all tasks in this layer.
         """
         results: dict[str, WorkerResult] = {}
+        layer_stop = _LayerStop(cancel_event)
 
         def _event_callback(event: SwarmEvent) -> None:
-            self._emit_event(run.id, event)
+            self._emit_event(run.id, event, accept=layer_stop.accepts_events)
 
-        # Manual executor lifecycle (not `with`) so KeyboardInterrupt and
-        # the layer deadline don't block main on `shutdown(wait=True)` —
-        # `wait=False + cancel_futures=True` lets pending work drop and
-        # the CLI return immediately. Running workers finish naturally.
+        # Don't wait on work that could still be blocked in I/O after expiry.
         executor = ThreadPoolExecutor(max_workers=self._max_workers)
         futures: dict[Future[WorkerResult], str] = {}
         layer_budget = 0  # seconds — max per-task (retries × timeout) across layer
@@ -1124,7 +1155,7 @@ class SwarmRuntime:
                     run_id=run.id,
                     include_shell_tools=include_shell_tools,
                     grounding_block=grounding_block,
-                    cancel_event=cancel_event,
+                    cancel_event=layer_stop,
                 )
                 futures[future] = tid
                 per_task_budget = (
@@ -1152,6 +1183,7 @@ class SwarmRuntime:
                             error=str(exc),
                         )
             except FuturesTimeoutError:
+                layer_stop.expire()
                 for pending, tid in futures.items():
                     if tid in results:
                         continue
@@ -1186,7 +1218,7 @@ class SwarmRuntime:
         run_id: str,
         include_shell_tools: bool = False,
         grounding_block: str = "",
-        cancel_event: threading.Event | None = None,
+        cancel_event: _CancellationSignal | None = None,
     ) -> WorkerResult:
         """Run a worker with automatic retry on failure.
 
@@ -1206,10 +1238,8 @@ class SwarmRuntime:
             grounding_block: Pre-rendered "Ground Truth" markdown spliced
                 into the worker's system prompt. Empty string when no
                 symbols were extracted from user_vars.
-            cancel_event: Optional cancellation signal from cancel_run().
-                Forwarded to run_worker() so a signalled cancellation reaches
-                an already-dispatched worker. A "cancelled" result is never
-                retried (see the status check below).
+            cancel_event: Cooperative stop signal for the run or this layer.
+                Forwarded to run_worker() and checked before another attempt.
 
         Returns:
             WorkerResult from the last attempt.
@@ -1222,27 +1252,42 @@ class SwarmRuntime:
         cumulative_token_source: str | None = None
         result: WorkerResult | None = None
 
-        # agent_artifact_dir is keyed by (agent_id, task_id), so this task's
-        # first attempt always starts from a directory no other task has
-        # ever written to. Nothing to clear before it; only a retry of this
-        # same task needs clearing, below.
+        def stop_requested() -> bool:
+            return cancel_event is not None and cancel_event.is_set()
+
+        def cancelled_result() -> WorkerResult:
+            if result is None:
+                return WorkerResult(status="cancelled", summary="")
+            return result.model_copy(update={
+                "status": WorkerStatus.cancelled,
+                "input_tokens": cumulative_input_tokens,
+                "output_tokens": cumulative_output_tokens,
+                "cache_read_tokens": cumulative_cache_read_tokens,
+                "cache_creation_tokens": cumulative_cache_creation_tokens,
+                "token_source": cumulative_token_source,
+            })
+
+        # Each task owns its artifact directory, so only retries need to clear it.
         for attempt in range(max_retries + 1):
+            if stop_requested():
+                return cancelled_result()
             if attempt > 0:
                 retry_delay_s = _worker_retry_delay_s(attempt)
-                self._emit_event(
-                    run_id,
-                    self._make_event(
-                        "task_retry",
-                        agent_id=agent_spec.id,
-                        task_id=task.id,
-                        data={
-                            "attempt": attempt + 1,
-                            "max_retries": max_retries,
-                            "previous_error": result.error if result else None,
-                            "retry_delay_s": retry_delay_s,
-                        },
-                    ),
+                retry_event = self._make_event(
+                    "task_retry",
+                    agent_id=agent_spec.id,
+                    task_id=task.id,
+                    data={
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "previous_error": result.error if result else None,
+                        "retry_delay_s": retry_delay_s,
+                    },
                 )
+                if event_callback is None:
+                    self._emit_event(run_id, retry_event)
+                else:
+                    event_callback(retry_event)
                 logger.info(
                     "Retrying task %s in %.2fs (attempt %d/%d)",
                     task.id,
@@ -1250,27 +1295,20 @@ class SwarmRuntime:
                     attempt + 1,
                     max_retries + 1,
                 )
-                if _wait_for_worker_retry(retry_delay_s, cancel_event):
-                    return result.model_copy(
-                        update={
-                            "status": WorkerStatus.cancelled,
-                            "summary": result.summary,
-                            "error": result.error,
-                            "input_tokens": cumulative_input_tokens,
-                            "output_tokens": cumulative_output_tokens,
-                            "cache_read_tokens": cumulative_cache_read_tokens,
-                            "cache_creation_tokens": cumulative_cache_creation_tokens,
-                            "token_source": cumulative_token_source,
-                        }
-                    )
-                # Checkpointed retries continue the saved conversation and
-                # files. Legacy attempts without context still restart cleanly.
-                if not (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
-                    clear_agent_artifacts(agent_artifact_dir(run_dir, agent_spec.id, task.id))
+                if _wait_for_worker_retry(retry_delay_s, cancel_event) or stop_requested():
+                    return cancelled_result()
+                # Checkpointed retries continue the saved conversation and files.
+                artifact_dir = agent_artifact_dir(run_dir, agent_spec.id, task.id)
+                if not (artifact_dir / checkpoint.FILENAME).is_file():
+                    if stop_requested():
+                        return cancelled_result()
+                    clear_agent_artifacts(artifact_dir)
 
             resume_kwargs = {}
             if (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
                 resume_kwargs["resume"] = True
+            if stop_requested():
+                return cancelled_result()
             result = run_worker(
                 agent_spec=agent_spec,
                 task=task,

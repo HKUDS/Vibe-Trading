@@ -16,6 +16,7 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pydantic import ValidationError
 
@@ -257,13 +258,25 @@ class SwarmStore:
         Raises:
             FileNotFoundError: If the run directory does not exist.
         """
+        self.append_event_if(run_id, event)
+
+    def append_event_if(
+        self,
+        run_id: str,
+        event: SwarmEvent,
+        accept: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Check admission under the journal lock so an expired writer cannot trail the terminal event."""
         rd = self.run_dir(run_id)
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         events_file = rd / "events.jsonl"
         with self._write_lock:
+            if accept is not None and not accept():
+                return False
             with events_file.open("a", encoding="utf-8") as f:
                 f.write(event.model_dump_json() + "\n")
+        return True
 
     def read_events(self, run_id: str, after_index: int = 0) -> list[SwarmEvent]:
         """Read the event log with optional offset for SSE incremental streaming.
