@@ -272,6 +272,9 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
     if item_type == "user" and result.get("input_id") is None:
         # Preserve the legacy user-item shape. Queued inputs carry a real id.
         result.pop("input_id", None)
+    if item_type == "tool_result" and result.get("images") is None:
+        # Preserve the legacy tool-result shape when no image artifacts exist.
+        result.pop("images", None)
     if item_type == "assistant":
         # Older thread records did not identify the provider/model. Keep their
         # on-disk shape stable while new responses record both fields.
@@ -818,12 +821,10 @@ def replay(
     # exact message that was sent after the in-memory mutation, while layer 3
     # starts a new replay view at its summary boundary.
     message_by_seq: Dict[int, Dict[str, Any]] = {}
-    source_by_seq: Dict[int, ThreadItem] = {}
     for item in items:
         message = _item_message(item, target_provider=provider, target_model=model)
         if message is not None:
             message_by_seq[item.seq] = message
-            source_by_seq[item.seq] = item
     for event in items:
         if event.type != "compaction":
             continue
@@ -874,11 +875,6 @@ def replay(
         effective = message_by_seq.get(item.seq)
         if effective is not None:
             if effective.get("role") == "assistant":
-                source = source_by_seq.get(item.seq)
-                if source is not None:
-                    effective = _assistant_message(
-                        source, target_provider=provider, target_model=model
-                    )
                 replayer.assistant_message(copy.deepcopy(effective))
             elif effective.get("role") == "tool":
                 replayer.tool_result_message(copy.deepcopy(effective))
