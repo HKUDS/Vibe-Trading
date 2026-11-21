@@ -77,6 +77,43 @@ class ToolRegistry:
         """Register a tool."""
         self._tools[tool.name] = tool
 
+    def register_host_tool(self, tool: BaseTool) -> None:
+        """Register one explicitly supplied, non-trading host tool.
+
+        Host tools are never part of discovery.  The strict collision check is
+        intentionally separate from :meth:`register`, which keeps the
+        registry's existing local/MCP assembly semantics.
+        """
+        if not isinstance(tool, BaseTool):
+            raise TypeError("host tools must be BaseTool instances")
+        name = str(getattr(tool, "name", "")).strip()
+        if not name:
+            raise ValueError("host tools require a non-empty name")
+        if name in self._tools:
+            raise ValueError(f"host tool name collides with registered tool: {name}")
+        if bool(getattr(tool, "is_trading_tool", False)):
+            raise ValueError("host tools cannot be marked as trading tools")
+        if not bool(getattr(tool, "is_readonly", False)):
+            raise ValueError("host tools must be read-only")
+        if name.startswith(("trading_", "broker_", "mcp_live_")):
+            raise ValueError("host tools cannot use a reserved trading tool name")
+        if any(token in name.casefold() for token in ("place_order", "cancel_order")):
+            raise ValueError("host tools cannot use an order-entry name")
+        self._tools[name] = tool
+
+    def check_policy(self, name: str, params: Dict[str, Any]) -> tuple[bool, str, Dict[str, Any]]:
+        """Apply the registry's provider tool policy without executing a tool."""
+        from src.providers.tool_policy import _deny_prefixes, screen_calls
+
+        if name.startswith(_deny_prefixes()):
+            return False, f"{name} is disabled by the active tool policy", params
+        if name in {"bash", "background_run", "cancel_background"}:
+            accepted, notes = screen_calls([{"name": name, "arguments": params}], {name})
+            if notes:
+                return False, notes[0], params
+            return True, "", accepted[0]["arguments"]
+        return True, "", params
+
     def get(self, name: str) -> Optional[BaseTool]:
         """Retrieve a tool by name."""
         return self._tools.get(name)
@@ -143,16 +180,9 @@ class ToolRegistry:
             # The registry is shared by agent, Swarm and MCP execution. Keep
             # explicit policy enforcement here so a direct/unoffered call
             # cannot bypass it. Claude CLI retains its adapter defaults.
-            from src.providers.tool_policy import _deny_prefixes, screen_calls
-
-            if name.startswith(_deny_prefixes()):
-                return json.dumps({"status": "error", "skipped": True,
-                                   "error": f"{name} is disabled by the active tool policy"})
-            if name in {"bash", "background_run", "cancel_background"}:
-                accepted, notes = screen_calls([{"name": name, "arguments": params}], {name})
-                if notes:
-                    return json.dumps({"status": "error", "skipped": True, "error": notes[0]})
-                params = accepted[0]["arguments"]
+            allowed, reason, params = self.check_policy(name, params)
+            if not allowed:
+                return json.dumps({"status": "error", "skipped": True, "error": reason})
             return tool.execute(**params)
         except Exception as exc:
             logger.exception("Tool %s failed", name)

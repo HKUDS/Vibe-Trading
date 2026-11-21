@@ -7,14 +7,29 @@ import os
 import re
 import signal
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from src.agent.tools import BaseTool
 from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
+from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
 
 _OUTPUT_LIMIT = 50_000
 _DEFAULT_TIMEOUT = 120
+
+
+def _sandbox_workspace(cwd: Any, sandbox: SandboxSettings) -> Path:
+    """Choose a runtime-owned writable workspace for sandboxed commands."""
+    root = Path(sandbox.runtime_root or Path.home() / ".vibe-trading").expanduser().resolve()
+    default = root / "workspace"
+    if not cwd:
+        return default
+    candidate = Path(str(cwd)).expanduser().resolve()
+    allowed = (root / "workspace", root / "runs")
+    if any(candidate == path or candidate.is_relative_to(path) for path in allowed):
+        return candidate
+    return default
 # How long to wait for output to drain after killing a timed-out process
 # tree before giving up (the pipes are held by grandchildren).
 _DRAIN_TIMEOUT = 5
@@ -80,6 +95,10 @@ class BashTool(BaseTool):
     repeatable = True
     is_readonly = False
 
+    def __init__(self, sandbox: SandboxSettings | None = None) -> None:
+        """Create a shell tool with optional per-registry sandbox settings."""
+        self.sandbox = sandbox
+
     def execute(self, **kwargs: Any) -> str:
         """Execute a shell command.
 
@@ -118,6 +137,23 @@ class BashTool(BaseTool):
                 ensure_ascii=False,
             )
 
+        sandbox = self.sandbox or SandboxSettings.from_env()
+        profile: Path | None = None
+        argv: str | list[str] = command
+        shell = True
+        if sandbox.enabled:
+            workspace = _sandbox_workspace(cwd, sandbox)
+            workspace.mkdir(parents=True, exist_ok=True)
+            try:
+                argv, profile = sandbox_command(command, workspace, sandbox)
+            except SandboxUnavailableError as exc:
+                return json.dumps(
+                    {"status": "error", "error_code": "sandbox_unavailable", "error": str(exc)},
+                    ensure_ascii=False,
+                )
+            cwd = str(workspace)
+            shell = False
+
         # Spawn with a dedicated process group so a timeout can kill the
         # WHOLE tree, not just cmd.exe. Without this, grandchildren that
         # inherited the pipe handles keep communicate() blocked forever.
@@ -129,8 +165,8 @@ class BashTool(BaseTool):
             start_new_session = True
         try:
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                argv,
+                shell=shell,
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -141,6 +177,11 @@ class BashTool(BaseTool):
                 start_new_session=start_new_session,
             )
         except Exception as exc:
+            if profile is not None:
+                try:
+                    profile.unlink()
+                except OSError:
+                    pass
             return json.dumps({
                 "status": "error",
                 "error": f"Could not start command: {exc}",
@@ -158,19 +199,31 @@ class BashTool(BaseTool):
                 stdout, stderr = "", ""
             stdout = (stdout or "")[:_OUTPUT_LIMIT]
             stderr = (stderr or "")[:_OUTPUT_LIMIT]
-            return json.dumps({
+            result = json.dumps({
                 "status": "error",
                 "error_code": "tool_timeout",
                 "error": f"Command timed out after {_DEFAULT_TIMEOUT}s",
                 "stdout": stdout,
                 "stderr": stderr,
             }, ensure_ascii=False)
+            if profile is not None:
+                try:
+                    profile.unlink()
+                except OSError:
+                    pass
+            return result
 
         stdout = stdout[:_OUTPUT_LIMIT] if len(stdout) > _OUTPUT_LIMIT else stdout
         stderr = stderr[:_OUTPUT_LIMIT] if len(stderr) > _OUTPUT_LIMIT else stderr
-        return json.dumps({
+        result = json.dumps({
             "status": "ok" if proc.returncode == 0 else "error",
             "exit_code": proc.returncode,
             "stdout": stdout,
             "stderr": stderr,
         }, ensure_ascii=False)
+        if profile is not None:
+            try:
+                profile.unlink()
+            except OSError:
+                pass
+        return result

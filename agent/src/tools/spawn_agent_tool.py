@@ -268,6 +268,8 @@ def child_registry(parent: ToolRegistry, workspace: Path) -> ToolRegistry:
     """
     root = Path(workspace).resolve()
     child = ToolRegistry()
+    child.hooks = getattr(parent, "hooks", None)
+    child.sandbox = getattr(parent, "sandbox", None)
     for name in parent.tool_names:
         tool = parent.get(name)
         if tool is None or child_exclusion(tool) is not None:

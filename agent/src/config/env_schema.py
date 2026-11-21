@@ -398,6 +398,21 @@ class APIConfig(_EnvBase):
     vibe_trading_enable_shell_tools: EnvBool = Field(
         alias="VIBE_TRADING_ENABLE_SHELL_TOOLS", default=False,
     )
+    vibe_trading_sandbox_enabled: EnvBool = Field(
+        alias="VIBE_TRADING_SANDBOX_ENABLED", default=False,
+    )
+    vibe_trading_sandbox_network: EnvBool = Field(
+        alias="VIBE_TRADING_SANDBOX_NETWORK", default=False,
+    )
+    vibe_trading_sandbox_backend: str = Field(
+        alias="VIBE_TRADING_SANDBOX_BACKEND", default="",
+    )
+    vibe_trading_hook_timeout_seconds: float = Field(
+        alias="VIBE_TRADING_HOOK_TIMEOUT_SECONDS", default=10.0, gt=0,
+    )
+    vibe_trading_hooks_file: str = Field(
+        alias="VIBE_TRADING_HOOKS_FILE", default="",
+    )
     vibe_trading_allowed_file_roots: str = Field(
         alias="VIBE_TRADING_ALLOWED_FILE_ROOTS", default="",
     )

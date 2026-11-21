@@ -311,6 +311,11 @@ class Client:
         """Settings the client was created with."""
         return self._settings
 
+    def register_tool(self, tool: Any) -> str:
+        """Register one explicit, non-trading tool for this client."""
+        self._check_open()
+        return self._service.register_tool(tool)
+
     def _release(self) -> None:
         release_sessions_dir(self._claim, self._owner)
 

@@ -822,6 +822,37 @@ class ToolCallLifecycle:
             Tuple of (result_str, elapsed_ms).
         """
         readonly = self._is_tool_readonly(tool_name)
+        # Apply the provider tool policy before invoking a hook.  A hook can
+        # add a refusal, while a hook result can never skip the policy gate.
+        policy_check = getattr(self.registry, "check_policy", None)
+        effective_args = args
+        if callable(policy_check):
+            allowed, policy_reason, effective_args = policy_check(tool_name, args)
+            if not allowed:
+                return json.dumps(
+                    {"status": "error", "skipped": True, "error": policy_reason},
+                    ensure_ascii=False,
+                ), 0
+        hooks = getattr(self, "_hooks", None) or getattr(self.registry, "hooks", None)
+        hook_payload = {
+            "tool_name": tool_name,
+            "call_id": call_id,
+            "arguments": redact_payload(effective_args),
+            "session_id": getattr(self, "_session_id", ""),
+        }
+        if hooks is not None:
+            decision = hooks.run("PreToolUse", hook_payload)
+            if decision.denied:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "skipped": True,
+                        "error_code": "hook_denied",
+                        "tool": tool_name,
+                        "message": decision.reason or "PreToolUse hook denied the call",
+                    },
+                    ensure_ascii=False,
+                ), decision.elapsed_ms
         timed_out = threading.Event()
 
         def _on_progress(event: ProgressEvent) -> None:
@@ -897,7 +928,7 @@ class ToolCallLifecycle:
         def _worker() -> None:
             _set_emitter(_on_progress)
             try:
-                result_queue.put((self.registry.execute(tool_name, args), None))
+                result_queue.put((self.registry.execute(tool_name, effective_args), None))
             except BaseException as exc:  # noqa: BLE001 - propagate through caller thread
                 result_queue.put((None, exc))
             finally:
@@ -923,20 +954,20 @@ class ToolCallLifecycle:
                 readonly=readonly,
                 orphaned_worker=worker.is_alive(),
             )
-            return (
-                json.dumps(
-                    {
-                        "status": "error",
-                        "error_code": error_code,
-                        "tool": tool_name,
-                        **({"timeout_seconds": timeout} if error_code == "tool_timeout" else {}),
-                        "message": message,
-                        "orphaned_worker": worker.is_alive(),
-                    },
-                    ensure_ascii=False,
-                ),
-                elapsed_ms,
+            result = json.dumps(
+                {
+                    "status": "error",
+                    "error_code": error_code,
+                    "tool": tool_name,
+                    **({"timeout_seconds": timeout} if error_code == "tool_timeout" else {}),
+                    "message": message,
+                    "orphaned_worker": worker.is_alive(),
+                },
+                ensure_ascii=False,
             )
+            if hooks is not None:
+                hooks.run("PostToolUse", {**hook_payload, "result": redact_tool_result(result), "status": "error"})
+            return result, elapsed_ms
 
         with _heartbeat_timer():
             deadline = None if timeout is None else _time.monotonic() + timeout
@@ -962,8 +993,17 @@ class ToolCallLifecycle:
                 except queue.Empty:
                     continue
         if exc is not None:
+            if hooks is not None:
+                hooks.run(
+                    "PostToolUse",
+                    {**hook_payload, "result": json.dumps({"status": "error", "error": str(exc)}), "status": "error"},
+                )
             raise exc
-        return result or "", _elapsed_ms()
+        result = result or ""
+        elapsed_ms = _elapsed_ms()
+        if hooks is not None:
+            hooks.run("PostToolUse", {**hook_payload, "result": redact_tool_result(result), "status": "ok"})
+        return result, elapsed_ms
 
     def _is_tool_readonly(self, tool_name: str) -> bool:
         """Return whether a tool is known to be side-effect free."""

@@ -105,6 +105,7 @@ from src.agent.tool_lifecycle import (
     MAX_READONLY_REPLAY_RECOVERIES as MAX_READONLY_REPLAY_RECOVERIES,
     _format_timeout as _format_timeout,
 )
+from src.agent.hooks import HookDecision
 
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
@@ -254,6 +255,9 @@ class AgentLoop(ToolCallLifecycle):
         self._thread = thread_recorder
         self._queued_inputs = queued_inputs
         self.registry = prepare_registry(registry)
+        self._hooks = getattr(self.registry, "hooks", None)
+        if self._hooks is not None and thread_recorder is not None:
+            self._hooks.set_audit_sink(thread_recorder)
         self.llm = llm
         runtime_snapshot = getattr(llm, "runtime_snapshot", None)
         if not isinstance(runtime_snapshot, LLMRuntimeSnapshot):
@@ -350,6 +354,7 @@ class AgentLoop(ToolCallLifecycle):
         next cooperative checkpoint instead of only at the next iteration.
         """
         self._cancel_event.set()
+        self._run_hook("Stop", {"session_id": getattr(self, "_session_id", "")})
         # Stop must reach commands the current or an earlier turn spawned, not
         # only the ReAct cycle. Normal successful turns do not call cancel().
         if self._background_manager is not None:
@@ -433,6 +438,19 @@ class AgentLoop(ToolCallLifecycle):
             result = self._run_bound(user_message, history, session_id)
             return result
         finally:
+            hooks = getattr(self, "_hooks", None)
+            if hooks is not None:
+                thread = getattr(self, "_thread", None)
+                if thread is not None:
+                    hooks.set_audit_sink(
+                        lambda decision: thread._runtime.thread.append(
+                            "hook_decision", thread.turn_id, **decision
+                        )
+                    )
+                self._run_hook(
+                    "SessionEnd",
+                    {"session_id": getattr(self, "_session_id", "")},
+                )
             reset_llm_session_id(token)
             if result is None or result.get("status") not in {"success", "waiting_user"}:
                 self._background_manager.cancel_all()
@@ -451,6 +469,7 @@ class AgentLoop(ToolCallLifecycle):
         # Preserve cancellation accepted while the first run is queued.  A
         # completed loop may still be reused deliberately, so clear terminal
         # state only after the first run has begun.
+        self._session_id = session_id
         if self._has_run:
             self._cancel_event.clear()
         else:
@@ -554,6 +573,10 @@ class AgentLoop(ToolCallLifecycle):
                 provider=self._llm_runtime.provider or None,
             )
             self._sync_thread_state()
+        self._run_hook(
+            "SessionStart",
+            {"session_id": session_id, "attempt_id": getattr(self._thread, "turn_id", "")},
+        )
         react_trace: List[Dict[str, Any]] = []
 
         trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
@@ -577,6 +600,21 @@ class AgentLoop(ToolCallLifecycle):
             value=user_message,
             offload_kind=f"user-message-{self._run_iteration + 1}",
         )
+        prompt_hook = self._run_hook(
+            "UserPromptSubmit",
+            {"session_id": session_id, "prompt": user_message, "attempt_id": getattr(self._thread, "turn_id", "")},
+        )
+        if prompt_hook is not None and prompt_hook.denied:
+            reason = prompt_hook.reason or "UserPromptSubmit hook denied the prompt"
+            trace.write({"type": "end", "iter": self._run_iteration, "status": "failed", "reason": reason})
+            trace.close()
+            state_store.mark_failure(run_dir, reason)
+            self._end_thread_turn()
+            return {
+                "status": "failed", "error_code": "hook_denied", "reason": reason,
+                "run_dir": str(run_dir), "run_id": run_dir.name, "content": "",
+                "react_trace": [], "iterations": 0, "max_iterations": self.max_iterations,
+            }
 
         iteration = 0
         final_content = ""
@@ -705,7 +743,12 @@ class AgentLoop(ToolCallLifecycle):
                     _tok_threshold = _token_threshold()
                     if tokens > _tok_threshold:
                         logger.info(f"Auto compact triggered: {tokens} tokens > {_tok_threshold}")
-                        self._auto_compact(messages, run_dir, trace, iteration=current_iter)
+                        compact_hook = self._run_hook(
+                            "PreCompact",
+                            {"session_id": session_id, "iteration": current_iter, "prompt_tokens": tokens},
+                        )
+                        if compact_hook is None or not compact_hook.denied:
+                            self._auto_compact(messages, run_dir, trace, iteration=current_iter)
                 else:
                     self._compact_to_budget(messages, run_dir, trace, iteration, current_iter)
 
@@ -1502,6 +1545,14 @@ class AgentLoop(ToolCallLifecycle):
         """
         budget = self._context_budget(messages)
         tokens = self._prompt_tokens(messages)
+        if tokens > budget.micro_at or force:
+            decision = self._run_hook(
+                "PreCompact",
+                {"session_id": getattr(self, "_session_id", ""), "iteration": current_iter, "prompt_tokens": tokens},
+            )
+            if decision is not None and decision.denied:
+                logger.info("PreCompact hook refused compaction: %s", decision.reason)
+                return
         if tokens > budget.micro_at:
             # Oldest results first and only until the prompt fits again:
             # clearing all but the last few is what sent a 12-company
@@ -1910,6 +1961,17 @@ class AgentLoop(ToolCallLifecycle):
                 self._event_callback(event_type, data)
             except Exception:
                 pass
+
+    def _run_hook(self, event: str, payload: Mapping[str, Any]) -> HookDecision | None:
+        """Run one configured lifecycle hook without weakening core guards."""
+        hooks = getattr(self, "_hooks", None)
+        if hooks is None:
+            return None
+        try:
+            return hooks.run(event, payload)
+        except Exception as exc:  # pragma: no cover - defensive hook boundary
+            logger.warning("Hook %s failed: %s", event, exc)
+            return HookDecision(event=event, decision="deny" if event == "PreToolUse" else "error", reason=str(exc))
 
 
 _LEGACY_LAZY = {
