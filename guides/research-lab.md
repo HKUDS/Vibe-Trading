@@ -7,7 +7,8 @@ or invoke `./.venv/bin/vibe-trading` directly. An old console script in another
 Python environment uses that environment’s dependencies.
 
 Costs and parameter studies reuse a completed backtest's exported inputs and
-strategy. No model, live broker or price-provider call is part of a study.
+strategy. Saved fundamental and event columns are replayed without refreshing
+them. No model, live broker or price-provider call is part of a study.
 
 ## Reusable inputs and execution costs
 
