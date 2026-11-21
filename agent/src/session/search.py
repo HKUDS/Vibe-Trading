@@ -456,6 +456,16 @@ class SessionSearchIndex:
                                 count += 1
                         except json.JSONDecodeError:
                             continue
+                else:
+                    from src.session.thread import ThreadLog
+
+                    for item in ThreadLog(session_dir / "thread.jsonl").read():
+                        if item.type == "user" and item.get("content"):
+                            self.index_message(sid, "user", str(item.get("content")))
+                            count += 1
+                        elif item.type == "assistant" and item.get("content"):
+                            self.index_message(sid, "assistant", str(item.get("content")))
+                            count += 1
             # One corrupt session must not abort the remaining reindex.
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to index session %s: %s", session_dir.name, exc)

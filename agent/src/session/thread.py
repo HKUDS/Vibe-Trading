@@ -147,6 +147,7 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
     "user": {
         "content": _Field(_is_message_content, required=True),
         "llm_content": _Field(_is_message_content, required=True),
+        "input_id": _Field(_optional(_is_str)),
     },
     "assistant": {
         "content": _Field(_optional(_is_message_content)),
@@ -168,9 +169,16 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "content": _Field(_is_message_content, required=True),
         "role": _Field(lambda v: v in {"user", "system"}, default="user"),
     },
+    "checkpoint": {
+        "content": _Field(_is_str, required=True),
+    },
     "compaction": {
-        "summary": _Field(_is_str, required=True),
-        "replaces_through_seq": _Field(_is_int, required=True),
+        "summary": _Field(_is_str, default=""),
+        "replaces_through_seq": _Field(_is_int, default=0),
+        "layer": _Field(lambda v: _is_int(v) and v in {1, 2, 3}, default=3),
+        # Layer 1 and 2 preserve raw items and record the exact message
+        # replacements that the model saw after an in-memory compaction.
+        "changes": _Field(_is_list, default=[]),
     },
     "state": None,
     "turn_end": {
@@ -225,6 +233,16 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
         if not spec.check(value):
             raise ThreadItemError(f"{item_type} item has an invalid {name!r}")
         result[name] = copy.deepcopy(value)
+    if item_type == "compaction":
+        # Keep the legacy on-disk shape byte-for-byte for summary-only
+        # records. New layer events carry these fields explicitly.
+        if "layer" not in payload:
+            result.pop("layer", None)
+        if "changes" not in payload:
+            result.pop("changes", None)
+    if item_type == "user" and result.get("input_id") is None:
+        # Preserve the legacy user-item shape. Queued inputs carry a real id.
+        result.pop("input_id", None)
     return result
 
 
@@ -559,7 +577,7 @@ def last_compaction(items: Iterable[ThreadItem]) -> Optional[ThreadItem]:
     """
     found = None
     for item in items:
-        if item.type == "compaction":
+        if item.type == "compaction" and item.get("layer", 3) == 3:
             found = item
     return found
 
@@ -628,24 +646,31 @@ class _Replayer:
     def assistant(self, item: ThreadItem) -> None:
         self.close_block()
         message = _assistant_message(item)
+        self.assistant_message(message)
+
+    def assistant_message(self, message: Dict[str, Any]) -> None:
+        """Append an already reconstructed assistant message."""
+        self.close_block()
         self.messages.append(message)
         for call in message.get("tool_calls", []):
             self._pending[call["id"]] = call["function"]["name"]
 
     def tool_result(self, item: ThreadItem) -> None:
-        call_id = item.get("tool_call_id")
+        self.tool_result_message({
+            "role": "tool",
+            "tool_call_id": item.get("tool_call_id"),
+            "name": item.get("name"),
+            "content": item.get("content"),
+        })
+
+    def tool_result_message(self, message: Dict[str, Any]) -> None:
+        """Append an already reconstructed tool result."""
+        call_id = message.get("tool_call_id")
         if call_id not in self._pending or call_id in self._answered:
             logger.debug("Replay dropped a tool result without an open call: %s", call_id)
             return
         self._answered.add(call_id)
-        self.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "name": item.get("name"),
-                "content": item.get("content"),
-            }
-        )
+        self.messages.append(copy.deepcopy(message))
 
     def other(self, message: Dict[str, Any]) -> None:
         if self._pending:
@@ -668,6 +693,24 @@ class _Replayer:
         self._answered = set()
         self.messages.extend(self._held)
         self._held = []
+
+
+def _item_message(item: ThreadItem) -> Optional[Dict[str, Any]]:
+    """Build the provider message represented by one thread item."""
+    if item.type == "user":
+        return {"role": "user", "content": copy.deepcopy(item.get("llm_content"))}
+    if item.type == "assistant":
+        return _assistant_message(item)
+    if item.type == "tool_result":
+        return {
+            "role": "tool",
+            "tool_call_id": item.get("tool_call_id"),
+            "name": item.get("name"),
+            "content": item.get("content"),
+        }
+    if item.type == "inject":
+        return {"role": item.get("role"), "content": copy.deepcopy(item.get("content"))}
+    return None
 
 
 def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
@@ -696,9 +739,31 @@ def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
     items = list(items)
     compaction = last_compaction(items)
     replayer = _Replayer()
-    start_after = 0
+    start_after = compaction.get("replaces_through_seq") if compaction is not None else 0
+
+    # Apply the recorded view changes in write order. Raw user, assistant and
+    # tool items remain untouched in the log. Layer 1 and 2 events replace the
+    # exact message that was sent after the in-memory mutation, while layer 3
+    # starts a new replay view at its summary boundary.
+    message_by_seq: Dict[int, Dict[str, Any]] = {}
+    for item in items:
+        message = _item_message(item)
+        if message is not None:
+            message_by_seq[item.seq] = message
+    for event in items:
+        if event.type != "compaction":
+            continue
+        layer = event.get("layer", 3)
+        if layer in {1, 2}:
+            for change in event.get("changes") or []:
+                if not isinstance(change, dict):
+                    continue
+                seq = change.get("seq")
+                message = change.get("message")
+                if _is_int(seq) and isinstance(message, dict) and seq in message_by_seq:
+                    message_by_seq[seq] = copy.deepcopy(message)
+
     if compaction is not None:
-        start_after = compaction.get("replaces_through_seq")
         replayer.messages.append({"role": "user", "content": compaction.get("summary")})
 
     open_turn: Optional[str] = None
@@ -731,6 +796,15 @@ def replay(items: Iterable[ThreadItem]) -> List[Dict[str, Any]]:
                 open_turn = None
             continue
         if item.seq <= start_after or item.type in {"compaction", "state"}:
+            continue
+        effective = message_by_seq.get(item.seq)
+        if effective is not None:
+            if effective.get("role") == "assistant":
+                replayer.assistant_message(copy.deepcopy(effective))
+            elif effective.get("role") == "tool":
+                replayer.tool_result_message(copy.deepcopy(effective))
+            elif effective.get("role") in {"user", "system"}:
+                replayer.other(copy.deepcopy(effective))
             continue
         if item.type == "user":
             replayer.other({"role": "user", "content": copy.deepcopy(item.get("llm_content"))})

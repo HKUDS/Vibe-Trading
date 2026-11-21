@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from src.session.models import Attempt
 from src.session.store import SessionStore
+
+if TYPE_CHECKING:
+    from src.session.runtime import SessionRuntime
 
 
 class ResponseCheckpoint:
@@ -24,6 +27,7 @@ class ResponseCheckpoint:
         attempt: Attempt,
         *,
         min_interval_seconds: float = 0.25,
+        runtime: Optional["SessionRuntime"] = None,
     ) -> None:
         """Create a response checkpoint.
 
@@ -33,6 +37,7 @@ class ResponseCheckpoint:
             min_interval_seconds: Minimum time between snapshot writes.
         """
         self._store = store
+        self._runtime = runtime
         self._session_id = attempt.session_id
         self._attempt_id = attempt.attempt_id
         self._min_interval_seconds = max(0.0, min_interval_seconds)
@@ -87,10 +92,14 @@ class ResponseCheckpoint:
     def _flush_locked(self, now: float | None = None) -> None:
         if not self._dirty:
             return
-        self._store.save_partial_response(
-            self._session_id,
-            self._attempt_id,
-            self._text,
-        )
+        if self._runtime is not None:
+            self._runtime.record_checkpoint(self._attempt_id, self._text)
+        else:
+            # Legacy sessions without a thread keep the old recovery file.
+            self._store.save_partial_response(
+                self._session_id,
+                self._attempt_id,
+                self._text,
+            )
         self._dirty = False
         self._last_flush = time.monotonic() if now is None else now

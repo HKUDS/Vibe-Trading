@@ -177,9 +177,12 @@ class SessionService:
         for attempt in self.store.list_attempts():
             if attempt.status not in recoverable:
                 continue
-            partial = self.store.get_partial_response(
-                attempt.session_id, attempt.attempt_id
-            )
+            runtime = self.runtime(attempt.session_id)
+            partial = runtime.partial_response(attempt.attempt_id)
+            if partial is None:
+                partial = self.store.get_partial_response(
+                    attempt.session_id, attempt.attempt_id
+                )
             has_partial = bool(partial)
             existing_reply = self.store.get_message_for_attempt(
                 attempt.session_id, attempt.attempt_id
@@ -188,6 +191,8 @@ class SessionService:
                 projection = self._close_recovered_turn(
                     attempt, AttemptStatus.INTERRUPTED.value
                 )
+                if not self._has_projected_user(attempt.session_id, attempt):
+                    self._append_projected_user(attempt)
                 reply = Message(
                     session_id=attempt.session_id,
                     role="assistant",
@@ -259,14 +264,8 @@ class SessionService:
                 continue
             if not delivered:
                 continue
-            recorded = {
-                message.metadata.get("queued_input_id")
-                for message in self.store.get_messages(session_id, limit=None)
-                if message.role == "user"
-            }
-            for pending in delivered:
-                if pending.input_id not in recorded:
-                    self._append_user_row(session_id, pending, pending.claimed_by)
+            # Delivered inputs are persisted by the terminal turn projection.
+            # The thread item already records them while the turn is live.
 
     def _close_recovered_turn(
         self, attempt: Attempt, status: str
@@ -308,6 +307,53 @@ class SessionService:
                 runtime = SessionRuntime(self.store.thread_log(session_id), session_id)
                 self._runtimes[session_id] = runtime
             return runtime
+
+    def _has_projected_user(self, session_id: str, attempt: Attempt) -> bool:
+        if not self.store._messages_file(session_id).exists():
+            return False
+        return any(
+            message.role == "user" and message.content == attempt.prompt
+            for message in self.store.get_messages(session_id, limit=None)
+        )
+
+    def _append_projected_user(self, attempt: Attempt) -> None:
+        items = self.store.thread_log(attempt.session_id).turn_items(attempt.attempt_id)
+        user_items = [item for item in items if item.type == "user"]
+        message_path = self.store._messages_file(attempt.session_id)
+        existing = self.store.get_messages(attempt.session_id, limit=None) if message_path.exists() else []
+        for item in user_items:
+            metadata = {}
+            input_id = item.get("input_id")
+            if isinstance(input_id, str) and input_id:
+                metadata["queued_input_id"] = input_id
+            content = item.get("content") or ""
+            if any(
+                message.role == "user"
+                and message.content == content
+                and message.metadata == metadata
+                for message in existing
+            ):
+                continue
+            self.store.append_message(Message(
+                session_id=attempt.session_id,
+                role="user",
+                content=content,
+                metadata=metadata,
+            ))
+            self._search_index.index_message(attempt.session_id, "user", content)
+            existing.append(Message(
+                session_id=attempt.session_id,
+                role="user",
+                content=content,
+                metadata=metadata,
+            ))
+        if not user_items and not self._has_projected_user(attempt.session_id, attempt):
+            self.store.append_message(Message(
+                session_id=attempt.session_id,
+                role="user",
+                content=attempt.prompt,
+            ))
+            self._search_index.index_message(attempt.session_id, "user", attempt.prompt)
 
     @staticmethod
     def _format_interrupted_message(partial: Optional[str]) -> str:
@@ -587,8 +633,6 @@ class SessionService:
             content=content,
             metadata={"queued_input_id": queued.input_id} if queued is not None else {},
         )
-        self.store.append_message(message)
-        self._search_index.index_message(session_id, "user", content)
         self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": "user", "content": content})
 
         if attempt is None:
@@ -732,8 +776,6 @@ class SessionService:
             content=pending.content,
             metadata={"queued_input_id": pending.input_id, "delivered_to_attempt_id": turn_id},
         )
-        self.store.append_message(message)
-        self._search_index.index_message(session_id, "user", pending.content)
         return message
 
     def _input_joined_turn(self, session_id: str, turn_id: str, pending: PendingInput, item: Any) -> None:
@@ -745,13 +787,12 @@ class SessionService:
             pending: The input.
             item: Its recorded ``user`` thread item.
         """
-        message = self._append_user_row(session_id, pending, turn_id)
         # Publishes the recorded user item (completing the queued live item)
         # before the legacy event.
         self.thread_events.emit(
             session_id, "input.delivered",
             {"attempt_id": turn_id, "input_id": pending.input_id,
-             "message_id": message.message_id, "seq": item.seq},
+             "seq": item.seq},
         )
 
     def list_pending_inputs(self, session_id: str) -> list[Dict[str, Any]]:
@@ -913,6 +954,8 @@ class SessionService:
                 # one thing a failure report needs.
                 tool_trail=projection.tool_trail,
             )
+            if not self._has_projected_user(session.session_id, attempt):
+                self._append_projected_user(attempt)
             reports = [entry["artifact"] for entry in reply.tool_trail
                        if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
             if reports:
@@ -1052,6 +1095,7 @@ class SessionService:
         from src.tools.background_tools import BackgroundScope, get_background_manager
         from src.session.model_selection import chat_llm_for_session
         from src.agent.loop import AgentLoop
+        from src.agent.memory import WorkspaceMemory
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
@@ -1062,7 +1106,8 @@ class SessionService:
             session_id = attempt.session_id
             attempt_id = attempt.attempt_id
             loop = asyncio.get_running_loop()
-            checkpoint = ResponseCheckpoint(self.store, attempt)
+            runtime = self.runtime(session_id)
+            checkpoint = ResponseCheckpoint(self.store, attempt, runtime=runtime)
 
             safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
             agent_config = load_runtime_agent_config(overrides=safe_overrides)
@@ -1120,7 +1165,7 @@ class SessionService:
 
             from src.config.accessor import get_env_config
 
-            recorder = self.runtime(session_id).begin_turn(attempt_id, messages or [])
+            recorder = runtime.begin_turn(attempt_id, messages or [])
             queued_inputs = QueuedInputDelivery(
                 self.pending_inputs,
                 session_id=session_id,
@@ -1141,6 +1186,7 @@ class SessionService:
                 background_manager=background,
                 thread_recorder=recorder,
                 queued_inputs=queued_inputs,
+                memory=WorkspaceMemory(session_workspace=str(runtime.workspace_path)),
             )
             self._active_loops[session_id] = agent
 

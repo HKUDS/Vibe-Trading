@@ -447,6 +447,11 @@ class AgentLoop(ToolCallLifecycle):
         self._compacted_to_tokens: int | None = None
         self._turn_messages = None
         self.registry = prepare_registry(self.registry)
+        # Result receipts are conversation-scoped. Run directories remain the
+        # public identity for backtests and run cards, while the registry lets
+        # the delivery projection write one shared workspace across turns.
+        if self.memory.session_workspace:
+            setattr(self.registry, "session_workspace", self.memory.session_workspace)
         # A conversation keeps the schemas it already loaded; only a new one
         # starts from the initial set.
         if self._thread is not None and self._thread.loaded_tools is not None:
@@ -467,7 +472,14 @@ class AgentLoop(ToolCallLifecycle):
             run_dir = state_store.create_run_dir(RUNS_DIR)
             self.memory.run_dir = str(run_dir)
 
-        state_store.save_request(run_dir, user_message, {"session_id": session_id})
+        state_store.save_request(
+            run_dir,
+            user_message,
+            {
+                "session_id": session_id,
+                "session_workspace": self.memory.session_workspace,
+            },
+        )
         if self._thread is not None:
             self._thread.prepare_workspace(run_dir)
         from src.agent.data_window import UserDataWindow
@@ -649,7 +661,9 @@ class AgentLoop(ToolCallLifecycle):
                         )
                         tokens = estimate_tokens(messages)
                     if tokens > int(_token_threshold() * 0.7):
+                        before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
                         _context_collapse(messages, preserve_tool_call_ids=self._readonly_replay_visibility_pending)
+                        self._record_compaction_layer(messages, 2, before)
                         tokens = estimate_tokens(messages)
                     _tok_threshold = _token_threshold()
                     if tokens > _tok_threshold:
@@ -1271,7 +1285,10 @@ class AgentLoop(ToolCallLifecycle):
         """Record the conversation state a later turn or a restart restores."""
         if self._thread is None:
             return
-        snapshot: Dict[str, Any] = {"workspace": self.memory.run_dir}
+        snapshot: Dict[str, Any] = {
+            "workspace": self.memory.run_dir,
+            "workspace_dir": self.memory.session_workspace,
+        }
         if self._identity is not None:
             snapshot["identity"] = self._identity.export_state()
         exposed_names = getattr(self.registry, "exposed_names", None)
@@ -1434,7 +1451,9 @@ class AgentLoop(ToolCallLifecycle):
             )
             tokens = self._prompt_tokens(messages)
         if tokens > budget.collapse_at:
+            before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
             _context_collapse(messages, preserve_tool_call_ids=self._readonly_replay_visibility_pending)
+            self._record_compaction_layer(messages, 2, before)
             tokens = self._prompt_tokens(messages)
         # A summary keeps the static prompt plus a ~20K-token tail, so on a
         # window that small the prompt stays over the line after compacting;
@@ -1519,12 +1538,14 @@ class AgentLoop(ToolCallLifecycle):
             The tool names re-opened, for callers and tests to assert on.
         """
         readable_before = self._readable_success_keys(messages)
+        before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
         _microcompact(
             messages,
             target_tokens=target_tokens,
             measure=measure,
             preserve_tool_call_ids=preserve_tool_call_ids,
         )
+        self._record_compaction_layer(messages, 1, before)
         unreadable_tools = self._unblock_lost_readonly_results(messages, readable_before)
         if unreadable_tools:
             trace.write({
@@ -1533,6 +1554,19 @@ class AgentLoop(ToolCallLifecycle):
                 "tools": unreadable_tools,
             })
         return unreadable_tools
+
+    def _record_compaction_layer(
+        self, messages: list, layer: int, before: list[dict[str, Any]]
+    ) -> None:
+        """Persist the exact post-layer message view for thread replay."""
+        if self._thread is None:
+            return
+        changed = []
+        for previous, current in zip(before, messages):
+            # The list order is stable for both in-place compaction layers.
+            if previous != current:
+                changed.append(current)
+        self._thread.compaction_layer(layer, changed)
 
 
     def _account_llm_usage(
@@ -1623,12 +1657,6 @@ class AgentLoop(ToolCallLifecycle):
         """
         if self._cancel_event.is_set() or self._budget_stop_reason is not None:
             return
-        # Save full transcript before compressing next to the active trace.
-        transcript_path = trace.dir_path / f"transcript_{int(_time.time())}.jsonl"
-        with open(transcript_path, "w", encoding="utf-8") as f:
-            for msg in messages:
-                f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
-
         readable_before = self._readable_success_keys(messages)
         system_msg = messages[0]
         body = messages[1:]
@@ -1756,8 +1784,8 @@ class AgentLoop(ToolCallLifecycle):
         if degraded_compact and not summary:
             summary = (
                 "[compaction degraded: LLM summarization timed out or failed; "
-                "earlier tool results were truncated. "
-                f"Full transcript: {transcript_path}]"
+                "earlier tool results were truncated. Raw conversation items "
+                "remain available in the session thread."
             )
         self._previous_summary = summary
 
@@ -1786,7 +1814,7 @@ class AgentLoop(ToolCallLifecycle):
 
         # Reconstruct: system + summary + acknowledge + preserved tail
         state_summary = self.memory.to_summary()
-        compressed = f"[Conversation compressed — handoff summary. Transcript: {transcript_path}]\n\n{summary}"
+        compressed = f"[Conversation compressed — handoff summary]\n\n{summary}"
         if verification_ledger:
             compressed += (
                 "\n\n[Verified tool results from the compressed turns - do NOT "

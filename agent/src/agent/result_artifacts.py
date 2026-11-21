@@ -169,7 +169,9 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
         payload = None
         is_json = False
     try:
-        root = Path(run_dir).resolve()
+        workspace = getattr(registry, "session_workspace", None)
+        root = Path(workspace).expanduser().resolve() if workspace else Path(run_dir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(result.encode()).hexdigest()
         folder = root / 'tool-results' / digest
         path = folder / ('result.json' if is_json else 'result.txt')

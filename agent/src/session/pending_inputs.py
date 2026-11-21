@@ -453,7 +453,9 @@ class QueuedInputDelivery:
                 return delivered
             message = {"role": "user", "content": claimed.content}
             try:
-                item = self._recorder.user(message, content=claimed.content)
+                item = self._recorder.user(
+                    message, content=claimed.content, input_id=claimed.input_id
+                )
             except Exception:  # noqa: BLE001 - the input must go back, not vanish
                 logger.warning("Could not record queued input %s", claimed.input_id, exc_info=True)
                 item = None

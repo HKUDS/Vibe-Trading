@@ -6,11 +6,12 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.session.models import Attempt, Message, Session
-from src.session.thread import THREAD_FILENAME, ThreadLog
+from src.session.thread import THREAD_FILENAME, ThreadLog, open_turns, project_turn
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,7 @@ class SessionStore:
             return []
         path = self._messages_file(session_id)
         if not path.exists():
-            return []
+            return self._project_messages_from_thread(session_id, limit)
         messages: List[Message] = []
         # Decode physical JSONL records separately: one unreadable byte must
         # cost one record, never the intact messages on either side of it.
@@ -236,7 +237,87 @@ class SessionStore:
                         session_id,
                         type(exc).__name__,
                     )
+        # A running turn is durable in the thread before its terminal display
+        # rows are written. Include its user items in reads without creating a
+        # second append-only projection.
+        thread_items = self.thread_log(session_id).read()
+        open_ids = set(open_turns(thread_items))
+        if open_ids:
+            for item in thread_items:
+                if item.turn_id not in open_ids or item.type != "user":
+                    continue
+                metadata = {}
+                input_id = item.get("input_id")
+                if isinstance(input_id, str) and input_id:
+                    metadata["queued_input_id"] = input_id
+                messages.append(Message(
+                    session_id=session_id,
+                    role="user",
+                    content=item.get("content") or "",
+                    created_at=datetime.fromtimestamp(item.ts, timezone.utc).isoformat(),
+                    metadata=metadata,
+                ))
+            messages.sort(key=lambda message: message.created_at)
         return messages if limit is None else messages[-limit:]
+
+    def _project_messages_from_thread(
+        self, session_id: str, limit: Optional[int]
+    ) -> List[Message]:
+        """Build compatibility display rows when the projection file is absent."""
+        items = self.thread_log(session_id).read()
+        starts = [item for item in items if item.type == "turn_start"]
+        rows: List[Message] = []
+        for start in starts:
+            turn_items = [item for item in items if item.turn_id == start.turn_id]
+            user_items = [item for item in turn_items if item.type == "user"]
+            if user_items:
+                for item in user_items:
+                    metadata = {}
+                    input_id = item.get("input_id")
+                    if isinstance(input_id, str) and input_id:
+                        metadata["queued_input_id"] = input_id
+                    rows.append(Message(
+                        session_id=session_id,
+                        role="user",
+                        content=item.get("content") or "",
+                        created_at=datetime.fromtimestamp(item.ts, timezone.utc).isoformat(),
+                        metadata=metadata,
+                    ))
+            else:
+                prompt = start.get("prompt")
+                if isinstance(prompt, str):
+                    rows.append(Message(
+                        session_id=session_id,
+                        role="user",
+                        content=prompt,
+                        created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
+                    ))
+            projection = project_turn(items, start.turn_id)
+            if projection.content is None and projection.status is None:
+                continue
+            rows.append(Message(
+                session_id=session_id,
+                role="assistant",
+                content=projection.content or "",
+                linked_attempt_id=start.turn_id,
+                created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
+                metadata={"status": projection.status} if projection.status else {},
+                tool_trail=projection.tool_trail,
+            ))
+        if not starts:
+            # A task can be accepted before its worker gets a chance to open
+            # the thread. Expose that durable attempt prompt as the live user
+            # row until the worker writes the terminal projection.
+            for attempt in self.list_attempts():
+                if attempt.session_id != session_id:
+                    continue
+                if attempt.status.value in {"pending", "running", "waiting_user"}:
+                    rows.append(Message(
+                        session_id=session_id,
+                        role="user",
+                        content=attempt.prompt,
+                    ))
+        return rows if limit is None else rows[-limit:]
 
     # ---- Attempt CRUD ----
 
