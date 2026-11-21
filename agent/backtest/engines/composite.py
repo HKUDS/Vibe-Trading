@@ -33,6 +33,10 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
 
     if "jp_equity" in markets:
         raise ValueError("Japanese backtest execution rules are not implemented; market data is available")
+    if "europe_equity" in markets:
+        raise ValueError(
+            "European backtest execution rules are not implemented; market data is available"
+        )
 
     for market in markets:
         if market == "a_share":

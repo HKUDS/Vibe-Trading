@@ -138,6 +138,10 @@ class BacktestConfigSchema(BaseModel):
         # routing rule names; the loaders and the benchmark resolve both.
         if any(matched_market(c.strip()) == "jp_equity" for c in v):
             raise ValueError("Japan market data is supported, but Japanese backtest execution rules are not implemented")
+        if any(matched_market(c.strip()) == "europe_equity" for c in v):
+            raise ValueError(
+                "European market data is supported, but European backtest execution rules are not implemented"
+            )
         unrecognised = [
             c for c in v
             if matched_market(c.strip()) is None
@@ -900,6 +904,7 @@ _MARKET_TO_SOURCE = {
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
     "taiwan_equity": "yahoo",
+    "europe_equity": "yahoo",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1816,6 +1821,10 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
 
     if "jp_equity" in markets:
         raise ValueError("Japanese backtest execution rules are not implemented; market data is available")
+    if "europe_equity" in markets:
+        raise ValueError(
+            "European backtest execution rules are not implemented; market data is available"
+        )
 
     # The Hong Kong pool books in HKD. HKEX numbers its RMB and USD counters
     # in their own code ranges, and no source in the hk_equity chain but Yahoo

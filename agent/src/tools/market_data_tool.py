@@ -111,7 +111,7 @@ class MarketDataTool(BaseTool):
                 "items": {"type": "string"},
                 "description": (
                     'Symbols such as ["AAPL.US"], ["700.HK"], ["TD.TO"], '
-                    '["PNG.V"], ["7203.T"] (Japan), or ["BTC-USDT"].'
+                    '["PNG.V"], ["7203.T"] (Japan), ["SAP.DE"] (Europe), or ["BTC-USDT"].'
                 ),
             },
             "start_date": {
