@@ -50,6 +50,29 @@ SECTIONS = {
 # the folder's index.
 ARTICLE_DIRS = ("tutorials", "research-lab/posts")
 HTML_LANG = {"en": "en", "zh": "zh-CN"}
+SITE_ORIGIN = "https://vibetrading.wiki"
+
+
+def alternate_target(href: str) -> Path | None:
+    """Resolve an ``hreflang`` href to the file that serves it.
+
+    The href may be site-absolute (``https://vibetrading.wiki/...``) or a local
+    path, and a published URL may omit the ``.html`` extension, which Pages
+    resolves to the same file.
+
+    Args:
+        href: The value of the ``href`` attribute.
+
+    Returns:
+        The file behind the href, or None when nothing serves it.
+    """
+    path = href[len(SITE_ORIGIN):] if href.startswith(SITE_ORIGIN) else href
+    path = path.split("?", 1)[0].split("#", 1)[0].strip("/")
+    for candidate in (path, f"{path}.html", f"{path}/index.html"):
+        target = WIKI / candidate
+        if candidate and target.is_file():
+            return target
+    return None
 
 
 def pages() -> list[Path]:
@@ -158,8 +181,8 @@ def wiring_problems(path: Path, text: str) -> list[str]:
         if not link:
             problems.append(f"{rel}: missing <link rel=\"alternate\" hreflang=\"{code}\">")
             continue
-        target = WIKI / link.group(1).lstrip("/")
-        if not target.is_file():
+        target = alternate_target(link.group(1))
+        if target is None:
             problems.append(f"{rel}: alternate {code} points at missing {link.group(1)}")
         elif lang == declared.group(1) and target != path:
             problems.append(f"{rel}: its own-language alternate points elsewhere ({link.group(1)})")
