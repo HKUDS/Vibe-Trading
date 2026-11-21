@@ -2440,13 +2440,16 @@ class BaseEngine(ABC):
         # entry_price is the weighted cost after any scale-ins while its
         # entry_time stays on the first open, so pairing those two would
         # report a fill that never happened. Scale-ins stay in fills.jsonl.
+        # Keep date-only output for naive midnight bars. Other runs need
+        # full timestamps to match trades to the equity curve.
+        date_only = dates.tz is None and dates.equals(dates.normalize())
         trade_rows = []
         for t in self.trades:
             # Entry event
             entry_price = t.entry_price if t.open_price is None else t.open_price
             entry_qty = t.size if t.open_size is None else t.open_size
             trade_rows.append({
-                "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
+                "timestamp": t.entry_time.date().isoformat() if date_only else t.entry_time.isoformat(),
                 "code": t.symbol,
                 "side": "buy" if t.direction == 1 else "sell",
                 "price": entry_price,
@@ -2464,7 +2467,7 @@ class BaseEngine(ABC):
             except Exception:
                 hold_days = 0
             trade_rows.append({
-                "timestamp": str(t.exit_time.date()) if hasattr(t.exit_time, "date") else str(t.exit_time),
+                "timestamp": t.exit_time.date().isoformat() if date_only else t.exit_time.isoformat(),
                 "code": t.symbol,
                 "side": "sell" if t.direction == 1 else "buy",
                 "price": t.exit_price,
