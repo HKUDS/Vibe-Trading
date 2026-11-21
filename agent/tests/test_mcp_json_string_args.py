@@ -38,6 +38,7 @@ LIST_DICT_PARAMS = {
     "analyze_options_payoff": ("legs", "scenario_iv_values", "expiry_spot_values", "alternatives"),
     "run_swarm": ("variables",),
     "get_market_data": ("codes",),
+    "get_hk_quotes": ("symbols",),
     "get_fund_flow": ("codes",),
     "get_stock_profile": ("sections",),
     "run_shadow_backtest": ("markets",),
@@ -94,6 +95,20 @@ def test_list_dict_params_keep_a_typed_schema(tool, tool_parameters) -> None:
 # ---------------------------------------------------------------------------
 # Coercion helper unit behaviour
 # ---------------------------------------------------------------------------
+
+
+def test_hk_quote_symbols_are_coerced_and_fast_defaults_forwarded(mcp_server, monkeypatch):
+    from types import SimpleNamespace
+
+    called = []
+
+    def execute(name, arguments):
+        called.append((name, arguments))
+        return '{"ok": true}'
+
+    monkeypatch.setattr(mcp_server, "_get_registry", lambda: SimpleNamespace(execute=execute))
+    asyncio.run(mcp_server.mcp.call_tool("get_hk_quotes", {"symbols": '["700"]'}))
+    assert called == [("get_hk_quotes", {"symbols": ["700"], "source": "tencent", "max_age_seconds": 60})]
 
 
 def test_coerce_json_string_decodes_arrays_and_objects(mcp_server) -> None:

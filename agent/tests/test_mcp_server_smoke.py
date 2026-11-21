@@ -47,6 +47,7 @@ EXPECTED_MIN_TOOL_COUNT = 30
 REQUIRED_TOOL_NAMES = {
     "analyze_options",
     "get_market_data",
+    "get_hk_quotes",
     "list_skills",
     "start_research_goal",
     "get_research_goal",

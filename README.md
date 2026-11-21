@@ -738,3 +738,43 @@ Vibe-Trading is research and trading software. It is not investment advice, hold
 ## License
 
 MIT License — see [LICENSE](LICENSE)
+
+## Hang Seng Index benchmark
+
+Run `vibe alpha bench --universe hsi --zoo alpha101 --period 2016-01-01/2026-10-31`.
+HSI works in the benchmark/compare API, CLI and Alpha Zoo selector.
+Current Wikipedia membership is revision-stamped and checked against the dated published count.
+A count mismatch or source failure stops the benchmark; there is no benchmark roster fallback.
+Prices use the shared HK provider chain with provider-native adjustment/volume provenance.
+Sector labels require 90% coverage; VWAP is a labeled OHLC4 proxy.
+Current members and sectors have survivorship bias, not point-in-time membership.
+Inspect missing instruments, observation counts and data-quality warnings before using results.
+
+### Hong Kong quote snapshots (optional)
+
+The read-only `get_hk_quotes` agent/MCP tool defaults to the faster public Tencent
+`r_hk` endpoint. Example arguments: `{"symbols":["0700.HK","0005.HK"],"source":"tencent","max_age_seconds":60}`.
+Provider timestamp, receipt time, currency and freshness are explicit; a newly
+received stale quote is still stale. No broker orders or account login occur.
+
+To keep a local quote archive, run from `agent/`:
+
+```bash
+python -m src.hk_data --hsi-snapshot --source tencent --interval-seconds 5 --db ./data/hk_quotes.sqlite3
+python -m src.hk_data --latest --db ./data/hk_quotes.sqlite3
+```
+
+The snapshot is the dated 95-stock 2026-11-04 list; refresh after index reviews
+or pass your own `--symbols-file` CSV. This archive command runs until stopped
+and can retain quotes outside sessions; it does not install a scheduler or
+cloud service. See [HK quote package](agent/src/hk_data/README.md). Observed
+last-trade age is not a latency guarantee or a verified real-time entitlement.
+
+### Hong Kong market-layer inputs
+
+HK backtests support a dated `hk_lot_sizes_file` CSV and statutory bilateral
+stamp duty with session dates and whole-HKD ceiling. Historical FX helpers report
+local and USD returns using only earlier, published closes; missing rates fail
+closed. The existing XHKG calendar validator excludes lunch and sourced weather
+exceptions. See [the HK market-layer contract](agent/backtest/HK_MARKET_LAYER.md) for
+usage, the current-lot historical assumption, data requirements and limits.

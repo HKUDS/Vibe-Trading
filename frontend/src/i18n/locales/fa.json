@@ -1868,6 +1868,7 @@
     "universeOption": {
       "csi300": "CSI 300 (سهام A چین)",
       "sp500": "S&P 500 (آمریکا)",
+      "hsi": "شاخص هنگ سنگ (هنگ کنگ)",
       "btc-usdt": "BTC-USDT (رمزارز)",
       "equity_cn": "سهام A چین",
       "equity_us": "سهام آمریکا",

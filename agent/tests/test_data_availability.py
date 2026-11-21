@@ -128,3 +128,44 @@ def test_metadata_without_source_is_explicitly_unknown() -> None:
     assert close["status"] == "unknown"
     assert close["source"] is None
     assert close["pit_safe"] is False
+
+
+def _hsi_panel() -> dict:
+    return {
+        "close": pd.DataFrame(
+            {"0700.HK": [400.0]}, index=pd.DatetimeIndex(["2024-01-02"])
+        ),
+        "_meta": {
+            "price_sources": ["tencent"],
+            "constituent_source": "wikipedia",
+            "constituent_source_date": "2026-10-01",
+            "pit_membership": False,
+            "survivorship_bias": True,
+        },
+    }
+
+
+def test_hsi_uses_hong_kong_context_in_the_existing_schema() -> None:
+    contract = build_availability_contract(
+        _hsi_panel(), universe="hsi", period="2024-01-01/2024-01-31"
+    )
+    assert contract["schema"] == "alpha-bench.data-availability/v1"
+    assert contract["adapter"] == "hk_equity"
+    assert contract["asset_class"] == "equity"
+    assert contract["venue"] == "XHKG"
+    assert contract["currency"] == "HKD"
+    assert contract["timezone"] == "Asia/Hong_Kong"
+    assert contract["calendar"] == "XHKG"
+    assert json.loads(json.dumps(contract)) == contract
+
+
+def test_hsi_identity_does_not_upgrade_unverified_availability() -> None:
+    contract = build_availability_contract(_hsi_panel(), universe="hsi")
+    fields = _fields(contract)
+    assert fields["close"]["availability_mode"] == "bar_close"
+    assert fields["close"]["status"] == "assumed"
+    assert fields["close"]["pit_safe"] is False
+    assert fields["universe:membership"]["availability_mode"] == "effective_date"
+    assert fields["universe:membership"]["status"] == "unknown"
+    assert fields["universe:membership"]["pit_safe"] is False
+    assert any("not point-in-time" in warning for warning in contract["warnings"])

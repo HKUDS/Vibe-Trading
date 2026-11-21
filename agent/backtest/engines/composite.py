@@ -311,6 +311,7 @@ class CompositeEngine(BaseEngine):
         """Delegate to active symbol's sub-engine."""
         sub = self._rule_for(self._active_symbol)
         sub._active_symbol = self._active_symbol
+        sub._bar_ts = self._bar_ts
         return sub.calc_commission(size, price, direction, is_open)
 
     def apply_slippage(self, price: float, direction: int) -> float:
