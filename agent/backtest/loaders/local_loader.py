@@ -184,17 +184,13 @@ def _normalize_columns(
     col_map: dict[str, str],
     date_fmt: str | None,
 ) -> pd.DataFrame | None:
-    # A DatetimeIndex carries the bar dates (parquet files, and duckdb
-    # relations whose query set one). An explicitly mapped date column wins
-    # over the index; otherwise the index becomes the date column, whatever
-    # date_fmt is configured. Dropping the index on the first path also
-    # sidesteps the reset_index crash when index and column share a name.
-    if isinstance(df.index, pd.DatetimeIndex):
-        if col_map.get("date", "date") in df.columns:
-            df = df.reset_index(drop=True)
-        else:
-            df = df.reset_index()
-            col_map = {**col_map, "date": df.columns[0]}
+    date_col = col_map.get("date", "date")
+    # Use index dates directly so a same-named column cannot shadow them.
+    index_dates = (
+        df.index.to_series()
+        if isinstance(df.index, pd.DatetimeIndex) and date_col not in df.columns
+        else None
+    )
     rename: dict[str, str] = {}
     for std_name, src_name in col_map.items():
         if std_name == "date":
@@ -207,16 +203,16 @@ def _normalize_columns(
     if not required.issubset(df.columns):
         return None
 
-    date_col = col_map.get("date", "date")
-    if date_col not in df.columns:
+    if index_dates is None and date_col not in df.columns:
         return None
 
+    dates = index_dates if index_dates is not None else df[date_col]
     if date_fmt:
         parsed_dates = pd.to_datetime(
-            df[date_col], format=date_fmt, errors="coerce", utc=True
+            dates, format=date_fmt, errors="coerce", utc=True
         )
     else:
-        parsed_dates = pd.to_datetime(df[date_col], errors="coerce", utc=True)
+        parsed_dates = pd.to_datetime(dates, errors="coerce", utc=True)
     # Normalize every input to the loader's UTC-naive index contract. Parsing
     # as UTC first also handles files that span daylight-saving offset changes.
     df["trade_date"] = parsed_dates.dt.tz_convert(None)
