@@ -1243,7 +1243,10 @@
       "failed": "Başarısız",
       "steps": "{{count}} adım",
       "continue": "Devam et",
-      "reattach": "Yeniden bağlan"
+      "reattach": "Yeniden bağlan",
+      "interrupted": "Kesildi — bu tur bitmeden sunucu yeniden başlatıldı",
+      "interruptedStep": "Bitmeden kesildi",
+      "partial": "Tur durdurulurken kesildi"
     },
     "resumeConnector": "Bağlantıyı sürdür",
     "resumeConnectorTitle": "Acil durdurmayı kaldır ve bağlantı faaliyetlerini yeniden etkinleştir",
@@ -1252,6 +1255,20 @@
     "messageTooLong": "Mesaj, ekler ve ekip talimatlarıyla birlikte {{limit}} karakteri aşıyor. Göndermeden önce kısaltın.",
     "tokenUsage": {
       "live": "belirteç"
+    },
+    "turnFailed": "Yürütme başarısız oldu",
+    "notice": {
+      "compaction": "Önceki konuşma özetlendi"
+    },
+    "queue": {
+      "placeholder": "Mesaj ekleyin — mevcut adımdan sonra katılır",
+      "label": "Sıradaki mesajlar",
+      "queued": "Sırada",
+      "delivering": "Konuşmaya katılıyor…",
+      "discard": "Sıradaki mesajı kaldır",
+      "discardFailed": "Bu mesaj zaten konuşmaya katılıyor",
+      "failed": "Mesaj sıraya alınamadı",
+      "send": "Sıraya al"
     }
   },
   "runDetail": {

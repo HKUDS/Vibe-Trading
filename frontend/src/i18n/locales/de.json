@@ -1284,7 +1284,10 @@
       "failed": "Fehlgeschlagen",
       "steps": "{{count}} Schritte",
       "continue": "Fortsetzen",
-      "reattach": "Erneut verbinden"
+      "reattach": "Erneut verbinden",
+      "interrupted": "Unterbrochen – der Server wurde neu gestartet, bevor dieser Durchgang fertig war",
+      "interruptedStep": "Vor dem Abschluss unterbrochen",
+      "partial": "Beim Stoppen des Durchgangs abgeschnitten"
     },
     "resumeConnector": "Connector fortsetzen",
     "resumeConnectorTitle": "Kill-Switch löschen und Connector-Aktivität wieder aktivieren",
@@ -1292,6 +1295,20 @@
     "failedToResumeConnector": "Connector konnte nicht fortgesetzt werden.",
     "tokenUsage": {
       "live": "Tokens"
+    },
+    "turnFailed": "Ausführung fehlgeschlagen",
+    "notice": {
+      "compaction": "Früherer Verlauf wurde zusammengefasst"
+    },
+    "queue": {
+      "placeholder": "Nachricht hinzufügen – sie folgt nach dem aktuellen Schritt",
+      "label": "Wartende Nachrichten",
+      "queued": "Wartet",
+      "delivering": "Wird in die Unterhaltung aufgenommen…",
+      "discard": "Wartende Nachricht entfernen",
+      "discardFailed": "Diese Nachricht wird bereits in die Unterhaltung aufgenommen",
+      "failed": "Nachricht konnte nicht eingereiht werden",
+      "send": "Einreihen"
     }
   },
   "runDetail": {

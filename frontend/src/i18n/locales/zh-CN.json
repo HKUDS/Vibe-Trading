@@ -1278,7 +1278,10 @@
       "failed": "失败",
       "steps": "{{count}} 个步骤",
       "continue": "继续",
-      "reattach": "重新连接"
+      "reattach": "重新连接",
+      "interrupted": "已中断——服务在本轮完成前重启",
+      "interruptedStep": "未执行完即中断",
+      "partial": "本轮停止时被截断"
     },
     "resumeConnector": "恢复连接器",
     "resumeConnectorTitle": "清除熔断开关并恢复连接器活动",
@@ -1286,6 +1289,20 @@
     "failedToResumeConnector": "恢复连接器失败。",
     "tokenUsage": {
       "live": "Token"
+    },
+    "turnFailed": "执行失败",
+    "notice": {
+      "compaction": "更早的对话已压缩为摘要"
+    },
+    "queue": {
+      "placeholder": "补充一条消息——当前步骤结束后加入",
+      "label": "排队中的消息",
+      "queued": "排队中",
+      "delivering": "正在加入对话…",
+      "discard": "移除排队消息",
+      "discardFailed": "这条消息已经在加入对话",
+      "failed": "无法排队这条消息",
+      "send": "排队发送"
     }
   },
   "runDetail": {

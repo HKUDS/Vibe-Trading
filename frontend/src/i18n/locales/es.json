@@ -1284,7 +1284,10 @@
       "failed": "Falló",
       "steps": "{{count}} pasos",
       "continue": "Continuar",
-      "reattach": "Reconectar"
+      "reattach": "Reconectar",
+      "interrupted": "Interrumpido: el servidor se reinició antes de que terminara este turno",
+      "interruptedStep": "Interrumpido antes de terminar",
+      "partial": "Cortado al detenerse el turno"
     },
     "resumeConnector": "Reanudar conector",
     "resumeConnectorTitle": "Desactivar el interruptor de emergencia y reanudar la actividad del conector",
@@ -1292,6 +1295,20 @@
     "failedToResumeConnector": "Error al reanudar el conector.",
     "tokenUsage": {
       "live": "tokens"
+    },
+    "turnFailed": "La ejecución falló",
+    "notice": {
+      "compaction": "La conversación anterior se resumió"
+    },
+    "queue": {
+      "placeholder": "Añade un mensaje: se une después del paso actual",
+      "label": "Mensajes en cola",
+      "queued": "En cola",
+      "delivering": "Uniéndose a la conversación…",
+      "discard": "Quitar mensaje en cola",
+      "discardFailed": "Este mensaje ya se está uniendo a la conversación",
+      "failed": "No se pudo poner el mensaje en cola",
+      "send": "Poner en cola"
     }
   },
   "runDetail": {

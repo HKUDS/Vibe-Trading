@@ -1284,7 +1284,10 @@
       "failed": "Gagal",
       "steps": "{{count}} langkah",
       "continue": "Lanjutkan",
-      "reattach": "Lampirkan kembali"
+      "reattach": "Lampirkan kembali",
+      "interrupted": "Terputus — server dimulai ulang sebelum giliran ini selesai",
+      "interruptedStep": "Terputus sebelum selesai",
+      "partial": "Terpotong saat giliran dihentikan"
     },
     "resumeConnector": "Lanjutkan connector",
     "resumeConnectorTitle": "Nonaktifkan penghentian darurat dan aktifkan kembali aktivitas connector",
@@ -1292,6 +1295,20 @@
     "failedToResumeConnector": "Gagal melanjutkan connector.",
     "tokenUsage": {
       "live": "token"
+    },
+    "turnFailed": "Eksekusi gagal",
+    "notice": {
+      "compaction": "Percakapan sebelumnya telah diringkas"
+    },
+    "queue": {
+      "placeholder": "Tambahkan pesan — akan bergabung setelah langkah saat ini",
+      "label": "Pesan dalam antrean",
+      "queued": "Dalam antrean",
+      "delivering": "Bergabung ke percakapan…",
+      "discard": "Hapus pesan dalam antrean",
+      "discardFailed": "Pesan ini sudah bergabung ke percakapan",
+      "failed": "Tidak dapat mengantrekan pesan",
+      "send": "Antrekan pesan"
     }
   },
   "runDetail": {

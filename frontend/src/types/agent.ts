@@ -1,7 +1,13 @@
 /** Chat message types */
 export type AgentMessageType =
   | "user" | "thinking" | "tool_call" | "tool_result"
-  | "answer" | "error" | "run_complete" | "compact" | "swarm_status";
+  | "answer" | "error" | "run_complete" | "compact" | "swarm_status"
+  /** Text the agent wrote between steps, before its final answer. */
+  | "commentary"
+  /** A turn's end: how long it worked and how it ended. */
+  | "turn_status"
+  /** A marker in the conversation, such as earlier context being summarized. */
+  | "notice";
 
 export type SwarmAgentDisplayStatus =
   | "waiting"

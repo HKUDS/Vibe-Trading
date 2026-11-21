@@ -1278,7 +1278,10 @@
       "failed": "失敗",
       "steps": "{{count}} ステップ",
       "continue": "続行",
-      "reattach": "再接続"
+      "reattach": "再接続",
+      "interrupted": "中断されました — このターンが終わる前にサーバーが再起動しました",
+      "interruptedStep": "完了前に中断されました",
+      "partial": "ターン停止時に途切れました"
     },
     "resumeConnector": "コネクタを再開",
     "resumeConnectorTitle": "キルスイッチを解除してコネクタ活動を再開",
@@ -1286,6 +1289,20 @@
     "failedToResumeConnector": "コネクタの再開に失敗しました。",
     "tokenUsage": {
       "live": "トークン"
+    },
+    "turnFailed": "実行に失敗しました",
+    "notice": {
+      "compaction": "以前の会話は要約されました"
+    },
+    "queue": {
+      "placeholder": "メッセージを追加 — 現在のステップの後に加わります",
+      "label": "待機中のメッセージ",
+      "queued": "待機中",
+      "delivering": "会話に追加しています…",
+      "discard": "待機中のメッセージを削除",
+      "discardFailed": "このメッセージはすでに会話に追加されています",
+      "failed": "メッセージを待機列に追加できませんでした",
+      "send": "待機列に追加"
     }
   },
   "runDetail": {

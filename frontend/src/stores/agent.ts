@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
+import type { ThreadView, TurnMeta } from "@/lib/threadItems";
 
 const SESSION_CACHE_MAX = 5;
 
@@ -10,6 +11,7 @@ export type ActivityState =
   | "stopped"
   | "timeout"
   | "failed"
+  | "interrupted"
   | "done";
 
 export type ActivityVerb =
@@ -51,15 +53,63 @@ export interface AgentMessageMeta {
   requestText?: string;
   activity?: AgentActivity;
   partialAttemptId?: string;
+  /** Turn (attempt) a thread-derived row belongs to. */
+  turnId?: string;
+  /** Text a stopped turn streamed before it was cut off. */
+  partial?: boolean;
+  /** What a notice row marks. */
+  notice?: "compaction";
+  /** Shown on send, before the server records the message. */
+  pendingSend?: boolean;
+  /** Built from the thread view; replaced whenever the view changes. */
+  fromThread?: boolean;
 }
 
 export type StoredAgentMessage = AgentMessage & { meta?: AgentMessageMeta };
 
 const _sessionCache = new Map<string, StoredAgentMessage[]>();
 const _swarmSessionCache = new Map<string, Record<string, SwarmRunStatus>>();
+const _threadSessionCache = new Map<string, { thread: ThreadView; turnMeta: Record<string, TurnMeta> }>();
+
+function emptyThread(): ThreadView {
+  return { loaded: false, cursor: 0, entries: [], liveAssistant: null, queued: [] };
+}
+
+/** Builds the chat rows of a thread view; `previous` are the rows it built last time. */
+export type TranscriptBuilder = (
+  thread: ThreadView,
+  turnMeta: Readonly<Record<string, TurnMeta>>,
+  previous: readonly StoredAgentMessage[],
+) => StoredAgentMessage[];
+
+let transcriptBuilder: TranscriptBuilder | null = null;
+
+/** Register how thread views become chat rows (the chat page does, once). */
+export function setTranscriptBuilder(builder: TranscriptBuilder | null): void {
+  transcriptBuilder = builder;
+}
+
+/** Replace the thread-built rows of `messages`, keeping every other row, in time order. */
+function withThreadRows(
+  messages: StoredAgentMessage[],
+  thread: ThreadView,
+  turnMeta: Record<string, TurnMeta>,
+): StoredAgentMessage[] {
+  if (!transcriptBuilder) return messages;
+  const previous = messages.filter((message) => message.meta?.fromThread);
+  const others = messages.filter((message) => !message.meta?.fromThread);
+  const rows = transcriptBuilder(thread, turnMeta, previous);
+  // Stable: equal timestamps keep other rows before thread rows.
+  return [...others, ...rows].sort((a, b) => a.timestamp - b.timestamp);
+}
 
 interface AgentState {
+  /** Rows not derived from the thread: pre-thread history, local errors, swarm cards. */
   messages: StoredAgentMessage[];
+  /** The session's conversation items (design §6.8); rendered after `messages` rows of older turns. */
+  thread: ThreadView;
+  /** Per-turn facts from attempt events and the projected reply rows, keyed by turn id. */
+  turnMeta: Record<string, TurnMeta>;
   sessionId: string | null;
   status: "idle" | "streaming" | "error";
   streamingText: string;
@@ -101,6 +151,9 @@ interface AgentState {
   cacheSession: (sid: string, msgs: StoredAgentMessage[]) => void;
   getCachedSession: (sid: string) => StoredAgentMessage[] | undefined;
 
+  updateThread: (updater: (thread: ThreadView) => ThreadView) => void;
+  setTurnMeta: (turnId: string, patch: Partial<TurnMeta>) => void;
+
   setReasoningTail: (tail: string) => void;
   clearStreaming: () => void;
   clearStreamingSession: (sid: string) => void;
@@ -119,6 +172,8 @@ const nextId = () => String(++_id);
 
 export const useAgentStore = create<AgentState>((set) => ({
   messages: [],
+  thread: emptyThread(),
+  turnMeta: {},
   sessionId: null,
   status: "idle",
   streamingText: "",
@@ -159,8 +214,9 @@ export const useAgentStore = create<AgentState>((set) => ({
         s.swarmRuns[msg.swarmRunId] &&
         !historicalSwarmIds.has(msg.swarmRunId)
       ));
+      const threadRows = s.messages.filter((msg) => msg.meta?.fromThread);
       return {
-        messages: [...msgs, ...liveSwarmPlaceholders]
+        messages: [...msgs, ...liveSwarmPlaceholders, ...threadRows]
           .sort((a, b) => a.timestamp - b.timestamp),
       };
     }),
@@ -239,7 +295,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   setActivityState: (state, at = Date.now()) =>
     set((s) => {
       if (!s.activity) return {};
-      const terminal = ["stopped", "timeout", "failed", "done"].includes(state);
+      const terminal = ["stopped", "timeout", "failed", "interrupted", "done"].includes(state);
       return {
         activity: {
           ...s.activity,
@@ -286,16 +342,33 @@ export const useAgentStore = create<AgentState>((set) => ({
       _sessionCache.set(sid, msgs);
       _swarmSessionCache.delete(sid);
       _swarmSessionCache.set(sid, s.swarmRuns);
+      _threadSessionCache.delete(sid);
+      if (s.sessionId === sid) {
+        _threadSessionCache.set(sid, { thread: s.thread, turnMeta: s.turnMeta });
+      }
       if (_sessionCache.size > SESSION_CACHE_MAX) {
         const oldest = _sessionCache.keys().next().value;
         if (oldest) {
           _sessionCache.delete(oldest);
           _swarmSessionCache.delete(oldest);
+          _threadSessionCache.delete(oldest);
         }
       }
       return {};
     }),
   getCachedSession: (sid) => _sessionCache.get(sid),
+
+  updateThread: (updater) =>
+    set((s) => {
+      const thread = updater(s.thread);
+      if (thread === s.thread) return {};
+      return { thread, messages: withThreadRows(s.messages, thread, s.turnMeta) };
+    }),
+  setTurnMeta: (turnId, patch) =>
+    set((s) => {
+      const turnMeta = { ...s.turnMeta, [turnId]: { ...s.turnMeta[turnId], ...patch } };
+      return { turnMeta, messages: withThreadRows(s.messages, s.thread, turnMeta) };
+    }),
 
   setReasoningTail: (reasoningTail) => set({ reasoningTail }),
   clearStreaming: () => set({ streamingText: "", reasoningTail: "" }),
@@ -307,9 +380,20 @@ export const useAgentStore = create<AgentState>((set) => ({
 
   switchSession: (sid, msgs) => {
     _id = 0;
+    const cachedThread = msgs ? _threadSessionCache.get(sid) : undefined;
     set((s) => ({
       sessionId: sid,
       messages: msgs || [],
+      // In-progress items of a cached view are stale; the reload and the
+      // resumed stream bring back whatever is still running.
+      thread: cachedThread
+        ? {
+            ...cachedThread.thread,
+            liveAssistant: null,
+            entries: cachedThread.thread.entries.filter((entry) => entry.state !== "live"),
+          }
+        : emptyThread(),
+      turnMeta: cachedThread?.turnMeta ?? {},
       status: "idle",
       streamingText: "",
       reasoningTail: "",
@@ -328,7 +412,8 @@ export const useAgentStore = create<AgentState>((set) => ({
   reset: () => {
     _id = 0;
     set({
-      messages: [], status: "idle", streamingText: "", reasoningTail: "",
+      messages: [], thread: emptyThread(), turnMeta: {},
+      status: "idle", streamingText: "", reasoningTail: "",
       sessionId: null, toolCalls: [], activity: null, swarmRuns: {}, sessionLoading: false,
       streamingSessionId: null,
     });

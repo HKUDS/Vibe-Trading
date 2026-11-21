@@ -1284,7 +1284,10 @@
       "failed": "Falha",
       "steps": "Etapas {{count}}",
       "continue": "Continuar",
-      "reattach": "Anexe novamente"
+      "reattach": "Anexe novamente",
+      "interrupted": "Interrompido — o servidor reiniciou antes de esta rodada terminar",
+      "interruptedStep": "Interrompido antes de terminar",
+      "partial": "Cortado quando a rodada parou"
     },
     "resumeConnector": "Retomar conector",
     "resumeConnectorTitle": "Limpe o kill switch e reative a atividade do conector",
@@ -1292,6 +1295,20 @@
     "failedToResumeConnector": "Falha ao retomar o conector.",
     "tokenUsage": {
       "live": "tokens"
+    },
+    "turnFailed": "A execução falhou",
+    "notice": {
+      "compaction": "A conversa anterior foi resumida"
+    },
+    "queue": {
+      "placeholder": "Adicione uma mensagem — ela entra após a etapa atual",
+      "label": "Mensagens na fila",
+      "queued": "Na fila",
+      "delivering": "Entrando na conversa…",
+      "discard": "Remover mensagem da fila",
+      "discardFailed": "Esta mensagem já está entrando na conversa",
+      "failed": "Não foi possível colocar a mensagem na fila",
+      "send": "Colocar na fila"
     }
   },
   "runDetail": {

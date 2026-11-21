@@ -1284,7 +1284,10 @@
       "failed": "Failed",
       "steps": "{{count}} steps",
       "continue": "Continue",
-      "reattach": "Re-attach"
+      "reattach": "Re-attach",
+      "interrupted": "Interrupted — the server restarted before this turn finished",
+      "interruptedStep": "Interrupted before it finished",
+      "partial": "Cut off when the turn stopped"
     },
     "resumeConnector": "Resume connector",
     "resumeConnectorTitle": "Clear the kill switch and re-enable connector activity",
@@ -1292,6 +1295,20 @@
     "failedToResumeConnector": "Failed to resume connector.",
     "tokenUsage": {
       "live": "tokens"
+    },
+    "turnFailed": "Execution failed",
+    "notice": {
+      "compaction": "Earlier conversation summarized"
+    },
+    "queue": {
+      "placeholder": "Add a message — it joins after the current step",
+      "label": "Queued messages",
+      "queued": "Queued",
+      "delivering": "Joining the conversation…",
+      "discard": "Remove queued message",
+      "discardFailed": "This message is already joining the conversation",
+      "failed": "Could not queue the message",
+      "send": "Queue message"
     }
   },
   "runDetail": {

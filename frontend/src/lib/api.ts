@@ -765,9 +765,23 @@ export const api = {
       `/scheduled-runs/proposals/${encodeURIComponent(proposalId)}/discard`,
       { method: "POST" },
     ),
-  sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
-  cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
+  /** Start a turn, or queue the message behind the running one (HTTP 202, `status: "queued"`). */
+  sendMessage: (sid: string, content: string) => request<SendMessageResult>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  cancelSession: (sid: string) => request<CancelSessionResult>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
+  /** One page of the session's conversation thread, as display items ordered by seq. */
+  getSessionThread: (sid: string, options: { after?: number; limit?: number } = {}) => {
+    let path = `/sessions/${sid}/thread`;
+    if (options.after) path = appendQueryParam(path, "after", String(options.after));
+    if (options.limit) path = appendQueryParam(path, "limit", String(options.limit));
+    return request<ThreadPage>(path);
+  },
+  listPendingInputs: (sid: string) => request<{ session_id: string; items: PendingInputView[] }>(`/sessions/${sid}/pending-inputs`),
+  discardPendingInput: (sid: string, inputId: string) =>
+    request<{ status: string; session_id: string; input: PendingInputView }>(
+      `/sessions/${sid}/pending-inputs/${encodeURIComponent(inputId)}`,
+      { method: "DELETE" },
+    ),
   createGoal: (sid: string, body: CreateGoalRequest) =>
     request<GoalSnapshot>(`/sessions/${sid}/goal`, {
       method: "POST",
@@ -792,9 +806,11 @@ export const api = {
   // Returns the bare stream URL (no auth in the query string). The SSE ticket
   // is minted per connect/reconnect inside useSSE (tickets are single-use, so
   // baking one into a cached URL would break reconnection).
-  sseUrl: (sid: string, options?: { replay?: "active" }) => {
+  sseUrl: (sid: string, options?: { replay?: "active"; cursor?: number }) => {
     let url = `${BASE}/sessions/${sid}/events`;
     if (options?.replay) url = appendQueryParam(url, "replay", options.replay);
+    // A thread seq: every recorded item after it is re-read from disk first.
+    if (options?.cursor !== undefined) url = appendQueryParam(url, "cursor", String(options.cursor));
     return url;
   },
 
@@ -2379,6 +2395,87 @@ export interface MessageItem {
   linked_attempt_id?: string;
   metadata?: Record<string, unknown>;
   tool_trail?: ToolTrailItem[];
+}
+
+/** A turn that started (HTTP 200). */
+export interface SentMessage {
+  message_id: string;
+  attempt_id: string;
+}
+
+/** A message accepted while a turn runs; it joins that turn or starts the next (HTTP 202). */
+export interface QueuedMessage {
+  status: "queued";
+  input_id: string;
+  attempt_id: string | null;
+  position: number;
+}
+
+export type SendMessageResult = SentMessage | QueuedMessage;
+
+export function isQueuedMessage(result: SendMessageResult): result is QueuedMessage {
+  return (result as QueuedMessage).status === "queued";
+}
+
+/** A message waiting to join a session's conversation. */
+export interface PendingInputView {
+  input_id: string;
+  content: string;
+  queued_at?: number | string;
+  queued_during?: string | null;
+  status: "queued" | "delivering";
+}
+
+export interface CancelSessionResult {
+  status: string;
+  pending_inputs?: PendingInputView[];
+}
+
+/** Item types the thread endpoint and item events show a client. */
+export type ThreadItemType =
+  | "turn_start"
+  | "user"
+  | "assistant"
+  | "tool_result"
+  | "compaction"
+  | "turn_end";
+
+/** Client view of one recorded thread item (`display_item` on the server). */
+export interface ThreadDisplayItem {
+  seq: number;
+  /** Epoch seconds. */
+  ts: number;
+  turn_id: string;
+  type: ThreadItemType;
+  /** turn_start */
+  prompt?: unknown;
+  model?: string | null;
+  provider?: string | null;
+  /** user / assistant / tool_result */
+  content?: unknown;
+  /** assistant */
+  phase?: "commentary" | "final" | null;
+  reasoning_content?: string | null;
+  tool_calls?: Array<{ id?: string | null; name?: string | null; arguments?: Record<string, string> }>;
+  /** tool_result */
+  tool_call_id?: string;
+  name?: string;
+  status?: string | null;
+  elapsed_ms?: number | null;
+  artifact?: { filename?: string; download_url?: string } | null;
+  /** compaction */
+  summary?: string;
+  replaces_through_seq?: number;
+  /** turn_end */
+  usage?: Record<string, unknown> | null;
+}
+
+export interface ThreadPage {
+  session_id: string;
+  items: ThreadDisplayItem[];
+  has_more: boolean;
+  /** Highest seq in the thread; the event stream continues live from it. */
+  cursor: number;
 }
 
 export interface ToolTrailItem {

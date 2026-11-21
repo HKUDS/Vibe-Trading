@@ -1278,7 +1278,10 @@
       "failed": "실패",
       "steps": "{{count}}단계",
       "continue": "계속",
-      "reattach": "다시 연결"
+      "reattach": "다시 연결",
+      "interrupted": "중단됨 — 이 턴이 끝나기 전에 서버가 다시 시작되었습니다",
+      "interruptedStep": "완료되기 전에 중단됨",
+      "partial": "턴이 중지되며 잘림"
     },
     "resumeConnector": "커넥터 재개",
     "resumeConnectorTitle": "킬 스위치를 해제하고 커넥터 활동을 재개",
@@ -1286,6 +1289,20 @@
     "failedToResumeConnector": "커넥터 재개에 실패했습니다.",
     "tokenUsage": {
       "live": "토큰"
+    },
+    "turnFailed": "실행 실패",
+    "notice": {
+      "compaction": "이전 대화가 요약되었습니다"
+    },
+    "queue": {
+      "placeholder": "메시지 추가 — 현재 단계가 끝나면 합류합니다",
+      "label": "대기 중인 메시지",
+      "queued": "대기 중",
+      "delivering": "대화에 합류하는 중…",
+      "discard": "대기 메시지 삭제",
+      "discardFailed": "이 메시지는 이미 대화에 합류하는 중입니다",
+      "failed": "메시지를 대기열에 넣지 못했습니다",
+      "send": "대기열에 추가"
     }
   },
   "runDetail": {
