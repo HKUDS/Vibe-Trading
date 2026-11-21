@@ -165,6 +165,22 @@ def _content_text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
+def _tool_content_text(content: Any) -> str:
+    """Render tool image parts as explicit placeholders for text-only Claude CLI."""
+    if not isinstance(content, list):
+        return _content_text(content)
+    parts = []
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "image_url":
+            url = (part.get("image_url") or {}).get("url", "")
+            parts.append(f"[image artifact: {url}]")
+        elif isinstance(part, dict):
+            parts.append(str(part.get("text", "")))
+        else:
+            parts.append(str(part))
+    return "".join(parts)
+
+
 def _role(message: Any) -> str:
     return str(
         _message_value(message, "role", "") or _message_value(message, "type", "")
@@ -193,7 +209,7 @@ def _render(messages: list[Any]) -> tuple[str, str]:
     parts: list[str] = []
     for message in rest:
         role = _role(message)
-        content = _content_text(_message_value(message, "content", ""))
+        content = _tool_content_text(_message_value(message, "content", "")) if role == "tool" else _content_text(_message_value(message, "content", ""))
         tool_calls = _message_value(message, "tool_calls")
         if role in {"assistant", "ai"} and tool_calls:
             calls = [

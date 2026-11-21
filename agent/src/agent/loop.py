@@ -243,6 +243,7 @@ class AgentLoop(ToolCallLifecycle):
         self._active_model_source = reported_model_source(runtime_snapshot, None)
         self.memory = memory or WorkspaceMemory()
         self._event_callback = event_callback
+        self._waiting_user: Optional[Dict[str, Any]] = None
         self.max_iterations = max_iterations
         # Dedup identity is (tool name, canonical arguments) -- NOT the name
         # alone. Keying on the name blocked every legitimate second call to a
@@ -1104,6 +1105,13 @@ class AgentLoop(ToolCallLifecycle):
                 compact_requested, focus_topic = self._process_tool_calls(
                     response.tool_calls, context, messages, trace, react_trace, current_iter,
                 )
+                if self._waiting_user is not None:
+                    final_content = self._waiting_user.get("prompt", "")
+                    options = self._waiting_user.get("options") or []
+                    if options:
+                        final_content += "\n" + "\n".join(f"{i + 1}. {option}" for i, option in enumerate(options))
+                    self._record_final_answer(final_content)
+                    break
                 self._sync_thread_state()
 
                 if (
@@ -1186,6 +1194,7 @@ class AgentLoop(ToolCallLifecycle):
                 budget_reason=self._budget_stop_reason,
                 answer_released=bool(final_content),
                 truncation_reason=truncation_reason,
+                waiting_user=self._waiting_user is not None,
             )
         )
         final_reason = outcome.reason

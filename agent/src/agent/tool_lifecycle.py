@@ -74,6 +74,7 @@ class ToolCallLifecycle:
         status: str | None = None,
         elapsed_ms: int | None = None,
         artifact: dict | None = None,
+        images: list[dict] | None = None,
     ) -> None:
         """Append a tool message and record it as the model receives it.
 
@@ -95,6 +96,7 @@ class ToolCallLifecycle:
                 status=status or ("ok" if _is_tool_success(content) else "error"),
                 elapsed_ms=elapsed_ms,
                 artifact=artifact,
+                images=images,
             )
 
     def _identity_dependency_query(self, tc: Any) -> str | None:
@@ -1167,6 +1169,21 @@ class ToolCallLifecycle:
         # One redaction feeds every subscriber below: the persisted trace
         # record, the react trace, and the SSE preview.
         trace_result = redact_tool_result(result)
+        image_refs: list[dict] = []
+        payload: dict | None = None
+        try:
+            parsed = json.loads(trace_result)
+            payload = parsed if isinstance(parsed, dict) else None
+            if isinstance(payload, dict) and isinstance(payload.get("images"), list):
+                image_refs = [dict(image) for image in payload["images"] if isinstance(image, dict) and isinstance(image.get("path"), str)]
+        except (TypeError, ValueError):
+            pass
+        if payload is not None and payload.get("status") == "waiting_user":
+            self._waiting_user = payload
+            if self._thread is not None:
+                self._thread.question(payload.get("question_id", ""), payload.get("prompt", ""), payload.get("options", []), bool(payload.get("allow_free_text", True)))
+        if payload is not None and payload.get("status") == "ok" and tc.name == "plan" and self._thread is not None:
+            self._thread.plan(payload.get("plan_id", ""), payload.get("steps", []))
         artifact = None
         if status == "ok" and tc.name in {"write_file", "render_shadow_report"}:
             try:
@@ -1183,6 +1200,7 @@ class ToolCallLifecycle:
         self._append_tool_result(
             messages, context, tc.id, tc.name, truncated,
             status=status, elapsed_ms=elapsed_ms, artifact=artifact,
+            images=image_refs,
         )
         trace.write_tool_result(
             call_id=tc.id,

@@ -321,6 +321,13 @@ class Attempt:
         if summary:
             self.summary = summary
 
+    def mark_waiting_user(self, summary: Optional[str] = None) -> None:
+        """Pause the attempt while a structured question awaits an answer."""
+        self.status = AttemptStatus.WAITING_USER
+        self.completed_at = _utc_now_iso()
+        if summary:
+            self.summary = summary
+
     def mark_failed(self, error: str) -> None:
         """Mark the attempt as failed.
 

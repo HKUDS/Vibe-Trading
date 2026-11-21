@@ -7,7 +7,7 @@ export type AgentMessageType =
   /** A turn's end: how long it worked and how it ended. */
   | "turn_status"
   /** A marker in the conversation, such as earlier context being summarized. */
-  | "notice";
+  | "notice" | "plan" | "question" | "image";
 
 export type SwarmAgentDisplayStatus =
   | "waiting"
@@ -78,6 +78,9 @@ export interface AgentMessage {
   stage?: string;
   /** Shadow Account id if render_shadow_report fired in this turn (RunCompleteCard renders a "View Shadow Report" button). */
   shadowId?: string;
+  plan?: { plan_id?: string; steps: Array<{ step: string; status: string }> };
+  question?: { question_id: string; prompt: string; options: string[]; allow_free_text?: boolean };
+  images?: Array<{ path: string; mime_type?: string; alt?: string; download_url?: string }>;
 }
 
 /** Tool call tracking entry */

@@ -40,7 +40,7 @@ THREAD_FILENAME = "thread.jsonl"
 
 ASSISTANT_PHASES = frozenset({"commentary", "final"})
 TOOL_RESULT_STATUSES = frozenset({"ok", "error"})
-TURN_END_STATUSES = frozenset({"completed", "cancelled", "failed", "interrupted"})
+TURN_END_STATUSES = frozenset({"completed", "cancelled", "failed", "interrupted", "waiting_user"})
 STOPPED_TURN_STATUSES = frozenset({"cancelled", "failed", "interrupted"})
 
 # Tool-trail display limits, matching the live ``tool_call`` / ``tool_result``
@@ -148,6 +148,7 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "content": _Field(_is_message_content, required=True),
         "llm_content": _Field(_is_message_content, required=True),
         "input_id": _Field(_optional(_is_str)),
+        "answer_to_question_id": _Field(_optional(_is_str)),
     },
     "assistant": {
         "content": _Field(_optional(_is_message_content)),
@@ -164,6 +165,17 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "elapsed_ms": _Field(_optional(_is_number)),
         # Display-only: the report link the live event carried. Never replayed.
         "artifact": _Field(_optional(_is_dict)),
+        "images": _Field(_optional(_is_list)),
+    },
+    "plan": {
+        "plan_id": _Field(_is_str, required=True),
+        "steps": _Field(_is_list, required=True),
+    },
+    "question": {
+        "question_id": _Field(_is_str, required=True),
+        "prompt": _Field(_is_str, required=True),
+        "options": _Field(_is_list, required=True),
+        "allow_free_text": _Field(lambda v: isinstance(v, bool), default=True),
     },
     "inject": {
         "content": _Field(_is_message_content, required=True),
@@ -249,6 +261,8 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
     if item_type == "user" and result.get("input_id") is None:
         # Preserve the legacy user-item shape. Queued inputs carry a real id.
         result.pop("input_id", None)
+    if item_type == "user" and result.get("answer_to_question_id") is None:
+        result.pop("answer_to_question_id", None)
     return result
 
 
@@ -708,11 +722,19 @@ def _item_message(item: ThreadItem) -> Optional[Dict[str, Any]]:
     if item.type == "assistant":
         return _assistant_message(item)
     if item.type == "tool_result":
+        content: Any = item.get("content")
+        images = item.get("images") or []
+        if isinstance(images, list) and images:
+            parts: list[dict[str, Any]] = [{"type": "text", "text": str(content or "")}]
+            for image in images:
+                if isinstance(image, dict) and isinstance(image.get("path"), str):
+                    parts.append({"type": "image_url", "image_url": {"url": image["path"], "detail": "auto"}})
+            content = parts
         return {
             "role": "tool",
             "tool_call_id": item.get("tool_call_id"),
             "name": item.get("name"),
-            "content": item.get("content"),
+            "content": content,
         }
     if item.type == "inject":
         return {"role": item.get("role"), "content": copy.deepcopy(item.get("content"))}

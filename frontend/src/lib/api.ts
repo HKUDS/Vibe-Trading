@@ -1061,7 +1061,7 @@ export interface CreateScheduledRunRequest {
 
 export interface UpdateScheduledRunRequest {
   title?: string | null;
-  prompt?: string;
+  /** question prompt reuses the prompt field declared above */
   schedule?: string;
   timezone?: string | null;
   end_at?: number | null;
@@ -2437,6 +2437,8 @@ export type ThreadItemType =
   | "user"
   | "assistant"
   | "tool_result"
+  | "plan"
+  | "question"
   | "compaction"
   | "turn_end";
 
@@ -2463,6 +2465,12 @@ export interface ThreadDisplayItem {
   status?: string | null;
   elapsed_ms?: number | null;
   artifact?: { filename?: string; download_url?: string } | null;
+  images?: Array<{ path: string; mime_type?: string; alt?: string; download_url?: string }>;
+  plan_id?: string;
+  steps?: Array<{ step: string; status: string }>;
+  question_id?: string;
+  options?: string[];
+  allow_free_text?: boolean;
   /** compaction */
   summary?: string | null;
   replaces_through_seq?: number;
