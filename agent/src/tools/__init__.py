@@ -152,6 +152,7 @@ def build_registry(
     )
     from src.tools.autopilot_tool import RunResearchAutopilotTool
     from src.tools.remember_tool import RememberTool
+    from src.tools.spawn_agent_tool import SpawnAgentTool
     from src.tools.swarm_tool import SwarmTool
     from src.tools.scheduled_research_tool import ScheduledResearchTool
 
@@ -207,6 +208,10 @@ def build_registry(
                         cancel_event=cancel_event,
                     )
                 )
+            elif cls is SpawnAgentTool:
+                # Reads this registry when it runs, so MCP tools appended
+                # below are part of the child's tool set too.
+                registry.register(cls(registry, cancel_event=cancel_event))
             else:
                 registry.register(cls())
         except Exception as exc:

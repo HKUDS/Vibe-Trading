@@ -468,7 +468,8 @@ class AgentTuningConfig(_EnvBase):
     Sources: ``src/agent/loop.py``, ``src/providers/content_filter.py``,
     ``src/scheduled_research/executor.py``, ``src/live/order_guard.py``,
     ``src/factors/_backend.py``, ``src/factors/bench_runner.py``,
-    ``src/tools/web_search_tool.py``, ``api_server.py``.
+    ``src/tools/web_search_tool.py``, ``src/tools/spawn_agent_tool.py``,
+    ``api_server.py``.
     """
 
     # Deprecated: counted chars/4 of messages without tool schemas, so no value
@@ -480,6 +481,12 @@ class AgentTuningConfig(_EnvBase):
     vibe_trading_agent_max_iterations: int = Field(
         alias="VIBE_TRADING_AGENT_MAX_ITERATIONS", default=50, ge=1,
     )
+    # spawn_agent child: one focused task in a fresh context, the shape of a
+    # swarm worker, so it gets a swarm worker's budget (SWARM_WORKER_MAX_ITER
+    # and SWARM_WORKER_TIMEOUT; every shipped preset agent declares 50).
+    subagent_max_iter: int = Field(alias="SUBAGENT_MAX_ITER", default=50, ge=1)
+    # Wall-clock seconds before the child is cancelled; 0 disables.
+    subagent_timeout: float = Field(alias="SUBAGENT_TIMEOUT", default=300.0, ge=0)
     vibe_trading_tool_loading: Literal["eager", "lazy"] = Field(
         alias="VIBE_TRADING_TOOL_LOADING", default="lazy",
     )
