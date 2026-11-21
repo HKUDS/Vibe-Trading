@@ -9,9 +9,8 @@ marks on the system message — for everything after the ``## State`` section.
 
 The fix: the volatile summary rides the first **user** message wrapped in an
 ``<agent-state>`` envelope (same convention as ``<recalled-memories>``), and
-the system template no longer has a ``## State`` section. The system prompt is
-now byte-identical across runs as long as the registry, skills, and date
-minute do not change.
+the system template no longer has a ``## State`` section. The system prompt is now byte-identical across turns. The minute-resolution
+current date rides in the user-message envelope.
 """
 
 from __future__ import annotations
@@ -87,7 +86,10 @@ class TestSystemPromptCacheStability:
     def test_empty_state_leaves_user_message_untouched(self) -> None:
         messages = _builder(WorkspaceMemory()).build_messages("analyze AAPL")
 
-        assert messages[-1]["content"] == "analyze AAPL"
+        content = messages[-1]["content"]
+        assert content.startswith("<agent-state>")
+        assert "current-date-time:" in content
+        assert content.endswith("analyze AAPL")
 
     def test_state_envelope_sits_before_recalled_memories(self) -> None:
         class _Recall:

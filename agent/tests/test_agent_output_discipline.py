@@ -75,6 +75,7 @@ class TestOutputPrinciplesArePresent:
         assert "Answer at the level of detail asked" in prompt
         assert "stop calling tools" in prompt
         assert "Do not re-fetch data you already have" in prompt
+        assert "period change" in prompt
 
     def test_principle_six_requires_an_audible_refusal(self) -> None:
         prompt = _rendered_prompt()

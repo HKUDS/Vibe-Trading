@@ -269,10 +269,8 @@ def test_block_sits_before_the_date_line_and_after_the_principles(tmp_path, monk
     a = _prompt(monkeypatch, minute=0)
     b = _prompt(monkeypatch, minute=1)
     assert a.index("## Output Principles") < a.index("Stable rule.") < a.index("## Current Date & Time")
-    # Only the date line may differ between turns: the whole prefix incl. the block is shared.
-    cut = a.index("## Current Date & Time")
-    assert a[:cut] == b[:cut]
-    assert a != b
+    # The whole system prompt is stable. The volatile date rides in the user envelope.
+    assert a == b
 
 
 def test_instruction_text_cannot_rewrite_the_output_principles(tmp_path, monkeypatch):

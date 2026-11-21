@@ -34,6 +34,8 @@ from src.agent.tuning import (
     _llm_timeout_seconds as _llm_timeout_seconds,
     _goal_max_continuations as _goal_max_continuations,
     _stall_timeout_seconds as _stall_timeout_seconds,
+    _mid_turn_nudge_rounds as _mid_turn_nudge_rounds,
+    _wrap_up_nudge_remaining as _wrap_up_nudge_remaining,
 )
 
 from src.agent.loop_streaming import TurnStream, repair_provider_messages
@@ -111,7 +113,35 @@ SESSIONS_DIR = get_sessions_dir()
 # retry once with a nudge before failing the run on a second consecutive one.
 MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS = 1
 
+# A successful result from one of these tools is enough to let the pacing
+# nudge ask for an answer without treating every readonly lookup as evidence.
+_DATA_RESULT_TOOLS = frozenset({
+    "get_market_data",
+    "technical_indicators",
+    "get_stock_profile",
+    "get_fundamentals",
+    "get_financial_statements",
+    "get_options_chain",
+    "news_search",
+    "web_search",
+    "backtest",
+})
 
+
+def _has_successful_data_result(messages: list[dict[str, Any]]) -> bool:
+    """Return whether the model already has a successful data observation."""
+    for message in messages:
+        if message.get("role") != "tool" or message.get("name") not in _DATA_RESULT_TOOLS:
+            continue
+        content = message.get("content")
+        try:
+            payload = json.loads(content) if isinstance(content, str) else content
+        except (TypeError, ValueError):
+            payload = None
+        if isinstance(payload, dict) and (payload.get("ok") is False or payload.get("success") is False):
+            continue
+        return True
+    return False
 
 
 logger = logging.getLogger(__name__)
@@ -607,7 +637,14 @@ class AgentLoop(ToolCallLifecycle):
         last_response_model: str | None = None
         goal_continuations = 0
         goal_last_progress: tuple[int, int] | None = None
-        wrap_up_at = max(1, int(self.max_iterations * 0.8))
+        wrap_up_remaining = _wrap_up_nudge_remaining()
+        wrap_up_at = (
+            max(2, self.max_iterations - wrap_up_remaining)
+            if wrap_up_remaining > 0
+            else None
+        )
+        no_commentary_rounds = 0
+        mid_turn_nudge_rounds = _mid_turn_nudge_rounds()
 
         # Zombie-run watchdog: fail a run that makes no forward progress
         # (no LLM completion, no tool result) for the stall timeout instead
@@ -684,7 +721,7 @@ class AgentLoop(ToolCallLifecycle):
                 # iteration (the forced text-only path already guarantees an
                 # answer there) so the nudge never displaces the active-goal
                 # context as the most recent user message.
-                if iteration == wrap_up_at and 1 < iteration < self.max_iterations:
+                if wrap_up_at is not None and iteration == wrap_up_at and 1 < iteration < self.max_iterations:
                     remaining = self.max_iterations - iteration
                     wrap_content = (
                         f"[SYSTEM] You have {remaining} iterations remaining out of "
@@ -1105,6 +1142,28 @@ class AgentLoop(ToolCallLifecycle):
                     response.tool_calls, context, messages, trace, react_trace, current_iter,
                 )
                 self._sync_thread_state()
+
+                if response.content and response.content.strip():
+                    no_commentary_rounds = 0
+                else:
+                    no_commentary_rounds += 1
+                if (
+                    mid_turn_nudge_rounds > 0
+                    and no_commentary_rounds >= mid_turn_nudge_rounds
+                    and _has_successful_data_result(messages)
+                ):
+                    self._inject(
+                        messages,
+                        "<system>Evidence is already in hand. Answer the user's request now "
+                        "using the available evidence. Do not start extra analysis unless "
+                        "the user requested it.</system>",
+                    )
+                    trace.write({
+                        "type": "mid_turn_nudge",
+                        "iter": current_iter,
+                        "no_commentary_rounds": no_commentary_rounds,
+                    })
+                    no_commentary_rounds = 0
 
                 if (
                     not self._cancel_event.is_set()

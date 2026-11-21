@@ -129,3 +129,27 @@ def _stall_timeout_seconds() -> float:
         return ov
     from src.config.accessor import get_env_config
     return get_env_config().agent_tuning.vibe_trading_run_stall_timeout_seconds
+
+
+def _mid_turn_nudge_rounds() -> int:
+    """Return the configured no-commentary pacing nudge threshold.
+
+    Zero disables the nudge.
+    """
+    ov = _override("MID_TURN_NUDGE_ROUNDS")
+    if ov is not None:
+        return max(int(ov), 0)
+    from src.config.accessor import get_env_config
+    return get_env_config().agent_tuning.vibe_trading_mid_turn_nudge_rounds
+
+
+def _wrap_up_nudge_remaining() -> int:
+    """Return the configured number of iterations reserved for a wrap-up nudge.
+
+    Zero disables the pacing nudge.
+    """
+    ov = _override("WRAP_UP_NUDGE_REMAINING")
+    if ov is not None:
+        return max(int(ov), 0)
+    from src.config.accessor import get_env_config
+    return get_env_config().agent_tuning.vibe_trading_wrap_up_nudge_remaining

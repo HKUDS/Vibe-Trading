@@ -12,7 +12,7 @@ Systematic risk-measurement methodology covering VaR/CVaR calculation, Monte Car
 
 The measures below are implemented once, with tests, in `src/quantlib/risk.py`. Call them; do not retype the formulas, because a hand-retyped VaR is where the sign convention silently flips.
 
-Without shell access, use `quantlib_call` with module `risk` (describe the function before calling). For Monte Carlo, call `monte_carlo_summary` with an explicit seed: it runs the simulation and returns statistics without sending an oversized path matrix through the tool boundary. For full-history observed VaR/ES, volatility and drawdown, `portfolio_risk_xray` fetches and computes the complete sample. Its long-only weights sum to 100%, so convert those asset-level results to NAV using the final position separately.
+Load the `quantlib-index` skill, then use `quantlib_call` with the indexed module `risk` function directly. Use `describe` only when the index lacks the needed signature. For Monte Carlo, call `monte_carlo_summary` with an explicit seed: it runs the simulation and returns statistics without sending an oversized path matrix through the tool boundary. For full-history observed VaR/ES, volatility and drawdown, `portfolio_risk_xray` fetches and computes the complete sample. Its long-only weights sum to 100%, so convert those asset-level results to NAV using the final position separately.
 
 ```python
 from src.quantlib.risk import (
