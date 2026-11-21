@@ -91,6 +91,7 @@ class OutcomeInputs:
     budget_reason: Optional[str] = None
     answer_released: bool = False
     truncation_reason: Optional[str] = None
+    waiting_user: bool = False
 
 
 @dataclass
@@ -143,6 +144,8 @@ def resolve_final_status(inputs: OutcomeInputs) -> RunOutcome:
         return RunOutcome("failed", reason, "failure", False)
     if inputs.truncation_reason is not None:
         return RunOutcome("failed", inputs.truncation_reason, "failure", False)
+    if inputs.waiting_user:
+        return RunOutcome("waiting_user", None, None, False)
     if inputs.has_output:
         if inputs.budget_reason is not None:
             # The answer that crossed a goal's token budget was released.

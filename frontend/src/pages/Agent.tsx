@@ -45,6 +45,9 @@ import { LlmUsageCounter } from "@/components/chat/LlmUsageCounter";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
 import { ScheduledResearchProposalCard } from "@/components/chat/ScheduledResearchProposalCard";
 import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
+import { PlanCard } from "@/components/chat/PlanCard";
+import { QuestionCard } from "@/components/chat/QuestionCard";
+import { ImageResult } from "@/components/chat/ImageResult";
 import {
   Composer,
   type ComposerAttachment,
@@ -1801,6 +1804,9 @@ export function Agent() {
             const swarmStatus = g.msg.swarmRunId
               ? swarmRuns[g.msg.swarmRunId] ?? g.msg.swarmStatus
               : g.msg.swarmStatus;
+            if (g.msg.type === "plan" && g.msg.plan) return <div key={row.key} data-msg-idx={g.msgIdx}><PlanCard steps={g.msg.plan.steps} /></div>;
+            if (g.msg.type === "question" && g.msg.question) return <div key={row.key} data-msg-idx={g.msgIdx}><QuestionCard questionId={g.msg.question.question_id} prompt={g.msg.question.prompt} options={g.msg.question.options} allowFreeText={g.msg.question.allow_free_text} onAnswer={submitComposerPrompt} /></div>;
+            if (g.msg.type === "image" && g.msg.images) return <div key={row.key} data-msg-idx={g.msgIdx}><ImageResult images={g.msg.images} /></div>;
             if (g.msg.type === "swarm_status" && swarmStatus) {
               return (
                 <div

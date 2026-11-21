@@ -426,7 +426,7 @@ class EventBus:
 #: directives) are runtime internals: they advance the cursor but are never
 #: sent, by event or by the thread endpoint.
 DISPLAY_ITEM_TYPES = frozenset(
-    {"turn_start", "user", "assistant", "tool_result", "compaction", "turn_end"}
+    {"turn_start", "user", "assistant", "tool_result", "plan", "question", "compaction", "turn_end"}
 )
 
 ITEM_STARTED = "item.started"
@@ -442,6 +442,7 @@ RUN_TERMINAL_EVENTS: Dict[str, str] = {
     "failed": "run.failed",
     "cancelled": "run.cancelled",
     "interrupted": "run.failed",
+    "waiting_user": "run.waiting_user",
 }
 RUN_EVENT_TYPES = frozenset({RUN_STARTED, *RUN_TERMINAL_EVENTS.values()})
 
@@ -561,7 +562,12 @@ def display_item(item: ThreadItem) -> Optional[Dict[str, Any]]:
             status=item.get("status"),
             elapsed_ms=item.get("elapsed_ms"),
             artifact=item.get("artifact"),
+            images=item.get("images"),
         )
+    elif item.type == "plan":
+        view.update(plan_id=item.get("plan_id"), steps=item.get("steps"))
+    elif item.type == "question":
+        view.update(question_id=item.get("question_id"), prompt=item.get("prompt"), options=item.get("options"), allow_free_text=item.get("allow_free_text"))
     elif item.type == "compaction":
         view.update(summary=item.get("summary"), replaces_through_seq=item.get("replaces_through_seq"))
     elif item.type == "turn_end":
@@ -638,6 +644,7 @@ class _Tail:
     last_seq: int = 0
     assistant: Optional[_LiveItem] = None
     tools: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
+    interactions: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
     # Queued user inputs, oldest first: (input_id, content, live item). Each
     # stays until its ``user`` item is recorded or it is discarded; it
     # outlives the turn it was sent during.
@@ -1028,6 +1035,12 @@ class ThreadEvents:
                 live = pending.pop(0)
                 if not pending:
                     tail.tools.pop(key, None)
+        elif item.type in {"plan", "question"}:
+            pending = tail.interactions.get((item.turn_id, item.type))
+            if pending:
+                live = pending.pop(0)
+                if not pending:
+                    tail.interactions.pop((item.turn_id, item.type), None)
         elif item.type == "user":
             content = item.get("content")
             for index, (_, queued_content, queued) in enumerate(tail.inputs):
@@ -1116,6 +1129,9 @@ class ThreadEvents:
         for key in [key for key in tail.tools if turn_id in (None, key[0])]:
             for live in tail.tools.pop(key):
                 self._discard(session_id, tail, live)
+        for key in [key for key in tail.interactions if turn_id in (None, key[0])]:
+            for live in tail.interactions.pop(key):
+                self._discard(session_id, tail, live)
 
     def _assistant(self, session_id: str, tail: _Tail, turn_id: str, iteration: Any) -> _LiveItem:
         current = tail.assistant
@@ -1190,6 +1206,13 @@ class ThreadEvents:
                     del tail.inputs[index]
                     self._discard(session_id, tail, queued)
                     break
+        elif event_type in ("plan.updated", "question.asked"):
+            item_type = "plan" if event_type == "plan.updated" else "question"
+            live = self._new_live(tail, item_type, turn_id)
+            tail.interactions.setdefault((turn_id, item_type), []).append(live)
+            payload = dict(data)
+            payload.pop("attempt_id", None)
+            self._start_live(session_id, tail, live, payload, "item.started")
         elif event_type == "llm_waiting":
             self._publish(
                 session_id,

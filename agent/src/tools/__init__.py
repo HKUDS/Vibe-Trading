@@ -101,6 +101,8 @@ def session_bound_tool_classes() -> frozenset[type[BaseTool]]:
         UpdateResearchGoalTool,
     )
     from src.tools.scheduled_research_tool import ScheduledResearchTool
+    from src.tools.plan_tool import PlanTool
+    from src.tools.ask_user_tool import AskUserTool
 
     return frozenset({
         StartResearchGoalTool,
@@ -110,6 +112,8 @@ def session_bound_tool_classes() -> frozenset[type[BaseTool]]:
         UpdateResearchGoalTool,
         RunResearchAutopilotTool,
         ScheduledResearchTool,
+        PlanTool,
+        AskUserTool,
     })
 
 

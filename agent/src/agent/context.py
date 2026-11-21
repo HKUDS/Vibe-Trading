@@ -309,12 +309,26 @@ class ContextBuilder:
 
     @staticmethod
     def format_tool_result(tool_call_id: str, tool_name: str, result: str) -> Dict[str, Any]:
-        """Format a tool execution result as a message."""
+        """Format a tool result, preserving local image references as parts."""
+        content: Any = result
+        try:
+            payload = json.loads(result)
+            images = payload.get("images") if isinstance(payload, dict) else None
+            if isinstance(images, list) and images:
+                text_payload = dict(payload)
+                text_payload["images"] = [{k: v for k, v in image.items() if k != "data"} for image in images if isinstance(image, dict)]
+                parts: list[dict[str, Any]] = [{"type": "text", "text": json.dumps(text_payload, ensure_ascii=False)}]
+                for image in images:
+                    if isinstance(image, dict) and isinstance(image.get("path"), str):
+                        parts.append({"type": "image_url", "image_url": {"url": image["path"], "detail": "auto"}})
+                content = parts
+        except (TypeError, ValueError):
+            pass
         return {
             "role": "tool",
             "tool_call_id": tool_call_id,
             "name": tool_name,
-            "content": result,
+            "content": content,
         }
 
     @staticmethod

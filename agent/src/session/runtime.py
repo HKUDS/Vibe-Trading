@@ -305,7 +305,7 @@ class TurnRecorder:
             return
         self.started = True
         self._write("turn_start", None, prompt=prompt, model=model, provider=provider)
-        self._write("user", message, content=prompt, llm_content=message.get("content"))
+        self._write("user", message, content=prompt, llm_content=message.get("content"), answer_to_question_id=self._runtime.pending_question_id())
 
     def user(
         self, message: Dict[str, Any], *, content: str, input_id: Optional[str] = None
@@ -325,7 +325,7 @@ class TurnRecorder:
         """
         return self._write(
             "user", message, content=content, llm_content=message.get("content"),
-            input_id=input_id,
+            input_id=input_id, answer_to_question_id=self._runtime.pending_question_id(),
         )
 
     def assistant(self, message: Dict[str, Any], *, phase: str) -> None:
@@ -354,6 +354,7 @@ class TurnRecorder:
         status: str,
         elapsed_ms: Optional[float] = None,
         artifact: Optional[Dict[str, Any]] = None,
+        images: Optional[list[Dict[str, Any]]] = None,
     ) -> None:
         """Record one delivered (redacted, size-capped) tool result.
 
@@ -363,15 +364,25 @@ class TurnRecorder:
             elapsed_ms: Execution time.
             artifact: Display-only report link.
         """
+        durable_content = message.get("content")
+        if not isinstance(durable_content, str):
+            parts = []
+            for part in durable_content if isinstance(durable_content, list) else [durable_content]:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    parts.append(str(part.get("text", "")))
+                elif isinstance(part, dict) and part.get("type") == "image_url":
+                    parts.append(f"[image artifact: {(part.get('image_url') or {}).get('url', '')}]")
+            durable_content = "\n".join(parts)
         self._write(
             "tool_result",
             message,
             tool_call_id=message.get("tool_call_id"),
             name=message.get("name") or "",
-            content=message.get("content"),
+            content=durable_content,
             status=status,
             elapsed_ms=elapsed_ms,
             artifact=artifact,
+            images=images,
         )
 
     def hook(self, decision: Dict[str, Any]) -> None:
@@ -379,6 +390,12 @@ class TurnRecorder:
         self._write("hook_decision", None, **dict(decision))
 
     hook_decision = hook
+
+    def plan(self, plan_id: str, steps: list[dict[str, Any]]) -> None:
+        self._write("plan", None, plan_id=plan_id, steps=steps)
+
+    def question(self, question_id: str, prompt: str, options: list[str], allow_free_text: bool = True) -> None:
+        self._write("question", None, question_id=question_id, prompt=prompt, options=options, allow_free_text=allow_free_text)
 
     def inject(self, message: Dict[str, Any]) -> None:
         """Record a message the loop added on its own (``<system>`` notes).
@@ -596,6 +613,15 @@ class SessionRuntime:
             if item.type == "user" and isinstance(item.get("content"), str)
         ]
         return prefix + replayed, [None] * len(prefix) + seqs, user_history
+
+    def pending_question_id(self) -> Optional[str]:
+        """Return the latest unanswered structured question."""
+        items = self.thread.read()
+        answered = {item.get("answer_to_question_id") for item in items if item.type == "user"}
+        for item in reversed(items):
+            if item.type == "question" and item.get("question_id") not in answered:
+                return item.get("question_id")
+        return None
 
     def begin_turn(
         self,

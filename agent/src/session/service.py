@@ -232,7 +232,7 @@ class SessionService:
                 reply_status = existing_reply.metadata.get("status")
                 thread_status = (
                     reply_status
-                    if reply_status in {"completed", "cancelled", "failed"}
+                    if reply_status in {"completed", "cancelled", "failed", "waiting_user"}
                     else AttemptStatus.INTERRUPTED.value
                 )
                 self._close_recovered_turn(attempt, thread_status)
@@ -242,6 +242,8 @@ class SessionService:
                     attempt.mark_cancelled(reason="cancelled by user")
                 elif reply_status == AttemptStatus.FAILED.value:
                     attempt.mark_failed(error="execution failed")
+                elif reply_status == AttemptStatus.WAITING_USER.value:
+                    attempt.mark_waiting_user(summary=existing_reply.content)
                 else:
                     attempt.mark_interrupted(
                         "service restarted before attempt completed"
@@ -1064,6 +1066,8 @@ class SessionService:
             status = result.get("status")
             if status == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
+            elif status == "waiting_user":
+                attempt.mark_waiting_user(summary=result.get("content", ""))
             elif status == "cancelled":
                 # A cooperative cancel is not an outage; AttemptStatus.CANCELLED
                 # existed but was dead because every non-success landed in the
@@ -1185,7 +1189,7 @@ class SessionService:
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
             self.thread_events.sync(session.session_id)
         finally:
-            if attempt.status != AttemptStatus.COMPLETED:
+            if attempt.status not in (AttemptStatus.COMPLETED, AttemptStatus.WAITING_USER):
                 background = self._background_handles.get(session.session_id)
                 if background is not None:
                     background.cancel_all()
@@ -1447,4 +1451,6 @@ class SessionService:
         if attempt.status == AttemptStatus.CANCELLED:
             streamed = streamed_text.strip()
             return f"{streamed}\n\n{STOPPED_MARKER}" if streamed else STOPPED_MARKER
+        if attempt.status == AttemptStatus.WAITING_USER:
+            return attempt.summary or "Please answer the question above."
         return f"Execution failed: {attempt.error or 'unknown error'}"

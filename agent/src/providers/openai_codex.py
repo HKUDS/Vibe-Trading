@@ -454,6 +454,27 @@ def _convert_user_message(content: Any) -> dict[str, Any]:
     return {"role": "user", "content": [{"type": "input_text", "text": ""}]}
 
 
+def _convert_tool_output(content: Any) -> Any:
+    """Convert durable image references to Responses image input parts."""
+    if not isinstance(content, list):
+        return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+    output: list[dict[str, Any]] = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") in {"text", "input_text"}:
+            output.append({"type": "input_text", "text": part.get("text", "")})
+        elif part.get("type") == "image_url":
+            url = (part.get("image_url") or {}).get("url")
+            if isinstance(url, str) and Path(url).is_file():
+                mime = "image/png" if url.lower().endswith(".png") else "image/jpeg"
+                encoded = base64.b64encode(Path(url).read_bytes()).decode("ascii")
+                url = f"data:{mime};base64,{encoded}"
+            if url:
+                output.append({"type": "input_image", "image_url": url, "detail": "auto"})
+    return output or ""
+
+
 def _split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
     if isinstance(tool_call_id, str) and tool_call_id:
         if "|" in tool_call_id:
@@ -539,7 +560,7 @@ def _convert_messages(
                 input_items.append(function_call)
         elif role == "tool":
             call_id, _ = _split_tool_call_id(msg.get("tool_call_id"))
-            output = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+            output = _convert_tool_output(content)
             input_items.append({"type": "function_call_output", "call_id": call_id, "output": output})
     return system_prompt, input_items
 

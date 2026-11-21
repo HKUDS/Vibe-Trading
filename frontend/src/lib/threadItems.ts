@@ -472,6 +472,7 @@ function footerState(status: string | undefined, meta: TurnMeta | undefined): Ac
   if (status === "cancelled") return "stopped";
   if (status === "failed") return "failed";
   if (status === "interrupted") return "interrupted";
+  if (status === "waiting_user") return "done";
   if (status) return "failed";
   if (meta?.timedOut) return "timeout";
   return meta?.stopRequested ? "stopped" : null;
@@ -621,6 +622,9 @@ export function buildTranscript(
           step.preview = contentText(entry.item.content).slice(0, TOOL_PREVIEW_CHARS);
           step.progress = undefined;
           step.elapsed_s = undefined;
+          if (entry.item.images?.length) {
+            push({ id: `${turn.turnId}:images:${entry.key}`, type: "image", content: "", images: entry.item.images, meta: { turnId: turn.turnId }, timestamp: at });
+          }
         } else if (entry.state === "discarded") {
           step.status = "error";
           step.preview = options.interruptedLabel;
@@ -629,6 +633,12 @@ export function buildTranscript(
           step.progress = entry.progress;
           step.elapsed_s = entry.elapsedS;
         }
+      } else if (entry.type === "plan" && entry.state === "recorded") {
+        flush();
+        push({ id: `${turn.turnId}:plan:${entry.key}`, type: "plan", content: "", plan: { plan_id: entry.item.plan_id, steps: entry.item.steps || [] }, meta: { turnId: turn.turnId }, timestamp: at });
+      } else if (entry.type === "question" && entry.state === "recorded") {
+        flush();
+        push({ id: `${turn.turnId}:question:${entry.key}`, type: "question", content: "", question: { question_id: entry.item.question_id || "", prompt: String(entry.item.prompt || ""), options: entry.item.options || [], allow_free_text: entry.item.allow_free_text }, meta: { turnId: turn.turnId }, timestamp: at });
       } else if (entry.type === "compaction" && entry.state === "recorded") {
         flush();
         push({
