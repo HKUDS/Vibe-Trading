@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, NamedTuple, Protocol
 
 from src.agent.context import ContextBuilder
+from src.agent.instructions import build_instruction_block
 from src.agent.llm_usage import _normalize_llm_usage
 from src.agent.progress import HeartbeatTimer
 from src.agent.skills import SkillsLoader
@@ -358,6 +359,13 @@ def build_worker_prompt(
             + "\n\n".join(sections)
         )
     prompt_parts.append(agent_spec.system_prompt.replace("{upstream_context}", upstream_block))
+
+    # Swarm workers have a purpose-built prompt instead of ContextBuilder, but
+    # they are still agent runs and must receive the runtime-root standing
+    # instructions. A CLI launch directory is intentionally unavailable here.
+    instruction_block = build_instruction_block()
+    if instruction_block:
+        prompt_parts.append(instruction_block)
 
     if grounding_block:
         # Placed before Execution Rules so it's in scope when the worker

@@ -1297,6 +1297,7 @@ def _run_agent(
             background_manager=background,
             thread_recorder=turn.recorder if turn is not None else None,
         )
+        agent.instruction_launch_dir = Path.cwd()
         if run_dir_override:
             agent.memory.run_dir = run_dir_override
 
