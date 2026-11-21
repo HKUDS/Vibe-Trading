@@ -167,12 +167,12 @@ def test_auto_title_wait_preserves_live_session_updates(
         assert current.title == expected
         assert result["status"] == ("kept" if manual_rename else "updated")
         assert provider_closed.is_set()
-        assert len(service.get_messages(session.session_id)) == 2
+        assert len(service.get_messages(session.session_id)) == 1
         match = json.loads(SessionSearchTool().execute(query="volatility"))["results"][
             0
         ]
         assert match["title"] == expected
-        assert match["message_count"] == 2
+        assert match["message_count"] == 1
         assert match["started_at"] == before.started_at
         assert (
             service.store.get_session(sibling.session_id).title

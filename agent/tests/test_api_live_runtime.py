@@ -726,7 +726,7 @@ def test_api_stop_terminates_the_real_scheduler_task(tmp_path, monkeypatch) -> N
 
 
 # --------------------------------------------------------------------------- #
-# C1 — propose_mandate_profiles tool_result -> mandate.proposal SSE frame
+# C1 — propose_mandate_profiles item.completed -> mandate.proposal SSE frame
 # --------------------------------------------------------------------------- #
 
 
@@ -751,12 +751,15 @@ def test_c1_relay_builds_mandate_proposal_frame(tmp_path: Path, monkeypatch) -> 
     _seed_proposal(tmp_path, proposal_id)
 
     event = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
         data={
-            "tool": "propose_mandate_profiles",
-            "status": "ok",
-            "preview": json.dumps({"proposal_id": proposal_id})[:200],
+            "kind": "tool.completed",
+            "item": {
+                "name": "propose_mandate_profiles",
+                "status": "ok",
+                "content": json.dumps({"proposal_id": proposal_id})[:200],
+            },
         },
     )
 
@@ -772,9 +775,9 @@ def test_c1_relay_ignores_non_propose_events(tmp_path: Path, monkeypatch) -> Non
 
     # A different tool's result: no relay.
     other = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
-        data={"tool": "run_backtest", "status": "ok", "preview": "{}"},
+        data={"kind": "tool.completed", "item": {"name": "run_backtest", "status": "ok", "content": "{}"}},
     )
     assert api_server._mandate_proposal_frame_from_tool_result(other) is None
 
@@ -787,12 +790,15 @@ def test_c1_relay_returns_none_when_proposal_missing(tmp_path: Path, monkeypatch
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     # Preview references an id with no persisted proposal on disk.
     event = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
         data={
-            "tool": "propose_mandate_profiles",
-            "status": "ok",
-            "preview": json.dumps({"proposal_id": "mp_" + "2" * 32})[:200],
+            "kind": "tool.completed",
+            "item": {
+                "name": "propose_mandate_profiles",
+                "status": "ok",
+                "content": json.dumps({"proposal_id": "mp_" + "2" * 32})[:200],
+            },
         },
     )
     assert api_server._mandate_proposal_frame_from_tool_result(event) is None
@@ -881,7 +887,7 @@ def test_real_runner_factory_uses_fresh_sessions_and_persistent_budget(tmp_path,
                 cancelled = True
             svc._active_loops[attempt.session_id] = SimpleNamespace(cancel=cancel)
             try:
-                bus.emit(attempt.session_id, "llm_usage", {"iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110})
+                bus.emit(attempt.session_id, "item.delta", {"kind": "run.usage", "iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110})
                 return {"status": "cancelled" if cancelled else "success", "content": "hold"}
             finally:
                 svc._active_loops.pop(attempt.session_id, None)
@@ -947,7 +953,8 @@ def test_live_runner_owns_its_actual_background_session_attempt(tmp_path, monkey
                 if fails:
                     return {"status": "failed", "reason": "execution failed"}
                 if not cancelled:
-                    bus.emit(attempt.session_id, "llm_usage", {
+                    bus.emit(attempt.session_id, "item.delta", {"kind": "run.usage", 
+                        
                         "iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110,
                     })
                 return {"status": "cancelled" if cancelled else "success", "content": "completed analysis"}
@@ -1026,12 +1033,15 @@ def test_live_action_relay_builds_frame_from_guard_result(tmp_path: Path, monkey
                             "broker_request": {"symbol": "NVDA"}})
 
     event = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
         data={
-            "tool": "mcp_robinhood_place_equity_order",
-            "status": "ok",
-            "preview": json.dumps({"status": "ok", "live_action": {"audit_id": audit_id}})[:200],
+            "kind": "tool.completed",
+            "item": {
+                "name": "mcp_robinhood_place_equity_order",
+                "status": "ok",
+                "content": json.dumps({"status": "ok", "live_action": {"audit_id": audit_id}})[:200],
+            },
         },
     )
 
@@ -1043,10 +1053,10 @@ def test_live_action_relay_builds_frame_from_guard_result(tmp_path: Path, monkey
 
 def test_live_action_relay_ignores_non_live_results(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
-    # A normal tool_result with no live_action marker → no relay.
+    # A normal tool completion with no live_action marker → no relay.
     event = SimpleNamespace(
-        event_type="tool_result", session_id="s1",
-        data={"tool": "run_backtest", "status": "ok", "preview": "{}"},
+        event_type="item.completed", session_id="s1",
+        data={"kind": "tool.completed", "item": {"name": "run_backtest", "status": "ok", "content": "{}"}},
     )
     assert api_server._live_action_frame_from_tool_result(event) is None
 

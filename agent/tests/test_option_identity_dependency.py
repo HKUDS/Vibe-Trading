@@ -133,7 +133,9 @@ def test_existing_conflict_is_not_re_resolved(runtime):
 
 def test_cancel_before_dependencies_performs_no_work(runtime):
     runtime.agent._cancel_event.set()
-    assert runtime.run([option()]) == []
+    cancelled = runtime.run([option()])
+    assert len(cancelled) == 1
+    assert json.loads(cancelled[0]["content"])["error_code"] == "tool_cancelled"
     assert runtime.events == []
 
 

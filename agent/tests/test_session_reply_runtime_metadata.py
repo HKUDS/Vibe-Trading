@@ -57,7 +57,10 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
     assert isinstance(reply.metadata["elapsed_ms"], int)
     assert reply.metadata["elapsed_ms"] >= 0
 
-    terminal = event_bus.replay(session.session_id, replay_all=True)[-1]
-    assert terminal.event_type == "attempt.completed"
-    assert terminal.data["model"] == "deepseek-v4-flash-202607"
-    assert terminal.data["elapsed_ms"] == reply.metadata["elapsed_ms"]
+    terminal = next(
+        item for item in store.thread_log(session.session_id).read()
+        if item.type == "turn_end"
+    )
+    assert terminal.get("status") == "completed"
+    assert terminal.get("model") == "deepseek-v4-flash-202607"
+    assert terminal.get("elapsed_ms") == reply.metadata["elapsed_ms"]

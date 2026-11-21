@@ -545,13 +545,7 @@ def test_projected_row_has_the_pre_change_shape_and_matches_the_live_events(tmp_
     session = service.create_session(title="projection")
     sid = session.session_id
     events: list = []
-    emit = service.event_bus.emit
-
-    def record(session_id, kind, data):
-        events.append((kind, copy.deepcopy(data)))
-        return emit(session_id, kind, data)
-
-    service.event_bus.emit = record  # type: ignore[assignment]
+    service.event_bus.add_listener(events.append)
 
     async def scenario() -> str:
         return await _send(service, sid, "Read both")
@@ -565,16 +559,24 @@ def test_projected_row_has_the_pre_change_shape_and_matches_the_live_events(tmp_
         "run_id", "status", "elapsed_ms", "started_at",
         "provider", "configured_model", "model", "model_source", "reasoning_effort",
     }
-    calls = {d["call_id"]: d for k, d in events if k == "tool_call"}
-    results = {d["call_id"]: d for k, d in events if k == "tool_result"}
+    calls = {
+        e.data["item"]["tool_call_id"]: e.data["item"]
+        for e in events
+        if e.event_type == "item.started" and e.data.get("kind") == "tool.started"
+    }
+    results = {
+        e.data["item"]["tool_call_id"]: e.data["item"]
+        for e in events
+        if e.event_type == "item.completed" and e.data.get("kind") == "tool.completed"
+    }
     assert [e["call_id"] for e in reply.tool_trail] == ["c1", "c2"]
     for entry in reply.tool_trail:
         assert set(entry) == {"tool", "status", "arguments", "timestamp", "call_id", "elapsed_ms", "preview"}
         live_call, live_result = calls[entry["call_id"]], results[entry["call_id"]]
-        assert entry["tool"] == live_call["tool"]
+        assert entry["tool"] == live_call["name"]
         assert entry["arguments"] == live_call["arguments"]
         assert entry["status"] == live_result["status"]
-        assert entry["preview"] == live_result["preview"]
+        assert entry["preview"] == live_result["content"]
         assert entry["elapsed_ms"] == live_result["elapsed_ms"]
     end = _turn_items(service, sid, turn)[-1]
     assert end.type == "turn_end" and end.get("usage")["total_tokens"] == 220
@@ -592,7 +594,7 @@ def test_phase_marks_commentary_and_final_on_items_and_events(tmp_path, monkeypa
     service = _service(tmp_path, monkeypatch, _lookup_factory(), llm)
     session = service.create_session(title="phase")
     events: list = []
-    service.event_bus.emit = lambda sid, kind, data: events.append((kind, dict(data)))  # type: ignore[assignment]
+    service.event_bus.add_listener(events.append)
 
     async def scenario() -> str:
         return await _send(service, session.session_id, "go")
@@ -602,8 +604,19 @@ def test_phase_marks_commentary_and_final_on_items_and_events(tmp_path, monkeypa
     assert [(i.get("phase"), i.get("content")) for i in assistants] == [
         ("commentary", "Checking first."), ("final", "Final answer."),
     ]
-    assert [d.get("phase") for k, d in events if k == "thinking_done"] == ["commentary"]
-    assert [d for k, d in events if k == "text_delta" and d.get("phase") == "final"][-1]["delta"] == "Final answer."
+    completed_assistants = [
+        e.data["item"] for e in events
+        if e.event_type == "item.completed"
+        and e.data.get("kind") == "item.completed"
+        and e.data.get("item", {}).get("type") == "assistant"
+    ]
+    assert [item["phase"] for item in completed_assistants] == ["commentary", "final"]
+    final_delta = [
+        e.data for e in events
+        if e.event_type == "item.delta" and e.data.get("kind") == "text.delta"
+        and e.data.get("phase") == "final"
+    ]
+    assert final_delta[-1]["delta"] == "Final answer."
 
 
 # ---------------------------------------------------------------------------
