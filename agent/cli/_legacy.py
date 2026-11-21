@@ -128,131 +128,6 @@ def _parse_swarm_run_args(values: list[str]) -> tuple[str, Optional[str]] | None
             return None
     return preset, vars_json
 
-_HAS_PROMPT_TOOLKIT = False
-try:
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.formatted_text import FormattedText
-    from prompt_toolkit.history import InMemoryHistory
-
-    _HAS_PROMPT_TOOLKIT = True
-except ImportError:
-    pass
-
-
-class _SessionStats:
-    """Mutable container for interactive session statistics.
-
-    Shared between the status bar renderer and the agent loop so that
-    tool callbacks can update counters in-place.
-    """
-
-    __slots__ = ("session_start", "last_elapsed", "total_tool_ms", "tool_count")
-
-    def __init__(self, session_start: float) -> None:
-        self.session_start = session_start
-        self.last_elapsed: Optional[float] = None
-        self.total_tool_ms = 0
-        self.tool_count = 0
-
-
-def _build_status_parts(stats: _SessionStats) -> list[str]:
-    """Build plain-text status bar segments.
-
-    Args:
-        stats: Session statistics.
-
-    Returns:
-        List of status text segments.
-    """
-    _cfg = get_env_config()
-    provider = _cfg.llm.langchain_provider
-    model = _cfg.llm.langchain_model_name
-    model_short = model.split("/")[-1] if "/" in model else model
-    label = f"{provider}/{model_short}" if provider else model_short or "unknown"
-
-    session_s = int(time.monotonic() - stats.session_start)
-    mins, secs = divmod(session_s, 60)
-    session_str = f"{mins}m{secs:02d}s" if mins else f"{secs}s"
-
-    parts = [label, session_str]
-
-    if stats.last_elapsed is not None:
-        parts.append(f"last {stats.last_elapsed:.1f}s")
-
-    if stats.tool_count > 0:
-        total_s = stats.total_tool_ms / 1000
-        parts.append(f"{stats.tool_count} tools ({total_s:.1f}s)")
-
-    return parts
-
-
-def _ptk_toolbar(stats: _SessionStats) -> FormattedText:
-    """prompt_toolkit bottom_toolbar callback — called on every render.
-
-    Args:
-        stats: Session statistics.
-
-    Returns:
-        FormattedText for the toolbar.
-    """
-    segments = _build_status_parts(stats)
-    text = " │ ".join(segments)
-    return FormattedText([("class:bottom-toolbar.text", f" {text} ")])
-
-
-def _print_status_bar(stats: _SessionStats) -> None:
-    """Print a static status bar using Rich (fallback without prompt_toolkit).
-
-    Args:
-        stats: Session statistics.
-    """
-    parts = _build_status_parts(stats)
-    bar = "[dim] │ [/dim]".join(
-        f"[bold]{parts[0]}[/bold]" if i == 0 else p for i, p in enumerate(parts)
-    )
-    console.print(bar)
-
-
-def _create_prompt_session(stats: _SessionStats) -> Any:
-    """Create a prompt_toolkit PromptSession with history and live toolbar.
-
-    Args:
-        stats: Session statistics for the live bottom toolbar.
-
-    Returns:
-        A PromptSession instance, or None if prompt_toolkit is not available.
-    """
-    if not _HAS_PROMPT_TOOLKIT:
-        return None
-    return PromptSession(
-        history=InMemoryHistory(),
-        bottom_toolbar=lambda: _ptk_toolbar(stats),
-        refresh_interval=1.0,
-    )
-
-
-def _read_input(prompt_session: Any, prompt_str: str = "> ") -> str:
-    """Read user input with arrow key support if prompt_toolkit is available.
-
-    Falls back to Rich Prompt.ask() when prompt_toolkit is not installed or
-    when stdin is not a tty.
-
-    Args:
-        prompt_session: A prompt_toolkit PromptSession, or None.
-        prompt_str: Prompt text to display.
-
-    Returns:
-        User input string (not stripped).
-
-    Raises:
-        EOFError: When the user presses Ctrl-D.
-        KeyboardInterrupt: When the user presses Ctrl-C.
-    """
-    if prompt_session is not None and sys.stdin.isatty():
-        return prompt_session.prompt(prompt_str)
-    return Prompt.ask(f"[bold]{prompt_str}[/bold]")
-
-
 def serve_main(argv: list[str] | None = None) -> int:
     """Delegate server startup to api_server."""
     from api_server import serve_main as api_serve_main
@@ -403,11 +278,6 @@ def _format_seconds(seconds: float) -> str:
     return f"{secs:d}s"
 
 
-def _configured_label(value: str | None) -> str:
-    """Render a masked configuration state."""
-    return "[green]configured[/green]" if value else "[yellow]not set[/yellow]"
-
-
 def _state_badge(value: str | None, *, ready_label: str = "READY") -> str:
     """Render a compact terminal status badge."""
     return f"[black on green] {ready_label} [/]" if value else "[black on yellow] MISSING [/]"
@@ -487,58 +357,6 @@ def _clip_inline(text: str, limit: int) -> str:
     if len(clipped) <= limit:
         return clipped
     return clipped[: max(0, limit - 3)] + "..."
-
-
-def _fit_cell(text: str, width: int) -> str:
-    """Clip and pad text to an exact display cell width."""
-    width = max(1, width)
-    return _clip_inline(text, width).ljust(width)
-
-
-def _styled_line(parts: list[tuple[str, int | None, str]]) -> Text:
-    """Build one fixed-width line with per-cell styling."""
-    line = Text()
-    for value, width, style in parts:
-        rendered = value if width is None else _fit_cell(value, width)
-        line.append(rendered, style=style)
-    return line
-
-
-def _stack_text(lines: list[Text]) -> Text:
-    """Join Text lines while preserving segment styles."""
-    out = Text()
-    for idx, line in enumerate(lines):
-        if idx:
-            out.append("\n")
-        out.append_text(line)
-    return out
-
-
-def _welcome_widths(term_width: int) -> dict[str, int]:
-    """Calculate welcome-screen column widths from the terminal width."""
-    content_width = max(34, term_width - 8)
-    label = 10
-    right_label = 10
-    right_value = 8
-    gap = 2 if term_width < 86 else 4
-    left_value = max(10, content_width - label - gap - right_label - right_value)
-
-    command_gap = 2 if term_width < 86 else 6
-    pair_width = max(20, (content_width - command_gap) // 2)
-    action = min(16, max(12, pair_width // 2))
-    use = max(7, pair_width - action - 1)
-
-    return {
-        "content": content_width,
-        "label": label,
-        "left_value": left_value,
-        "gap": gap,
-        "right_label": right_label,
-        "right_value": right_value,
-        "action": action,
-        "use": use,
-        "command_gap": command_gap,
-    }
 
 
 def _metric_value_style(key: str, value: str) -> str:
@@ -1726,197 +1544,27 @@ def cmd_continue(
 
 
 # ---------------------------------------------------------------------------
-# Interactive mode (Welcome + Slash commands + Swarm streaming)
-# ---------------------------------------------------------------------------
+# Interactive compatibility entry points
+
 
 def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
-    """Build the welcome screen for the given terminal width."""
-    _ensure_cli_env()
-    term_width = term_width or _terminal_width()
-    compact = term_width < 64
-    widths = _welcome_widths(term_width)
-    _cfg = get_env_config()
-    provider = _cfg.llm.langchain_provider or "(not set)"
-    model = _cfg.llm.langchain_model_name or "(not set)"
-    key_env = _provider_key_env(provider)
-    key_value = os.getenv(key_env or "")  # noqa: env-gate — dynamic provider key display
-    credential_ready = provider in {"ollama", "openai-codex"} or bool(key_value)
-    key_state = "READY" if credential_ready else "MISSING"
-    recent_runs = len([d for d in RUNS_DIR.iterdir() if d.is_dir()]) if RUNS_DIR.exists() else 0
-    recent_swarms = len([d for d in SWARM_DIR.iterdir() if d.is_dir()]) if SWARM_DIR.exists() else 0
-    content_width = widths["content"]
+    """Build the old welcome panel for callers that imported this helper.
 
-    header_lines: list[Text] = []
-    title = f"Vibe-Trading v{_VERSION}"
-    subtitle = "finance agent CLI"
-    if term_width < 78:
-        header_lines.append(Text(title, style="bold cyan"))
-        header_lines.append(Text(subtitle, style="dim"))
-    else:
-        header_lines.append(
-            _styled_line(
-                [
-                    (title, content_width - len(subtitle), "bold cyan"),
-                    (subtitle, None, "dim"),
-                ]
-            )
-        )
-    header_lines.append(Text(_clip_inline("Research, backtest, inspect runs, and coordinate swarm presets.", content_width), style="dim"))
-
-    config_lines: list[Text] = []
-    if compact:
-        value_width = max(10, content_width - widths["label"] - 1)
-        rows = [
-            ("Provider", str(provider), "bold cyan"),
-            ("Model", str(model), "white"),
-            ("Credential", key_state, "bold green" if credential_ready else "bold yellow"),
-            ("Runs", str(recent_runs), "cyan"),
-            ("Swarms", str(recent_swarms), "cyan"),
-            ("Workspace", str(get_runtime_root()), "dim"),
-        ]
-        for label, value, value_style in rows:
-            config_lines.append(
-                _styled_line(
-                    [
-                        (label, widths["label"], "dim"),
-                        (" ", None, ""),
-                        (value, value_width, value_style),
-                    ]
-                )
-            )
-    else:
-        gap = " " * widths["gap"]
-        rows = [
-            ("Provider", str(provider), "bold cyan", "Credential", key_state, "bold green" if credential_ready else "bold yellow"),
-            ("Model", str(model), "white", "Runs", str(recent_runs), "cyan"),
-            ("Workspace", str(get_runtime_root()), "dim", "Swarms", str(recent_swarms), "cyan"),
-        ]
-        for left_label, left_value, left_style, right_label, right_value, right_style in rows:
-            config_lines.append(
-                _styled_line(
-                    [
-                        (left_label, widths["label"], "dim"),
-                        (" ", None, ""),
-                        (left_value, widths["left_value"], left_style),
-                        (gap, None, ""),
-                        (right_label, widths["right_label"], "dim"),
-                        (" ", None, ""),
-                        (right_value, widths["right_value"], right_style),
-                    ]
-                )
-            )
-
-    action_lines: list[Text] = []
-    if compact:
-        actions = [
-            ("type a request", "start a run"),
-            ("/settings", "check config"),
-            ("/list", "recent runs"),
-            ("/swarm", "team presets"),
-            ("/help", "all commands"),
-            ("/quit", "exit"),
-        ]
-        action_width = min(16, max(12, content_width // 2 - 1))
-        use_width = max(8, content_width - action_width - 1)
-        for action, use in actions:
-            action_lines.append(
-                _styled_line(
-                    [
-                        (action, action_width, "bold cyan"),
-                        (" ", None, ""),
-                        (use, use_width, "white"),
-                    ]
-                )
-            )
-    else:
-        gap = " " * widths["command_gap"]
-        rows = [
-            ("type a request", "start a run", "/settings", "check config"),
-            ("/list", "recent runs", "/swarm", "team presets"),
-            ("/help", "all commands", "/quit", "exit"),
-        ]
-        for left_action, left_use, right_action, right_use in rows:
-            action_lines.append(
-                _styled_line(
-                    [
-                        (left_action, widths["action"], "bold cyan"),
-                        (" ", None, ""),
-                        (left_use, widths["use"], "white"),
-                        (gap, None, ""),
-                        (right_action, widths["action"], "bold cyan"),
-                        (" ", None, ""),
-                        (right_use, widths["use"], "white"),
-                    ]
-                )
-            )
-
-    body = Table.grid(expand=True)
-    body.add_row(_stack_text(header_lines))
-    body.add_row("")
-    body.add_row(
-        Panel(
-            _stack_text(config_lines),
-            title="[bold green]Current Config[/bold green]",
-            border_style="green" if credential_ready else "yellow",
-            padding=(0, 1),
-        )
+    The console now renders its startup banner through ``cli.main`` and
+    ``cli.ui.banner``. This compact helper remains for integrations that used
+    the private renderer directly.
+    """
+    del term_width
+    return Panel(
+        f"[bold cyan]Vibe-Trading[/bold cyan]\n"
+        f"[dim]Workspace: {get_runtime_root()}[/dim]",
+        border_style="cyan",
     )
-    body.add_row("")
-    body.add_row(
-        Panel(
-            _stack_text(action_lines),
-            title="[bold magenta]Actions[/bold magenta]",
-            border_style="magenta",
-            padding=(0, 1),
-        )
-    )
-    body.add_row("")
-    body.add_row(Text(_clip_inline("Example: analyze AAPL momentum with risk controls", content_width), style="dim"))
-
-    return Panel(body, title="[bold cyan]Vibe-Trading[/bold cyan]", border_style="cyan", padding=(1, 1))
 
 
 def _print_welcome() -> None:
-    """Print the welcome screen."""
+    """Render the compatibility welcome panel."""
     console.print(_build_welcome_panel())
-
-
-def _print_help() -> None:
-    """Print all available slash commands."""
-    table = Table(title="Commands", show_lines=False, border_style="dim", box=box.SIMPLE_HEAVY)
-    table.add_column("Command", style="cyan", no_wrap=True)
-    table.add_column("Description")
-
-    cmds = [
-        ("/help", "Show this command list"),
-        ("/skills", "List available trading skills"),
-        ("/list", "List recent backtest and research runs"),
-        ("/show <run_id>", "Open a compact run summary"),
-        ("/code <run_id>", "Show generated Python"),
-        ("/pine <run_id>", "Show exported Pine Script"),
-        ("/trace <run_id>", "Replay tool calls and answer events"),
-        ("/continue <run_id> <prompt>", "Refine an existing run"),
-        ("/swarm", "List multi-agent team presets"),
-        ("/swarm run <preset> {vars}", "Run a team preset"),
-        ("/swarm inspect <preset>", "Inspect preset DAG and validation"),
-        ("/swarm list", "List team run history"),
-        ("/swarm show <run_id>", "Show a team run"),
-        ("/swarm cancel <run_id>", "Cancel a team run"),
-        ("/swarm retry <run_id> [--resume]", "Retry a team run or resume a failed one"),
-        ("/sessions", "List chat sessions"),
-        ("/settings", "Show provider, model, timeout, and credentials"),
-        ("/stop", "How to gracefully cancel a running agent"),
-        ("/clear", "Clear the terminal"),
-        ("/quit", "Exit"),
-        ("", ""),
-        ("[dim]Natural language[/dim]", ""),
-        ('"analyze journal.csv"', "Parse a broker export and diagnose trading behavior"),
-        ('"train my shadow"', "Extract a strategy, backtest it, and create a report"),
-    ]
-    for cmd, desc in cmds:
-        table.add_row(cmd, desc)
-
-    console.print(table)
 
 
 def _show_settings() -> None:
@@ -1978,171 +1626,46 @@ def _show_settings() -> None:
     console.print("[dim]Edit configuration in ~/.vibe-trading/.env, or run vibe-trading init.[/dim]")
 
 
-def _handle_slash_command(input_str: str, *, max_iter: int) -> None:
-    """Parse and route a slash command."""
-    parts = input_str.split(maxsplit=1)
-    cmd = parts[0].lower()
-    arg = parts[1].strip() if len(parts) > 1 else ""
-
-    if cmd == "/help":
-        _print_help()
-    elif cmd == "/skills":
-        cmd_skills()
-    elif cmd == "/list":
-        cmd_list()
-    elif cmd == "/show":
-        if arg:
-            cmd_show(arg)
-        else:
-            console.print("[red]Usage: /show <run_id>[/red]")
-    elif cmd == "/code":
-        if arg:
-            cmd_code(arg)
-        else:
-            console.print("[red]Usage: /code <run_id>[/red]")
-    elif cmd == "/pine":
-        if arg:
-            cmd_pine(arg)
-        else:
-            console.print("[red]Usage: /pine <run_id>[/red]")
-    elif cmd == "/trace":
-        if arg:
-            cmd_trace(arg)
-        else:
-            console.print("[red]Usage: /trace <run_id>[/red]")
-    elif cmd == "/continue":
-        cont_parts = arg.split(maxsplit=1)
-        if len(cont_parts) >= 2:
-            cmd_continue(cont_parts[0], cont_parts[1], max_iter)
-        else:
-            console.print("[red]Usage: /continue <run_id> <prompt>[/red]")
-    elif cmd == "/swarm":
-        _handle_swarm_command(arg)
-    elif cmd == "/sessions":
-        cmd_sessions()
-    elif cmd == "/settings":
-        _show_settings()
-    elif cmd == "/stop":
-        console.print(
-            "[dim]No agent is running. Press [bold]Ctrl+C[/bold] during a run "
-            "to gracefully cancel — the current step finishes, then the loop "
-            "exits cleanly. Press Ctrl+C twice within 2 seconds to force quit.[/dim]"
-        )
-    elif cmd == "/clear":
-        console.clear()
-        _print_welcome()
-    elif cmd in ("/quit", "/exit"):
-        raise EOFError
-    else:
-        console.print(f"[red]Unknown command: {cmd}[/red] - type [cyan]/help[/cyan] for available commands")
-
-
 def _handle_swarm_command(arg: str) -> None:
-    """Route swarm sub-commands."""
-    if not arg:
-        cmd_swarm_presets()
-        return
+    """Compatibility wrapper for the canonical swarm slash command module."""
+    from cli.commands.swarm import dispatch
 
-    parts = arg.split(maxsplit=1)
-    sub = parts[0].lower()
-    sub_arg = parts[1].strip() if len(parts) > 1 else ""
+    dispatch(arg)
 
-    if sub == "run":
-        run_parts = sub_arg.split(maxsplit=1)
-        if not run_parts:
-            console.print("[red]Usage: /swarm run <preset> [vars_json][/red]")
-            return
-        preset = run_parts[0]
-        vars_json = run_parts[1] if len(run_parts) > 1 else None
-        cmd_swarm_run_live(preset, vars_json)
-    elif sub == "inspect":
-        if sub_arg:
-            cmd_swarm_inspect(sub_arg)
-        else:
-            console.print("[red]Usage: /swarm inspect <preset>[/red]")
-    elif sub == "list":
-        cmd_swarm_list()
-    elif sub == "show":
-        if sub_arg:
-            cmd_swarm_show(sub_arg)
-        else:
-            console.print("[red]Usage: /swarm show <run_id>[/red]")
-    elif sub == "cancel":
-        if sub_arg:
-            cmd_swarm_cancel(sub_arg)
-        else:
-            console.print("[red]Usage: /swarm cancel <run_id>[/red]")
-    elif sub == "retry":
-        retry_parts = sub_arg.split()
-        if len(retry_parts) == 1:
-            cmd_swarm_retry_live(retry_parts[0])
-        elif len(retry_parts) == 2 and retry_parts[1] == "--resume":
-            cmd_swarm_retry_live(retry_parts[0], resume=True)
-        else:
-            console.print("[red]Usage: /swarm retry <run_id> [--resume][/red]")
-    else:
-        console.print(f"[red]Unknown swarm command: {sub}[/red]")
+
+def _read_input(prompt_session: Any, prompt_str: str = "> ") -> str:
+    """Compatibility input helper delegated to the canonical prompt layer."""
+    del prompt_str
+    if prompt_session is not None and sys.stdin.isatty():
+        return prompt_session.prompt("> ")
+    return Prompt.ask("[bold]> [/bold]")
+
+
+def _create_prompt_session(stats: Any = None) -> Any:
+    """Compatibility hook for callers that still inject an input session."""
+    del stats
+    try:
+        from cli.input import make_session
+
+        return make_session()
+    except Exception:
+        return None
+
+
+def _print_status_bar(stats: Any = None) -> None:
+    """Compatibility no-op. The canonical loop renders its own prompt rail."""
+    del stats
 
 
 def cmd_interactive(max_iter: int) -> None:
-    """Interactive mode with welcome screen, slash commands, and agent conversation."""
-    _print_welcome()
+    """Run the canonical interactive loop for legacy flag compatibility."""
+    from cli.main import _interactive_loop
 
-    from src.preflight import run_preflight
-    results = run_preflight(console)
-    if any(r.critical and r.status != "ready" for r in results):
-        return
-
-    stats = _SessionStats(session_start=time.monotonic())
-    prompt_session = _create_prompt_session(stats)
-    # Created on the first agent turn so a REPL used only for slash commands
-    # leaves no empty session behind.
-    session_id = ""
-
-    while True:
-        if prompt_session is None:
-            _print_status_bar(stats)
-        try:
-            user_input = _read_input(prompt_session).strip()
-        except (KeyboardInterrupt, EOFError):
-            break
-
-        if not user_input:
-            continue
-        if user_input.lower() in ("q", "quit", "exit"):
-            break
-
-        # Slash commands
-        if user_input.startswith("/"):
-            try:
-                _handle_slash_command(user_input, max_iter=max_iter)
-            except EOFError:
-                break
-            continue
-
-        # Natural language -> agent
-        start = time.perf_counter()
-        if not session_id:
-            session_id = _ensure_session_id(user_input)
-        try:
-            dashboard = _RunDashboard(user_input, max_iter)
-            with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
-                dashboard.live = live
-                result = _run_agent(
-                    user_input,
-                    max_iter=max_iter,
-                    dashboard=dashboard,
-                    session_id=session_id,
-                )
-                dashboard.finish(result, time.perf_counter() - start)
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted[/yellow]")
-            continue
-        stats.last_elapsed = time.perf_counter() - start
-        stats.tool_count += dashboard.iterations
-        _print_result(result, stats.last_elapsed)
-
-    console.print("[dim]Goodbye[/dim]")
+    _interactive_loop(
+        max_iter,
+        input_reader=_read_input,
+        session_factory=lambda: _create_prompt_session(None),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2948,7 +2471,7 @@ def cmd_sessions() -> None:
 
 
 def cmd_session_chat(session_id: str, max_iter: int) -> None:
-    """Continue a session chat."""
+    """Continue a session through the canonical interactive loop."""
     from src.session.store import SessionStore
 
     store = SessionStore(base_dir=SESSIONS_DIR)
@@ -2958,59 +2481,24 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
         console.print(f"[red]Session {session_id} not found[/red]")
         return
 
-    # The model's history is replayed from the session's thread log by
-    # ``_run_agent``; the messages here are only what the user reads.
     messages = store.get_messages(session_id, limit=None)
+    console.print(
+        Panel(
+            f"[bold cyan]Session: {session.title or session_id}[/bold cyan]\n"
+            f"[dim]History: {len(messages)} messages | Type q or /quit to exit[/dim]",
+            border_style="cyan",
+        )
+    )
 
-    console.print(Panel(
-        f"[bold cyan]Session: {session.title or session_id}[/bold cyan]\n"
-        f"[dim]History: {len(messages)} messages | Type q to exit[/dim]",
-        border_style="cyan",
-    ))
+    from cli.main import _interactive_loop
 
-    stats = _SessionStats(session_start=time.monotonic())
-    prompt_session = _create_prompt_session(stats)
-
-    while True:
-        if prompt_session is None:
-            _print_status_bar(stats)
-        try:
-            prompt = _read_input(prompt_session).strip()
-        except (KeyboardInterrupt, EOFError):
-            break
-        if not prompt or prompt.lower() in ("q", "quit", "exit"):
-            break
-
-        run_start = time.perf_counter()
-        _run_state = {"label": "running"}
-        _stop_timer = threading.Event()
-
-        def _session_event_timer(status_ref: Any) -> None:
-            while not _stop_timer.is_set():
-                elapsed = time.perf_counter() - run_start
-                label = _run_state["label"]
-                try:
-                    status_ref.update(f"[bold cyan]\u23f3 {label}... {elapsed:.1f}s[/bold cyan]")
-                except Exception:
-                    pass
-                _stop_timer.wait(1.0)
-
-        with console.status("[bold cyan]\u23f3 Running...[/bold cyan]") as spinner:
-            _timer = threading.Thread(target=_session_event_timer, args=(spinner,), daemon=True)
-            _timer.start()
-            try:
-                result = _run_agent(prompt, max_iter=max_iter, session_id=session_id)
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Interrupted[/yellow]")
-                continue
-            finally:
-                _stop_timer.set()
-                _timer.join(timeout=1)
-
-        stats.last_elapsed = time.perf_counter() - run_start
-        _print_result(result, stats.last_elapsed)
-
-    console.print("[dim]Goodbye[/dim]")
+    _interactive_loop(
+        max_iter,
+        resume_session_id=session_id,
+        input_reader=_read_input,
+        session_factory=lambda: _create_prompt_session(None),
+        session_store=store,
+    )
 
 
 # ---------------------------------------------------------------------------

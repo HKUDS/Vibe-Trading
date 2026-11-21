@@ -1270,7 +1270,14 @@ def _handle_proposal_reply(text: str, ctx: InteractiveContext) -> bool:
     return True
 
 
-def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) -> int:
+def _interactive_loop(
+    max_iter: int,
+    resume_session_id: Optional[str] = None,
+    *,
+    input_reader: Any = None,
+    session_factory: Any = None,
+    session_store: Any = None,
+) -> int:
     """Drive the new interactive REPL.
 
     Args:
@@ -1289,11 +1296,11 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
 
     ctx = InteractiveContext(max_iter=max_iter)
     pending_input: Optional[str] = None
+    store = session_store or _session_store()
 
     if resume_session_id:
         # Resume a specific session by ID (``vibe-trading resume <session-id>``).
         try:
-            store = _session_store()
             session = store.get_session(resume_session_id)
         except Exception:  # noqa: BLE001
             session = None
@@ -1308,7 +1315,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         )
     else:
         # Offer to resume the most recent session. Audit item 8.
-        resume = _maybe_resume_last_session(console)
+        resume = _maybe_resume_last_session(console) if session_store is None else None
         if resume is not None:
             if "pending_input" in resume:
                 pending_input = str(resume["pending_input"])
@@ -1323,18 +1330,12 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
     # Build the prompt session once so history + completer persist.
     try:
         from cli.input import ctrl_c_within_window, get_user_input, make_session
-    except Exception as exc:  # noqa: BLE001 — fall back gracefully if prompt_toolkit broken
+    except Exception as exc:  # noqa: BLE001 — input dependency is required for the REPL
         console.print(f"[red]Failed to initialise input layer: {exc}[/red]")
-        console.print("[dim]Falling back to legacy interactive loop.[/dim]")
-        from cli._legacy import cmd_interactive
+        return 1
 
-        try:
-            cmd_interactive(max_iter)
-        except Exception:  # noqa: BLE001
-            return 1
-        return 0
-
-    session = make_session()
+    session = session_factory() if session_factory is not None else make_session()
+    read_input = input_reader or (lambda prompt_session: get_user_input(session=prompt_session))
 
     while True:
         if pending_input is not None:
@@ -1343,7 +1344,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         else:
             _print_recap_if_needed(console, ctx)
             try:
-                user_input = get_user_input(session=session)
+                user_input = read_input(session)
             except KeyboardInterrupt:
                 # Should not reach here — the keybinding raises EOFError instead.
                 continue
@@ -1366,6 +1367,8 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         text = user_input.strip()
         if not text:
             continue
+        if text.lower() in {"q", "quit", "exit"}:
+            break
 
         # Kill switch — intercept a bare "停"/"stop"/"kill" turn BEFORE the
         # agent loop so it trips even if a turn is mid-stream and never depends
