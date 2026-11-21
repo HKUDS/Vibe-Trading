@@ -69,7 +69,7 @@ This Hard-Gate Checklist is also the evidence ingestion gate for Strategy Discov
 
 ## Fixing Principles
 
-- Use **edit_file** to make precise code fixes instead of rewriting the entire file with `write_file`, unless the structure is fundamentally broken
+- Use **edit_file** to make precise code fixes (old_text must match exactly once: add surrounding context, or pass replace_all=true) instead of rewriting the entire file with `write_file`, unless the structure is fundamentally broken
 - Fix the bug only, do not change strategy logic unless the user explicitly asks
 - Fix one issue at a time, and rerun the backtest immediately after each fix
 - Limit yourself to at most 3 repair iterations

@@ -193,6 +193,31 @@ def test_resolve_safe_path_run_dir_escapes_fallback(tmp_path: Path, monkeypatch)
     assert "escapes run_dir" in str(excinfo.value)
 
 
+def test_confined_write_roots_only_narrow_and_end_with_the_block(tmp_path: Path, monkeypatch) -> None:
+    from src.tools.path_utils import confined_write_roots
+
+    runs = tmp_path / "runs"
+    parent = runs / "parent"
+    child = parent / "subagents" / "child"
+    child.mkdir(parents=True)
+    extra_write_dir = tmp_path / "extra_write"
+    extra_write_dir.mkdir()
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(runs))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", f"{extra_write_dir},{runs}")
+
+    with confined_write_roots(child):
+        assert allowed_write_roots() == [child.resolve()]
+        assert resolve_safe_path("notes.md", str(child), allowed_write_roots(), purpose="write") == child / "notes.md"
+        for escape in ("../../req.json", str(parent / "req.json"), str(extra_write_dir / "tool.py")):
+            with pytest.raises(ValueError) as excinfo:
+                resolve_safe_path(escape, str(child), allowed_write_roots(), purpose="write")
+            # No setting widens a confinement, so none is offered.
+            assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" not in str(excinfo.value)
+
+    assert extra_write_dir.resolve() in allowed_write_roots()
+    assert resolve_safe_path("../../req.json", str(child), allowed_write_roots(), purpose="write") == parent / "req.json"
+
+
 def test_write_rejection_names_the_write_roots_env(tmp_path: Path, monkeypatch) -> None:
     # The escape hatch must be discoverable from the error itself: a model
     # told only "escapes the workspace" cannot tell the user how to allow

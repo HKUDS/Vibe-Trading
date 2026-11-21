@@ -74,6 +74,38 @@ def _discover_subclasses() -> list[type[BaseTool]]:
     return classes
 
 
+def session_bound_tool_classes() -> frozenset[type[BaseTool]]:
+    """Tool classes ``build_registry`` binds to the host session.
+
+    Each is built with the session id and event callback: they create or
+    mutate the session's research goal (or schedule runs for it), and the LLM
+    never knows the session id. An instance of one acts on that session
+    whoever calls it.
+
+    Returns:
+        The goal tools, the research autopilot and scheduled research.
+    """
+    from src.tools.autopilot_tool import RunResearchAutopilotTool
+    from src.tools.goal_tool import (
+        AddGoalEvidenceTool,
+        GetResearchGoalTool,
+        StartResearchGoalTool,
+        UpdateResearchGoalStatusTool,
+        UpdateResearchGoalTool,
+    )
+    from src.tools.scheduled_research_tool import ScheduledResearchTool
+
+    return frozenset({
+        StartResearchGoalTool,
+        GetResearchGoalTool,
+        AddGoalEvidenceTool,
+        UpdateResearchGoalStatusTool,
+        UpdateResearchGoalTool,
+        RunResearchAutopilotTool,
+        ScheduledResearchTool,
+    })
+
+
 def build_registry(
     *,
     persistent_memory: "PersistentMemory | None" = None,
@@ -143,31 +175,11 @@ def build_registry(
         CheckBackgroundTool,
         get_background_manager,
     )
-    from src.tools.goal_tool import (
-        AddGoalEvidenceTool,
-        GetResearchGoalTool,
-        StartResearchGoalTool,
-        UpdateResearchGoalStatusTool,
-        UpdateResearchGoalTool,
-    )
-    from src.tools.autopilot_tool import RunResearchAutopilotTool
     from src.tools.remember_tool import RememberTool
+    from src.tools.spawn_agent_tool import SpawnAgentTool
     from src.tools.swarm_tool import SwarmTool
-    from src.tools.scheduled_research_tool import ScheduledResearchTool
 
-    goal_tool_classes = {
-        StartResearchGoalTool,
-        GetResearchGoalTool,
-        AddGoalEvidenceTool,
-        UpdateResearchGoalStatusTool,
-        UpdateResearchGoalTool,
-    }
-    # Tools that need the host session id injected: they create or mutate the
-    # session's research goal, and the LLM never knows the session id.
-    session_injected_classes = goal_tool_classes | {
-        RunResearchAutopilotTool,
-        ScheduledResearchTool,
-    }
+    session_injected_classes = session_bound_tool_classes()
     classes = _discover_subclasses()
     registry = ToolRegistry()
 
@@ -205,6 +217,17 @@ def build_registry(
                         event_callback=event_callback,
                         session_id=session_id,
                         cancel_event=cancel_event,
+                    )
+                )
+            elif cls is SpawnAgentTool:
+                # Reads this registry when it runs, so MCP tools appended
+                # below are part of the child's tool set too.
+                registry.register(
+                    cls(
+                        registry,
+                        cancel_event=cancel_event,
+                        session_id=session_id,
+                        event_callback=event_callback,
                     )
                 )
             else:

@@ -468,7 +468,8 @@ class AgentTuningConfig(_EnvBase):
     Sources: ``src/agent/loop.py``, ``src/providers/content_filter.py``,
     ``src/scheduled_research/executor.py``, ``src/live/order_guard.py``,
     ``src/factors/_backend.py``, ``src/factors/bench_runner.py``,
-    ``src/tools/web_search_tool.py``, ``api_server.py``.
+    ``src/tools/web_search_tool.py``, ``src/tools/spawn_agent_tool.py``,
+    ``api_server.py``.
     """
 
     # Deprecated: counted chars/4 of messages without tool schemas, so no value
@@ -480,6 +481,15 @@ class AgentTuningConfig(_EnvBase):
     vibe_trading_agent_max_iterations: int = Field(
         alias="VIBE_TRADING_AGENT_MAX_ITERATIONS", default=50, ge=1,
     )
+    # spawn_agent child: one focused task in a fresh context, the shape of a
+    # swarm worker, so it gets a swarm worker's budget (SWARM_WORKER_MAX_ITER
+    # and SWARM_WORKER_TIMEOUT; every shipped preset agent declares 50).
+    subagent_max_iter: int = Field(alias="SUBAGENT_MAX_ITER", default=50, ge=1)
+    # Seconds after which the child is cancelled; 0 disables. Cooperative: the
+    # child stops at its next checkpoint, so a tool call it is running finishes
+    # first (a read-only one within VIBE_TRADING_TOOL_TIMEOUT_SECONDS, a write
+    # such as a backtest only when it returns). A parent cancel waits the same.
+    subagent_timeout: float = Field(alias="SUBAGENT_TIMEOUT", default=300.0, ge=0)
     vibe_trading_tool_loading: Literal["eager", "lazy"] = Field(
         alias="VIBE_TRADING_TOOL_LOADING", default="lazy",
     )

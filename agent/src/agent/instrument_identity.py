@@ -10,10 +10,12 @@ from __future__ import annotations
 import copy
 import json
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from src.agent.resolution_context import ResolutionContext, candidate_market
 from src.market_data import canonical_fx_pair
@@ -22,6 +24,32 @@ _RESOLVER_TOOL = "search_symbol"
 IDENTITY_ARTIFACT = "identity_evidence.json"
 # Version of IdentityLedger.export_state(); a different version is not restored.
 _STATE_SCHEMA_VERSION = 1
+
+# A canonical symbol the USER typed is locked as their assertion. A request
+# another model wrote (a delegated sub-agent task) carries no such authority:
+# the parent could put an unresolved or wrong code there, and seeding it would
+# authorize data calls the parent's own gate refused.
+_REQUEST_IS_USER_AUTHORED: ContextVar[bool] = ContextVar(
+    "identity_request_is_user_authored", default=True
+)
+
+
+@contextmanager
+def agent_authored_request() -> Iterator[None]:
+    """Mark ledgers created in this context as serving an agent-written request.
+
+    Symbols in such a request are not seeded; the run resolves each one
+    through the resolver like any other name. Resolution constraints read from
+    the text still apply, because they only narrow what the resolver accepts.
+
+    Yields:
+        None, while the marking is active in the current context.
+    """
+    token = _REQUEST_IS_USER_AUTHORED.set(False)
+    try:
+        yield
+    finally:
+        _REQUEST_IS_USER_AUTHORED.reset(token)
 
 
 _SYMBOL_ARGUMENT_KEYS = {
@@ -471,7 +499,9 @@ class IdentityLedger:
 
         Args:
             run_dir: Directory for the identity diagnostic artifact.
-            user_message: Current request; explicit canonical symbols seed state.
+            user_message: Current request; explicit canonical symbols seed state
+                unless the request was written by an agent
+                (:func:`agent_authored_request`).
             history: Prior messages used for subject-specific resolver constraints.
                 They only ever narrow a resolver query; no symbol in them is
                 authorized.
@@ -490,7 +520,8 @@ class IdentityLedger:
         self._identity_required = False
         if restored_state is not None:
             self._restore_state(restored_state)
-        self._seed_symbols(user_message, source="user_message")
+        if _REQUEST_IS_USER_AUTHORED.get():
+            self._seed_symbols(user_message, source="user_message")
         self.persist()
 
     def export_state(self) -> dict[str, Any]:
