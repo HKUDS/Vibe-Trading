@@ -1,13 +1,11 @@
 """Vibe-Trading CLI package.
 
-The legacy single-file CLI has been preserved verbatim as
-``cli/_legacy.py`` and is the source of truth for non-interactive
-subcommands (``serve``, ``run``, ``mcp``, ``sessions``, ``swarm`` ...).
-The front door (:mod:`cli.main`) shows the banner, runs the
-onboarding wizard when needed, then drives the interactive loop
-built on :mod:`cli.input`, :mod:`cli.completer`, and
-:mod:`cli.commands.*`. Non-interactive entries still pass through to
-``_legacy.main``.
+The front door (:mod:`cli.main`) owns the single interactive loop and
+dispatches slash commands through :mod:`cli.commands.*`. The compact
+``cli/_legacy.py`` module remains the implementation and parser for
+non-interactive subcommands (``serve``, ``run``, ``sessions``, ``swarm`` ...).
+Legacy chat flags and session-chat imports delegate back to the same loop.
+Non-interactive entries still pass through to ``_legacy.main``.
 
 The console-script entry in ``pyproject.toml``
 (``vibe-trading = "cli:main"``) points at the ``main`` callable exported

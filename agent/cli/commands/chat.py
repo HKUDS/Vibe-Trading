@@ -4,7 +4,7 @@
 ``/model`` renders the current configuration via the legacy
 ``_show_settings`` helper, and ``/model set`` / ``/model clear`` change the
 current session's own model selection. ``/swarm`` dispatches to the legacy
-``_handle_swarm_command`` so the existing presets keep working. ``/clear``
+``cli.commands.swarm`` so the existing presets keep working. ``/clear``
 clears the screen and reprints the banner. ``/journal``, ``/shadow``, and
 ``/debug`` show a "Coming soon" placeholder pointing at the established
 fallback workflows.
@@ -250,12 +250,11 @@ def cmd_shadow(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_swarm(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Dispatch to the legacy swarm handler."""
+    """Dispatch to the canonical swarm slash command module."""
     try:
-        from cli._legacy import _handle_swarm_command
+        from cli.commands.swarm import dispatch
 
-        _handle_swarm_command(" ".join(args))
-        return 0
+        return dispatch(" ".join(args))
     except Exception as exc:  # noqa: BLE001
         console = _resolve_console()
         console.print(Text(f"/swarm failed: {exc}", style="bold red"))
