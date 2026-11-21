@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter
+
 
 @dataclass
 class Skill:
@@ -57,9 +59,6 @@ class Skill:
             return path.read_text(encoding="utf-8")
         except Exception:
             return None
-
-
-from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
 
 
 def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
@@ -140,8 +139,11 @@ class SkillsLoader:
         "crypto", "flow", "tool", "other",
     ]
 
-    def get_descriptions(self) -> str:
+    def get_descriptions(self, *, max_description_chars: Optional[int] = None) -> str:
         """Return skills grouped by category for the system prompt.
+
+        Args:
+            max_description_chars: Optional length cap for each discovery hint.
 
         Returns:
             Grouped skill list with category headers.
@@ -160,7 +162,10 @@ class SkillsLoader:
         for cat in ordered_cats:
             lines.append(f"\n### {cat}")
             for skill in groups[cat]:
-                lines.append(f"  - {skill.name}: {skill.description}")
+                description = str(skill.description)
+                if max_description_chars is not None and len(description) > max_description_chars:
+                    description = description[:max_description_chars - 1].rstrip() + "…"
+                lines.append(f"  - {skill.name}: {description}")
         return "\n".join(lines)
 
     def get_content(self, name: str) -> str:
