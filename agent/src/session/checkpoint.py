@@ -73,6 +73,12 @@ class ResponseCheckpoint:
             ):
                 self._flush_locked(now)
 
+    @property
+    def text(self) -> str:
+        """Text streamed to the user so far, after any stream resets."""
+        with self._lock:
+            return self._text
+
     def flush(self) -> None:
         """Persist any text accumulated since the last snapshot."""
         with self._lock:

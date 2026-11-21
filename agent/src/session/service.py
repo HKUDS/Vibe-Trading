@@ -1,6 +1,9 @@
 """Session lifecycle orchestration for message flow, attempt creation, and execution scheduling.
 
-V5: Uses AgentLoop instead of the fixed pipeline behind the generate skill.
+The conversation, not the attempt, is the unit: each session has one
+:class:`~src.session.runtime.SessionRuntime` whose ``thread.jsonl`` records
+every turn in full. A turn's model input is replayed from it, and the
+``messages.jsonl`` display row is projected from it when the turn ends.
 """
 
 from __future__ import annotations
@@ -23,8 +26,10 @@ from src.session.models import (
     Principal,
     Session,
 )
+from src.session.runtime import SessionRuntime
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
+from src.session.thread import TurnProjection
 
 if TYPE_CHECKING:
     from src.agent.loop import AgentLoop
@@ -41,6 +46,10 @@ _TERMINAL_EVENTS = {
     "cancelled": "attempt.cancelled",
     "failed": "attempt.failed",
 }
+
+#: Shown after whatever a stopped turn had streamed, or alone if it streamed
+#: nothing. The turn's finished tool results stay in the thread either way.
+STOPPED_MARKER = "_Stopped before the answer was complete._"
 
 
 def _cancel_session_swarm_runs(session_id: str) -> int:
@@ -118,6 +127,10 @@ class SessionService:
         self._inflight_lock = threading.Lock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
+        # One runtime per conversation, alive across its turns. Rebuilt from
+        # the thread's state items on first use after a restart.
+        self._runtimes: Dict[str, SessionRuntime] = {}
+        self._runtimes_lock = threading.Lock()
         self._shutting_down = False
         # Durable records live under the runtime root that owns runs_dir, so a
         # test pointing runs_dir at a temp root gets its own isolated store.
@@ -131,8 +144,15 @@ class SessionService:
 
         A newly constructed service has no live AgentLoop instances. Any
         attempt still marked pending or running therefore belongs to the
-        previous process. Convert it to an explicit terminal state and expose
-        the most recent durable response snapshot in conversation history.
+        previous process. This is only valid because the service is built once
+        per process: two servers sharing one sessions directory would mark each
+        other's in-flight attempts interrupted.
+
+        The thread log already holds every tool result the turn finished; its
+        turn is closed as ``interrupted`` so the next turn's replay shows those
+        results, stubs the call that was cut off and tells the model the turn
+        stopped. The transcript reply keeps the streamed-text snapshot, which
+        covers text the model was still writing when no assistant item existed.
         """
         recoverable = {AttemptStatus.PENDING, AttemptStatus.RUNNING}
         for attempt in self.store.list_attempts():
@@ -146,6 +166,9 @@ class SessionService:
                 attempt.session_id, attempt.attempt_id
             )
             if existing_reply is None:
+                projection = self._close_recovered_turn(
+                    attempt, AttemptStatus.INTERRUPTED.value
+                )
                 reply = Message(
                     session_id=attempt.session_id,
                     role="assistant",
@@ -156,6 +179,7 @@ class SessionService:
                         "partial": has_partial,
                         "recovery_reason": "service_restart",
                     },
+                    tool_trail=projection.tool_trail if projection is not None else [],
                 )
                 self.store.append_message(reply)
                 self._search_index.index_message(
@@ -168,6 +192,12 @@ class SessionService:
                 # from the reply's terminal metadata instead of mislabelling a
                 # complete response as interrupted.
                 reply_status = existing_reply.metadata.get("status")
+                thread_status = (
+                    reply_status
+                    if reply_status in {"completed", "cancelled", "failed"}
+                    else AttemptStatus.INTERRUPTED.value
+                )
+                self._close_recovered_turn(attempt, thread_status)
                 if reply_status == AttemptStatus.COMPLETED.value:
                     attempt.mark_completed(summary=existing_reply.content)
                 elif reply_status == AttemptStatus.CANCELLED.value:
@@ -180,6 +210,47 @@ class SessionService:
                     )
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(attempt.session_id, attempt.attempt_id)
+
+    def _close_recovered_turn(
+        self, attempt: Attempt, status: str
+    ) -> Optional[TurnProjection]:
+        """Write the missing ``turn_end`` of a turn the previous process lost.
+
+        A session without a thread log predates it; recovery does not create
+        one for it.
+
+        Args:
+            attempt: The attempt being reconciled.
+            status: Thread status to close the turn with.
+
+        Returns:
+            The turn's projection, or None for a session with no thread log.
+        """
+        runtime = self.runtime(attempt.session_id)
+        if not runtime.thread.path.exists():
+            return None
+        return runtime.finish_turn(
+            attempt.attempt_id,
+            prompt=attempt.prompt,
+            status=status,
+            run_dir=attempt.run_dir,
+        )
+
+    def runtime(self, session_id: str) -> SessionRuntime:
+        """Return the session's runtime, rebuilding it from its thread if needed.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The session runtime.
+        """
+        with self._runtimes_lock:
+            runtime = self._runtimes.get(session_id)
+            if runtime is None:
+                runtime = SessionRuntime(self.store.thread_log(session_id), session_id)
+                self._runtimes[session_id] = runtime
+            return runtime
 
     @staticmethod
     def _format_interrupted_message(partial: Optional[str]) -> str:
@@ -333,6 +404,8 @@ class SessionService:
             # index rows left by an older version or an interrupted deletion.
             self._search_index.remove_session(session_id)
             deleted = self.store.delete_session(session_id)
+            with self._runtimes_lock:
+                self._runtimes.pop(session_id, None)
             self.event_bus.clear(session_id)
             background = self._background_handles.pop(session_id, None)
             if background is not None:
@@ -499,6 +572,15 @@ class SessionService:
             if attempt.metrics:
                 reply_metadata["metrics"] = attempt.metrics
             reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
+            # turn_end first: the display row below is projected from it.
+            projection = self.runtime(session.session_id).finish_turn(
+                attempt.attempt_id,
+                prompt=attempt.prompt,
+                status=attempt.status.value,
+                usage=result.get("usage"),
+                elapsed_ms=reply_metadata["elapsed_ms"],
+                run_dir=attempt.run_dir,
+            )
             reply_metadata["started_at"] = wall_started_at
             runtime_keys = (
                 "provider",
@@ -514,14 +596,16 @@ class SessionService:
 
             reply = Message(
                 session_id=session.session_id, role="assistant",
-                content=self._format_result_message(attempt),
+                content=self._format_result_message(
+                    attempt, streamed_text=result.get("streamed_text") or ""
+                ),
                 linked_attempt_id=attempt.attempt_id,
                 metadata=reply_metadata,
                 # Every terminal attempt keeps its steps. A failed run saved an
                 # empty trail, so after a reload the history said "0 steps"
                 # for a run that made eight rounds of tool calls — hiding the
                 # one thing a failure report needs.
-                tool_trail=result.get("tool_trail", []),
+                tool_trail=projection.tool_trail,
             )
             reports = [entry["artifact"] for entry in reply.tool_trail
                        if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
@@ -554,6 +638,7 @@ class SessionService:
                 # reached its AgentLoop yet. Keep that explicit user action
                 # distinct from event-loop cancellation during server shutdown.
                 attempt.mark_cancelled(reason="cancelled by user")
+                self._finish_thread_turn_quietly(session.session_id, attempt)
                 self.store.update_attempt(attempt)
                 self.store.delete_partial_response(
                     session.session_id, attempt.attempt_id
@@ -571,6 +656,7 @@ class SessionService:
             raise
         except Exception as exc:
             attempt.mark_failed(error=str(exc))
+            self._finish_thread_turn_quietly(session.session_id, attempt)
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
@@ -584,6 +670,23 @@ class SessionService:
             self._user_cancel_requests.discard(session.session_id)
             self._release_session(session.session_id)
 
+    def _finish_thread_turn_quietly(self, session_id: str, attempt: Attempt) -> None:
+        """Close the turn in the thread on an error path, never raising.
+
+        Args:
+            session_id: Session ID.
+            attempt: The attempt, already marked terminal.
+        """
+        try:
+            self.runtime(session_id).finish_turn(
+                attempt.attempt_id,
+                prompt=attempt.prompt,
+                status=attempt.status.value,
+                run_dir=attempt.run_dir,
+            )
+        except Exception:  # noqa: BLE001 - the attempt's own terminal write still runs
+            logger.warning("Could not close thread turn %s", attempt.attempt_id, exc_info=True)
+
     async def _run_with_agent(
         self,
         attempt: Attempt,
@@ -594,9 +697,16 @@ class SessionService:
     ) -> Dict[str, Any]:
         """Execute an attempt with the V5 AgentLoop.
 
+        The registry and LLM client are built per attempt: the registry binds
+        this attempt's event callback, cancel flag and background handle, and
+        rebuilding it is how a changed config (MCP servers, tool gates) takes
+        effect. What a conversation carries across turns lives in its
+        :class:`SessionRuntime` instead.
+
         Args:
             attempt: Current execution attempt.
-            messages: Session message history.
+            messages: The session's ``messages.jsonl`` rows; read only for
+                history recorded before the session had a thread log.
             include_shell_tools: Whether the registry may include shell tools.
             session_config: Optional session-level config overrides. MCP server
                 definitions under the ``mcpServers`` key are merged on top of
@@ -620,7 +730,6 @@ class SessionService:
             session_id = attempt.session_id
             attempt_id = attempt.attempt_id
             loop = asyncio.get_running_loop()
-            tool_trail: list[Dict[str, Any]] = []
             checkpoint = ResponseCheckpoint(self.store, attempt)
 
             safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
@@ -638,8 +747,6 @@ class SessionService:
                         attempt_id,
                         exc,
                     )
-                if event_type in {"tool_call", "tool_result"}:
-                    self._record_tool_trail_event(tool_trail, event_type, data)
                 data["attempt_id"] = attempt_id
                 self.event_bus.emit(session_id, event_type, data)
 
@@ -681,6 +788,7 @@ class SessionService:
 
             from src.config.accessor import get_env_config
 
+            recorder = self.runtime(session_id).begin_turn(attempt_id, messages or [])
             agent = AgentLoop(
                 registry=registry,
                 llm=llm,
@@ -689,18 +797,16 @@ class SessionService:
                 persistent_memory=pm,
                 cancel_event=turn_cancel,
                 background_manager=background,
+                thread_recorder=recorder,
             )
             self._active_loops[session_id] = agent
-
-            # Build the message history context.
-            history = self._convert_messages_to_history(messages) if messages else None
 
             try:
                 result = await loop.run_in_executor(
                     _AGENT_EXECUTOR,
                     lambda: agent.run(
                         user_message=attempt.prompt,
-                        history=history,
+                        history=recorder.history or None,
                         session_id=session_id,
                     ),
                 )
@@ -718,7 +824,8 @@ class SessionService:
                         exc,
                     )
 
-            result["tool_trail"] = tool_trail
+            result["streamed_text"] = checkpoint.text
+            result["usage"] = recorder.usage
 
             # Load metrics from the run output when available.
             if result.get("run_dir"):
@@ -729,146 +836,6 @@ class SessionService:
             return result
         finally:
             await llm.aclose()
-
-    @staticmethod
-    def _record_tool_trail_event(
-        tool_trail: list[Dict[str, Any]],
-        event_type: str,
-        data: Dict[str, Any],
-    ) -> None:
-        """Consolidate live tool events into a compact history record.
-
-        Args:
-            tool_trail: Mutable per-attempt trail.
-            event_type: Agent event type (`tool_call` or `tool_result`).
-            data: Already-redacted live event payload.
-        """
-        tool = str(data.get("tool") or "")
-        if not tool:
-            return
-
-        call_id_value = data.get("call_id")
-        call_id = call_id_value if isinstance(call_id_value, str) and call_id_value else None
-
-        if event_type == "tool_call":
-            entry: Dict[str, Any] = {
-                "tool": tool,
-                "status": "running",
-                "arguments": (
-                    dict(data["arguments"])
-                    if isinstance(data.get("arguments"), dict)
-                    else {}
-                ),
-                "timestamp": int(time.time() * 1000),
-            }
-            if call_id:
-                entry["call_id"] = call_id
-            tool_trail.append(entry)
-            return
-
-        match = None
-        if call_id:
-            match = next(
-                (
-                    entry
-                    for entry in tool_trail
-                    if entry.get("call_id") == call_id
-                    and entry.get("status") == "running"
-                ),
-                None,
-            )
-        if match is None:
-            match = next(
-                (
-                    entry
-                    for entry in tool_trail
-                    if entry.get("tool") == tool
-                    and entry.get("status") == "running"
-                ),
-                None,
-            )
-        if match is None:
-            match = {
-                "tool": tool,
-                "arguments": {},
-                "timestamp": int(time.time() * 1000),
-            }
-            tool_trail.append(match)
-
-        match["status"] = "ok" if data.get("status") == "ok" else "error"
-        elapsed_ms = data.get("elapsed_ms")
-        if isinstance(elapsed_ms, (int, float)) and not isinstance(elapsed_ms, bool):
-            match["elapsed_ms"] = max(0, int(elapsed_ms))
-        match["preview"] = str(data.get("preview") or "")
-        if match["status"] == "ok" and isinstance(data.get("artifact"), dict):
-            match["artifact"] = dict(data["artifact"])
-        if call_id:
-            match["call_id"] = call_id
-
-    @staticmethod
-    def _convert_messages_to_history(messages: list) -> list[Dict[str, Any]]:
-        """Convert Session messages into OpenAI-format history.
-
-        Keeps the readable ``[prev_run: {run_id}]`` marker instead of removing it
-        completely (and adds it to assistant replies whose metadata records the
-        run, so a later turn can find that run's artifacts), and trims by character budget instead of a hard six-message cap
-        so the LLM can still see previous artifact paths and strategy content during
-        iterative updates.
-
-        Args:
-            messages: Session message list without the current turn.
-
-        Returns:
-            OpenAI-format messages trimmed from the newest items within the token budget.
-        """
-        import re
-        from pathlib import Path
-
-        def _shorten_run_dir(match: re.Match) -> str:
-            path_str = match.group(0).replace("Run directory:", "").strip()
-            run_id = Path(path_str).name if path_str else ""
-            return f"[prev_run: {run_id}]" if run_id else ""
-
-        history = []
-        for msg in messages[:-1]:
-            role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-            content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-            if not content.strip() or role not in ("user", "assistant"):
-                continue
-            content = re.sub(r"Run directory:\s*\S+", _shorten_run_dir, content).strip()
-            # The run id is only in message metadata; without it the next turn cannot name the run to reuse.
-            meta = msg.get("metadata") if isinstance(msg, dict) else getattr(msg, "metadata", None)
-            run_id = (meta or {}).get("run_id")
-            marker = f"[prev_run: {run_id}]"
-            if (
-                role == "assistant"
-                and content
-                and isinstance(run_id, str)
-                and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", run_id)
-                and marker not in content
-            ):
-                content = f"{marker}\n{content}"
-            if content:
-                history.append({"role": role, "content": content})
-
-        # Trim from the newest messages within a character budget of roughly 3000 tokens.
-        MAX_HISTORY_CHARS = 12000
-        total_chars = 0
-        trimmed: list = []
-        for msg in reversed(history):
-            content = msg.get("content", "")
-            remaining = MAX_HISTORY_CHARS - total_chars
-            if len(content) <= remaining:
-                trimmed.append(msg)
-                total_chars += len(content)
-                continue
-            # A single oversized message must not wipe the whole window: when
-            # nothing has been kept yet, the newest turn survives truncated
-            # rather than the agent starting with no history at all.
-            if not trimmed:
-                trimmed.append({**msg, "content": content[:remaining] + "\n[... truncated]"})
-            break
-        return list(reversed(trimmed))
 
     @staticmethod
     def _load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
@@ -901,11 +868,13 @@ class SessionService:
         return metrics or None
 
     @staticmethod
-    def _format_result_message(attempt: Attempt) -> str:
+    def _format_result_message(attempt: Attempt, streamed_text: str = "") -> str:
         """Format the final execution result message.
 
         Args:
             attempt: The terminal attempt.
+            streamed_text: Text the turn streamed to the user; a stopped turn
+                keeps it instead of replacing it with a bare notice.
 
         Returns:
             The reply text shown in the transcript.
@@ -920,5 +889,6 @@ class SessionService:
                 "Check the run artifacts, or rephrase the request and try again."
             )
         if attempt.status == AttemptStatus.CANCELLED:
-            return "Run cancelled."
+            streamed = streamed_text.strip()
+            return f"{streamed}\n\n{STOPPED_MARKER}" if streamed else STOPPED_MARKER
         return f"Execution failed: {attempt.error or 'unknown error'}"

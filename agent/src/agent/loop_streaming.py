@@ -35,7 +35,12 @@ class TurnStream:
         self.streamed_chars = self.stream_total
 
     def finish(self, content: str) -> None:
-        """Deliver a provider's final text, including adapters that do not stream."""
+        """Deliver a provider's final text, including adapters that do not stream.
+
+        Text delivered here is the turn's answer, so its delta carries
+        ``phase: final``. Deltas streamed earlier left before the response said
+        whether tool calls follow and carry no phase.
+        """
         shown = "".join(self.thinking_chunks)[:self.streamed_chars]
         if not content.startswith(shown):
             # Some adapters return a normalized final message. Replace its own
@@ -43,7 +48,10 @@ class TurnStream:
             self.emit("stream_reset", {"iter": self.iteration, "reason": "provider_final_text"})
             shown = ""
         if len(content) > len(shown):
-            self.emit("text_delta", {"delta": content[len(shown):], "iter": self.iteration})
+            self.emit(
+                "text_delta",
+                {"delta": content[len(shown):], "iter": self.iteration, "phase": "final"},
+            )
 
     def on_waiting(self) -> None:
         now = _time.monotonic()

@@ -7,6 +7,7 @@ evidence scanner, answer validator, or text-rewriting interface.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from dataclasses import asdict, dataclass, field, replace
@@ -19,6 +20,8 @@ from src.market_data import canonical_fx_pair
 
 _RESOLVER_TOOL = "search_symbol"
 IDENTITY_ARTIFACT = "identity_evidence.json"
+# Version of IdentityLedger.export_state(); a different version is not restored.
+_STATE_SCHEMA_VERSION = 1
 
 
 _SYMBOL_ARGUMENT_KEYS = {
@@ -462,6 +465,7 @@ class IdentityLedger:
         user_message: str,
         history: Sequence[Mapping[str, Any]] | None = None,
         contextual_identity_constraints: bool = True,
+        restored_state: Mapping[str, Any] | None = None,
     ) -> None:
         """Initialize identity state from explicit symbols and relevant constraints.
 
@@ -469,7 +473,12 @@ class IdentityLedger:
             run_dir: Directory for the identity diagnostic artifact.
             user_message: Current request; explicit canonical symbols seed state.
             history: Prior messages used for subject-specific resolver constraints.
+                They only ever narrow a resolver query; no symbol in them is
+                authorized.
             contextual_identity_constraints: Enable those contextual constraints.
+            restored_state: This conversation's earlier ledger, exactly as
+                :meth:`export_state` returned it. It is the only source of
+                carried-over authorization.
         """
         self.run_dir = Path(run_dir)
         self.resolution_context = ResolutionContext.from_messages(
@@ -479,8 +488,54 @@ class IdentityLedger:
         )
         self._identities: dict[str, IdentityRecord] = {}
         self._identity_required = False
+        if restored_state is not None:
+            self._restore_state(restored_state)
         self._seed_symbols(user_message, source="user_message")
         self.persist()
+
+    def export_state(self) -> dict[str, Any]:
+        """Return the ledger's records, keyed as held, for a later turn to restore.
+
+        Returns:
+            JSON-serialisable ledger state.
+        """
+        return {
+            "schema_version": _STATE_SCHEMA_VERSION,
+            "identity_required": self._identity_required,
+            "records": [
+                {"key": key, **asdict(record)} for key, record in self._identities.items()
+            ],
+        }
+
+    def _restore_state(self, state: Mapping[str, Any]) -> None:
+        """Load records a previous :meth:`export_state` produced.
+
+        A record that does not have the exported shape is skipped, never
+        repaired: guessing a field of an authorization record would invent one.
+
+        Args:
+            state: Exported ledger state.
+        """
+        if not isinstance(state, Mapping) or state.get("schema_version") != _STATE_SCHEMA_VERSION:
+            return
+        records = state.get("records")
+        if not isinstance(records, list):
+            return
+        names = set(IdentityRecord.__dataclass_fields__)
+        for entry in records:
+            if not isinstance(entry, Mapping):
+                continue
+            key = entry.get("key")
+            fields = {name: entry[name] for name in names if name in entry}
+            if not isinstance(key, str) or not key or set(entry) - names - {"key"}:
+                continue
+            if not isinstance(fields.get("query"), str) or not isinstance(fields.get("status"), str):
+                continue
+            try:
+                self._identities[key] = IdentityRecord(**copy.deepcopy(fields))
+            except TypeError:
+                continue
+        self._identity_required = bool(state.get("identity_required"))
 
     def pending_resolution_query(self, arguments: Mapping[str, Any], field: str) -> str | None:
         """Find a new unresolved dependency without changing authorization.

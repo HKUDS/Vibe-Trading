@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.session.service import SessionService
 from src.session.thread import INTERRUPTED_RESULT_CONTENT, ThreadLog, project_turn
 
 
@@ -66,26 +65,33 @@ def test_projection_matches_the_live_tool_trail_shape(tmp_path: Path) -> None:
     ]
 
 
-def test_projection_agrees_with_the_live_trail_recorder(tmp_path: Path) -> None:
-    """Same events through SessionService's recorder give the same keys and values."""
+def test_projection_matches_the_retired_live_trail_recorder(tmp_path: Path) -> None:
+    """The keys and values the live-event trail recorder produced, fixed.
+
+    ``SessionService._record_tool_trail_event`` built the trail from SSE
+    events until the trail was projected from the thread; these are the
+    values it produced for the same call and result.
+    """
     log = ThreadLog(tmp_path / "thread.jsonl")
     log.append("assistant", "t1", content="", tool_calls=[_call("c1", "search_symbol", {"query": "苹果"})])
     log.append("tool_result", "t1", tool_call_id="c1", name="search_symbol",
                content='{"status": "error"}', status="error", elapsed_ms=4)
     log.append("turn_end", "t1", status="completed")
 
-    live: list = []
-    SessionService._record_tool_trail_event(
-        live, "tool_call", {"tool": "search_symbol", "arguments": {"query": "苹果"}, "call_id": "c1"}
-    )
-    SessionService._record_tool_trail_event(
-        live, "tool_result",
-        {"tool": "search_symbol", "status": "error", "elapsed_ms": 4, "preview": '{"status": "error"}', "call_id": "c1"},
-    )
     projected = project_turn(log.read(), "t1").tool_trail
 
     strip = lambda entries: [{k: v for k, v in e.items() if k != "timestamp"} for e in entries]  # noqa: E731
-    assert strip(projected) == strip(live)
+    assert strip(projected) == [
+        {
+            "tool": "search_symbol",
+            "status": "error",
+            "arguments": {"query": "苹果"},
+            "call_id": "c1",
+            "elapsed_ms": 4,
+            "preview": '{"status": "error"}',
+        }
+    ]
+    assert isinstance(projected[0]["timestamp"], int)
 
 
 def test_run_dir_argument_is_shown_as_the_live_event_showed_it(tmp_path: Path) -> None:

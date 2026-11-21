@@ -185,6 +185,7 @@ class AgentLoop(ToolCallLifecycle):
         persistent_memory: Optional[Any] = None,
         cancel_event: Optional[threading.Event] = None,
         background_manager: Optional[Any] = None,
+        thread_recorder: Optional[Any] = None,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -204,7 +205,14 @@ class AgentLoop(ToolCallLifecycle):
                 tools, so this loop drains the completions of its own tasks and
                 never another conversation's. Falls back to the handle the
                 registry recorded, and only then to an unowned one.
+            thread_recorder: The conversation's sink for this turn
+                (``src.session.runtime.TurnRecorder``). It receives every item
+                the model sees, carries the identity records and loaded tool
+                names earlier turns left, and brings their offloaded tool
+                results into this run. ``None`` (CLI, tests) records nothing
+                and starts every run fresh, as before.
         """
+        self._thread = thread_recorder
         self.registry = prepare_registry(registry)
         self.llm = llm
         runtime_snapshot = getattr(llm, "runtime_snapshot", None)
@@ -421,7 +429,14 @@ class AgentLoop(ToolCallLifecycle):
         self._context_meter = ContextMeter()
         self._learned_context_window: int | None = None
         self._compacted_to_tokens: int | None = None
+        self._turn_messages = None
         self.registry = prepare_registry(self.registry)
+        # A conversation keeps the schemas it already loaded; only a new one
+        # starts from the initial set.
+        if self._thread is not None and self._thread.loaded_tools is not None:
+            restore_exposure = getattr(self.registry, "restore_exposure", None)
+            if callable(restore_exposure):
+                restore_exposure(self._thread.loaded_tools)
         # Sent with every request and never compacted, so they count against
         # the window exactly like the system prompt.
         self._tool_schema_tokens = estimate_tokens(request_definitions(self.registry))
@@ -437,16 +452,23 @@ class AgentLoop(ToolCallLifecycle):
             self.memory.run_dir = str(run_dir)
 
         state_store.save_request(run_dir, user_message, {"session_id": session_id})
+        if self._thread is not None:
+            self._thread.prepare_workspace(run_dir)
         from src.agent.data_window import UserDataWindow
 
         self._user_data_window = UserDataWindow.parse(user_message)
+        # Authorization carried from an earlier turn comes only from the
+        # ledger's own exported records. Replayed history (tool results, the
+        # model's prose) is never parsed for symbols; for resolver constraints
+        # the ledger reads what the user typed, as it did before replay.
         self._identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,
-            history=history,
+            history=self._thread.user_history if self._thread is not None else history,
             contextual_identity_constraints=(
                 get_env_config().agent_tuning.vibe_contextual_identity_constraints
             ),
+            restored_state=self._thread.identity_state if self._thread is not None else None,
         )
 
         context = ContextBuilder(self.registry, self.memory,
@@ -461,6 +483,18 @@ class AgentLoop(ToolCallLifecycle):
         goal_store = None
         goal_turn_accounted = False
         messages = context.build_messages(llm_user_message, history)
+        self._turn_messages = messages
+        if self._thread is not None:
+            # Before any model call: the user message exactly as it is sent,
+            # agent-state and recalled-memory envelopes included, so a later
+            # replay reproduces the request byte for byte.
+            self._thread.start(
+                prompt=user_message,
+                message=messages[-1],
+                model=self._llm_runtime.configured_model or None,
+                provider=self._llm_runtime.provider or None,
+            )
+            self._sync_thread_state()
         react_trace: List[Dict[str, Any]] = []
 
         trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
@@ -582,7 +616,7 @@ class AgentLoop(ToolCallLifecycle):
                 notifs = self._background_manager.drain_notifications()
                 if notifs:
                     notif_text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
-                    messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>"})
+                    self._inject(messages, f"<background-results>\n{notif_text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>")
 
                 if _override("TOKEN_THRESHOLD") is not None:
                     # Test hook: a monkeypatched module-level TOKEN_THRESHOLD
@@ -641,7 +675,7 @@ class AgentLoop(ToolCallLifecycle):
                                 "iter": current_iter,
                             }
                         )
-                    messages.append({"role": "user", "content": wrap_content})
+                    self._inject(messages, wrap_content)
 
                 # Safety net: on the second-to-last iteration tools are still
                 # available, but the final iteration is text-only and cannot
@@ -659,7 +693,7 @@ class AgentLoop(ToolCallLifecycle):
                                 "iter": current_iter,
                             }
                         )
-                        messages.append({"role": "user", "content": f"<system>{pending_directive}</system>"})
+                        self._inject(messages, f"<system>{pending_directive}</system>")
 
                 stream = TurnStream(
                     emit=self._emit, iteration=current_iter,
@@ -785,9 +819,15 @@ class AgentLoop(ToolCallLifecycle):
                         value=thinking_text,
                         offload_kind=f"thinking-{current_iter}",
                     )
+                    # The streamed deltas went out before the response said
+                    # whether tool calls follow; its phase is known only now.
                     self._emit(
                         "thinking_done",
-                        {"iter": current_iter, "content": thinking_text[:500]},
+                        {
+                            "iter": current_iter,
+                            "content": thinking_text[:500],
+                            "phase": "commentary" if response.has_tool_calls else "final",
+                        },
                     )
 
                 # Content-filter skip: provider blocked the response — continue
@@ -807,10 +847,7 @@ class AgentLoop(ToolCallLifecycle):
                         content_filter_circuit_breaker = True
                         break
                     trace.write({"type": "content_filter_skipped", "iter": current_iter})
-                    messages.append({
-                        "role": "user",
-                        "content": f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>",
-                    })
+                    self._inject(messages, f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>")
                     continue
 
                 # Not filtered — reset the consecutive-skip counter.
@@ -827,6 +864,7 @@ class AgentLoop(ToolCallLifecycle):
                         {"type": "answer_partial", "iter": current_iter, "reason": finish_reason},
                         field="content", value=final_content, offload_kind=f"partial-answer-{current_iter}",
                     )
+                    self._record_final_answer(final_content)
                     break
 
                 unoffered_retry_call = final_answer_retry and response.has_tool_calls
@@ -850,15 +888,11 @@ class AgentLoop(ToolCallLifecycle):
                         if consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS:
                             break
                         consecutive_empty_responses += 1
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    "<system>Your previous response was empty (no text, no tool "
-                                    "calls). Respond again with either your next tool call or "
-                                    "your final plain-text answer.</system>"
-                                ),
-                            }
+                        self._inject(
+                            messages,
+                            "<system>Your previous response was empty (no text, no tool "
+                            "calls). Respond again with either your next tool call or "
+                            "your final plain-text answer.</system>",
                         )
                         continue
                     # A real response resets the consecutive-empty counter.
@@ -885,16 +919,15 @@ class AgentLoop(ToolCallLifecycle):
                                 "iter": current_iter,
                             }
                         )
-                        messages.append({"role": "assistant", "content": final_content})
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    "<system>Your previous response was not released: it contained "
-                                    "tool-call syntax even though tool calling is unavailable now. "
-                                    "Provide the final answer as plain prose only, with no XML/DSML tags.</system>"
-                                ),
-                            }
+                        self._append_assistant(
+                            messages, {"role": "assistant", "content": final_content},
+                            phase="commentary",
+                        )
+                        self._inject(
+                            messages,
+                            "<system>Your previous response was not released: it contained "
+                            "tool-call syntax even though tool calling is unavailable now. "
+                            "Provide the final answer as plain prose only, with no XML/DSML tags.</system>",
                         )
                         final_content = ""
                         if iteration <= self.max_iterations:
@@ -918,7 +951,7 @@ class AgentLoop(ToolCallLifecycle):
                         )
                         self._emit(
                             "text_delta",
-                            {"delta": final_content, "iter": current_iter},
+                            {"delta": final_content, "iter": current_iter, "phase": "final"},
                         )
                         syntax_fallback_emitted = True
                     if not syntax_fallback_emitted:
@@ -984,15 +1017,16 @@ class AgentLoop(ToolCallLifecycle):
                             react_trace.append(
                                 {"type": "goal_intermediate_answer", "content": final_content[:500]}
                             )
-                            messages.append({"role": "assistant", "content": final_content})
-                            messages.append(
-                                {
-                                    "role": "user",
-                                    "content": format_goal_continuation_prompt(
-                                        continuation_snapshot,
-                                        previous_answer=final_content,
-                                    ),
-                                }
+                            self._append_assistant(
+                                messages, {"role": "assistant", "content": final_content},
+                                phase="commentary",
+                            )
+                            self._inject(
+                                messages,
+                                format_goal_continuation_prompt(
+                                    continuation_snapshot,
+                                    previous_answer=final_content,
+                                ),
                             )
                             goal_last_progress = current_progress
                             goal_continuations += 1
@@ -1011,6 +1045,7 @@ class AgentLoop(ToolCallLifecycle):
                         offload_kind=f"assistant-message-{current_iter}",
                     )
                     react_trace.append({"type": "answer", "content": final_content[:500]})
+                    self._record_final_answer(final_content)
                     break
 
                 assistant_message = context.format_assistant_tool_calls(
@@ -1020,7 +1055,7 @@ class AgentLoop(ToolCallLifecycle):
                     provider_items=getattr(response, "provider_items", None),
                 )
                 _attach_tool_call_thought_signatures(assistant_message, response.tool_calls)
-                messages.append(assistant_message)
+                self._append_assistant(messages, assistant_message, phase="commentary")
 
                 # Execute tools with read/write batching
                 self._active_model_id = (
@@ -1032,6 +1067,7 @@ class AgentLoop(ToolCallLifecycle):
                 compact_requested, focus_topic = self._process_tool_calls(
                     response.tool_calls, context, messages, trace, react_trace, current_iter,
                 )
+                self._sync_thread_state()
 
                 if (
                     not self._cancel_event.is_set()
@@ -1054,8 +1090,10 @@ class AgentLoop(ToolCallLifecycle):
                     )
                     react_trace.append({"type": "answer", "content": final_content})
                     self._emit(
-                        "text_delta", {"delta": final_content, "iter": current_iter}
+                        "text_delta",
+                        {"delta": final_content, "iter": current_iter, "phase": "final"},
                     )
+                    self._record_final_answer(final_content)
                     break
 
                 # Layer 3: compress after all tools have executed
@@ -1073,6 +1111,7 @@ class AgentLoop(ToolCallLifecycle):
             trace.write({"type": "end", "iter": self._run_iteration, "status": "error", "reason": str(exc), "iterations": iteration})
             trace.close()
             state_store.mark_failure(run_dir, str(exc))
+            self._end_thread_turn()
             self._run_done.set()
             return {
                 "status": "failed",
@@ -1137,9 +1176,67 @@ class AgentLoop(ToolCallLifecycle):
             content_filter_count,
         )
 
+        self._end_thread_turn()
         self._run_done.set()
 
         return result
+
+    # -- Conversation thread ----------------------------------------------------
+
+    def _inject(self, messages: list, content: str) -> None:
+        """Append a loop-authored user-role message and record it.
+
+        Args:
+            messages: The turn's messages (appended in place).
+            content: Injected text (``<system>`` notes, background results).
+        """
+        message = {"role": "user", "content": content}
+        messages.append(message)
+        if self._records_into(messages):
+            self._thread.inject(message)
+
+    def _append_assistant(self, messages: list, message: Dict[str, Any], *, phase: str) -> None:
+        """Append a model response to the turn's messages and record it.
+
+        Args:
+            messages: The turn's messages (appended in place).
+            message: OpenAI-format assistant message, exactly as it will be sent.
+            phase: ``commentary`` for a response more steps follow.
+        """
+        messages.append(message)
+        if self._records_into(messages):
+            self._thread.assistant(message, phase=phase)
+
+    def _record_final_answer(self, content: str) -> None:
+        """Record the turn's released answer as the ``final`` assistant item.
+
+        The loop never sends its final answer back within the turn, so the
+        item holds the plain ``{role, content}`` a later turn replays.
+
+        Args:
+            content: Released answer text.
+        """
+        if self._thread is not None and content:
+            self._thread.assistant({"role": "assistant", "content": content}, phase="final")
+
+    def _sync_thread_state(self) -> None:
+        """Record the conversation state a later turn or a restart restores."""
+        if self._thread is None:
+            return
+        snapshot: Dict[str, Any] = {"workspace": self.memory.run_dir}
+        if self._identity is not None:
+            snapshot["identity"] = self._identity.export_state()
+        exposed_names = getattr(self.registry, "exposed_names", None)
+        if callable(exposed_names):
+            snapshot["loaded_tools"] = exposed_names()
+        self._thread.state(snapshot)
+
+    def _end_thread_turn(self) -> None:
+        """Hand the turn's usage to the recorder and flush the final state."""
+        if self._thread is None:
+            return
+        self._thread.usage = dict(self._llm_usage_summary.get("totals") or {})
+        self._sync_thread_state()
 
     def _stall_watchdog(
         self,
@@ -1624,14 +1721,19 @@ class AgentLoop(ToolCallLifecycle):
         if state_summary and state_summary != "(empty state)":
             compressed += f"\n\nCurrent agent state:\n{state_summary}"
 
+        summary_message = {"role": "user", "content": f"{compressed}\n\n<system>Continue from the summary above.</system>"}
         messages.clear()
         messages.append(system_msg)
-        messages.append({"role": "user", "content": f"{compressed}\n\n<system>Continue from the summary above.</system>"})
+        messages.append(summary_message)
         messages.extend(tail)
 
         # Fix orphaned tool pairs in the reconstructed message list
         _fix_tool_pairs(messages)
         self._unblock_lost_readonly_results(messages, readable_before)
+        # The next turn replays from this summary instead of from the items it
+        # folded; those items stay in the thread file.
+        if self._records_into(messages):
+            self._thread.compaction(summary_message, tail)
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""

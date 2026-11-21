@@ -18,7 +18,7 @@ def loading_policy() -> dict[str, Any]:
 
 
 class DeferredToolRegistry(ToolRegistry):
-    """Run-local schema exposure; execution permissions stay with the source tools.
+    """Per-conversation schema exposure; execution permissions stay with the source tools.
 
     All registered tools remain in the catalog and full manifest. No retrieval
     ranking, keyword routing, subagent, or alternate tool dispatcher is involved.
@@ -34,12 +34,32 @@ class DeferredToolRegistry(ToolRegistry):
         self.reset_exposure()
 
     def reset_exposure(self) -> None:
-        """Start a new question without carrying unrelated schemas forward."""
+        """Start a new conversation with only the initial schemas exposed."""
         with self._lock:
             self._loaded = dict.fromkeys([
                 *(name for name in loading_policy()["initial_tools"] if name in self._tools),
                 "load_tools",
             ])
+
+    def exposed_names(self) -> list[str]:
+        """Return the exposed tool names in request order, for a later turn."""
+        with self._lock:
+            return list(self._loaded)
+
+    def restore_exposure(self, names: list[str]) -> None:
+        """Expose the schemas an earlier turn of the same conversation loaded.
+
+        Order is kept, so the request's tool definitions match the earlier
+        turn's and the provider's prefix cache still applies. A name this
+        registry does not hold is skipped; ``load_tools`` stays exposed.
+
+        Args:
+            names: Names from :meth:`exposed_names` of an earlier registry.
+        """
+        with self._lock:
+            restored = dict.fromkeys(name for name in names if name in self._tools)
+            restored.setdefault("load_tools")
+            self._loaded = restored
 
     def request_definitions(self) -> list[dict[str, Any]]:
         """Return unmodified schemas for the tools exposed on this question."""

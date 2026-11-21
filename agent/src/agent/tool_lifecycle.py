@@ -46,6 +46,56 @@ def _format_timeout(seconds: float) -> str:
 class ToolCallLifecycle:
     """Run tools against the AgentLoop owner state; no independent lifecycle."""
 
+    # Thread sink of the conversation (``src.session.runtime.TurnRecorder``)
+    # and the message lists whose results it records: the turn's own list and
+    # the internal lists identity-dependency lookups run in. Class defaults
+    # keep loops built without ``__init__`` (tests) recording nothing.
+    _thread: Any = None
+    _turn_messages: list | None = None
+    _dependency_message_lists: tuple = ()
+
+    def _records_into(self, messages: list) -> bool:
+        """Whether results appended to ``messages`` belong in the thread."""
+        if self._thread is None:
+            return False
+        if messages is self._turn_messages:
+            return True
+        return any(messages is listed for listed in self._dependency_message_lists)
+
+    def _append_tool_result(
+        self,
+        messages: list,
+        context: ContextBuilder,
+        call_id: str,
+        tool_name: str,
+        content: str,
+        *,
+        status: str | None = None,
+        elapsed_ms: int | None = None,
+        artifact: dict | None = None,
+    ) -> None:
+        """Append a tool message and record it as the model receives it.
+
+        Args:
+            messages: Conversation messages (appended in place).
+            context: ContextBuilder for formatting.
+            call_id: Provider tool-call id.
+            tool_name: Tool name.
+            content: Delivered result text (already redacted and capped).
+            status: ``ok`` / ``error``; derived from the content when omitted.
+            elapsed_ms: Execution time.
+            artifact: Display-only report link.
+        """
+        message = context.format_tool_result(call_id, tool_name, content)
+        messages.append(message)
+        if self._records_into(messages):
+            self._thread.tool_result(
+                message,
+                status=status or ("ok" if _is_tool_success(content) else "error"),
+                elapsed_ms=elapsed_ms,
+                artifact=artifact,
+            )
+
     def _identity_dependency_query(self, tc: Any) -> str | None:
         """Read the opted-in dependency without issuing a refused consumer call."""
         if self._identity is None or self._cancel_event.is_set():
@@ -85,9 +135,19 @@ class ToolCallLifecycle:
                 "tool": dependency.name, "query": query,
             })
             internal_messages = []
-            self._process_tool_calls(
-                [dependency], context, internal_messages, trace, react_trace, iteration,
-            )
+            # The lookup is not model input, but its result is part of the
+            # turn the user saw run; the thread records it for the display
+            # trail (replay drops a result whose call the model never made).
+            self._dependency_message_lists = (*self._dependency_message_lists, internal_messages)
+            try:
+                self._process_tool_calls(
+                    [dependency], context, internal_messages, trace, react_trace, iteration,
+                )
+            finally:
+                self._dependency_message_lists = tuple(
+                    listed for listed in self._dependency_message_lists
+                    if listed is not internal_messages
+                )
             if internal_messages:
                 outcomes[tc.id] = internal_messages[-1]["content"]
         return outcomes
@@ -228,12 +288,15 @@ class ToolCallLifecycle:
                             "tool results are still in context; keep using them."
                         ),
                     })
-                    messages.append(context.format_tool_result(tc.id, "compact", declined))
+                    self._append_tool_result(messages, context, tc.id, "compact", declined, status="ok", elapsed_ms=0)
                     trace.write({"type": "compact_declined", "iter": iteration, "prompt_tokens": tokens})
                 else:
                     compact_requested = True
                     focus_topic = tc.arguments.get("focus_topic", "")
-                    messages.append(context.format_tool_result(tc.id, "compact", '{"status":"ok","message":"Compressing..."}'))
+                    self._append_tool_result(
+                        messages, context, tc.id, "compact",
+                        '{"status":"ok","message":"Compressing..."}', status="ok", elapsed_ms=0,
+                    )
                     trace.write({"type": "compact_requested", "iter": iteration})
                 self._emit(
                     "tool_result",
@@ -323,10 +386,10 @@ class ToolCallLifecycle:
             ):
                 cached = self._readonly_replay_cache[dedup_key]
                 restored = _replay_context_result(cached)
-                messages.append(
-                    context.format_tool_result(
-                        tc.id, tc.name, deliver_tool_result(restored, self.memory.run_dir, self.registry)
-                    )
+                self._append_tool_result(
+                    messages, context, tc.id, tc.name,
+                    deliver_tool_result(restored, self.memory.run_dir, self.registry),
+                    status="ok", elapsed_ms=0,
                 )
                 self._readonly_replay_visibility_pending.add(tc.id)
                 self._successful_call_keys[tc.id] = dedup_key
@@ -384,7 +447,7 @@ class ToolCallLifecycle:
                     else f"{tc.name} already completed successfully. Use the previous result."
                 )
                 skip_msg = json.dumps({"skipped": True, "reason": reason})
-                messages.append(context.format_tool_result(tc.id, tc.name, skip_msg))
+                self._append_tool_result(messages, context, tc.id, tc.name, skip_msg, elapsed_ms=0)
                 trace.write({"type": "tool_skipped", "iter": iteration, "tool": tc.name})
                 self._tool_progress.note("skipped", tc.name)
                 react_trace.append({"type": "tool_skipped", "tool": tc.name})
@@ -400,7 +463,11 @@ class ToolCallLifecycle:
                 cache_key = self._identical_call_key(tc.name, tc.arguments)
                 if cache_key is not None and cache_key in self._called_identical:
                     cached = self._called_identical[cache_key]
-                    messages.append(context.format_tool_result(tc.id, tc.name, deliver_tool_result(cached, self.memory.run_dir, self.registry)))
+                    self._append_tool_result(
+                        messages, context, tc.id, tc.name,
+                        deliver_tool_result(cached, self.memory.run_dir, self.registry),
+                        status="ok", elapsed_ms=0,
+                    )
                     self._successful_call_keys[tc.id] = cache_key
                     self._called_ok.add(cache_key)
                     trace.write({
@@ -1042,21 +1109,9 @@ class ToolCallLifecycle:
                 self._readonly_replay_protected.clear()
 
         status = "ok" if success else "error"
-        truncated = deliver_tool_result(result, self.memory.run_dir, self.registry)
-        messages.append(context.format_tool_result(tc.id, tc.name, truncated))
-
         # One redaction feeds every subscriber below: the persisted trace
         # record, the react trace, and the SSE preview.
         trace_result = redact_tool_result(result)
-        trace.write_tool_result(
-            call_id=tc.id,
-            result=trace_result,
-            tool_name=tc.name,
-            status=status,
-            elapsed_ms=elapsed_ms,
-            iteration=iteration,
-        )
-        preview = trace_result[:200]
         artifact = None
         if status == "ok" and tc.name in {"write_file", "render_shadow_report"}:
             try:
@@ -1069,6 +1124,20 @@ class ToolCallLifecycle:
                                 "download_url": f"/api/reports/{report_id}"}
             except (ValueError, TypeError, AttributeError, OSError):
                 pass
+        truncated = deliver_tool_result(result, self.memory.run_dir, self.registry)
+        self._append_tool_result(
+            messages, context, tc.id, tc.name, truncated,
+            status=status, elapsed_ms=elapsed_ms, artifact=artifact,
+        )
+        trace.write_tool_result(
+            call_id=tc.id,
+            result=trace_result,
+            tool_name=tc.name,
+            status=status,
+            elapsed_ms=elapsed_ms,
+            iteration=iteration,
+        )
+        preview = trace_result[:200]
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
         self._emit(
             "tool_result",
