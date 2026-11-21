@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from src.agent.tools import BaseTool
-from src.tools.path_utils import allowed_file_roots, resolve_safe_path
+from src.tools.path_utils import safe_user_path
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class AnalyzeImageTool(BaseTool):
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Path to the image file (must be inside the allowed file roots).",
+                "description": "Image path or browser upload handle (uploads/<name>); must be inside the allowed file roots.",
             },
             "question": {
                 "type": "string",
@@ -102,7 +102,7 @@ class AnalyzeImageTool(BaseTool):
             return _error("question must be a string")
 
         try:
-            path = resolve_safe_path(raw_path.strip(), None, allowed_file_roots(), purpose="file")
+            path = safe_user_path(raw_path.strip())
         except ValueError as exc:
             return _error(str(exc))
         if not path.is_file():
