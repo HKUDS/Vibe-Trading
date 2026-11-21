@@ -9,6 +9,7 @@ from typing import Any
 from src.agent.tools import BaseTool
 from src.tools.path_utils import safe_path as _safe_path
 from src.tools.path_utils import safe_run_dir as _safe_run_dir
+from src.tools.path_utils import session_workspace_for_run
 from src.tools.path_utils import allowed_file_roots
 from src.tools.redaction import redact_internal_paths
 
@@ -120,7 +121,12 @@ class ReadFileTool(BaseTool):
         allowed_roots = []
         if run_dir:
             try:
-                allowed_roots.append(_safe_run_dir(str(run_dir)))
+                run_root = _safe_run_dir(str(run_dir))
+                allowed_roots.append(run_root)
+                workspace = session_workspace_for_run(run_root)
+                if workspace is not None:
+                    workspace.mkdir(parents=True, exist_ok=True)
+                    allowed_roots.append(workspace)
             except ValueError as exc:
                 return json.dumps(
                     {

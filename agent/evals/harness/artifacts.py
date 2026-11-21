@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.session.thread import ThreadLog
+
 JSON_LIMIT_BYTES = 16 * 1024 * 1024
 TRACE_LIMIT_BYTES = 64 * 1024 * 1024
 
@@ -68,6 +70,8 @@ class ArtifactBundle:
         llm_usage = load_object(run_root, "llm_usage.json", "llm_usage")
         manifest = load_object(trace_root, "run_manifest.json", "manifest")
         trace = _load_trace(trace_root, present, errors)
+        if not trace and "trace" not in present:
+            trace = _load_thread_records(run_root, present, errors)
         return cls(
             run_dir=run_root,
             trace_dir=trace_root,
@@ -81,6 +85,68 @@ class ArtifactBundle:
             errors=errors,
             identity=identity,
         )
+
+
+def _load_thread_records(
+    run_root: Path,
+    present: set[str],
+    errors: dict[str, str],
+) -> tuple[dict[str, Any], ...]:
+    """Project conversation thread items for evaluations without trace.jsonl.
+
+    ``trace.jsonl`` remains a run-diagnostic view for legacy consumers. New
+    evaluations can read the conversation source directly, including tool
+    calls, results and terminal status, without requiring a duplicate trace.
+    """
+    try:
+        req = _safe_known_path(run_root, "req.json")
+        payload = _read_json(req)
+        context = payload.get("context") if isinstance(payload, dict) else None
+        context = context if isinstance(context, dict) else {}
+        session_id = context.get("session_id")
+        if not isinstance(session_id, str) or not session_id:
+            return ()
+        workspace = context.get("session_workspace")
+        if not isinstance(workspace, str):
+            return ()
+        session_dir = Path(workspace).resolve().parent
+        thread = ThreadLog(session_dir / "thread.jsonl")
+        items = thread.read()
+    except (OSError, ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        errors["trace"] = str(exc)
+        return ()
+    if not items:
+        return ()
+    records: list[dict[str, Any]] = []
+    for item in items:
+        if item.type == "turn_start":
+            records.append({"type": "start", "ts": item.ts, "prompt": item.get("prompt"), "_line": item.seq})
+        elif item.type == "user":
+            records.append({"type": "message", "role": "user", "content": item.get("content"), "_line": item.seq})
+        elif item.type == "assistant":
+            for call in item.get("tool_calls") or []:
+                function = call.get("function") or {}
+                try:
+                    args = json.loads(function.get("arguments", "{}"))
+                except (TypeError, ValueError):
+                    args = function.get("arguments")
+                records.append({
+                    "type": "tool_call", "ts": item.ts, "tool": function.get("name"),
+                    "call_id": call.get("id"), "args": args, "_line": item.seq,
+                })
+            if item.get("content") is not None:
+                records.append({"type": "message", "role": "assistant", "content": item.get("content"), "_line": item.seq})
+        elif item.type == "tool_result":
+            records.append({
+                "type": "tool_result", "ts": item.ts, "tool": item.get("name"),
+                "call_id": item.get("tool_call_id"), "status": item.get("status"),
+                "result": item.get("content"), "preview": str(item.get("content") or "")[:500],
+                "elapsed_ms": item.get("elapsed_ms"), "_line": item.seq,
+            })
+        elif item.type == "turn_end":
+            records.append({"type": "end", "ts": item.ts, "status": item.get("status"), "_line": item.seq})
+    present.add("trace")
+    return tuple(records)
 
 
 def _require_directory(path: Path, label: str) -> Path:

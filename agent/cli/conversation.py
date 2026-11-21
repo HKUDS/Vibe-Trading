@@ -153,6 +153,14 @@ class CliTurn:
             self._store,
             Message(
                 session_id=self._session_id,
+                role="user",
+                content=self._prompt,
+            )
+        )
+        record_message(
+            self._store,
+            Message(
+                session_id=self._session_id,
                 role="assistant",
                 content=_reply_text(status, result, streamed_text),
                 metadata=metadata,
@@ -176,8 +184,7 @@ class CliTurn:
 def open_turn(store: SessionStore, session_id: str, prompt: str) -> Optional[CliTurn]:
     """Start a recorded turn in a session.
 
-    Appends the user's message to ``messages.jsonl``, replays the session's
-    history and opens the turn's recorder. A new session id gets a thread on
+    Replays the session's history and opens the turn's recorder. A new session id gets a thread on
     its first turn; a session recorded before the thread existed keeps working
     through the text-only fallback of :meth:`SessionRuntime.begin_turn`.
 
@@ -191,9 +198,6 @@ def open_turn(store: SessionStore, session_id: str, prompt: str) -> Optional[Cli
         then runs the loop without history, as a store failure always did.
     """
     try:
-        record_message(
-            store, Message(session_id=session_id, role="user", content=prompt)
-        )
         runtime = SessionRuntime(store.thread_log(session_id), session_id)
         recorder = runtime.begin_turn(
             uuid.uuid4().hex[:12], store.get_messages(session_id, limit=None)

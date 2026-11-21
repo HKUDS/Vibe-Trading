@@ -20,6 +20,7 @@ class WorkspaceMemory:
     """
 
     run_dir: Optional[str] = None
+    session_workspace: Optional[str] = None
     counters: Dict[str, int] = field(default_factory=dict)
 
     def increment(self, key: str) -> int:
@@ -47,6 +48,8 @@ class WorkspaceMemory:
         lines: list[str] = []
         if self.run_dir:
             lines.append(f"- run_dir: {self.run_dir}")
+        if self.session_workspace:
+            lines.append(f"- session_workspace: {self.session_workspace}")
         if self.counters:
             counter_parts = [f"{k}={v}" for k, v in self.counters.items()]
             lines.append(f"- counters: {', '.join(counter_parts)}")

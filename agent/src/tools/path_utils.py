@@ -21,6 +21,7 @@ All helpers raise ``ValueError`` on rejection — callers already expect this.
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -446,6 +447,37 @@ def safe_run_dir(p: str) -> Path:
         f"{_describe_roots(roots)}\n"
         f"Set {_ALLOWED_RUN_ROOTS_ENV} to add a run directory. {_ENV_SCOPE_HINT}"
     )
+
+
+def session_workspace_for_run(run_dir: str | Path) -> Path | None:
+    """Return the owning session workspace for a generated run directory.
+
+    The session id is read from the run's persisted request envelope. This
+    keeps workspace access scoped to the session that owns the run and avoids
+    exposing every session workspace as a global file root.
+    """
+    try:
+        run = safe_run_dir(str(run_dir))
+        request = run / "req.json"
+        payload = json.loads(request.read_text(encoding="utf-8"))
+        context = payload.get("context") if isinstance(payload, dict) else None
+        context = context if isinstance(context, dict) else payload
+        session_id = context.get("session_id") if isinstance(context, dict) else None
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        declared = context.get("session_workspace") if isinstance(context, dict) else None
+        if isinstance(declared, str) and declared:
+            workspace = Path(declared).expanduser().resolve()
+            if workspace.name == "workspace" and workspace.is_dir():
+                return workspace
+        from src.config.paths import get_sessions_dir
+        workspace = (get_sessions_dir() / session_id / "workspace").resolve()
+        sessions_root = get_sessions_dir().resolve()
+        if not workspace.is_relative_to(sessions_root):
+            return None
+        return workspace
+    except (OSError, UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError):
+        return None
 
 
 def safe_run_id(run_id: str) -> Path:

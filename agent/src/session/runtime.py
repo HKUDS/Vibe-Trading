@@ -23,9 +23,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import os
 import re
-import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -180,6 +178,16 @@ def replay_with_seqs(items: Sequence[ThreadItem]) -> Tuple[List[Dict[str, Any]],
         message = _item_message(item)
         if message is not None:
             pool.setdefault(_message_key(message), []).append(item.seq)
+    for item in items:
+        if item.type != "compaction" or item.get("layer", 3) == 3:
+            continue
+        for change in item.get("changes") or []:
+            if not isinstance(change, Mapping):
+                continue
+            seq = change.get("seq")
+            message = change.get("message")
+            if isinstance(seq, int) and seq > start_after and isinstance(message, Mapping):
+                pool.setdefault(_message_key(message), []).append(seq)
     seqs: List[Optional[int]] = []
     for message in messages:
         queue = pool.get(_message_key(message))
@@ -188,58 +196,6 @@ def replay_with_seqs(items: Sequence[ThreadItem]) -> Tuple[List[Dict[str, Any]],
 
 
 # ---- Workspace ----
-
-
-def carry_tool_results(previous_run_dir: Optional[str], run_dir: Path) -> int:
-    """Make earlier turns' offloaded tool results readable from this turn.
-
-    A tool-result receipt tells the model to read ``tool-results/...`` relative
-    to its current workspace, and ``read_file`` only reads the active run
-    directory. Each turn still gets its own run directory (its id is the turn's
-    public identity for run cards, ``state.json`` and ``/runs/{id}``), so the
-    files are hard-linked forward: content-addressed and written once, they are
-    safe to share. A filesystem without hard links gets a copy.
-
-    The previous turn's directory already carries everything before it, so
-    linking from it alone is enough.
-
-    Args:
-        previous_run_dir: Run directory of the session's previous turn.
-        run_dir: This turn's run directory.
-
-    Returns:
-        Number of files made available.
-    """
-    if not previous_run_dir:
-        return 0
-    from src.tools.path_utils import safe_run_dir
-
-    try:
-        previous = safe_run_dir(str(previous_run_dir))
-    except ValueError:
-        logger.warning("Not carrying tool results from %s: outside the run roots", previous_run_dir)
-        return 0
-    source = previous / TOOL_RESULTS_DIRNAME
-    if not source.is_dir() or previous == Path(run_dir).resolve():
-        return 0
-    target_root = Path(run_dir) / TOOL_RESULTS_DIRNAME
-    carried = 0
-    for path in sorted(source.rglob("*")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        target = target_root / path.relative_to(source)
-        if target.exists():
-            continue
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                os.link(path, target)
-            except OSError:
-                shutil.copy2(path, target)
-            carried += 1
-        except OSError as exc:
-            logger.warning("Could not carry tool result %s forward: %s", path, exc)
-    return carried
 
 
 # ---- Recorder ----
@@ -264,7 +220,7 @@ class TurnRecorder:
         user_history: Earlier user-authored text, for resolver constraints.
         identity_state: Identity ledger records restored from ``state``.
         loaded_tools: Tool names exposed so far, or None for a new session.
-        previous_workspace: Run directory of the previous turn.
+        session_workspace: Shared artifact workspace for this conversation.
         usage: Token usage the loop reports at the end of the turn.
         degraded: Whether any write failed.
     """
@@ -294,8 +250,8 @@ class TurnRecorder:
         self.identity_state = copy.deepcopy(state.get("identity"))
         loaded = state.get("loaded_tools")
         self.loaded_tools = list(loaded) if isinstance(loaded, list) else None
-        workspace = state.get("workspace")
-        self.previous_workspace = workspace if isinstance(workspace, str) else None
+        workspace = state.get("workspace_dir")
+        self.session_workspace = workspace if isinstance(workspace, str) else None
         self.usage: Optional[Dict[str, Any]] = None
         self.degraded = False
         self.started = False
@@ -305,6 +261,8 @@ class TurnRecorder:
         # id(message) -> (seq, message); the message is held so its id is
         # never reused by another object while it is mapped.
         self._seqs: Dict[int, Tuple[int, Dict[str, Any]]] = {}
+        self._seq_by_key: Dict[str, int] = {}
+        self._seq_by_call_id: Dict[str, int] = {}
         for message, seq in zip(history, history_seqs):
             if seq is not None:
                 self._remember(message, seq)
@@ -334,7 +292,9 @@ class TurnRecorder:
         self._write("turn_start", None, prompt=prompt, model=model, provider=provider)
         self._write("user", message, content=prompt, llm_content=message.get("content"))
 
-    def user(self, message: Dict[str, Any], *, content: str) -> Optional[ThreadItem]:
+    def user(
+        self, message: Dict[str, Any], *, content: str, input_id: Optional[str] = None
+    ) -> Optional[ThreadItem]:
         """Record a user message that joined the turn after it started.
 
         A message sent while the turn was running (``src.session.pending_inputs``)
@@ -348,7 +308,10 @@ class TurnRecorder:
             The recorded item, or None when the write failed or the turn has
             already finished; the caller must then keep the input pending.
         """
-        return self._write("user", message, content=content, llm_content=message.get("content"))
+        return self._write(
+            "user", message, content=content, llm_content=message.get("content"),
+            input_id=input_id,
+        )
 
     def assistant(self, message: Dict[str, Any], *, phase: str) -> None:
         """Record one model response as it enters the model's messages.
@@ -421,6 +384,35 @@ class TurnRecorder:
         if item is not None:
             self._remember(message, item.seq)
 
+    def compaction_layer(self, layer: int, messages: Iterable[Dict[str, Any]], *, reason: str = "") -> None:
+        """Record an exact layer-1 or layer-2 view mutation.
+
+        The source items stay immutable. Each replacement is keyed by the
+        source sequence so replay can rebuild the same message bytes after a
+        restart, including tool-result markers and folded tool arguments.
+        Messages that were injected without a thread item are omitted because
+        they have no durable source identity.
+        """
+        changes = []
+        for message in messages:
+            seq = self.seq_of(message)
+            if seq is not None:
+                changes.append({"seq": seq, "message": copy.deepcopy(message)})
+        if not changes:
+            return
+        payload: Dict[str, Any] = {
+            "summary": "",
+            "replaces_through_seq": 0,
+            "layer": layer,
+            "changes": changes,
+        }
+        if reason:
+            payload["reason"] = reason
+        # reason is intentionally omitted from the schema payload. The layer
+        # and exact replacements are the replay contract.
+        payload.pop("reason", None)
+        self._write("compaction", None, **payload)
+
     def state(self, snapshot: Dict[str, Any]) -> None:
         """Record a state snapshot when it differs from the last one.
 
@@ -434,13 +426,18 @@ class TurnRecorder:
             self._last_state = copy.deepcopy(snapshot)
             self._runtime.update_state(snapshot)
 
+    def record_checkpoint(self, content: str) -> None:
+        """Record the latest streamed text in the conversation log."""
+        self._write("checkpoint", None, content=content)
+
     def prepare_workspace(self, run_dir: Path) -> None:
-        """Bring earlier turns' offloaded tool results into this run directory.
+        """Ensure the shared artifact workspace exists before tool execution.
 
         Args:
             run_dir: This turn's run directory.
         """
-        carry_tool_results(self.previous_workspace, Path(run_dir))
+        if self.session_workspace:
+            Path(self.session_workspace).mkdir(parents=True, exist_ok=True)
 
     def close(self) -> None:
         """Stop recording; later writes are dropped."""
@@ -459,14 +456,38 @@ class TurnRecorder:
             The item seq, or None for a message the thread does not hold.
         """
         entry = self._seqs.get(id(message))
-        if entry is None or entry[1] is not message:
+        if entry is not None and entry[1] is message:
+            return entry[0]
+        try:
+            seq = self._seq_by_key.get(json.dumps(message, sort_keys=True, ensure_ascii=False, default=str))
+            if seq is not None:
+                return seq
+            if message.get("role") == "tool" and isinstance(message.get("tool_call_id"), str):
+                return self._seq_by_call_id.get(message["tool_call_id"])
+            for call in message.get("tool_calls") or []:
+                if isinstance(call, Mapping) and isinstance(call.get("id"), str):
+                    seq = self._seq_by_call_id.get(call["id"])
+                    if seq is not None:
+                        return seq
             return None
-        return entry[0]
+        except (TypeError, ValueError):
+            return None
 
     # ---- Internals ----
 
     def _remember(self, message: Dict[str, Any], seq: int) -> None:
         self._seqs[id(message)] = (seq, message)
+        try:
+            self._seq_by_key.setdefault(
+                json.dumps(message, sort_keys=True, ensure_ascii=False, default=str), seq
+            )
+        except (TypeError, ValueError):
+            pass
+        if message.get("role") == "tool" and isinstance(message.get("tool_call_id"), str):
+            self._seq_by_call_id.setdefault(message["tool_call_id"], seq)
+        for call in message.get("tool_calls") or []:
+            if isinstance(call, Mapping) and isinstance(call.get("id"), str):
+                self._seq_by_call_id.setdefault(call["id"], seq)
         self.max_seq = max(self.max_seq, seq)
 
     def _write(self, item_type: str, message: Optional[Dict[str, Any]], **payload: Any) -> Optional[ThreadItem]:
@@ -511,12 +532,15 @@ class SessionRuntime:
         """
         self.session_id = session_id
         self.thread = thread
+        self.workspace_path = thread.path.parent / "workspace"
+        self.workspace_path.mkdir(parents=True, exist_ok=True)
         self.state: Dict[str, Any] = {}
         self._recorders: Dict[str, TurnRecorder] = {}
         self._lock = threading.Lock()
         for item in thread.read():
             if item.type == "state":
                 self.state.update(copy.deepcopy(item.data))
+        self.state.setdefault("workspace_dir", str(self.workspace_path))
 
     def update_state(self, snapshot: Mapping[str, Any]) -> None:
         """Fold a recorded snapshot into the live state.
@@ -609,6 +633,23 @@ class SessionRuntime:
                 "turn_end", turn_id, status=status, usage=usage, elapsed_ms=elapsed_ms,
             )
         return project_turn(self.thread.read(), turn_id, run_dir=run_dir)
+
+    def partial_response(self, turn_id: str) -> Optional[str]:
+        """Return the latest durable streaming checkpoint for a turn."""
+        value: Optional[str] = None
+        for item in self.thread.read():
+            if item.turn_id == turn_id and item.type == "checkpoint":
+                value = item.get("content")
+        return value
+
+    def record_checkpoint(self, turn_id: str, content: str) -> None:
+        """Append a streamed-text checkpoint for an active turn."""
+        with self._lock:
+            recorder = self._recorders.get(turn_id)
+        if recorder is not None:
+            recorder.record_checkpoint(content)
+        else:
+            self._append_safely("checkpoint", turn_id, content=content)
 
     def _append_safely(self, item_type: str, turn_id: str, **payload: Any) -> None:
         try:
