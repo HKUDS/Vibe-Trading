@@ -42,6 +42,11 @@ class _SlowWriteRegistry:
         return '{"status":"ok"}'
 
 
+class _SlowOrderRegistry(_SlowWriteRegistry):
+    def get(self, tool_name: str) -> object:
+        return SimpleNamespace(is_readonly=False, repeatable=False)
+
+
 def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     """A hung tool should become a bounded diagnostic instead of heartbeating forever."""
     monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.05, raising=False)
@@ -74,8 +79,8 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     assert timeout_event["call_id"] == "slow-call"
 
 
-def test_write_tool_timeout_returns_before_orphaned_worker_finishes(monkeypatch) -> None:
-    """Every tool has a hard wait bound, including writes."""
+def test_write_tool_timeout_reports_unknown_outcome(monkeypatch) -> None:
+    """A detached side-effecting worker must never look like a safe retry."""
     monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.02, raising=False)
     monkeypatch.setattr(tuning_mod, "HEARTBEAT_INTERVAL_S", 0.01, raising=False)
     events: list[tuple[str, dict[str, Any]]] = []
@@ -88,12 +93,15 @@ def test_write_tool_timeout_returns_before_orphaned_worker_finishes(monkeypatch)
     )
 
     result, elapsed_ms = agent._invoke_tool(
-        "place_order", {}, call_id="write-call"
+        "write_tool", {}, call_id="write-call"
     )
 
     payload = json.loads(result)
     assert payload["status"] == "error"
-    assert payload["error_code"] == "tool_timeout"
+    assert payload["error_code"] == "tool_outcome_unknown"
+    assert payload["outcome"] == "unknown"
+    assert payload["retryable"] is False
+    assert "check the external state" in payload["message"].lower()
     assert payload["orphaned_worker"] is True
     assert registry.completed is False
     assert elapsed_ms < 70
@@ -105,9 +113,29 @@ def test_write_tool_timeout_returns_before_orphaned_worker_finishes(monkeypatch)
     ) is False
 
     # The worker cannot be killed safely from Python. It finishes its side
-    # effect in the background, while the loop has already recorded timeout.
+    # effect in the background, while the loop has already recorded unknown.
     time.sleep(0.1)
     assert registry.completed is True
+
+
+def test_order_tool_waits_for_completion_instead_of_detaching(monkeypatch) -> None:
+    """Order tools keep their broker-side timeout and cannot orphan a write."""
+    monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.02, raising=False)
+    registry = _SlowOrderRegistry()
+    agent = AgentLoop(
+        registry=registry,  # type: ignore[arg-type]
+        llm=SimpleNamespace(),
+        max_iterations=1,
+    )
+
+    result, elapsed_ms = agent._invoke_tool(
+        "trading_place_order", {}, call_id="order-call"
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+    assert registry.completed is True
+    assert elapsed_ms >= 70
 
 
 def test_cancel_returns_explicit_result_for_running_write(monkeypatch) -> None:
@@ -127,11 +155,13 @@ def test_cancel_returns_explicit_result_for_running_write(monkeypatch) -> None:
     import threading
 
     threading.Thread(target=cancel, daemon=True).start()
-    result, elapsed_ms = agent._invoke_tool("place_order", {}, call_id="cancel-call")
+    result, elapsed_ms = agent._invoke_tool("write_tool", {}, call_id="cancel-call")
 
     payload = json.loads(result)
     assert payload["status"] == "error"
-    assert payload["error_code"] == "tool_cancelled"
+    assert payload["error_code"] == "tool_outcome_unknown"
+    assert payload["outcome"] == "unknown"
+    assert payload["retryable"] is False
     assert elapsed_ms < 70
 
 

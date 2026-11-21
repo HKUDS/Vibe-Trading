@@ -167,10 +167,10 @@ def test_cmd_session_chat_passes_the_session_it_was_given(
 
     seen = _capture_session_ids(monkeypatch)
     replies = iter(["analyse AAPL", "q"])
-    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
-    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+    from cli import input as cli_input
+
+    monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
+    monkeypatch.setattr(cli_input, "make_session", lambda: None)
 
     _legacy.cmd_session_chat(session.session_id, 5)
 
@@ -212,10 +212,10 @@ def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -
 
     monkeypatch.setattr(_legacy, "_run_agent", fake_run_agent)
     replies = iter(["next question", "q"])
-    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
-    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+    from cli import input as cli_input
+
+    monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
+    monkeypatch.setattr(cli_input, "make_session", lambda: None)
 
     _legacy.cmd_session_chat(session.session_id, 5)
 

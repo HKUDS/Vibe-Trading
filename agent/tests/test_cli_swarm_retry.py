@@ -39,10 +39,10 @@ def test_swarm_resume_requires_retry_id(capsys: pytest.CaptureFixture[str]) -> N
 
 
 def test_swarm_retry_slash_command_accepts_resume_opt_in() -> None:
-    from cli._legacy import _handle_swarm_command
+    from cli.commands.swarm import dispatch
 
     with patch("cli._legacy.cmd_swarm_retry_live") as retry:
-        _handle_swarm_command("retry run-123 --resume")
+        dispatch("retry run-123 --resume")
 
     retry.assert_called_once_with("run-123", resume=True)
 

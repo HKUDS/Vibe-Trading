@@ -811,9 +811,23 @@ def cancel_order(
         return _unsupported(profile, "orders.cancel")
     module = _sdk_module(profile.connector)
     config = _sdk_config(profile, module, overrides)
-    result = module.cancel_order(config, order_id, symbol=symbol)
     if profile.environment == "live":
-        _audit_live_cancel(profile, order_id, symbol, result, session_id)
+        from src.live.sdk_order_gate import execute_live_action
+
+        result = execute_live_action(
+            broker=profile.connector,
+            connector_module=module,
+            config=config,
+            remote_tool="cancel_order",
+            risk_reducing=True,
+            intent=None,
+            execute_fn=lambda: module.cancel_order(config, order_id, symbol=symbol),
+            audit_request={"order_id": order_id, "symbol": symbol},
+            session_id=session_id,
+            audit_kind="order_cancelled",
+        )
+    else:
+        result = module.cancel_order(config, order_id, symbol=symbol)
     return _with_profile(profile, result)
 
 
@@ -1265,34 +1279,6 @@ def etoro_copy_close(
         overrides={**overrides, "session_id": session_id},
         unsupported_capability="copy.close",
     )
-
-
-def _audit_live_cancel(profile, order_id, symbol, result, session_id) -> None:
-    """Write a live-action audit record for a live order cancellation (best-effort)."""
-    try:
-        from src.live.audit import LiveActionEvent, write_live_action
-
-        ok = isinstance(result, dict) and str(result.get("status", "")).lower() == "ok"
-        event = LiveActionEvent(
-            kind="order_cancelled",
-            session_id=session_id,
-            outcome="accepted" if ok else "error",
-            server=profile.connector,
-            remote_tool="cancel_order",
-            intent_normalized=f"cancel {order_id} {symbol or ''}".strip(),
-            mandate_snapshot_ref=None,
-            consent_record_ref=None,
-            broker_request={"order_id": order_id, "symbol": symbol},
-            broker_response=result if isinstance(result, dict) else {"raw": result},
-            gate_decision={"allowed": True, "decision": "cancel"},
-            error=None if ok else (result.get("error") if isinstance(result, dict) else "cancel failed"),
-        )
-        try:
-            write_live_action(event, event_callback=None, trace_writer=None)
-        except TypeError:
-            write_live_action(event)
-    except Exception:  # noqa: BLE001 - auditing must never block a cancel
-        pass
 
 
 def profile_supports_live_runner(profile: TradingProfile) -> bool:

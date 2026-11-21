@@ -237,19 +237,17 @@ def test_banner_session_probe_follows_home_override(
     assert cli_main._probe_session_count() == 2
 
 
-def test_welcome_panel_reports_runtime_root_as_workspace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from rich.console import Console
+def test_canonical_banner_renders_without_legacy_panel(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
 
-    from cli import _legacy
+    cli_main = importlib.import_module("cli.main")
 
-    monkeypatch.setattr(_legacy, "get_runtime_root", lambda: Path("/RTROOT"))
-
-    console = Console(width=200, record=True)
-    console.print(_legacy._build_welcome_panel(term_width=120))
-
-    assert "RTROOT" in console.export_text()
+    monkeypatch.setattr(
+        cli_main,
+        "_collect_banner_stats",
+        lambda: {"model": "offline", "skills": 1, "tools": 1, "sessions": 0},
+    )
+    cli_main._show_banner()
 
 
 def test_state_dir_helpers_do_not_create_directories(

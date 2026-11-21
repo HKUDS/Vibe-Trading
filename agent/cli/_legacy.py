@@ -53,7 +53,6 @@ from cli.theme import get_console
 from src.config.accessor import get_env_config, reset_env_config
 from src.config.paths import (
     get_runs_dir,
-    get_runtime_root,
     get_sessions_dir,
     get_swarm_runs_dir,
     get_uploads_dir,
@@ -1549,30 +1548,6 @@ def cmd_continue(
     return _result_exit_code(result)
 
 
-# ---------------------------------------------------------------------------
-# Interactive compatibility entry points
-
-
-def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
-    """Build the old welcome panel for callers that imported this helper.
-
-    The console now renders its startup banner through ``cli.main`` and
-    ``cli.ui.banner``. This compact helper remains for integrations that used
-    the private renderer directly.
-    """
-    del term_width
-    return Panel(
-        f"[bold cyan]Vibe-Trading[/bold cyan]\n"
-        f"[dim]Workspace: {get_runtime_root()}[/dim]",
-        border_style="cyan",
-    )
-
-
-def _print_welcome() -> None:
-    """Render the compatibility welcome panel."""
-    console.print(_build_welcome_panel())
-
-
 def _show_settings() -> None:
     """Show current runtime settings."""
     _ensure_cli_env()
@@ -1630,48 +1605,6 @@ def _show_settings() -> None:
     else:
         console.print(Columns(panels, expand=True, equal=True))
     console.print("[dim]Edit configuration in ~/.vibe-trading/.env, or run vibe-trading init.[/dim]")
-
-
-def _handle_swarm_command(arg: str) -> None:
-    """Compatibility wrapper for the canonical swarm slash command module."""
-    from cli.commands.swarm import dispatch
-
-    dispatch(arg)
-
-
-def _read_input(prompt_session: Any, prompt_str: str = "> ") -> str:
-    """Compatibility input helper delegated to the canonical prompt layer."""
-    del prompt_str
-    if prompt_session is not None and sys.stdin.isatty():
-        return prompt_session.prompt("> ")
-    return Prompt.ask("[bold]> [/bold]")
-
-
-def _create_prompt_session(stats: Any = None) -> Any:
-    """Compatibility hook for callers that still inject an input session."""
-    del stats
-    try:
-        from cli.input import make_session
-
-        return make_session()
-    except Exception:
-        return None
-
-
-def _print_status_bar(stats: Any = None) -> None:
-    """Compatibility no-op. The canonical loop renders its own prompt rail."""
-    del stats
-
-
-def cmd_interactive(max_iter: int) -> None:
-    """Run the canonical interactive loop for legacy flag compatibility."""
-    from cli.main import _interactive_loop
-
-    _interactive_loop(
-        max_iter,
-        input_reader=_read_input,
-        session_factory=lambda: _create_prompt_session(None),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -2034,11 +1967,6 @@ def cmd_swarm_retry_live(run_id: str, resume: bool = False) -> Optional[int]:
 # ---------------------------------------------------------------------------
 # Legacy subcommands (used by flags and slash commands)
 # ---------------------------------------------------------------------------
-
-def cmd_chat(max_iter: int) -> None:
-    """Interactive mode (delegates to cmd_interactive)."""
-    cmd_interactive(max_iter)
-
 
 def cmd_list(limit: int = 20) -> None:
     """List run history."""
@@ -2498,13 +2426,7 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
 
     from cli.main import _interactive_loop
 
-    _interactive_loop(
-        max_iter,
-        resume_session_id=session_id,
-        input_reader=_read_input,
-        session_factory=lambda: _create_prompt_session(None),
-        session_store=store,
-    )
+    _interactive_loop(max_iter, resume_session_id=session_id, session_store=store)
 
 
 # ---------------------------------------------------------------------------
@@ -5983,7 +5905,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "show":
         return _coerce_exit_code(cmd_show(args.run_id))
     if args.command == "chat":
-        return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
+        from cli.main import _interactive_loop
+
+        return _coerce_exit_code(_interactive_loop(args.chat_max_iter))
     if args.command == "update":
         from cli.commands.update import cmd_update
 
@@ -6067,7 +5991,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.upload:
         return _coerce_exit_code(cmd_upload(args.upload))
     if args.chat:
-        return _coerce_exit_code(cmd_interactive(args.max_iter))
+        from cli.main import _interactive_loop
+
+        return _coerce_exit_code(_interactive_loop(args.max_iter))
     if args.cont:
         return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
 
@@ -6082,7 +6008,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     # Default: interactive mode
-    return _coerce_exit_code(cmd_interactive(args.max_iter))
+    from cli.main import _interactive_loop
+
+    return _coerce_exit_code(_interactive_loop(args.max_iter))
 
 
 if __name__ == "__main__":

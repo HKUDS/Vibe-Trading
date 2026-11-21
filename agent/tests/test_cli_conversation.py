@@ -319,10 +319,10 @@ def test_cmd_session_chat_replays_the_session_thread(cli, monkeypatch):
     cli.run("Quote Apple", sid)
     first_requests = len(cli.llm.requests)
     replies = iter(["What was its value?", "q"])
-    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
-    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+    from cli import input as cli_input
+
+    monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
+    monkeypatch.setattr(cli_input, "make_session", lambda: None)
 
     _legacy.cmd_session_chat(sid, 8)
 
@@ -334,15 +334,14 @@ def test_cmd_session_chat_replays_the_session_thread(cli, monkeypatch):
 
 def test_cmd_interactive_keeps_one_session_and_replays_it(cli, monkeypatch):
     replies = iter(["Quote Apple", "What was its value?", "q"])
-    monkeypatch.setattr(_legacy, "_print_welcome", lambda: None)
     monkeypatch.setattr("src.preflight.run_preflight", lambda console: [])
-    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
-    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+    from cli import input as cli_input
+
+    monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
+    monkeypatch.setattr(cli_input, "make_session", lambda: None)
     monkeypatch.setattr(_legacy, "_RunDashboard", lambda prompt, max_iter: _QuietDashboard())
 
-    _legacy.cmd_interactive(8)
+    cli_main._interactive_loop(8)
 
     (session,) = cli.store.list_sessions()
     request = cli.llm.requests[2]["messages"]

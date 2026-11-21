@@ -824,6 +824,8 @@ class ToolCallLifecycle:
             Tuple of (result_str, elapsed_ms).
         """
         readonly = self._is_tool_readonly(tool_name)
+        order_tool = self._is_order_tool(tool_name)
+        side_effecting = not readonly or order_tool
         # Apply the provider tool policy before invoking a hook.  A hook can
         # add a refusal, while a hook result can never skip the policy gate.
         policy_check = getattr(self.registry, "check_policy", None)
@@ -873,7 +875,10 @@ class ToolCallLifecycle:
 
         t0 = _time.perf_counter()
         _tool_timeout = _tool_timeout_seconds()
-        timeout = _tool_timeout if _tool_timeout > 0 else None
+        # Order calls own their timeout at the broker boundary. Detaching an
+        # in-process order worker can leave a live order running after the
+        # model has been told it timed out, which makes a retry unsafe.
+        timeout = None if order_tool else (_tool_timeout if _tool_timeout > 0 else None)
         timeout_label = _format_timeout(timeout) if timeout is not None else ""
 
         def _elapsed_ms() -> int:
@@ -950,11 +955,20 @@ class ToolCallLifecycle:
 
         def _terminal_error(error_code: str, message: str) -> tuple[str, int]:
             timed_out.set()
+            outcome_unknown = side_effecting
+            terminal_stage = "cancelled" if error_code == "tool_cancelled" else "timeout"
+            if outcome_unknown:
+                error_code = "tool_outcome_unknown"
+                message = (
+                    f"{message}. The tool may have completed after this wait ended. "
+                    "Check the external state before retrying."
+                )
             elapsed_ms = _emit_timeout_progress(
-                "cancelled" if error_code == "tool_cancelled" else "timeout",
+                terminal_stage,
                 message,
                 readonly=readonly,
                 orphaned_worker=worker.is_alive(),
+                **({"outcome": "unknown", "retryable": False} if outcome_unknown else {}),
             )
             result = json.dumps(
                 {
@@ -964,6 +978,7 @@ class ToolCallLifecycle:
                     **({"timeout_seconds": timeout} if error_code == "tool_timeout" else {}),
                     "message": message,
                     "orphaned_worker": worker.is_alive(),
+                    **({"outcome": "unknown", "retryable": False} if outcome_unknown else {}),
                 },
                 ensure_ascii=False,
             )
@@ -974,7 +989,7 @@ class ToolCallLifecycle:
         with _heartbeat_timer():
             deadline = None if timeout is None else _time.monotonic() + timeout
             while True:
-                if self._cancel_event.is_set():
+                if self._cancel_event.is_set() and not order_tool:
                     return _terminal_error(
                         "tool_cancelled",
                         "Run was cancelled while this tool was running",
@@ -1006,6 +1021,12 @@ class ToolCallLifecycle:
         if hooks is not None:
             hooks.run("PostToolUse", {**hook_payload, "result": redact_tool_result(result), "status": "ok"})
         return result, elapsed_ms
+
+    @staticmethod
+    def _is_order_tool(tool_name: str) -> bool:
+        """Return whether a tool name can submit or cancel an order."""
+        name = str(tool_name or "").casefold()
+        return any(marker in name for marker in ("place_order", "cancel_order", "submit_order", "replace_order"))
 
     def _is_tool_readonly(self, tool_name: str) -> bool:
         """Return whether a tool is known to be side-effect free."""
