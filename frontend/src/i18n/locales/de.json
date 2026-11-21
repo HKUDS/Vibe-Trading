@@ -1766,7 +1766,10 @@
       "entry_cost_return": "Einstiegskosten / Aktiennominalwert",
       "higher": "Höher",
       "lower": "Niedriger",
-      "equal": "Gleich"
+      "equal": "Gleich",
+      "scenarioBasis": "Beide Strategien verwenden die abgeschlossene Anfrage und ein gemeinsames Spot-×-IV-Raster. Delta ist Strategie minus Basis, rein deskriptiv.",
+      "deltaGrid": "P&L-Differenz",
+      "gridCapped": "Vergleichsraster verwenden höchstens {{count}} Kurs­punkte."
     }
   },
   "alphaZoo": {

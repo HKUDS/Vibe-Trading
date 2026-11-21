@@ -1766,7 +1766,10 @@
       "entry_cost_return": "Entry cost / stock notional",
       "higher": "Higher",
       "lower": "Lower",
-      "equal": "Equal"
+      "equal": "Equal",
+      "scenarioBasis": "Both strategies use the completed request and one shared spot × IV grid. Delta is strategy minus base, descriptive only.",
+      "deltaGrid": "P&L delta",
+      "gridCapped": "Comparison grids use at most {{count}} spot points."
     }
   },
   "alphaZoo": {

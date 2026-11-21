@@ -1760,7 +1760,10 @@
       "entry_cost_return": "入场成本／股票名义本金",
       "higher": "高于",
       "lower": "低于",
-      "equal": "相等"
+      "equal": "相等",
+      "scenarioBasis": "两个方案使用同一份已完成请求和统一的标的价 × 波动率网格。差值为备选方案减基准方案，仅作描述，不构成推荐。",
+      "deltaGrid": "盈亏差值",
+      "gridCapped": "比较网格最多使用 {{count}} 个标的价点。"
     }
   },
   "alphaZoo": {

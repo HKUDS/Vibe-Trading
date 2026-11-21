@@ -1766,7 +1766,10 @@
       "entry_cost_return": "Biaya masuk / nosional saham",
       "higher": "Lebih tinggi",
       "lower": "Lebih rendah",
-      "equal": "Sama"
+      "equal": "Sama",
+      "scenarioBasis": "Kedua strategi memakai permintaan yang selesai dan grid harga × volatilitas yang sama. Delta adalah strategi dikurangi dasar, hanya deskriptif.",
+      "deltaGrid": "Selisih P&L",
+      "gridCapped": "Grid perbandingan memakai paling banyak {{count}} titik harga."
     }
   },
   "alphaZoo": {

@@ -15,6 +15,7 @@ import {
 } from "@/lib/options";
 import { StrategyBuilder } from "@/components/options/StrategyBuilder";
 import { PayoffComparisons } from "@/components/options/PayoffComparisons";
+import { StrategyScenarioComparison } from "@/components/options/StrategyScenarioComparison";
 import { GreeksCards } from "@/components/options/GreeksCards";
 import { OptionsChainTable } from "@/components/options/OptionsChainTable";
 import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
@@ -294,6 +295,7 @@ export function OptionsLab() {
         label={label} alternatives={alternatives} legs={legs} comparisons={result?.comparisons}
         onChange={(label, alternatives) => setDraft((d) => ({ ...d, label, alternatives }))}
       />
+      {resultRequest && <StrategyScenarioComparison request={resultRequest} />}
 
       {/* Portfolio Greeks */}
       {result && <GreeksCards greeks={result.greeks} />}
