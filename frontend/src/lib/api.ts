@@ -2464,10 +2464,12 @@ export interface ThreadDisplayItem {
   elapsed_ms?: number | null;
   artifact?: { filename?: string; download_url?: string } | null;
   /** compaction */
-  summary?: string;
+  summary?: string | null;
   replaces_through_seq?: number;
   /** turn_end */
   usage?: Record<string, unknown> | null;
+  error?: string | null;
+  run_dir?: string | null;
 }
 
 export interface ThreadPage {

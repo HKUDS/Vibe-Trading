@@ -113,11 +113,11 @@ describe("useSSE — event handling", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        text_delta: (data) => textDeltas.push(data),
+        "item.delta": (data) => textDeltas.push(data),
       }),
     );
 
-    act(() => MockEventSource.latest.emit("text_delta", { content: "hello" }));
+    act(() => MockEventSource.latest.emit("item.delta", { content: "hello" }));
     expect(textDeltas).toHaveLength(1);
     expect(textDeltas[0]).toEqual({ content: "hello" });
   });
@@ -128,11 +128,11 @@ describe("useSSE — event handling", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        reasoning_delta: (data) => reasoningEvents.push(data),
+        "item.delta": (data) => reasoningEvents.push(data),
       }),
     );
 
-    act(() => MockEventSource.latest.emit("reasoning_delta", { chars: 8 }, "evt-reasoning"));
+    act(() => MockEventSource.latest.emit("item.delta", { chars: 8 }, "evt-reasoning"));
     expect(reasoningEvents).toEqual([{ chars: 8 }]);
   });
 
@@ -140,12 +140,12 @@ describe("useSSE — event handling", () => {
     const waiting = vi.fn();
     const heartbeat = vi.fn();
     const { result } = renderHook(() => useSSE());
-    act(() => result.current.connect("http://test/events", { llm_waiting: waiting, heartbeat }));
+    act(() => result.current.connect("http://test/events", { "item.delta": waiting, heartbeat }));
     const payload = { attempt_id: "attempt-wait", iter: 1 };
     act(() => {
       MockEventSource.latest.emit("heartbeat", {}, "evt-heartbeat");
-      MockEventSource.latest.emit("llm_waiting", payload, "evt-wait");
-      MockEventSource.latest.emit("llm_waiting", payload, "evt-wait");
+      MockEventSource.latest.emit("item.delta", payload, "evt-wait");
+      MockEventSource.latest.emit("item.delta", payload, "evt-wait");
     });
     expect(waiting).toHaveBeenCalledExactlyOnceWith(payload);
     expect(heartbeat).toHaveBeenCalledExactlyOnceWith({});
@@ -157,13 +157,13 @@ describe("useSSE — event handling", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        stream_reset: (data) => resetEvents.push(data),
+        "item.delta": (data) => resetEvents.push(data),
       }),
     );
 
     act(() =>
       MockEventSource.latest.emit(
-        "stream_reset",
+        "item.delta",
         { reason: "provider_stream_retry" },
         "evt-reset",
       ),
@@ -181,9 +181,9 @@ describe("useSSE — event handling", () => {
       }),
     );
 
-    // "text_delta" is a known type the hook subscribes to,
+    // "item.delta" is a known type the hook subscribes to,
     // but no specific handler → falls back to "message"
-    act(() => MockEventSource.latest.emit("text_delta", { foo: "bar" }, "evt-1"));
+    act(() => MockEventSource.latest.emit("item.delta", { foo: "bar" }, "evt-1"));
     expect(messages).toHaveLength(1);
   });
 
@@ -193,14 +193,14 @@ describe("useSSE — event handling", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        text_delta: (data) => messages.push(data),
+        "item.delta": (data) => messages.push(data),
       }),
     );
 
     // Emit with raw non-JSON data
-    const event = new MessageEvent("text_delta", { data: "not json" });
+    const event = new MessageEvent("item.delta", { data: "not json" });
     Object.defineProperty(event, "lastEventId", { value: "evt-x" });
-    const handlers = (MockEventSource.latest as any).listeners.get("text_delta");
+    const handlers = (MockEventSource.latest as any).listeners.get("item.delta");
     act(() => handlers?.forEach((h: ESHandler) => h(event)));
 
     expect(messages).toHaveLength(1);
@@ -215,13 +215,13 @@ describe("useSSE — deduplication", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        text_delta: (data) => messages.push(data),
+        "item.delta": (data) => messages.push(data),
       }),
     );
 
-    act(() => MockEventSource.latest.emit("text_delta", { n: 1 }, "dup-1"));
-    act(() => MockEventSource.latest.emit("text_delta", { n: 2 }, "dup-1")); // duplicate
-    act(() => MockEventSource.latest.emit("text_delta", { n: 3 }, "dup-2"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 1 }, "dup-1"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 2 }, "dup-1")); // duplicate
+    act(() => MockEventSource.latest.emit("item.delta", { n: 3 }, "dup-2"));
 
     expect(messages).toHaveLength(2);
     expect(messages[0]).toEqual({ n: 1 });
@@ -234,23 +234,23 @@ describe("useSSE — deduplication", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        text_delta: (data) => messages.push(data),
+        "item.delta": (data) => messages.push(data),
       }),
     );
 
     // Fill dedup set to capacity (3)
-    act(() => MockEventSource.latest.emit("text_delta", { n: 1 }, "a"));
-    act(() => MockEventSource.latest.emit("text_delta", { n: 2 }, "b"));
-    act(() => MockEventSource.latest.emit("text_delta", { n: 3 }, "c"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 1 }, "a"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 2 }, "b"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 3 }, "c"));
 
     // Duplicate: should be suppressed
-    act(() => MockEventSource.latest.emit("text_delta", { n: 10 }, "a"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 10 }, "a"));
     expect(messages).toHaveLength(3);
 
     // Adding 4th event → "a" gets evicted → re-emit "a" should pass through
-    act(() => MockEventSource.latest.emit("text_delta", { n: 4 }, "d"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 4 }, "d"));
     expect(messages).toHaveLength(4);
-    act(() => MockEventSource.latest.emit("text_delta", { n: 5 }, "a"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 5 }, "a"));
     expect(messages).toHaveLength(5);
   });
 });
@@ -309,12 +309,12 @@ describe("useSSE — Last-Event-ID resume", () => {
 
     act(() =>
       result.current.connect("http://test/events", {
-        text_delta: () => {},
+        "item.delta": () => {},
       }),
     );
 
     // Emit an event with lastEventId
-    act(() => MockEventSource.latest.emit("text_delta", { n: 1 }, "resume-42"));
+    act(() => MockEventSource.latest.emit("item.delta", { n: 1 }, "resume-42"));
 
     // Trigger reconnect
     act(() => MockEventSource.latest.onerror?.());

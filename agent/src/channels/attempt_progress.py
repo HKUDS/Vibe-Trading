@@ -7,18 +7,18 @@ from src.channels.bus.events import InboundMessage, OutboundMessage
 
 
 class AttemptProgress:
-    """Poll buffered session events with an attempt-scoped replay cursor."""
+    """Poll durable session item events with an attempt-scoped cursor."""
 
-    def __init__(self, bus: Any, event_bus: Any, msg: InboundMessage,
+    def __init__(self, bus: Any, event_stream: Any, msg: InboundMessage,
                  session_id: str, attempt_id: str,
                  is_visible: Callable[..., bool] | None = None) -> None:
         self.bus = bus
-        self.events = event_bus
+        self.events = event_stream
         self.msg = msg
         self.session_id = session_id
         self.attempt_id = attempt_id
         self.is_visible = is_visible
-        self.cursor: str | None = None
+        self.cursor = 0
         self.streaming = bool(msg.metadata.get("_wants_stream"))
         self.stream_started = False
         self.reasoning_started = False
@@ -35,13 +35,21 @@ class AttemptProgress:
 
     async def poll(self) -> None:
         """Forward status and opt-in reasoning, excluding answer drafts/results."""
-        for event in self.events.replay(self.session_id, self.cursor, replay_all=True):
-            self.cursor = event.event_id
+        if self.events is None or not hasattr(self.events, "stream"):
+            return
+        async for event in self.events.stream(self.session_id, cursor=self.cursor):
+            if event.event_type == "heartbeat":
+                break
+            cursor = event.data.get("cursor")
+            if isinstance(cursor, int):
+                self.cursor = max(self.cursor, cursor)
             data = event.data
-            if data.get("attempt_id") != self.attempt_id:
+            turn_id = data.get("turn_id")
+            if turn_id != self.attempt_id:
                 continue
             kind = event.event_type
-            if kind == "reasoning_delta":
+            item_kind = data.get("kind")
+            if kind == "item.delta" and item_kind == "reasoning.delta":
                 iteration = int(data.get("iter", 0))
                 chars = int(data.get("chars", 0))
                 seen = self.reasoning_chars.get(iteration, 0)
@@ -56,19 +64,22 @@ class AttemptProgress:
                     continue
                 if tail is not None or chars <= seen:
                     continue
-            if kind in {"tool_call", "attempt.completed", "attempt.failed"}:
+            if (kind == "item.started" and item_kind == "tool.started") or (
+                kind == "item.completed" and item_kind in {"tool.completed", "tool.failed"}
+            ) or kind in {"run.completed", "run.failed", "run.cancelled"}:
                 await self._end_reasoning()
-            tool = str(data.get("tool") or "tool")
+            item = data.get("item") if isinstance(data.get("item"), dict) else {}
+            tool = str(item.get("name") or "tool")
             status = {
-                "attempt.created": "Working on your request…",
-                "reasoning_delta": "Reasoning…",
-                "llm_waiting": "Waiting for the model…",
-                "tool_call": f"Using {tool}…",
-                "tool_heartbeat": f"Still running {tool}…",
-            }.get(kind)
+                "run.started": "Working on your request…",
+                "run.waiting": "Waiting for the model…",
+                "reasoning.delta": "Reasoning…",
+                "tool.started": f"Using {tool}…",
+                "tool.progress": f"Still running {tool}…",
+            }.get(str(item_kind) if kind == "item.delta" else kind)
             # Arbitrary progress payloads, tool results and text_delta may
             # be partial. Only these status labels go out.
-            hint = kind in {"tool_call", "tool_heartbeat"}
+            hint = item_kind in {"tool.started", "tool.progress"}
             if not status or status == self.last_status:
                 continue
             # A status the channel hides must not become last_status, or the

@@ -600,6 +600,11 @@ class SessionRuntime:
         usage: Optional[Dict[str, Any]] = None,
         elapsed_ms: Optional[float] = None,
         run_dir: Optional[str] = None,
+        summary: Optional[str] = None,
+        error: Optional[str] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        pending_inputs: Optional[list[Dict[str, Any]]] = None,
     ) -> TurnProjection:
         """Close a turn in the thread and project its display row.
 
@@ -615,6 +620,10 @@ class SessionRuntime:
             usage: Token usage totals.
             elapsed_ms: Turn duration.
             run_dir: The turn's run directory, for the trail's arguments.
+            summary: Stored reply text for durable run events.
+            error: Stored failure reason for durable run events.
+            provider: Provider used by the turn.
+            model: Model used by the turn.
 
         Returns:
             The turn's projection onto the legacy display row.
@@ -631,6 +640,8 @@ class SessionRuntime:
         if "turn_end" not in turn_types:
             self._append_safely(
                 "turn_end", turn_id, status=status, usage=usage, elapsed_ms=elapsed_ms,
+                summary=summary, error=error, run_dir=run_dir,
+                provider=provider, model=model, pending_inputs=pending_inputs,
             )
         return project_turn(self.thread.read(), turn_id, run_dir=run_dir)
 

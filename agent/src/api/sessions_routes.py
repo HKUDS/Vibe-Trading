@@ -304,11 +304,16 @@ def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
 def _mandate_proposal_frame_from_tool_result(event: Any) -> Optional[str]:
     """Build a mandate.proposal SSE frame from a propose-tool tool_result."""
     data = getattr(event, "data", None)
-    if getattr(event, "event_type", None) != "tool_result" or not isinstance(data, dict):
+    if (
+        not isinstance(data, dict)
+        or getattr(event, "event_type", None) != "item.completed"
+        or data.get("kind") not in {"tool.completed", "tool.failed"}
+    ):
         return None
-    if data.get("tool") != _PROPOSAL_TOOL_NAME or data.get("status") != "ok":
+    item = data.get("item") if isinstance(data.get("item"), dict) else {}
+    if item.get("name") != _PROPOSAL_TOOL_NAME or item.get("status") != "ok":
         return None
-    match = _PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
+    match = _PROPOSAL_ID_RE.search(str(item.get("content") or ""))
     if not match:
         return None
     proposal = _load_full_proposal(match.group(1))
@@ -328,11 +333,16 @@ def _mandate_proposal_frame_from_tool_result(event: Any) -> Optional[str]:
 def _scheduled_proposal_frame_from_tool_result(event: Any) -> Optional[str]:
     """Build a deterministic scheduled-research confirmation SSE frame."""
     data = getattr(event, "data", None)
-    if getattr(event, "event_type", None) != "tool_result" or not isinstance(data, dict):
+    if (
+        not isinstance(data, dict)
+        or getattr(event, "event_type", None) != "item.completed"
+        or data.get("kind") not in {"tool.completed", "tool.failed"}
+    ):
         return None
-    if data.get("tool") != _SCHEDULED_PROPOSAL_TOOL_NAME or data.get("status") != "ok":
+    item = data.get("item") if isinstance(data.get("item"), dict) else {}
+    if item.get("name") != _SCHEDULED_PROPOSAL_TOOL_NAME or item.get("status") != "ok":
         return None
-    match = _SCHEDULED_PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
+    match = _SCHEDULED_PROPOSAL_ID_RE.search(str(item.get("content") or ""))
     if not match:
         return None
     try:
@@ -379,9 +389,14 @@ def _load_live_action_record(audit_id: str) -> Optional[Dict[str, Any]]:
 def _live_action_frame_from_tool_result(event: Any) -> Optional[str]:
     """Build a live.action SSE frame from an order-guard tool_result."""
     data = getattr(event, "data", None)
-    if getattr(event, "event_type", None) != "tool_result" or not isinstance(data, dict):
+    if (
+        not isinstance(data, dict)
+        or getattr(event, "event_type", None) != "item.completed"
+        or data.get("kind") not in {"tool.completed", "tool.failed"}
+    ):
         return None
-    preview = str(data.get("preview") or "")
+    item = data.get("item") if isinstance(data.get("item"), dict) else {}
+    preview = str(item.get("content") or "")
     if '"live_action"' not in preview:
         return None
     match = _LIVE_ACTION_ID_RE.search(preview)
@@ -1053,14 +1068,11 @@ def register_sessions_routes(app: FastAPI) -> None:
         replay: Optional[str] = Query(None),
         cursor: Optional[int] = Query(None, ge=0),
     ):
-        """SSE stream for agent events.
+        """SSE stream for the durable item and run event vocabulary.
 
-        Without ``cursor`` the legacy contract holds: ``Last-Event-ID`` resumes
-        from the in-memory buffer and ``replay=active`` hydrates a running
-        attempt (its recorded items now come from the thread log). With
-        ``cursor`` (a thread seq, from an event's ``cursor`` field or the
-        thread endpoint), or a durable ``Last-Event-ID`` such as ``item-42``,
-        every recorded item after it is read from disk first.
+        The thread sequence is the only resume cursor. A durable
+        ``Last-Event-ID`` such as ``item-42`` is converted to the same cursor,
+        and completed items are replayed from ``thread.jsonl``.
         """
         _host_validate_path_param(session_id, "session_id")
         svc = _host_get_session_service()
@@ -1083,22 +1095,6 @@ def register_sessions_routes(app: FastAPI) -> None:
                 running_attempt = attempt
 
         async def event_generator():
-            # The ring buffer is bounded, so a long attempt's original
-            # `attempt.started` may already have rotated out by the time a client
-            # joins. Re-announce it from the persisted attempt so the client's
-            # elapsed clock starts from the real start, not from now. Clients
-            # treat a repeated attempt.started for the same attempt as a no-op.
-            if running_attempt is not None and running_attempt.started_at:
-                yield SSEEvent(
-                    event_id=None,
-                    event_type="attempt.started",
-                    data={
-                        "attempt_id": running_attempt.attempt_id,
-                        "started_at": running_attempt.started_at,
-                        "replayed": True,
-                    },
-                    session_id=session_id,
-                ).to_sse()
             async for event in svc.thread_events.stream(
                 session_id,
                 cursor=cursor,

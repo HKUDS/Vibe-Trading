@@ -195,7 +195,7 @@ class ChannelRuntime:
             attempt_id = result.get("attempt_id") if isinstance(result, dict) else None
             from src.channels.attempt_progress import AttemptProgress
 
-            events = getattr(self.session_service, "event_bus", None)
+            events = getattr(self.session_service, "thread_events", None)
             is_visible = (partial(self.manager.should_send_progress, msg.channel)
                           if self.manager is not None else None)
             progress = (AttemptProgress(self.bus, events, msg, session_id, attempt_id,

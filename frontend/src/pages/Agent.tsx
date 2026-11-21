@@ -9,12 +9,11 @@ import {
   useAgentStore,
   type AgentActivity,
   type AgentMessageMeta,
-  type StoredAgentMessage,
 } from "@/stores/agent";
 import { useSessionsStore } from "@/stores/sessions";
 import { useSSE } from "@/hooks/useSSE";
 import { useLlmUsageCounter } from "@/hooks/useLlmUsageCounter";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, isQueuedMessage, type GoalSnapshot, type MandateProposal, type MandateCommitted, type MessageItem, type PendingInputView, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type RunPreview, type ThreadDisplayItem, type ThreadPage } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, isQueuedMessage, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
 import {
   addQueuedInput,
   applyThreadEvent,
@@ -65,36 +64,10 @@ import {
   mergeSwarmRunUsage,
   stopSwarmRun,
 } from "@/lib/swarmStatus";
-import { buildToolTimelineMessages } from "@/pages/agentToolTimeline";
+import { buildLegacyTranscript } from "@/lib/legacySession";
+import { readThread, rowsBeforeThread } from "@/pages/agentHydration";
 
-/* ---------- Message grouping ---------- */
-type MsgGroup =
-  | { kind: "single"; msg: StoredAgentMessage; msgIdx: number }
-  | { kind: "timeline"; msgs: StoredAgentMessage[]; msgIdx: number };
-
-function groupMessages(msgs: StoredAgentMessage[]): MsgGroup[] {
-  const out: MsgGroup[] = [];
-  let buf: StoredAgentMessage[] = [];
-  let bufStartIdx = -1;
-  const flush = () => {
-    if (buf.length) {
-      out.push({ kind: "timeline", msgs: [...buf], msgIdx: bufStartIdx });
-      buf = [];
-      bufStartIdx = -1;
-    }
-  };
-  for (const [msgIdx, m] of msgs.entries()) {
-    if (["thinking", "tool_call", "tool_result", "compact"].includes(m.type)) {
-      if (bufStartIdx < 0) bufStartIdx = msgIdx;
-      buf.push(m);
-    } else {
-      flush();
-      out.push({ kind: "single", msg: m, msgIdx });
-    }
-  }
-  flush();
-  return out;
-}
+import { groupMessages, type MsgGroup } from "@/pages/agentTranscript";
 
 const act = () => useAgentStore.getState();
 
@@ -175,47 +148,6 @@ setTranscriptBuilder((thread, turnMeta, previous) => reuseRows(
     failedLabel: i18n.t("agent.turnFailed" as never),
   }),
 ));
-
-/** Largest page the thread endpoint serves. */
-const THREAD_PAGE_LIMIT = 500;
-
-/** Read a session's whole thread, page by page. */
-async function readThread(sid: string): Promise<Pick<ThreadPage, "items" | "cursor">> {
-  const items: ThreadDisplayItem[] = [];
-  let after = 0;
-  for (;;) {
-    const page = await api.getSessionThread(sid, { after, limit: THREAD_PAGE_LIMIT });
-    items.push(...page.items);
-    const last = page.items[page.items.length - 1];
-    if (!page.has_more || !last) return { items, cursor: page.cursor };
-    after = last.seq;
-  }
-}
-
-/**
- * The stored rows of turns the thread does not hold: a session's history from
- * before the thread log existed. A user row belongs to the turn of the reply
- * that follows it (or the turn it was delivered to); a trailing user row is a
- * turn still being started, which the thread and its events will show.
- */
-function rowsBeforeThread(rows: MessageItem[], threadTurns: ReadonlySet<string>): MessageItem[] {
-  const turnOf: Array<string | undefined> = new Array(rows.length);
-  let nextReplyTurn: string | undefined;
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const row = rows[index];
-    if (row.role === "assistant") {
-      nextReplyTurn = row.linked_attempt_id || undefined;
-      turnOf[index] = nextReplyTurn;
-    } else {
-      const delivered = row.metadata?.delivered_to_attempt_id;
-      turnOf[index] = typeof delivered === "string" && delivered ? delivered : nextReplyTurn;
-    }
-  }
-  return rows.filter((_, index) => {
-    const turn = turnOf[index];
-    return turn !== undefined && !threadTurns.has(turn);
-  });
-}
 
 function runIdFromDir(runDir: unknown): string | undefined {
   return typeof runDir === "string" && runDir ? runDir.split(/[/\\]/).pop() || undefined : undefined;
@@ -584,24 +516,22 @@ export function Agent() {
       // from before the thread log existed. When the thread cannot be read
       // the session renders from its rows alone.
       const [thread, msgs, pending] = await Promise.all([
-        (async () => readThread(sid))().catch(() => null),
+        readThread((after, limit) => api.getSessionThread(sid, { after, limit })).catch(() => null),
         api.getSessionMessages(sid),
         (async () => api.listPendingInputs(sid))().catch(() => null),
       ]);
       if (genRef.current !== gen) return false;
       const threadTurns = new Set((thread?.items ?? []).map((item) => item.turn_id));
       const legacyRows = threadTurns.size > 0 ? rowsBeforeThread(msgs, threadTurns) : msgs;
-      // Every assistant turn owns a run directory, so most of these are plain
-      // replies. Request all previews up front rather than one per message.
-      const previews = new Map<string, Promise<RunPreview | null>>();
+      // The legacy fallback reads one stored projection and resolves its run
+      // cards before building the transcript.
+      const previewIds = new Set<string>();
       for (const m of msgs) {
         const meta = m.metadata as Record<string, unknown> | undefined;
-        const runId = meta?.run_id as string | undefined;
-        const metrics = meta?.metrics as Record<string, number> | undefined;
-        if (m.role !== "user" && runId && !hasStoredMetrics(metrics) && !previews.has(runId)) {
-          previews.set(runId, api.getRunPreview(runId).catch(() => null));
-        }
+        if (m.role !== "user" && typeof meta?.run_id === "string") previewIds.add(meta.run_id);
       }
+      const previewEntries = await Promise.all([...previewIds].map(async (runId) => [runId, await api.getRunPreview(runId).catch(() => null)] as const));
+      const previews = new Map(previewEntries);
       let latestRuntimeIdentity: RuntimeIdentity | null = null;
       for (const m of msgs) {
         const meta = m.metadata as Record<string, unknown> | undefined;
@@ -636,74 +566,16 @@ export function Agent() {
           const metrics = meta.metrics as Record<string, number> | undefined;
           turnMeta.card = hasStoredMetrics(metrics)
             ? { metrics }
-            : runCardFields((await previews.get(runId)) ?? null);
+            : runCardFields(previews.get(runId) ?? null);
         }
         const startedAtSec = typeof meta.started_at === "number" ? meta.started_at : NaN;
         if (Number.isFinite(startedAtSec) && startedAtSec > 0) turnMeta.startedAt = startedAtSec * 1000;
         historyMeta[turnId] = turnMeta;
       }
-      const agentMsgs: StoredAgentMessage[] = [];
-      for (const m of legacyRows) {
-        const meta = m.metadata as Record<string, unknown> | undefined;
-        const runId = meta?.run_id as string | undefined;
-        const metrics = meta?.metrics as Record<string, number> | undefined;
-        const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
-        const ts = new Date(m.created_at).getTime();
-        // The reply is committed when the attempt ends, so created_at is the
-        // end. The start comes from the persisted attempt start when present,
-        // else is backed out of the attempt's elapsed time; only legacy rows
-        // without either fall back to the first tool call.
-        const startedAtSec = typeof meta?.started_at === "number" ? meta.started_at : NaN;
-        const attemptStartedAt = Number.isFinite(startedAtSec) && startedAtSec > 0
-          ? startedAtSec * 1000
-          : elapsedMs != null
-            ? ts - elapsedMs
-            : undefined;
-        const toolTimeline = m.role === "assistant"
-          ? buildToolTimelineMessages(m.tool_trail ?? [], {
-              fallbackTimestamp: ts,
-              idPrefix: `${m.message_id}_`,
-              attemptId: m.linked_attempt_id || `${m.message_id}_attempt`,
-              state: meta?.status === "failed"
-                ? "failed"
-                : meta?.status === "cancelled"
-                  ? "stopped"
-                  : "done",
-              startedAt: attemptStartedAt,
-              endedAt: ts,
-            })
-          : [];
-        agentMsgs.push(...toolTimeline);
-        const lastToolTimestamp = toolTimeline.length > 0
-          ? toolTimeline[toolTimeline.length - 1].timestamp
-          : ts - 1;
-        const assistantTs = Math.max(ts, lastToolTimestamp + 1);
-        if (m.role === "user") {
-          const displayPrompt = toDisplayPrompt(m.content);
-          agentMsgs.push({
-            id: m.message_id,
-            type: "user",
-            content: displayPrompt.content,
-            meta: displayPrompt.meta,
-            timestamp: ts,
-          });
-        } else if (runId) {
-          // Show text answer first (if non-empty), then chart card
-          if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
-          }
-          if (hasStoredMetrics(metrics)) {
-            agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
-          } else {
-            const card = runCardFields((await previews.get(runId)) ?? null);
-            if (card) {
-              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
-            }
-          }
-        } else {
-          agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
-        }
-      }
+      const agentMsgs = buildLegacyTranscript(legacyRows, {
+        displayPrompt: toDisplayPrompt,
+        previews,
+      });
       if (genRef.current !== gen) return false;
       // A background session's SSE stream disconnects the moment you navigate
       // away (doDisconnect() in the session-switch effect), so the
@@ -802,7 +674,7 @@ export function Agent() {
       if (turnIsOver(turnId)) return false;
       const store = act();
       const current = store.activity;
-      // `attempt.started` carries the backend's wall-clock start (epoch
+      // `run.started` carries the backend's wall-clock start (epoch
       // seconds). On a replayed stream that is the original start, so the
       // elapsed timer resumes from the truth rather than from reconnect time.
       const startedAtNumber = Number(startedAtSec);
@@ -902,6 +774,10 @@ export function Agent() {
           });
           return;
         }
+        if (kind === "run.waiting") {
+          if (identifyActivity(turnId, "thinking")) markStreaming();
+          return;
+        }
         applyItem(eventType, d);
         return;
       }
@@ -948,22 +824,46 @@ export function Agent() {
       scrollToBottom();
     };
 
-    const onRunEnd = (d: Record<string, unknown>) => {
+    const onRunEnd = async (eventType: "run.completed" | "run.failed" | "run.cancelled", d: Record<string, unknown>) => {
       touch();
-      applyItem("run.completed", d);
+      const turnId = String(d.turn_id || "");
+      if (!turnId || settledTurnsRef.current.has(turnId)) return;
+      settledTurnsRef.current.add(turnId);
+      markBackgroundCompletion(sid, turnId);
+      applyItem(eventType, d);
       if (act().sessionId !== sid) {
         act().clearStreamingSession(sid);
         return;
       }
-      endTurnHere(String(d.turn_id || ""));
+      const runId = runIdFromDir(d.run_dir);
+      const startedAt = Number(d.started_at);
+      act().setTurnMeta(turnId, {
+        content: String(d.summary || ""),
+        ...(runId ? { runId } : {}),
+        ...(Number.isFinite(startedAt) && startedAt > 0 ? { startedAt: startedAt * 1000 } : {}),
+        ...(eventType === "run.failed" ? { error: String(d.error || t("agent.turnFailed" as never)) } : {}),
+      });
+      if (d.provider || d.model) {
+        setRuntimeIdentity({
+          sessionId: sid,
+          provider: d.provider ? String(d.provider) : undefined,
+          model: d.model ? String(d.model) : undefined,
+          reasoningEffort: typeof d.reasoning_effort === "string" ? d.reasoning_effort : undefined,
+        });
+      }
+      endTurnHere(turnId);
+      if (userMessageCount() === 1 && eventType === "run.completed") {
+        api.autoTitleSession(sid).then(() => useSessionsStore.getState().refresh()).catch(() => {});
+      }
+      const shadowId = shadowIdOf(turnId);
+      if (runId) {
+        const card = runCardFields(await api.getRunPreview(runId).catch(() => null));
+        if (card || shadowId) act().setTurnMeta(turnId, { card: { ...card, shadowId } });
+      } else if (shadowId) {
+        act().setTurnMeta(turnId, { card: { shadowId } });
+      }
       scrollToBottom();
     };
-
-    /* Pre-thread sessions still receive the legacy stream. Keep their live
-       view working until the committed /messages projection is available.
-       Thread-backed sessions use item events exclusively, which avoids
-       reconstructing a second transcript from the legacy tool events. */
-    const legacyStream = () => !act().thread.loaded;
 
     connect(() => {
       // Resume from the newest item this page holds: every recorded item
@@ -982,278 +882,16 @@ export function Agent() {
         touch();
         replayAttemptSeenRef.current = true;
         applyItem("run.started", d);
-        if (identifyActivity(String(d.turn_id || ""), "thinking")) markStreaming();
+        if (identifyActivity(String(d.turn_id || ""), "thinking", d.started_at)) markStreaming();
       },
-      "run.completed": onRunEnd,
-      "run.failed": onRunEnd,
-      "run.cancelled": onRunEnd,
+      "run.completed": (d) => { void onRunEnd("run.completed", d); },
+      "run.failed": (d) => { void onRunEnd("run.failed", d); },
+      "run.cancelled": (d) => { void onRunEnd("run.cancelled", d); },
 
-      text_delta: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        replayAttemptSeenRef.current = true;
-        const turnId = String(d.attempt_id || "");
-        if (!identifyActivity(turnId, "responding")) return;
-        markStreaming();
-        queueStreamUpdate(String(d.delta || ""), false);
-      },
-      reasoning_delta: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        replayAttemptSeenRef.current = true;
-        const turnId = String(d.attempt_id || "");
-        if (!identifyActivity(turnId, "thinking")) return;
-        act().setReasoningTail(String(d.tail ?? ""));
-        queueStreamUpdate("", true);
-        markStreaming();
-      },
-      stream_reset: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        const turnId = String(d.attempt_id || "");
-        if (!identifyActivity(turnId, "thinking")) return;
-        clearStreamingView();
-        markStreaming();
-        scrollToBottom();
-      },
-      thinking_done: () => { touch(); },
-      tool_call: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        replayAttemptSeenRef.current = true;
-        const turnId = String(d.attempt_id || "");
-        if (!identifyActivity(turnId, "working")) return;
-        const callId = typeof d.call_id === "string" ? d.call_id : undefined;
-        act().addToolCall({
-          id: callId || `${String(d.tool || "tool")}-${Date.now()}`,
-          tool: String(d.tool || ""),
-          arguments: (d.arguments as Record<string, string> | undefined) ?? {},
-          status: "running",
-          timestamp: Date.now(),
-        });
-        markStreaming();
-      },
-      tool_result: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        const callId = typeof d.call_id === "string" ? d.call_id : undefined;
-        const tool = String(d.tool || "");
-        act().updateRunningToolCall(callId, tool, {
-          status: d.status === "ok" ? "ok" : "error",
-          preview: String(d.preview || ""),
-          elapsed_ms: Number(d.elapsed_ms || 0) || undefined,
-          progress: undefined,
-          elapsed_s: undefined,
-        });
-      },
-      tool_progress: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        const tool = String(d.tool || "");
-        if (!tool) return;
-        const progress: Record<string, unknown> = {};
-        for (const key of ["stage", "message", "current", "total"]) {
-          if (d[key] !== undefined) progress[key] = d[key];
-        }
-        act().updateRunningToolCall(
-          typeof d.call_id === "string" ? d.call_id : undefined,
-          tool,
-          { progress },
-        );
-      },
-      tool_heartbeat: (d) => {
-        touch();
-        if (!legacyStream()) return;
-        const tool = String(d.tool || "");
-        if (!tool) return;
-        act().updateRunningToolCall(
-          typeof d.call_id === "string" ? d.call_id : undefined,
-          tool,
-          { elapsed_s: Number(d.elapsed_s || 0) },
-        );
-      },
-
-      llm_waiting: (d) => {
+      "run.usage": (d) => {
         touch();
         replayAttemptSeenRef.current = true;
-        identifyActivity(String(d.attempt_id || ""), "thinking");
-      },
-      llm_usage: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        recordLlmUsage(String(d.attempt_id || ""), Number(d.iter || 0), d);
-      },
-
-      "input.queued": (d) => {
-        touch();
-        const inputId = String(d.input_id || "");
-        const content = String(d.content || "");
-        if (inputId) act().updateThread((view) => addQueuedInput(view, { inputId, content }));
-      },
-      "input.delivered": (d) => {
-        touch();
-        act().updateThread((view) => removeQueuedInput(view, String(d.input_id || "")));
-      },
-      "input.discarded": (d) => {
-        touch();
-        act().updateThread((view) => removeQueuedInput(view, String(d.input_id || "")));
-      },
-
-      "attempt.created": (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (!identifyActivity(String(d.attempt_id || ""), "thinking", d.started_at)) return;
-        // Backend has created a new attempt — ensure streaming state is active
-        // even if we connected mid-stream (SSE replay / page reload).
-        markStreaming();
-      },
-
-      "attempt.started": (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (!identifyActivity(String(d.attempt_id || ""), "thinking", d.started_at)) return;
-        // Backend has begun executing the attempt. Re-affirm streaming state
-        // so the UI shows a working indicator for reconnects and fresh loads.
-        markStreaming();
-      },
-
-      "attempt.completed": async (d) => {
-        touch();
-        const attemptId = String(d.attempt_id || "");
-        if (!attemptId || settledTurnsRef.current.has(attemptId)) return;
-        settledTurnsRef.current.add(attemptId);
-        markBackgroundCompletion(sid, attemptId);
-        if (act().sessionId !== sid) {
-          act().clearStreamingSession(sid);
-          return;
-        }
-        const runId = runIdFromDir(d.run_dir);
-        const startedAtSec = Number(d.started_at);
-        act().setTurnMeta(attemptId, {
-          content: String(d.summary || ""),
-          ...(runId ? { runId } : {}),
-          ...(Number.isFinite(startedAtSec) && startedAtSec > 0 ? { startedAt: startedAtSec * 1000 } : {}),
-        });
-        const eventStartedSec = Number(d.started_at);
-        const eventElapsedMs = Number(d.elapsed_ms);
-        const eventEndedSec = Number(d.ended_at);
-        const endedAt = Number.isFinite(eventEndedSec) && eventEndedSec > 0
-          ? eventEndedSec * 1000
-          : Date.now();
-        const startedAt = Number.isFinite(eventStartedSec) && eventStartedSec > 0
-          ? eventStartedSec * 1000
-          : Number.isFinite(eventElapsedMs) && eventElapsedMs > 0
-            ? endedAt - eventElapsedMs
-            : undefined;
-        // Legacy sessions have no durable turn_end to render. Preserve the
-        // completed activity row and answer until their /messages row exists.
-        const legacyActivity = !act().thread.loaded && act().activity?.attemptId === attemptId
-          ? act().activity
-          : null;
-        if (legacyActivity) {
-          const completedActivity: AgentActivity = {
-            ...legacyActivity,
-            state: "done",
-            startedAt: startedAt ?? legacyActivity.startedAt,
-            endedAt,
-          };
-          useAgentStore.setState({ activity: null, toolCalls: [] });
-          act().addMessage({
-            id: `legacy:${attemptId}:done`,
-            type: "turn_status",
-            content: "",
-            meta: { activity: completedActivity },
-            timestamp: endedAt,
-          });
-        } else if (!act().thread.loaded) {
-          endTurnHere(attemptId);
-        } else {
-          // run.completed normally ended the turn already.
-          endTurnHere(attemptId);
-        }
-        if (!act().thread.loaded) {
-          const summary = String(d.summary || "");
-          if (summary.trim() && !act().messages.some((message) => (
-            message.type === "answer" && message.meta?.turnId === attemptId
-          ))) {
-            act().addMessage({
-              id: `legacy:${attemptId}:answer`,
-              type: "answer",
-              content: summary,
-              elapsed_ms: Number(d.elapsed_ms || 0) || undefined,
-              meta: { turnId: attemptId },
-              timestamp: endedAt,
-            });
-          }
-        }
-        if (d.provider || d.model) {
-          setRuntimeIdentity({
-            sessionId: sid,
-            provider: d.provider ? String(d.provider) : undefined,
-            model: d.model ? String(d.model) : undefined,
-            reasoningEffort: typeof d.reasoning_effort === "string"
-              ? d.reasoning_effort
-              : undefined,
-          });
-        }
-
-        // First completed exchange → ask the backend for a Codex-style
-        // summary title, then re-list so the sidebar shows it.
-        if (userMessageCount() === 1) {
-          api.autoTitleSession(sid)
-            .then(() => useSessionsStore.getState().refresh())
-            .catch(() => {});
-        }
-
-        // Show RunCompleteCard when the turn produced backtest metrics or a shadow report.
-        const shadowId = shadowIdOf(attemptId);
-        if (runId) {
-          const card = runCardFields(await api.getRunPreview(runId).catch(() => null));
-          if (card || shadowId) act().setTurnMeta(attemptId, { card: { ...card, shadowId } });
-        } else if (shadowId) {
-          act().setTurnMeta(attemptId, { card: { shadowId } });
-        }
-        scrollToBottom();
-      },
-
-      "attempt.failed": (d) => {
-        touch();
-        const attemptId = String(d.attempt_id || "");
-        if (attemptId && settledTurnsRef.current.has(attemptId)) return;
-        if (attemptId) settledTurnsRef.current.add(attemptId);
-        if (act().sessionId !== sid) {
-          act().clearStreamingSession(sid);
-          return;
-        }
-        const error = String(d.error || "");
-        if (attemptId && error) act().setTurnMeta(attemptId, { error });
-        endTurnHere(attemptId);
-        if (!act().activity) act().setStatus("idle");
-        // A turn that failed before recording anything has no status line to carry the reason.
-        if (!act().thread.entries.some((entry) => entry.turnId === attemptId)) {
-          act().addMessage({ id: "", type: "error", content: error || t("agent.turnFailed" as never), timestamp: Date.now() });
-        }
-        scrollToBottom();
-      },
-
-      // A user stop is its own terminal event.
-      "attempt.cancelled": (d) => {
-        touch();
-        const attemptId = String(d.attempt_id || "");
-        if (Array.isArray(d.pending_inputs)) {
-          // A stop keeps the messages queued behind it.
-          const pending = d.pending_inputs as PendingInputView[];
-          act().updateThread((view) => withPendingInputs(view, pending));
-        }
-        if (attemptId && settledTurnsRef.current.has(attemptId)) return;
-        if (attemptId) settledTurnsRef.current.add(attemptId);
-        if (act().sessionId !== sid) {
-          act().clearStreamingSession(sid);
-          return;
-        }
-        endTurnHere(attemptId);
-        if (!act().activity) act().setStatus("idle");
-        scrollToBottom();
+        recordLlmUsage(String(d.turn_id || ""), Number(d.iter || 0), d);
       },
 
       "goal.created": () => {
@@ -1431,7 +1069,7 @@ export function Agent() {
       // cleanup tore down the SSE stream, so a running attempt stopped updating
       // and the UI looked frozen until the safety timeout fired. Re-hydrate like
       // a reload: reset the transient streaming view first (so replay=active
-      // rebuilds the in-flight turn from the backend ring buffer instead of
+      // rebuilds the in-flight turn from the active item stream instead of
       // duplicating deltas onto the preserved text), refresh committed history
       // (covers an attempt that finished while we were away), then re-subscribe.
       const gen = genRef.current + 1;
@@ -1440,8 +1078,8 @@ export function Agent() {
       const seed = curMsgs.length > 0 ? curMsgs : getCachedSession(urlSessionId);
       // switchSession() drops the live activity so replay can rebuild its
       // steps without duplicating them — but the attempt's start time is not
-      // something replay can restore once the ring buffer has rotated past
-      // `attempt.started`. Re-seed the still-running activity with its
+      // something replay can restore once the active stream has rotated past
+      // `run.started`. Re-seed the still-running activity with its
       // original startedAt so the elapsed clock does not restart at 0s.
       const liveActivity = act().activity;
       switchSession(urlSessionId, seed);

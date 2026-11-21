@@ -44,7 +44,7 @@ async function renderStreamingAttempt(attemptId: string): Promise<void> {
   render(<RouterProvider router={router} />);
   await waitFor(() => expect(sseMock.connect).toHaveBeenCalled());
   act(() => {
-    latestHandlers()["attempt.started"]({ attempt_id: attemptId });
+    latestHandlers()["run.started"]({ turn_id: attemptId });
   });
   expect(useAgentStore.getState().status).toBe("streaming");
 }
@@ -80,7 +80,7 @@ describe("Agent numeric streaming", () => {
     await renderStreamingAttempt("attempt-1");
     expect(latestHandlers().grounding_status).toBeUndefined();
     act(() => {
-      latestHandlers().text_delta({ attempt_id: "attempt-1", delta: "On Oct 13, revenue was USD 96.22B; growth 13%." });
+      latestHandlers()["item.delta"]({ turn_id: "attempt-1", kind: "text.delta", delta: "On Oct 13, revenue was USD 96.22B; growth 13%." });
     });
     await waitFor(() => expect(screen.getByText(/On Oct 13, revenue was USD 96.22B; growth 13%/)).toBeInTheDocument());
     expect(screen.queryByText(STATUS_TEXT)).not.toBeInTheDocument();

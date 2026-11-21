@@ -75,7 +75,7 @@ def _get_session_service():
 
 #: Terminal attempt events a finished scheduled briefing can follow.
 _DELIVERY_TRIGGER_EVENTS = frozenset(
-    {"attempt.completed", "attempt.failed", "attempt.cancelled"}
+    {"run.completed", "run.failed", "run.cancelled"}
 )
 
 

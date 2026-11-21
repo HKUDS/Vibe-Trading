@@ -2,8 +2,7 @@
 
 Item events use the thread item's seq as the cursor: a client that reconnects
 with a cursor reads every recorded item after it from disk, however far back
-the 500-event in-memory buffer has rotated, and the legacy events the frontend
-subscribes to keep flowing unchanged beside them.
+the transient in-memory buffer has rotated.
 """
 
 from __future__ import annotations
@@ -107,6 +106,8 @@ def _completed_seqs(received: List[SSEEvent]) -> List[int]:
 def test_live_items_are_started_streamed_and_completed_with_their_seq(tmp_path: Path) -> None:
     store, bus, events = _events(tmp_path)
     thread = store.thread_log(SESSION)
+    observed: list[SSEEvent] = []
+    bus.add_listener(observed.append)
     events.emit(SESSION, "attempt.created", {"attempt_id": TURN})
     thread.append("turn_start", TURN, prompt="go")
     thread.append("user", TURN, content="go", llm_content="go")
@@ -123,7 +124,7 @@ def test_live_items_are_started_streamed_and_completed_with_their_seq(tmp_path: 
     events.emit(SESSION, "tool_result", {"tool": "get_market_data", "status": "error",
                                          "call_id": "c1", "attempt_id": TURN})
 
-    item_events = [e for e in bus.replay(SESSION, replay_all=True) if e.event_type in ITEM_AND_RUN]
+    item_events = [e for e in observed if e.event_type in ITEM_AND_RUN]
     summary = [(e.event_type, e.data["kind"] if "kind" in e.data else None, e.seq) for e in item_events]
     assert summary == [
         ("item.started", "item.started", 1),     # turn_start
@@ -155,7 +156,7 @@ def test_live_items_are_started_streamed_and_completed_with_their_seq(tmp_path: 
     ]
 
 
-def test_legacy_events_are_published_unchanged_and_in_order(tmp_path: Path) -> None:
+def test_legacy_callbacks_are_translated_without_publication(tmp_path: Path) -> None:
     store, bus, events = _events(tmp_path)
     thread = store.thread_log(SESSION)
     emitted = [
@@ -171,15 +172,15 @@ def test_legacy_events_are_published_unchanged_and_in_order(tmp_path: Path) -> N
     for event_type, data in emitted:
         published.append(events.emit(SESSION, event_type, dict(data)))
 
-    legacy = [e for e in bus.replay(SESSION, replay_all=True) if e.event_type not in ITEM_AND_RUN]
-    assert [(e.event_type, e.data) for e in legacy] == emitted
-    assert legacy == published
-    assert all(e.seq is None for e in legacy)
+    assert published == [None] * len(emitted)
+    assert all(e.event_type not in {name for name, _ in emitted} for e in bus.replay(SESSION, replay_all=True))
 
 
 def test_a_response_the_thread_never_recorded_is_discarded_explicitly(tmp_path: Path) -> None:
     store, bus, events = _events(tmp_path)
     thread = store.thread_log(SESSION)
+    observed: list[SSEEvent] = []
+    bus.add_listener(observed.append)
     events.emit(SESSION, "attempt.created", {"attempt_id": TURN})
     thread.append("turn_start", TURN, prompt="go")
     events.emit(SESSION, "text_delta", {"delta": "x", "iter": 1, "attempt_id": TURN})
@@ -189,7 +190,7 @@ def test_a_response_the_thread_never_recorded_is_discarded_explicitly(tmp_path: 
     thread.append("turn_end", TURN, status="cancelled")
     events.emit(SESSION, "attempt.cancelled", {"attempt_id": TURN})
 
-    item_events = [e for e in bus.replay(SESSION, replay_all=True) if e.event_type in ITEM_AND_RUN]
+    item_events = [e for e in observed if e.event_type in ITEM_AND_RUN]
     started = [e.data["live_id"] for e in item_events
                if e.event_type == "item.started" and e.seq is None]
     discarded = [e.data["live_id"] for e in item_events
@@ -208,7 +209,7 @@ def test_an_interrupted_turn_is_a_failed_run_with_that_status(tmp_path: Path) ->
     thread.append("turn_end", TURN, status="interrupted")
     events.sync(SESSION)
 
-    runs = [e for e in bus.replay(SESSION, replay_all=True) if e.event_type.startswith("run.")]
+    runs = [e for e in _collect(events, cursor=0) if e.event_type.startswith("run.")]
     assert [(e.event_type, e.data["status"]) for e in runs] == [
         ("run.started", "running"), ("run.failed", "interrupted"),
     ]
@@ -257,10 +258,6 @@ def test_resume_from_a_cursor_older_than_the_memory_buffer(tmp_path: Path) -> No
     events.sync(SESSION)
     _write_turn(thread, TURN, calls=12)
     events.sync(SESSION)
-    for _ in range(10):
-        events.emit(SESSION, "llm_waiting", {"attempt_id": TURN})
-    assert all(e.event_type == "llm_waiting" for e in bus.replay(SESSION, replay_all=True))
-
     received = _collect(events, cursor=3)
 
     assert _completed_seqs(received) == _display_seqs(thread, after=3)
@@ -404,16 +401,14 @@ def test_cursor_resume_replays_only_the_live_events_of_unfinished_items(tmp_path
     }
 
 
-def test_legacy_resume_without_a_cursor_is_the_buffer_replay(tmp_path: Path) -> None:
+def test_resume_uses_the_thread_cursor_instead_of_legacy_buffer_replay(tmp_path: Path) -> None:
     store, bus, events = _events(tmp_path)
     thread = store.thread_log(SESSION)
     events.sync(SESSION)
-    first = events.emit(SESSION, "text_delta", {"delta": "a", "iter": 1, "attempt_id": TURN})
     thread.append("turn_start", TURN, prompt="go")
-    events.emit(SESSION, "text_delta", {"delta": "b", "iter": 1, "attempt_id": TURN})
-    buffer = bus.replay(SESSION, replay_all=True)
-
-    assert _collect(events, last_event_id=first.event_id) == select_replay(buffer, first.event_id)
+    events.sync(SESSION)
+    received = _collect(events, cursor=0)
+    assert [event.event_type for event in received] == ["item.completed", "run.started"]
     assert _collect(events) == []
 
 
@@ -471,11 +466,13 @@ def _patch_agent(monkeypatch) -> None:
     monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
 
 
-def test_a_service_turn_emits_item_and_run_events_beside_the_legacy_ones(
+def test_a_service_turn_emits_only_item_and_run_events(
     tmp_path: Path, monkeypatch
 ) -> None:
     _patch_agent(monkeypatch)
     service = _service(tmp_path, monkeypatch)
+    observed: list[SSEEvent] = []
+    service.event_bus.add_listener(observed.append)
     session = service.create_session(title="kernel")
 
     async def run() -> None:
@@ -484,21 +481,18 @@ def test_a_service_turn_emits_item_and_run_events_beside_the_legacy_ones(
         assert result["attempt_id"]
 
     asyncio.run(run())
-    events = service.event_bus.replay(session.session_id, replay_all=True)
-    legacy = [e.event_type for e in events if e.event_type not in ITEM_AND_RUN]
-    assert legacy == [
-        "session.created", "message.received", "attempt.created", "attempt.started",
-        "text_delta", "tool_call", "tool_result", "text_delta", "attempt.completed",
-    ]
+    events = [event for event in observed if event.session_id == session.session_id]
+    assert not {e.event_type for e in events} & {
+        "attempt.created", "attempt.started", "text_delta", "tool_call",
+        "tool_result", "attempt.completed",
+    }
     order = [e.event_type for e in events]
-    assert order.index("run.completed") < order.index("attempt.completed")
-    assert order.index("run.started") < order.index("tool_call")
+    assert "run.completed" in order
     completed = [e.data["item"] for e in events if e.event_type == "item.completed" and e.seq]
     assert [item["type"] for item in completed] == [
         "turn_start", "user", "assistant", "tool_result", "assistant", "turn_end",
     ]
     tool_done = next(e for e in events if e.data.get("kind") == "tool.completed")
-    assert order.index("tool_result") > events.index(tool_done)
     thread_seqs = _display_seqs(service.store.thread_log(session.session_id))
     assert [e.seq for e in events if e.event_type == "item.completed" and e.seq] == thread_seqs
 

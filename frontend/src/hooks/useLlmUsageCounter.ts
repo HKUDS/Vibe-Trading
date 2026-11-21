@@ -1,9 +1,9 @@
 /**
- * Live per-attempt LLM token counter, fed by the `llm_usage` SSE event.
+ * Live per-attempt LLM token counter, fed by the `run.usage` item delta.
  *
- * The backend emits one `llm_usage` event per agent iteration carrying the
+ * The backend emits one `run.usage` event per agent iteration carrying the
  * provider-reported usage DELTA plus `iter` and `attempt_id`
- * (emitted at agent/src/agent/loop.py; `attempt_id` injected at
+ * (emitted at agent/src/agent/loop.py; `turn_id` injected at
  * agent/src/session/service.py). useSSE dedups by Last-Event-ID, but a
  * reconnect replay can still deliver an already-applied iteration, so
  * accumulation is keyed idempotently on `(attemptId, iter)` and a new

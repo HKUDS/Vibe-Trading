@@ -259,7 +259,7 @@ class Attempt:
         created_at: Creation time in ISO format.
         started_at: Wall-clock time (epoch seconds) execution began, once running.
             Clients that join mid-attempt resume their elapsed clock from it, so
-            it must outlive the event ring buffer that first announced it.
+            it must outlive transient live-event buffering.
         completed_at: Completion time in ISO format, if available.
         error: Error message when the attempt fails.
         metrics: Snapshot of backtest metrics.

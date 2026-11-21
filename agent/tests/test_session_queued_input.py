@@ -352,7 +352,7 @@ def test_cancel_keeps_a_pending_input_reports_it_and_the_next_send_runs_it_first
     # No turn started on its own after the stop.
     assert harness.sid not in harness.service._inflight
     assert [i.turn_id for i in harness.items() if i.type == "turn_start"] == [cancelled]
-    terminal = [e.data for e in harness.events if e.event_type == "attempt.cancelled"]
+    terminal = [e.data for e in harness.events if e.event_type == "run.cancelled"]
     assert terminal[-1]["pending_inputs"] == pending
 
     # The next send keeps send order: the waiting input runs first.

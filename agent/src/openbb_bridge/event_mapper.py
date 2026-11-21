@@ -1,7 +1,7 @@
 """Map Vibe-Trading internal events to OpenBB Workspace SSE events.
 
-Vibe-Trading's :class:`AgentLoop` emits fine-grained events through the session
-event bus (``text_delta``, ``tool_call``, ``tool_result``, ...). OpenBB
+Vibe-Trading's session kernel emits durable item events through the session
+event stream (``item.delta``, ``item.started``, ``item.completed``). OpenBB
 Workspace expects a different, smaller vocabulary of Server-Sent Events built
 with the ``openbb_ai`` helper functions (``message_chunk``, ``reasoning_step``,
 ...).
@@ -20,23 +20,6 @@ from typing import Any, Dict, List
 from openbb_ai.helpers import message_chunk, reasoning_step
 
 logger = logging.getLogger("openbb_bridge")
-
-# Vibe-Trading event types that carry the visible answer text.
-_TEXT_EVENTS = {"text_delta"}
-
-# Events that are pure progress / telemetry and should not reach Workspace.
-_SILENT_EVENTS = {
-    "reasoning_delta",
-    "thinking_done",
-    "tool_progress",
-    "tool_heartbeat",
-    "llm_usage",
-    "stream_start",
-    "message.received",
-    "attempt.created",
-    "session.created",
-}
-
 
 def _clip(value: Any, limit: int = 500) -> str:
     """Return *value* stringified and clipped to *limit* characters."""
@@ -61,16 +44,18 @@ class SSEEventMapper:
         """
         data = data or {}
         try:
-            if event_type in _TEXT_EVENTS:
+            kind = data.get("kind")
+            item = data.get("item") if isinstance(data.get("item"), dict) else data
+            if event_type == "item.delta" and kind == "text.delta":
                 delta = data.get("delta", "")
                 return [message_chunk(text=delta)] if delta else []
 
-            if event_type in _SILENT_EVENTS:
+            if event_type == "item.delta" and kind in {"reasoning.delta", "run.waiting", "run.usage", "run.usage_unavailable", "tool.progress"}:
                 return []
 
-            if event_type == "tool_call":
-                tool = data.get("tool", "tool")
-                arguments = data.get("arguments")
+            if event_type == "item.started" and kind == "tool.started":
+                tool = item.get("name", "tool")
+                arguments = item.get("arguments")
                 details = arguments if isinstance(arguments, dict) else None
                 return [
                     reasoning_step(
@@ -80,11 +65,11 @@ class SSEEventMapper:
                     )
                 ]
 
-            if event_type == "tool_result":
-                tool = data.get("tool", "tool")
-                status = data.get("status", "done")
-                elapsed = data.get("elapsed_ms")
-                preview = data.get("preview")
+            if event_type == "item.completed" and kind in {"tool.completed", "tool.failed"}:
+                tool = item.get("name", "tool")
+                status = item.get("status", "done")
+                elapsed = item.get("elapsed_ms")
+                preview = item.get("content")
                 suffix = f" ({elapsed}ms)" if elapsed is not None else ""
                 level = "ERROR" if str(status).lower() in {"error", "failed"} else "INFO"
                 return [
@@ -95,8 +80,8 @@ class SSEEventMapper:
                     )
                 ]
 
-            if event_type == "compact":
-                summary = data.get("summary")
+            if event_type == "item.completed" and item.get("type") == "compaction":
+                summary = item.get("summary")
                 return [
                     reasoning_step(
                         message="Context compacted to stay within limits.",
@@ -105,7 +90,7 @@ class SSEEventMapper:
                     )
                 ]
 
-            if event_type == "stream_reset":
+            if event_type == "item.delta" and kind == "text.reset":
                 return [
                     reasoning_step(
                         message="Model stream reset, retrying.",
@@ -127,7 +112,7 @@ class SSEEventMapper:
                 message = data.get("message", "MCP warning")
                 return [reasoning_step(message=_clip(message), event_type="WARNING")]
 
-            if event_type == "attempt.started":
+            if event_type == "run.started":
                 return [
                     reasoning_step(
                         message="Vibe-Trading agent started.",
@@ -136,7 +121,7 @@ class SSEEventMapper:
                 ]
 
             # Unknown event: swallow it rather than leaking internal noise.
-            logger.debug("Unmapped Vibe-Trading event: %s", event_type)
+            logger.debug("Unmapped Vibe-Trading event: %s/%s", event_type, kind)
             return []
         except Exception as exc:  # never break the stream on a mapping error
             logger.warning("Failed to map event %s: %s", event_type, exc)
