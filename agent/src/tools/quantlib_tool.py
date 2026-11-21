@@ -273,7 +273,8 @@ class QuantlibCallTool(BaseTool):
     name = "quantlib_call"
     description = (
         "For named rate comparisons, units.compare_rates returns higher/lower/equal and signed differences in explicit units. Use left_label/right_label and file references for saved values. "
-        "Run a function from the tested finance-math library (src/quantlib): "
+        "Load the `quantlib-index` skill for the complete function index, then run "
+        "a function from the tested finance-math library (src/quantlib): "
         "Black-Scholes and implied vol, bond math and curve fitting, Altman Z "
         "and Merton/KMV, stationarity/cointegration/GARCH/regime switching, "
         "VaR/CVaR/EVT and VaR backtesting (Kupiec/Christoffersen/Basel), "
@@ -285,9 +286,8 @@ class QuantlibCallTool(BaseTool):
         "deflated Sharpe and PBO, "
         "purged cross-validation, and the valuation engine (DCF / comps / "
         "three-statement). Computes from supplied values or saved JSON/CSV observations; "
-        "no network or shell. Start with action='list' to see modules, then "
-        "action='list' with a module to see its functions, then "
-        "action='describe' for a signature. "
+        "no network or shell. Use action='call' with the indexed module and function. "
+        "Use action='describe' only when the loaded index lacks a signature. "
         'Example: quantlib_call(action="call", module="risk", '
         'function="historical_var", kwargs={"returns": [0.01, -0.02], "confidence": 0.95}).'
     )

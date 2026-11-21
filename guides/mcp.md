@@ -58,13 +58,13 @@ profile. `run_swarm` requires an LLM key.
 
 ```bash
 vibe-trading-mcp                   # stdio (default)
-vibe-trading-mcp --transport http  # Streamable HTTP (current MCP spec default) at http://127.0.0.1:8900/mcp
+vibe-trading-mcp --transport http  # Streamable HTTP (current MCP spec default) at http://127.0.0.1:9200/mcp
 vibe-trading-mcp --transport sse   # legacy SSE (deprecated) for older clients
 ```
 
 For HTTP clients (QwenPaw, and any client that negotiates by POSTing an
 `InitializeRequest`), use `--transport http` and point the client at the single
-`/mcp` endpoint — e.g. `http://127.0.0.1:8900/mcp`. Do **not** point an HTTP
+`/mcp` endpoint — e.g. `http://127.0.0.1:9200/mcp`. Do **not** point an HTTP
 client at `/sse`; that path belongs to the deprecated two-endpoint SSE transport
 and will return `405 Method Not Allowed` on `POST`. Override the bind address
 with `--host` / `--port`.
@@ -123,7 +123,7 @@ Browse on ClawHub: [clawhub.ai/skills/vibe-trading](https://clawhub.ai/skills/vi
 <details>
 <summary><b>OpenSpace — self-evolving skills</b></summary>
 
-All 89 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
+All 92 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
 
 To use with OpenSpace, add both MCP servers to your agent config:
 
@@ -145,7 +145,7 @@ To use with OpenSpace, add both MCP servers to your agent config:
 }
 ```
 
-OpenSpace will auto-discover all 89 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
+OpenSpace will auto-discover all 92 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
 
 </details>
 

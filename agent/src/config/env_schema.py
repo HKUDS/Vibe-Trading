@@ -524,6 +524,14 @@ class AgentTuningConfig(_EnvBase):
     vibe_trading_run_stall_timeout_seconds: float = Field(
         alias="VIBE_TRADING_RUN_STALL_TIMEOUT_SECONDS", default=1800.0,
     )
+    # Pacing nudges are disabled until traces separate healthy and over-long
+    # runs well enough to justify a default threshold.
+    vibe_trading_mid_turn_nudge_rounds: int = Field(
+        alias="VIBE_TRADING_MID_TURN_NUDGE_ROUNDS", default=0, ge=0,
+    )
+    vibe_trading_wrap_up_nudge_remaining: int = Field(
+        alias="VIBE_TRADING_WRAP_UP_NUDGE_REMAINING", default=0, ge=0,
+    )
     vibe_trading_goal_max_continuations: int = Field(
         alias="VIBE_TRADING_GOAL_MAX_CONTINUATIONS", default=3,
     )

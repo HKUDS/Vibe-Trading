@@ -1,5 +1,15 @@
 {
   "minimum_tools": 16,
-  "initial_tools": ["search_symbol", "load_skill", "read_file", "write_file", "edit_file", "bash", "compact"],
+  "initial_tools": [
+    "search_symbol",
+    "load_skill",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "bash",
+    "compact",
+    "get_market_data",
+    "technical_indicators"
+  ],
   "catalog_description_chars": 80
 }
