@@ -141,6 +141,47 @@ def test_session_cancel_reaps_background_tasks_before_its_turn_ends():
     assert calls == ["cancelled"]
 
 
+def test_session_cancel_reports_true_for_a_background_only_task():
+    """No active loop, no active task, no swarm run -- just a background task
+    the turn itself spawned. cancel_current must still report it was
+    cancelled instead of discarding cancel_all()'s result and reporting
+    False, which the /sessions/{id}/cancel API turns into "no_active_loop"
+    even though real work was in fact stopped.
+    """
+    from src.session.service import SessionService
+
+    service = SessionService.__new__(SessionService)
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:s1"))
+    service._background_handles = {"s1": manager}
+    service._active_tasks = {}
+    service._active_loops = {}
+    service._user_cancel_requests = set()
+    service._inflight_lock = __import__("threading").Lock()
+    service._inflight = set()
+    service._shutting_down = False
+    task_id = json.loads(manager.run(command("import time; time.sleep(60)")))["task_id"]
+
+    assert service.cancel_current("s1") is True
+
+    wait_until(lambda: json.loads(manager.check(task_id))["status"] == "cancelled")
+
+
+def test_session_cancel_reports_false_when_nothing_was_running():
+    from src.session.service import SessionService
+
+    service = SessionService.__new__(SessionService)
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:s1"))
+    service._background_handles = {"s1": manager}
+    service._active_tasks = {}
+    service._active_loops = {}
+    service._user_cancel_requests = set()
+    service._inflight_lock = __import__("threading").Lock()
+    service._inflight = set()
+    service._shutting_down = False
+
+    assert service.cancel_current("s1") is False
+
+
 def test_session_shutdown_stops_new_work_and_reaps_tasks():
     import threading
     from src.session.service import SessionService
