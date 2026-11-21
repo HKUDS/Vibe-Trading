@@ -28,7 +28,22 @@ _CONNECTOR_ROOT = Path(__file__).resolve().parents[1] / "src" / "trading" / "con
 
 # Brokers with no runtime paper/live discriminator. Capped at paper; every
 # order entry point must refuse a non-paper config up front.
-_PAPER_CAPPED = frozenset({"longbridge", "dhan", "shoonya", "trading212", "zerodha", "upbit", "toss", "mstock"})
+_PAPER_CAPPED = frozenset(
+    {
+        "longbridge",
+        "dhan",
+        "shoonya",
+        "trading212",
+        "zerodha",
+        "upbit",
+        "toss",
+        "mstock",
+        # OpenAlgo reports its analyzer mode, but the mode is server-wide and
+        # mutable and is re-read when a write is handled, so a request-time
+        # check is not a structural boundary (#1367). Every order refuses.
+        "openalgo",
+    }
+)
 
 # Brokers with a structural discriminator (host separation, demo flag, account
 # id format, trade environment). Live placement is allowed here, but only
