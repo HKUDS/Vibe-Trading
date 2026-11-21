@@ -1271,6 +1271,11 @@ def _run_agent(
     background = get_background_manager().for_scope(background_scope)
     cancel_event = threading.Event()
 
+    try:
+        llm = chat_llm_for_stored_session(SESSIONS_DIR, session_id)
+    except ModelSelectionError as exc:
+        return unavailable_selection_result(exc)
+
     registry = build_registry(
         persistent_memory=pm,
         include_shell_tools=True,
@@ -1281,10 +1286,6 @@ def _run_agent(
         background_scope=background_scope,
         cancel_event=cancel_event,
     )
-    try:
-        llm = chat_llm_for_stored_session(SESSIONS_DIR, session_id)
-    except ModelSelectionError as exc:
-        return unavailable_selection_result(exc)
 
     # Opened only once the agent can run: it writes the user's message and
     # replays the session's history, and a turn left open would be replayed

@@ -310,6 +310,9 @@ class _EmptyRegistry:
     def get_definitions(self):
         return []
 
+    def get(self, name):
+        return None
+
 
 @pytest.mark.parametrize(
     ("response_model", "expected_model", "expected_source"),

@@ -32,6 +32,9 @@ class _EmptyRegistry:
     def get_definitions(self):
         return []
 
+    def get(self, name):
+        return None
+
 
 def test_runtime_metadata_is_frozen_at_construction_with_model_override(
     monkeypatch,
