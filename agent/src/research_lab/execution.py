@@ -59,15 +59,18 @@ def constructor_defaults(source: str) -> dict[str, Any]:
     return {}
 
 
-def freeze_run(run: Path, destination: Path) -> tuple[dict, Path, pd.DatetimeIndex, str]:
+def freeze_run(
+    run: Path, destination: Path, *, use_evaluation_calendar: bool = False
+) -> tuple[dict, Path, pd.DatetimeIndex, str]:
     """Copy verified engine inputs and strategy, retaining every exported field.
 
     Args:
         run: Completed source run.
         destination: New experiment root.
+        use_evaluation_calendar: Use evaluated dates if the source declared a boundary.
 
     Returns:
-        Original config, sealed data manifest, union calendar and strategy hash.
+        Original config, sealed data manifest, study calendar and strategy hash.
 
     Raises:
         ValueError: If inputs are incomplete, changed or cannot be reproduced.
@@ -132,6 +135,27 @@ def freeze_run(run: Path, destination: Path) -> tuple[dict, Path, pd.DatetimeInd
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False))
     if calendar is None or len(calendar) < 2:
         raise ValueError("snapshot needs at least two trading bars")
+    # Training spans belong to the original evaluation, not its raw price
+    # history. The full inputs remain visible for indicator warm-up.
+    declared = (
+        config.get("warmup_bars") is not None
+        or config.get("evaluation_start_date") is not None
+    )
+    if use_evaluation_calendar and declared:
+        equity = run / "artifacts/equity.csv"
+        relative = "artifacts/equity.csv"
+        if relative not in entries:
+            raise ValueError(
+                "source run has no manifested evaluation calendar; rerun it before studying it"
+            )
+        if digest(equity) != entries[relative]["sha256"]:
+            raise ValueError(
+                "source equity changed since its completed backtest; rerun it before studying it"
+            )
+        observed = pd.read_csv(equity, index_col=0, parse_dates=True).index
+        calendar = calendar[calendar.isin(observed)]
+        if len(observed) < 2:
+            raise ValueError("source run needs at least two evaluated bars")
     return config, manifest_path, calendar.sort_values(), strategy_hash
 
 
