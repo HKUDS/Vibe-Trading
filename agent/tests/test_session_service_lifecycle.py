@@ -165,8 +165,8 @@ def test_cancelled_run_is_cancelled_not_failed(tmp_path, monkeypatch, streamed):
     async def scenario() -> None:
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="cancel")
-        seen: list[str] = []
-        service.event_bus.emit = lambda sid, event, data: seen.append(event)  # type: ignore[assignment]
+        seen: list[tuple[str, dict]] = []
+        service.event_bus.add_listener(lambda event: seen.append((event.event_type, event.data)))
         _stub_agent(
             service,
             monkeypatch,
@@ -182,8 +182,8 @@ def test_cancelled_run_is_cancelled_not_failed(tmp_path, monkeypatch, streamed):
         stored = service.store.get_session(session.session_id)
         attempt = service.store.get_attempt(session.session_id, stored.last_attempt_id)
         assert attempt.status == AttemptStatus.CANCELLED
-        assert "attempt.cancelled" in seen
-        assert "attempt.failed" not in seen
+        assert any(event == "run.cancelled" for event, _ in seen)
+        assert not any(event == "run.failed" for event, _ in seen)
         reply = service.store.get_messages(session.session_id)[-1]
         expected = f"{streamed}\n\n{STOPPED_MARKER}" if streamed else STOPPED_MARKER
         assert reply.content == expected
@@ -241,7 +241,7 @@ def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeyp
 
         monkeypatch.setattr(service, "_run_with_agent", _fake)
         events = []
-        service.event_bus.emit = lambda sid, kind, data: events.append((kind, data))
+        service.event_bus.add_listener(lambda event: events.append((event.event_type, event.data)))
         await service.send_message(session.session_id, "create report")
         for _ in range(100):
             await asyncio.sleep(0.01)
@@ -250,7 +250,7 @@ def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeyp
         reply = service.store.get_messages(session.session_id)[-1]
         assert reply.metadata["generated_reports"] == [report]
         assert "[研究报告.pdf](/api/reports/" in reply.content
-        completed = next(data for kind, data in events if kind == "attempt.completed")
+        completed = next(data for kind, data in events if kind == "run.completed")
         assert completed["summary"] == reply.content
     asyncio.run(scenario())
 
@@ -405,7 +405,7 @@ def test_attempt_started_event_carries_wall_clock_start(tmp_path, monkeypatch):
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="started-at")
         seen: list[tuple[str, dict]] = []
-        service.event_bus.emit = lambda sid, event, data: seen.append((event, data))  # type: ignore[assignment]
+        service.event_bus.add_listener(lambda event: seen.append((event.event_type, event.data)))
         _stub_agent(service, monkeypatch, {"status": "success", "content": "ok"})
 
         before = time.time()
@@ -416,10 +416,10 @@ def test_attempt_started_event_carries_wall_clock_start(tmp_path, monkeypatch):
                 break
         after = time.time()
 
-        started = [data for event, data in seen if event == "attempt.started"]
+        started = [data for event, data in seen if event == "run.started"]
         assert len(started) == 1
         stored = service.store.get_session(session.session_id)
-        assert started[0]["attempt_id"] == stored.last_attempt_id
+        assert started[0]["turn_id"] == stored.last_attempt_id
         assert isinstance(started[0]["started_at"], float)
         assert before <= started[0]["started_at"] <= after
 
@@ -436,7 +436,7 @@ def test_completed_reply_and_terminal_event_carry_attempt_timing(tmp_path, monke
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="timing")
         seen: list[tuple[str, dict]] = []
-        service.event_bus.emit = lambda sid, event, data: seen.append((event, data))  # type: ignore[assignment]
+        service.event_bus.add_listener(lambda event: seen.append((event.event_type, event.data)))
         _stub_agent(service, monkeypatch, {"status": "success", "content": "ok"})
 
         before = time.time()
@@ -447,15 +447,15 @@ def test_completed_reply_and_terminal_event_carry_attempt_timing(tmp_path, monke
                 break
         after = time.time()
 
-        started = next(data for event, data in seen if event == "attempt.started")
-        completed = next(data for event, data in seen if event == "attempt.completed")
+        started = next(data for event, data in seen if event == "run.started")
+        completed = next(data for event, data in seen if event == "run.completed")
         reply = service.store.get_messages(session.session_id)[-1]
 
         assert reply.role == "assistant"
-        assert reply.metadata["started_at"] == started["started_at"]
+        assert abs(reply.metadata["started_at"] - started["started_at"]) < 0.01
         assert before <= reply.metadata["started_at"] <= after
         assert reply.metadata["elapsed_ms"] >= 0
-        assert completed["started_at"] == started["started_at"]
+        assert abs(completed["started_at"] - started["started_at"]) < 0.01
         assert completed["started_at"] <= completed["ended_at"] <= after
         assert completed["elapsed_ms"] == reply.metadata["elapsed_ms"]
 

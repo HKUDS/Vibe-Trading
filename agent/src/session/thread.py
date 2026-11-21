@@ -177,6 +177,12 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "status": _Field(lambda v: v in TURN_END_STATUSES, required=True),
         "usage": _Field(_optional(_is_dict)),
         "elapsed_ms": _Field(_optional(_is_number)),
+        "summary": _Field(_optional(_is_str)),
+        "error": _Field(_optional(_is_str)),
+        "run_dir": _Field(_optional(_is_str)),
+        "provider": _Field(_optional(_is_str)),
+        "model": _Field(_optional(_is_str)),
+        "pending_inputs": _Field(_optional(_is_list)),
     },
 }
 

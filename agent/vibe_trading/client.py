@@ -178,7 +178,12 @@ class Stream:
         if self._attempt_id is None:
             self._early.append(event)
             return
-        if event.data.get("attempt_id") != self._attempt_id:
+        event_turn = event.data.get("attempt_id") or event.data.get("turn_id")
+        if event_turn is None:
+            item = event.data.get("item")
+            if isinstance(item, dict):
+                event_turn = item.get("turn_id")
+        if event_turn != self._attempt_id:
             return
         public = translate(event.event_type, self._session_id, self._attempt_id, event.data)
         if public is None:

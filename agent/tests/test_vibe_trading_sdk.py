@@ -440,25 +440,30 @@ def test_translate_drops_names_outside_the_vocabulary() -> None:
                      "message.received", "attempt.created", "mcp.warning", "goal.updated"):
         assert internal not in EVENT_TABLE
         assert translate(internal, "s", "a", {"attempt_id": "a"}) is None
-    samples = {
-        "attempt.started": {},
-        "text_delta": {"delta": "x"},
-        "stream_reset": {},
-        "reasoning_delta": {"tail": "t", "chars": 1},
-        "tool_call": {"tool": "t"},
-        "tool_result": {"tool": "t", "status": "ok"},
-        "attempt.completed": {},
-        "attempt.failed": {},
-        "attempt.cancelled": {},
+    assert set(EVENT_TABLE) == {
+        "run.started", "item.delta:text.delta", "item.delta:text.reset",
+        "item.delta:reasoning.delta", "item.started:tool.started",
+        "item.completed:tool.completed", "item.completed:tool.failed",
+        "run.completed", "run.failed", "run.cancelled",
     }
-    assert set(EVENT_TABLE) == set(samples)
-    produced = {translate(name, "s", "a", data).type for name, data in samples.items()}
-    produced.add(translate("tool_result", "s", "a", {"tool": "t", "status": "error"}).type)
+    # The table is keyed by the event envelope and item kind, so each sample
+    # must be explicit when a name is reused with different item payloads.
+    sample_values = [
+        ("run.started", {}),
+        ("item.delta", {"kind": "text.delta", "delta": "x"}),
+        ("item.delta", {"kind": "text.reset"}),
+        ("item.delta", {"kind": "reasoning.delta", "tail": "t", "chars": 1}),
+        ("item.started", {"kind": "tool.started", "item": {"name": "t"}}),
+        ("item.completed", {"kind": "tool.completed", "item": {"name": "t", "status": "ok"}}),
+        ("item.completed", {"kind": "tool.failed", "item": {"name": "t", "status": "error"}}),
+        ("run.completed", {}), ("run.failed", {}), ("run.cancelled", {}),
+    ]
+    produced = {translate(name, "s", "a", data).type for name, data in sample_values}
     assert produced == {
         "run.started", "text.delta", "reasoning.delta", "tool.started", "tool.completed",
         "tool.failed", "run.completed", "run.failed", "run.cancelled",
     }
-    reset = translate("stream_reset", "s", "a", {"reason": "grounding"})
+    reset = translate("item.delta", "s", "a", {"kind": "text.reset"})
     assert isinstance(reset, TextDelta) and reset.reset is True and reset.text == ""
 
 

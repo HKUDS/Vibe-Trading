@@ -1,10 +1,9 @@
-"""Session SSE events: the in-memory bus and the durable item stream.
+"""Session SSE events and the durable item stream.
 
-:class:`EventBus` keeps a bounded per-session buffer of every event and fans
-live events out to subscribers. :class:`ThreadEvents` derives typed item events
-from the session's ``thread.jsonl`` and uses each item's ``seq`` as a durable
-cursor, so a client that reconnects with a cursor reads every completed item
-after it from disk instead of from the 500-event buffer.
+:class:`ThreadEvents` derives typed item events from the session's
+``thread.jsonl`` and uses each item's ``seq`` as a durable cursor. The bus only
+keeps a small transient buffer for in-progress item events. Completed history
+is always replayed from the thread log.
 
 V5: Fixes the thread-safety issue caused by calling queue.put_nowait() on asyncio.Queue from a background thread.
 """
@@ -119,13 +118,14 @@ def select_replay(
 
 
 class EventBus:
-    """Session-scoped event bus with subscribers and buffered events.
+    """Session-scoped live bus with subscribers and transient item events.
 
     V5: Inject the asyncio event loop with ``set_loop()``, and use
     ``call_soon_threadsafe`` in ``publish()`` to preserve thread safety.
 
     Attributes:
-        max_buffer_size: Maximum number of buffered events per session.
+        max_buffer_size: Maximum number of in-progress events retained per
+            session. Durable item completions are read from ``thread.jsonl``.
     """
 
     def __init__(self, max_buffer_size: int = 500, heartbeat_interval_s: float = 30.0) -> None:
@@ -165,7 +165,12 @@ class EventBus:
             if session_id not in self._buffers:
                 self._buffers[session_id] = []
             buffer = self._buffers[session_id]
-            buffer.append(event)
+            # Completed item events have a durable cursor and never need the
+            # ring buffer. Keep only live item events so reconnects can retain
+            # an in-progress delta while the thread remains the source of
+            # truth for everything that completed.
+            if event.seq is None and event.event_type in ITEM_EVENT_TYPES:
+                buffer.append(event)
             if len(buffer) > self.max_buffer_size:
                 self._buffers[session_id] = buffer[-self.max_buffer_size:]
 
@@ -560,7 +565,17 @@ def display_item(item: ThreadItem) -> Optional[Dict[str, Any]]:
     elif item.type == "compaction":
         view.update(summary=item.get("summary"), replaces_through_seq=item.get("replaces_through_seq"))
     elif item.type == "turn_end":
-        view.update(status=item.get("status"), usage=item.get("usage"), elapsed_ms=item.get("elapsed_ms"))
+        view.update(
+            status=item.get("status"),
+            usage=item.get("usage"),
+            elapsed_ms=item.get("elapsed_ms"),
+            summary=item.get("summary"),
+            error=item.get("error"),
+            run_dir=item.get("run_dir"),
+            provider=item.get("provider"),
+            model=item.get("model"),
+            pending_inputs=item.get("pending_inputs"),
+        )
     return view
 
 
@@ -648,9 +663,8 @@ class ThreadEvents:
 
     Every event the session publishes goes through :meth:`emit`, which first
     reads the items appended to the thread since the last call and publishes
-    their events, then publishes the legacy event unchanged, then the live
-    item event it implies. Item events are additive: the legacy events keep
-    their names, payloads and random ids.
+    their item and run events, then translates any still-in-flight activity
+    into item deltas. Flat agent event names never leave this seam.
 
     Vocabulary (``data["kind"]`` names the lifecycle step inside the item
     envelope):
@@ -700,8 +714,8 @@ class ThreadEvents:
 
     # ---- Publishing ----
 
-    def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> SSEEvent:
-        """Publish a legacy event, preceded by any newly recorded items.
+    def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> Optional[SSEEvent]:
+        """Publish durable items and any live item event implied by a callback.
 
         Args:
             session_id: Session ID.
@@ -709,15 +723,14 @@ class ThreadEvents:
             data: Legacy payload, published as given.
 
         Returns:
-            The published legacy event.
+            The live item event when the callback produced one.
         """
         payload = data if data is not None else {}
         with self._lock:
             tail = self._tail(session_id)
             self._pump(session_id, tail)
-            event = self.bus.emit(session_id, event_type, payload)
             self._translate(session_id, tail, event_type, payload)
-        return event
+        return None
 
     def sync(self, session_id: str) -> int:
         """Publish the events of items recorded since the last read.
@@ -756,7 +769,7 @@ class ThreadEvents:
         * no cursor, ``replay_all`` and an ``active_turn_id``: that turn's
           recorded items from disk, then the buffer as before minus its
           item-derived events, then live events.
-        * otherwise: exactly the legacy buffer replay, then live events.
+        * otherwise: the transient in-progress item buffer, then live events.
 
         Each recorded item reaches the client once: events are ordered by
         (seq, started < completed < run) and anything at or below what was
@@ -798,7 +811,9 @@ class ThreadEvents:
                 for item in chosen:
                     for event in self._recorded_events(session_id, item, live_ids.get(item.seq)):
                         yield event
-                replayed = self._buffered_live(buffer, cursor, last_event_id)
+                replayed = self._buffered_live(
+                    buffer, cursor, last_event_id, finished_live_ids=set(live_ids.values())
+                )
             else:
                 replayed = select_replay(buffer, last_event_id, replay_all=replay_all)
             for event in replayed:
@@ -837,7 +852,8 @@ class ThreadEvents:
 
     @staticmethod
     def _buffered_live(
-        buffer: List[SSEEvent], cursor: Optional[int], last_event_id: Optional[str]
+        buffer: List[SSEEvent], cursor: Optional[int], last_event_id: Optional[str],
+        *, finished_live_ids: Optional[set[str]] = None,
     ) -> List[SSEEvent]:
         """Buffered live-only events a resuming client still needs."""
         anchor = 0
@@ -856,6 +872,7 @@ class ThreadEvents:
             for event in buffer
             if event.event_type == ITEM_COMPLETED and event.data.get("live_id")
         }
+        finished.update(finished_live_ids or set())
         return [
             event for event in buffer[anchor:]
             if event.seq is None
@@ -955,11 +972,33 @@ class ThreadEvents:
         run: Dict[str, Any] = {"turn_id": item.turn_id, "seq": item.seq, "cursor": item.seq}
         if item.type == "turn_start":
             run_type = RUN_STARTED
-            run.update(status="running", model=item.get("model"), provider=item.get("provider"))
+            run.update(
+                status="running",
+                started_at=item.ts,
+                model=item.get("model"),
+                provider=item.get("provider"),
+            )
         elif item.type == "turn_end":
             status = item.get("status")
             run_type = RUN_TERMINAL_EVENTS.get(status, "run.failed")
-            run.update(status=status, usage=item.get("usage"), elapsed_ms=item.get("elapsed_ms"))
+            started_at = next(
+                (candidate.ts for candidate in self._read(session_id)
+                 if candidate.turn_id == item.turn_id and candidate.type == "turn_start"),
+                None,
+            )
+            run.update(
+                status=status,
+                started_at=started_at,
+                ended_at=item.ts,
+                usage=item.get("usage"),
+                elapsed_ms=item.get("elapsed_ms"),
+                summary=item.get("summary"),
+                error=item.get("error"),
+                run_dir=item.get("run_dir"),
+                provider=item.get("provider"),
+                model=item.get("model"),
+                pending_inputs=item.get("pending_inputs"),
+            )
         if run_type is not None:
             events.append(
                 SSEEvent(
@@ -1091,7 +1130,7 @@ class ThreadEvents:
         return live
 
     def _translate(self, session_id: str, tail: _Tail, event_type: str, data: Dict[str, Any]) -> None:
-        """Publish the live item event a legacy agent event implies."""
+        """Publish the item event an internal agent callback implies."""
         turn_id = data.get("attempt_id")
         if not isinstance(turn_id, str) or not turn_id:
             return
@@ -1151,3 +1190,21 @@ class ThreadEvents:
                     del tail.inputs[index]
                     self._discard(session_id, tail, queued)
                     break
+        elif event_type == "llm_waiting":
+            self._publish(
+                session_id,
+                ITEM_DELTA,
+                {"kind": "run.waiting", "turn_id": turn_id, **data, "cursor": tail.last_seq},
+            )
+        elif event_type == "llm_usage":
+            self._publish(
+                session_id,
+                ITEM_DELTA,
+                {"kind": "run.usage", "turn_id": turn_id, **data, "cursor": tail.last_seq},
+            )
+        elif event_type == "llm_usage_unavailable":
+            self._publish(
+                session_id,
+                ITEM_DELTA,
+                {"kind": "run.usage_unavailable", "turn_id": turn_id, **data, "cursor": tail.last_seq},
+            )

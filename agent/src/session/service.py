@@ -39,7 +39,7 @@ from src.session.models import (
 from src.session.runtime import SessionRuntime
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
-from src.session.thread import TurnProjection
+from src.session.thread import TurnProjection, project_turn
 
 if TYPE_CHECKING:
     from src.agent.loop import AgentLoop
@@ -48,14 +48,6 @@ if TYPE_CHECKING:
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
 logger = logging.getLogger(__name__)
 
-
-#: Terminal attempt status -> SSE event name. Cancellation is its own event so
-#: the UI can distinguish a user stop from a failure, both live and on reload.
-_TERMINAL_EVENTS = {
-    "completed": "attempt.completed",
-    "cancelled": "attempt.cancelled",
-    "failed": "attempt.failed",
-}
 
 #: Shown after whatever a stopped turn had streamed, or alone if it streamed
 #: nothing. The turn's finished tool results stay in the thread either way.
@@ -118,8 +110,8 @@ class SessionService:
         """
         self.store = store
         self.event_bus = event_bus
-        # Every event of a running turn is published through this, so item
-        # and run events derived from thread.jsonl precede the legacy event.
+        # Every event of a running turn is published through this item/run
+        # seam, with thread.jsonl as the durable source of truth.
         self.thread_events = ThreadEvents(event_bus, store.thread_path)
         self.runs_dir = runs_dir
         # _active_loops is the cancellation handle only. It is populated after
@@ -746,8 +738,7 @@ class SessionService:
             item: Its recorded ``user`` thread item.
         """
         message = self._append_user_row(session_id, pending, turn_id)
-        # Publishes the recorded user item (completing the queued live item)
-        # before the legacy event.
+        # Publish the recorded user item, completing the queued live item.
         self.thread_events.emit(
             session_id, "input.delivered",
             {"attempt_id": turn_id, "input_id": pending.input_id,
@@ -840,14 +831,9 @@ class SessionService:
             # mid-attempt resumes its elapsed timer from it, and history
             # hydration derives the finished attempt's duration from it rather
             # than from the first tool call. It lives on the persisted attempt
-            # so it survives the event ring buffer that first announced it.
+            # so it survives reconnects and durable thread replay.
             wall_started_at = attempt.started_at or time.time()
             self.store.update_attempt(attempt)
-            self.event_bus.emit(
-                session.session_id,
-                "attempt.started",
-                {"attempt_id": attempt.attempt_id, "started_at": wall_started_at},
-            )
             messages = self.store.get_messages(session.session_id)
             result = await self._run_with_agent(
                 attempt,
@@ -871,23 +857,9 @@ class SessionService:
                 # the attempt, so the reply metadata below was always empty.
                 attempt.metrics = result["metrics"]
 
-            reply_metadata = {}
-            if attempt.run_dir:
-                reply_metadata["run_id"] = Path(attempt.run_dir).name
-            reply_metadata["status"] = attempt.status.value
-            if attempt.metrics:
-                reply_metadata["metrics"] = attempt.metrics
-            reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
-            # turn_end first: the display row below is projected from it.
-            projection = self.runtime(session.session_id).finish_turn(
-                attempt.attempt_id,
-                prompt=attempt.prompt,
-                status=attempt.status.value,
-                usage=result.get("usage"),
-                elapsed_ms=reply_metadata["elapsed_ms"],
-                run_dir=attempt.run_dir,
+            reply_content = self._format_result_message(
+                attempt, streamed_text=result.get("streamed_text") or ""
             )
-            reply_metadata["started_at"] = wall_started_at
             runtime_keys = (
                 "provider",
                 "configured_model",
@@ -895,16 +867,49 @@ class SessionService:
                 "model_source",
                 "reasoning_effort",
             )
+            reply_metadata = {}
+            if attempt.run_dir:
+                reply_metadata["run_id"] = Path(attempt.run_dir).name
+            reply_metadata["status"] = attempt.status.value
+            if attempt.metrics:
+                reply_metadata["metrics"] = attempt.metrics
+            reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
+            reply_metadata["started_at"] = wall_started_at
             for key in runtime_keys:
                 value = result.get(key)
                 if value is not None:
                     reply_metadata[key] = value
-
+            # Project the recorded tool results once before closing the turn so
+            # generated report links are included in the durable run summary.
+            prefinish_projection = project_turn(
+                self.runtime(session.session_id).thread.read(),
+                attempt.attempt_id,
+                run_dir=attempt.run_dir,
+            )
+            reports = [entry["artifact"] for entry in prefinish_projection.tool_trail
+                       if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
+            if reports:
+                reply_metadata["generated_reports"] = reports
+                links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
+                         for report in reports]
+                reply_content += "\n\n" + "\n\n".join(dict.fromkeys(links))
+            projection = self.runtime(session.session_id).finish_turn(
+                attempt.attempt_id,
+                prompt=attempt.prompt,
+                status=attempt.status.value,
+                usage=result.get("usage"),
+                elapsed_ms=reply_metadata["elapsed_ms"],
+                run_dir=attempt.run_dir,
+                summary=reply_content,
+                error=attempt.error,
+                provider=result.get("provider"),
+                model=result.get("model"),
+                pending_inputs=(self.list_pending_inputs(session.session_id)
+                                if attempt.status == AttemptStatus.CANCELLED else None),
+            )
             reply = Message(
                 session_id=session.session_id, role="assistant",
-                content=self._format_result_message(
-                    attempt, streamed_text=result.get("streamed_text") or ""
-                ),
+                content=reply_content,
                 linked_attempt_id=attempt.attempt_id,
                 metadata=reply_metadata,
                 # Every terminal attempt keeps its steps. A failed run saved an
@@ -913,15 +918,6 @@ class SessionService:
                 # one thing a failure report needs.
                 tool_trail=projection.tool_trail,
             )
-            reports = [entry["artifact"] for entry in reply.tool_trail
-                       if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
-            if reports:
-                reply.metadata["generated_reports"] = reports
-                # Persist and stream the same concrete download links even if
-                # the model forgot to include them in its final answer.
-                links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
-                         for report in reports]
-                reply.content += "\n\n" + "\n\n".join(dict.fromkeys(links))
             self.store.append_message(reply)
             # The append-only transcript is the user-visible source of truth.
             # Commit it before attempt.json so startup recovery can finish a
@@ -929,15 +925,7 @@ class SessionService:
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
             self._search_index.index_message(session.session_id, "assistant", reply.content)
-            self.thread_events.emit(
-                session.session_id,
-                _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
-                {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                 "summary": reply.content, "error": attempt.error, "run_dir": attempt.run_dir,
-                 "started_at": wall_started_at, "ended_at": time.time(),
-                 **self._pending_report(session.session_id, attempt),
-                 **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
-            )
+            self.thread_events.sync(session.session_id)
 
         except asyncio.CancelledError:
             if session.session_id in self._user_cancel_requests:
@@ -950,12 +938,7 @@ class SessionService:
                 self.store.delete_partial_response(
                     session.session_id, attempt.attempt_id
                 )
-                self.thread_events.emit(
-                    session.session_id,
-                    "attempt.cancelled",
-                    {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                     **self._pending_report(session.session_id, attempt)},
-                )
+                self.thread_events.sync(session.session_id)
             else:
                 logger.info(
                     "Leaving attempt %s recoverable after service task cancellation",
@@ -967,7 +950,7 @@ class SessionService:
             self._finish_thread_turn_quietly(session.session_id, attempt)
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
-            self.thread_events.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
+            self.thread_events.sync(session.session_id)
         finally:
             if attempt.status != AttemptStatus.COMPLETED:
                 background = self._background_handles.get(session.session_id)
@@ -983,25 +966,6 @@ class SessionService:
             if attempt.status in (AttemptStatus.COMPLETED, AttemptStatus.FAILED):
                 self._start_next_input(session.session_id)
 
-    def _pending_report(self, session_id: str, attempt: Attempt) -> Dict[str, Any]:
-        """Name the queued messages a stopped turn left waiting.
-
-        Args:
-            session_id: Session ID.
-            attempt: The terminal attempt.
-
-        Returns:
-            ``{"pending_inputs": [...]}`` for a cancelled turn with messages
-            waiting, else an empty dict.
-        """
-        if attempt.status != AttemptStatus.CANCELLED:
-            return {}
-        try:
-            pending = self.list_pending_inputs(session_id)
-        except OSError:
-            return {}
-        return {"pending_inputs": pending} if pending else {}
-
     def _finish_thread_turn_quietly(self, session_id: str, attempt: Attempt) -> None:
         """Close the turn in the thread on an error path, never raising.
 
@@ -1015,6 +979,8 @@ class SessionService:
                 prompt=attempt.prompt,
                 status=attempt.status.value,
                 run_dir=attempt.run_dir,
+                pending_inputs=(self.list_pending_inputs(session_id)
+                                if attempt.status == AttemptStatus.CANCELLED else None),
             )
         except Exception:  # noqa: BLE001 - the attempt's own terminal write still runs
             logger.warning("Could not close thread turn %s", attempt.attempt_id, exc_info=True)

@@ -8,9 +8,9 @@ import { useSessionsStore } from "@/stores/sessions";
 // at 0s when the user navigates to another tab (Runtime, Scheduled, …) and
 // back while an attempt is still running. The same-session re-hydrate path
 // (#229) resets the live activity so SSE replay can rebuild its steps, but the
-// attempt's start time is not recoverable from replay once the ring buffer has
-// rotated past `attempt.started`, so it must survive the reset. Independently,
-// a replayed `attempt.started` now carries the backend's wall-clock start so a
+// attempt's start time is not recoverable from replay once the active stream has
+// rotated past `run.started`, so it must survive the reset. Independently,
+// a replayed `run.started` now carries the backend's wall-clock start so a
 // fresh client resumes the clock from the real start rather than from now.
 
 const apiMock = vi.hoisted(() => ({
@@ -89,8 +89,18 @@ describe("Agent activity elapsed clock survives navigation", () => {
     useSessionsStore.setState({ refresh });
     try {
       act(() => {
-        latestHandlers()["attempt.completed"]({
-          attempt_id: "first-attempt", summary: "Hello back", elapsed_ms: 100,
+        latestHandlers()["item.completed"]({
+          turn_id: "first-attempt", kind: "item.completed", seq: 1,
+          item: { seq: 1, ts: 1_000, turn_id: "first-attempt", type: "assistant", phase: "final", content: "Hello back" },
+        });
+        latestHandlers()["item.completed"]({
+          turn_id: "first-attempt", kind: "item.completed", seq: 2,
+          item: { seq: 2, ts: 1_100, turn_id: "first-attempt", type: "turn_end", status: "completed", elapsed_ms: 100 },
+        });
+      });
+      act(() => {
+        latestHandlers()["run.completed"]({
+          turn_id: "first-attempt", summary: "Hello back", elapsed_ms: 100,
         });
       });
       expect(useAgentStore.getState().messages.some((message) => message.content === "Hello back")).toBe(true);
@@ -138,9 +148,9 @@ describe("Agent activity elapsed clock survives navigation", () => {
     expect(activity?.startedAt).toBe(originalStart);
     expect(activity?.endedAt).toBeUndefined();
 
-    // The replayed attempt.started for the same attempt must not restart the clock.
+    // The replayed run.started for the same turn must not restart the clock.
     act(() => {
-      latestHandlers()["attempt.started"]({ attempt_id: "attempt-1" });
+      latestHandlers()["run.started"]({ turn_id: "attempt-1" });
     });
     expect(useAgentStore.getState().activity?.startedAt).toBe(originalStart);
   });
@@ -175,7 +185,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
     expect(useAgentStore.getState().activity).toBeNull();
   });
 
-  it("starts the clock from the backend's started_at on a fresh attempt.started", async () => {
+  it("starts the clock from the backend's started_at on a fresh run.started", async () => {
     const router = createMemoryRouter(
       [{ path: "/", element: <Agent /> }],
       { initialEntries: ["/?session=session-one"] },
@@ -185,7 +195,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
 
     const startedAtSec = Math.floor(Date.now() / 1000) - 51;
     act(() => {
-      latestHandlers()["attempt.started"]({ attempt_id: "attempt-2", started_at: startedAtSec });
+      latestHandlers()["run.started"]({ turn_id: "attempt-2", started_at: startedAtSec });
     });
 
     const activity = useAgentStore.getState().activity;
@@ -193,7 +203,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
     expect(activity?.startedAt).toBe(startedAtSec * 1000);
   });
 
-  it("falls back to now when attempt.started carries no started_at", async () => {
+  it("falls back to now when run.started carries no started_at", async () => {
     const router = createMemoryRouter(
       [{ path: "/", element: <Agent /> }],
       { initialEntries: ["/?session=session-one"] },
@@ -203,7 +213,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
 
     const before = Date.now();
     act(() => {
-      latestHandlers()["attempt.started"]({ attempt_id: "attempt-3" });
+      latestHandlers()["run.started"]({ turn_id: "attempt-3" });
     });
     const startedAt = useAgentStore.getState().activity?.startedAt ?? 0;
     expect(startedAt).toBeGreaterThanOrEqual(before);
@@ -347,7 +357,7 @@ describe("Agent completion trusts the backend's attempt start", () => {
     render(<RouterProvider router={router} />);
     await waitFor(() => expect(sseMock.connect).toHaveBeenCalled());
 
-    // We joined 47s into a run whose attempt.started had already rotated out
+    // We joined 47s into a run whose run.started had already rotated out
     // of the ring buffer: the first replayed event was a tool call, so the
     // live clock started late.
     const backendStartSec = Math.floor(Date.now() / 1000) - 165;
@@ -361,8 +371,16 @@ describe("Agent completion trusts the backend's attempt start", () => {
 
     const endedSec = backendStartSec + 165;
     await act(async () => {
-      latestHandlers()["attempt.completed"]({
-        attempt_id: "attempt-late",
+      latestHandlers()["item.completed"]({
+        turn_id: "attempt-late", kind: "item.completed", seq: 1,
+        item: { seq: 1, ts: backendStartSec, turn_id: "attempt-late", type: "assistant", phase: "final", content: "done" },
+      });
+      latestHandlers()["item.completed"]({
+        turn_id: "attempt-late", kind: "item.completed", seq: 2,
+        item: { seq: 2, ts: endedSec, turn_id: "attempt-late", type: "turn_end", status: "completed", elapsed_ms: 165_000 },
+      });
+      latestHandlers()["run.completed"]({
+        turn_id: "attempt-late",
         status: "completed",
         summary: "done",
         started_at: backendStartSec,
@@ -397,7 +415,7 @@ describe("Agent completion trusts the backend's attempt start", () => {
       });
       for (let i = 0; i < 4; i++) {
         act(() => { vi.advanceTimersByTime(40_000); });
-        act(() => { latestHandlers().llm_waiting({ attempt_id: "attempt-wait", iter: 1 }); });
+        act(() => { latestHandlers()["item.delta"]({ turn_id: "attempt-wait", kind: "run.waiting", iter: 1 }); });
       }
       expect(useAgentStore.getState().status).toBe("streaming");
       expect(useAgentStore.getState().streamingText).toBe("");

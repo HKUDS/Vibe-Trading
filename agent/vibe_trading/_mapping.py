@@ -6,12 +6,9 @@ here; nothing else in the package reads kernel event names.
 
 Sources of the shapes read below:
 
-* ``attempt.*`` — ``SessionService._run_attempt`` (terminal names come from
-  its ``_TERMINAL_EVENTS``; the exception branch emits ``attempt.failed``
-  with only ``attempt_id`` and ``error``).
-* ``text_delta`` / ``stream_reset`` / ``reasoning_delta`` —
-  ``src.agent.loop_streaming.TurnStream`` and ``AgentLoop``.
-* ``tool_call`` / ``tool_result`` — ``src.agent.tool_lifecycle``.
+* ``run.*`` — durable turn boundaries derived from ``thread.jsonl``.
+* ``item.delta`` — streamed text, reasoning, usage and resets.
+* ``item.started`` / ``item.completed`` — tool lifecycle items.
 """
 
 from __future__ import annotations
@@ -105,11 +102,17 @@ def _reasoning_delta(session_id: str, attempt_id: str, data: Mapping[str, Any]) 
     )
 
 
+def _item(data: Mapping[str, Any]) -> Mapping[str, Any]:
+    item = data.get("item")
+    return item if isinstance(item, Mapping) else data
+
+
 def _tool_started(session_id: str, attempt_id: str, data: Mapping[str, Any]) -> Optional[Event]:
-    tool = _optional_str(data.get("tool"))
+    item = _item(data)
+    tool = _optional_str(item.get("name") or item.get("tool"))
     if tool is None:
         return None
-    raw_arguments = data.get("arguments")
+    raw_arguments = item.get("arguments")
     arguments = (
         {str(key): str(value) for key, value in raw_arguments.items()}
         if isinstance(raw_arguments, dict)
@@ -118,27 +121,28 @@ def _tool_started(session_id: str, attempt_id: str, data: Mapping[str, Any]) -> 
     return ToolStarted(
         session_id=session_id,
         attempt_id=attempt_id,
-        call_id=_optional_str(data.get("call_id")),
+        call_id=_optional_str(item.get("tool_call_id") or item.get("call_id")),
         tool=tool,
         arguments=MappingProxyType(arguments),
-        blocked=data.get("blocked") is True,
+        blocked=item.get("blocked") is True,
     )
 
 
 def _tool_finished(session_id: str, attempt_id: str, data: Mapping[str, Any]) -> Optional[Event]:
-    tool = _optional_str(data.get("tool"))
+    item = _item(data)
+    tool = _optional_str(item.get("name") or item.get("tool"))
     if tool is None:
         return None
     common = {
         "session_id": session_id,
         "attempt_id": attempt_id,
-        "call_id": _optional_str(data.get("call_id")),
+        "call_id": _optional_str(item.get("tool_call_id") or item.get("call_id")),
         "tool": tool,
-        "elapsed_ms": _non_negative_int(data.get("elapsed_ms")),
-        "preview": str(data.get("preview") or ""),
+        "elapsed_ms": _non_negative_int(item.get("elapsed_ms")),
+        "preview": str(item.get("preview") or item.get("content") or "")[:200],
     }
-    if data.get("status") == "ok":
-        return ToolCompleted(**common, cached=data.get("cached") is True)
+    if item.get("status") == "ok":
+        return ToolCompleted(**common, cached=item.get("cached") is True)
     return ToolFailed(**common)
 
 
@@ -159,7 +163,7 @@ def _terminal(event_cls: type, status: str) -> Builder:
         result = RunResult(
             session_id=session_id,
             attempt_id=attempt_id,
-            status=status,  # type: ignore[arg-type]
+            status=(data.get("status") if data.get("status") in {"completed", "failed", "cancelled"} else status),  # type: ignore[arg-type]
             text=str(data.get("summary") or ""),
             error=_optional_str(data.get("error")),
             provider=_optional_str(data.get("provider")),
@@ -173,19 +177,20 @@ def _terminal(event_cls: type, status: str) -> Builder:
     return build
 
 
-#: Kernel event name -> builder. A name absent here is dropped; a builder
+#: Item event name -> builder. A name absent here is dropped; a builder
 #: returning None drops a malformed payload rather than inventing fields.
 EVENT_TABLE: Mapping[str, Builder] = MappingProxyType(
     {
-        "attempt.started": _run_started,
-        "text_delta": _text_delta,
-        "stream_reset": _text_reset,
-        "reasoning_delta": _reasoning_delta,
-        "tool_call": _tool_started,
-        "tool_result": _tool_finished,
-        "attempt.completed": _terminal(RunCompleted, "completed"),
-        "attempt.failed": _terminal(RunFailed, "failed"),
-        "attempt.cancelled": _terminal(RunCancelled, "cancelled"),
+        "run.started": _run_started,
+        "item.delta:text.delta": _text_delta,
+        "item.delta:text.reset": _text_reset,
+        "item.delta:reasoning.delta": _reasoning_delta,
+        "item.started:tool.started": _tool_started,
+        "item.completed:tool.completed": _tool_finished,
+        "item.completed:tool.failed": _tool_finished,
+        "run.completed": _terminal(RunCompleted, "completed"),
+        "run.failed": _terminal(RunFailed, "failed"),
+        "run.cancelled": _terminal(RunCancelled, "cancelled"),
     }
 )
 
@@ -205,7 +210,9 @@ def translate(
         The public event, or None when the name is not in the vocabulary or
         the payload lacks what the public event needs.
     """
-    builder = EVENT_TABLE.get(event_type)
+    kind = data.get("kind")
+    table_key = f"{event_type}:{kind}" if kind else event_type
+    builder = EVENT_TABLE.get(table_key)
     if builder is None:
         return None
     return builder(session_id, attempt_id, data)
