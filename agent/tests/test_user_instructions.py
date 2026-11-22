@@ -303,8 +303,8 @@ def test_braces_in_the_file_do_not_break_the_template(tmp_path, monkeypatch):
 
 
 def test_cli_seam_sets_the_launch_dir_on_the_loop():
-    source = (Path(__file__).resolve().parents[1] / "cli" / "commands" / "runtime.py").read_text(encoding="utf-8")
-    assert "agent.instruction_launch_dir = Path.cwd()" in source
+    source = (Path(__file__).resolve().parents[1] / "cli" / "commands" / "execution.py").read_text(encoding="utf-8")
+    assert "agent.instruction_launch_dir = common.Path.cwd()" in source
 
 
 def test_swarm_worker_receives_runtime_root_instructions(tmp_path):

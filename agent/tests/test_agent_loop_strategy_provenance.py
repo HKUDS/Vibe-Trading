@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.agent.loop import AgentLoop
+from src.agent.loop_directives import WriteTargetState
 from src.agent.memory import WorkspaceMemory
 
 
@@ -13,7 +14,7 @@ def test_successful_strategy_file_write_records_the_active_model(
 ) -> None:
     loop = object.__new__(AgentLoop)
     loop.memory = WorkspaceMemory(run_dir=str(tmp_path))
-    loop._written_files = set()
+    loop._write_targets = WriteTargetState()
     loop._active_model_id = "gpt-5.6-luna"
     loop._active_model_source = "configured"
     loop._llm_runtime = SimpleNamespace(

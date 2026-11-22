@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from cli.intro import print_banner
 from cli.onboard import run_onboarding
-from cli.theme import Theme, get_console
+from cli.theme import get_console
 
 
 def _register_live_slash_commands() -> None:
@@ -1438,16 +1438,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         max_iter = _extract_max_iter(raw_argv, default=50)
         return _interactive_loop(max_iter=max_iter, resume_session_id=raw_argv[1])
 
-    # Delegate every other path to the legacy dispatcher.
-    try:
-        pass
-    except ImportError as exc:  # pragma: no cover — packaging error
-        get_console().print(
-            f"  Internal error: cannot import cli.commands.dispatch ({exc}).",
-            style=Theme.danger,
-        )
-        return 2
-
+    # Delegate every other path to the command-family dispatcher.
     return int(_cmd_dispatch.main(raw_argv))
 
 

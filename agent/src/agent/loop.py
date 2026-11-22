@@ -249,7 +249,6 @@ class AgentLoop(ToolCallLifecycle):
         self._user_data_window = None
         self._released_fallback = False
         self._released_fallback_reason: str | None = None
-        self._written_files: set[str] = set()
         self._stall_reason: str | None = None
         self._budget_stop_reason: str | None = None
         self._last_activity_wall: float = 0.0
@@ -828,24 +827,6 @@ class AgentLoop(ToolCallLifecycle):
     ) -> str:
         """Name task targets not yet written in this run."""
         return self._write_targets.pending(user_message, run_started_wall)
-
-    @property
-    def _written_files(self) -> set[str]:
-        """Compatibility view of the composed write-target ledger."""
-        return self._write_targets.written_files
-
-    @_written_files.setter
-    def _written_files(self, value: set[str]) -> None:
-        if not hasattr(self, "_write_targets"):
-            self._write_targets = WriteTargetState()
-        self._write_targets.written_files = value
-
-
-
-
-
-
-
 
     def _account_llm_usage(
         self, run_dir: Path, usage: Any, iteration: int, *, purpose: str | None = None,
