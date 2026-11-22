@@ -112,8 +112,8 @@ def test_enabled_mid_turn_nudge_is_injected_after_data_without_commentary(
     result = loop.run("Compare the two observations.")
 
     assert result["status"] == "success"
-    trace = (Path(result["run_dir"]) / "trace.jsonl").read_text(encoding="utf-8")
-    assert '"type": "mid_turn_nudge"' in trace
+    trace = (Path(result["run_dir"]) / "thread.jsonl").read_text(encoding="utf-8")
+    assert '"name": "mid_turn_nudge"' in trace
     assert any(
         isinstance(message.get("content"), str)
         and "Evidence is already in hand" in message["content"]

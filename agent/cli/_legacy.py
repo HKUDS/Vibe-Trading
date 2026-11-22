@@ -1466,8 +1466,6 @@ def cmd_continue(
     no_rich: bool = False,
 ) -> int:
     """Continue an existing run."""
-    from src.agent.trace import TraceWriter
-
     run_dir = RUNS_DIR / run_id
     session_trace_dir = SESSIONS_DIR / run_id
     if not run_dir.exists() and not session_trace_dir.exists():
@@ -1476,14 +1474,7 @@ def cmd_continue(
             return EXIT_USAGE_ERROR
         console.print(f"[red]Run {run_id} not found[/red]")
         return EXIT_USAGE_ERROR
-    trace_dir = TraceWriter.find_trace_dir(
-        run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR
-    )
-    if trace_dir is None:
-        # Preserve support for an existing, empty run/session directory. Once a
-        # trace exists, ``find_trace_dir`` is authoritative so every later
-        # continuation reads and appends to the same conversation.
-        trace_dir = session_trace_dir if session_trace_dir.exists() else run_dir
+    trace_dir = session_trace_dir if session_trace_dir.exists() else run_dir
     trace_dir.mkdir(parents=True, exist_ok=True)
 
     # Continuations of one run share a session so goals and evidence accumulate
@@ -2004,6 +1995,19 @@ def cmd_list(limit: int = 20) -> None:
     console.print("[dim]Use /show <run_id>, /code <run_id>, or /continue <run_id> <prompt>.[/dim]")
 
 
+def _thread_entries_for_run(run_id: str) -> list[dict[str, Any]]:
+    """Project thread items into the CLI's diagnostic display vocabulary."""
+    from src.session.thread import ThreadLog
+
+    candidates = [SESSIONS_DIR / run_id / "thread.jsonl", RUNS_DIR / run_id / "thread.jsonl"]
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        return []
+    from src.session.thread import diagnostic_records
+
+    return diagnostic_records(ThreadLog(path).read())
+
+
 def cmd_show(run_id: str) -> None:
     """Show run details."""
     run_dir = RUNS_DIR / run_id
@@ -2024,13 +2028,7 @@ def cmd_show(run_id: str) -> None:
         lines.append("\n[bold]Metrics:[/bold]")
         lines.extend(f"  {k}: {v}" for k, v in metrics.items())
 
-    from src.agent.trace import TraceWriter
-    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
-    entries = (
-        TraceWriter.read(trace_dir, resolve_offloads=True, resolve_fields={"content"})
-        if trace_dir
-        else []
-    )
+    entries = _thread_entries_for_run(run_id)
     answers = [e["content"] for e in entries if e.get("type") == "answer" and e.get("content")]
     if answers:
         summary = answers[-1][:200]
@@ -2086,24 +2084,13 @@ def cmd_skills() -> None:
 
 
 def cmd_trace(run_id: str) -> None:
-    """Replay trace.jsonl to show full execution."""
-    from src.agent.trace import TraceWriter
-
-    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
-    if trace_dir is None:
-        console.print(f"[red]{run_id}/trace.jsonl not found[/red]")
-        return
-
-    entries = TraceWriter.read(
-        trace_dir,
-        resolve_offloads=True,
-        resolve_fields={"prompt", "content", "summary"},
-    )
+    """Replay the conversation thread to show full execution."""
+    entries = _thread_entries_for_run(run_id)
     if not entries:
-        console.print(f"[red]{run_id}/trace.jsonl is empty or missing[/red]")
+        console.print(f"[red]{run_id}/thread.jsonl is empty or missing[/red]")
         return
 
-    console.print(Panel(f"[bold]Trace replay: {run_id}[/bold]  ({len(entries)} entries)", border_style="cyan"))
+    console.print(Panel(f"[bold]Thread replay: {run_id}[/bold]  ({len(entries)} entries)", border_style="cyan"))
 
     for entry in entries:
         etype = entry.get("type", "?")

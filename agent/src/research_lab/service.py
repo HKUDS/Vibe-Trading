@@ -32,6 +32,7 @@ def job_root(job_id: str) -> Path:
 def catalog() -> dict:
     """List reusable run inputs, constructor parameters and replay tasks."""
     from evals.harness.suite import list_cases
+    from evals.harness.artifacts import thread_directory
 
     rows = []
     runs = get_runs_dir()
@@ -43,7 +44,7 @@ def catalog() -> dict:
                 source_run(str(root))
                 if any(
                     not (root / relative).resolve().is_relative_to(root.resolve())
-                    for relative in ("config.json", "code/signal_engine.py", "req.json", "trace.jsonl")
+                    for relative in ("config.json", "code/signal_engine.py", "req.json", "thread.jsonl")
                 ):
                     continue
                 config = json.loads((root / "config.json").read_text()) if (root / "config.json").is_file() else {}
@@ -62,7 +63,7 @@ def catalog() -> dict:
                             (root / f"artifacts/ohlcv_{code.removeprefix('local:')}.csv").is_file()
                             for code in config.get("codes", [])
                         ),
-                        "has_trace": (root / "trace.jsonl").is_file(),
+                        "has_trace": (thread_directory(root) / "thread.jsonl").is_file(),
                         "parameters": {
                             **(constructor_defaults(signal.read_text()) if signal.is_file() else {}),
                             **config.get("signal_parameters", {}),

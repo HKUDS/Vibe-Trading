@@ -19,7 +19,7 @@ from src.agent.loop import (
     _is_cleared,
 )
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, run_recorded_tools
 
 
 class _Query(BaseTool):
@@ -45,9 +45,8 @@ def harness(tmp_path):
         llm=SimpleNamespace(chat=lambda *a, **kw: SimpleNamespace(content="summary")),
     )
     agent.memory.run_dir = str(tmp_path)
-    trace = TraceWriter(tmp_path)
+    trace = recorder_at(tmp_path)
     messages = [{"role": "system", "content": "system"}]
-    react = []
     call_ids = count()
 
     def call(arguments, name=None):
@@ -66,14 +65,7 @@ def harness(tmp_path):
                 ],
             }
         )
-        agent._process_tool_calls(
-            [SimpleNamespace(id=call_id, name=name, arguments=arguments)],
-            ContextBuilder,
-            messages,
-            trace,
-            react,
-            1,
-        )
+        run_recorded_tools(agent, [SimpleNamespace(id=call_id, name=name, arguments=arguments)], ContextBuilder, messages, trace, 1)
         return messages[-1]
 
     def pad(count=KEEP_RECENT):

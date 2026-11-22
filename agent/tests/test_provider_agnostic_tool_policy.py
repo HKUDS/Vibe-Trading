@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, run_recorded_tools
 from src.config.accessor import get_env_config, reset_env_config
 from src.providers.llm import provider_diagnostics
 from src.providers.tool_policy import bash_policy, policy_status
@@ -134,15 +134,8 @@ def _agent(tool: BaseTool, tmp_path) -> AgentLoop:
 
 def _call(agent: AgentLoop, name: str, arguments: dict, tmp_path) -> list[dict]:
     messages: list[dict] = []
-    trace = TraceWriter(tmp_path)
-    agent._process_tool_calls(
-        [SimpleNamespace(id="call-1", name=name, arguments=arguments)],
-        ContextBuilder,
-        messages,
-        trace,
-        [],
-        1,
-    )
+    trace = recorder_at(tmp_path)
+    run_recorded_tools(agent, [SimpleNamespace(id="call-1", name=name, arguments=arguments)], ContextBuilder, messages, trace, 1)
     trace.close()
     return messages
 

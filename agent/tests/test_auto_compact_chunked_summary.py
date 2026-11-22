@@ -9,7 +9,7 @@ from typing import Any
 
 from src.agent.loop import AgentLoop, _summary_chunks
 from src.agent.tools import ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at
 
 
 class _CompactionLLM:
@@ -41,7 +41,7 @@ def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_reque
     agent._readonly_replay_visibility_pending = {"leased"}
     loop_mod._context_collapse(messages, preserve_tool_call_ids={"leased"})
     assert result["content"] == payload
-    with_trace = TraceWriter(tmp_path / "trace")
+    with_trace = recorder_at(tmp_path / "trace")
     try:
         agent._auto_compact(messages, tmp_path, with_trace)
         assert any(message.get("content") == payload for message in messages)
@@ -126,7 +126,7 @@ def test_auto_compact_folds_all_head_chunks_and_preserves_empty_update(
     messages = [{"role": "system", "content": "system prompt"}, *head_messages, *tail_messages]
     llm = _CompactionLLM(["summary-0", "", "summary-2"])
     agent = _build_agent(llm)
-    trace = TraceWriter(tmp_path / "trace")
+    trace = recorder_at(tmp_path / "trace")
 
     try:
         agent._auto_compact(messages, tmp_path / "run", trace, iteration=7)
@@ -147,7 +147,7 @@ def test_auto_compact_folds_all_head_chunks_and_preserves_empty_update(
         assert sum(prompt.count(marker) for prompt in llm.prompts) == 1
 
     compact_entries = [
-        entry for entry in TraceWriter.read(tmp_path / "trace") if entry.get("type") == "compact"
+        entry for entry in records_at(tmp_path / "trace") if entry.get("type") == "compact"
     ]
     assert len(compact_entries) == 1
     assert compact_entries[0]["summary_chunks"] == len(llm.prompts)

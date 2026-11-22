@@ -20,7 +20,7 @@ import pytest
 
 from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tool
 from src.tools.redaction import (
     RESULT_SINK,
     is_sensitive_arg,
@@ -409,7 +409,7 @@ def _run_one_tool_call(
         run_dir: Existing directory receiving ``trace.jsonl`` and sidecars.
 
     Returns:
-        ``(events, messages, react_trace)`` — emitted SSE events, the
+        ``(events, messages, records)`` — emitted SSE events, the
         LLM-facing message list, and the react trace.
     """
     events: list[tuple[str, dict]] = []
@@ -420,13 +420,12 @@ def _run_one_tool_call(
         event_callback=lambda event_type, data: events.append((event_type, data)),
     )
     agent.memory.run_dir = str(run_dir)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._execute_single(tc, ContextBuilder, messages, trace, react_trace, 1)
+    run_recorded_tool(agent, tc, ContextBuilder, messages, trace, 1)
     trace.close()
-    return events, messages, react_trace
+    return events, messages, records_at(run_dir)
 
 
 def _persisted_text(run_dir: Path) -> str:
@@ -446,7 +445,7 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     run_dir.mkdir()
     tc = SimpleNamespace(id="tc_plain", name="fetch_quote", arguments={"symbol": "AAPL"})
 
-    events, messages, react_trace = _run_one_tool_call(
+    events, messages, records = _run_one_tool_call(
         _StubRegistry(_PLAINTEXT_RESULT), tc, run_dir
     )
 
@@ -455,7 +454,7 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     assert _PLAINTEXT_BEARER_SECRET not in persisted
     assert "[redacted]" in persisted
 
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     tool_result = next(entry for entry in entries if entry["type"] == "tool_result")
     assert 'api_key="[redacted]"' in tool_result["result"]
     assert "Bearer [redacted]" in tool_result["result"]
@@ -464,7 +463,7 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
 
     previews = [data["preview"] for event_type, data in events if event_type == "tool_result"]
     assert previews, "expected a tool_result event"
-    for preview in previews + [item["result_preview"] for item in react_trace]:
+    for preview in previews + [item["preview"] for item in records if item["type"] == "tool_result"]:
         assert _PLAINTEXT_KEY_SECRET not in preview
         assert _PLAINTEXT_BEARER_SECRET not in preview
 
@@ -491,7 +490,7 @@ def test_write_file_content_argument_never_lands_in_the_trace(tmp_path: Path) ->
 
     assert _WRITE_FILE_DOC_SECRET not in _persisted_text(run_dir)
 
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     tool_call = next(entry for entry in entries if entry["type"] == "tool_call")
     assert tool_call["args"]["content"] == "[redacted]"
     assert tool_call["args"]["path"] == "notes.md"
@@ -618,11 +617,11 @@ def test_metadata_validation_reaches_trace_events_and_result_previews(tmp_path: 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     tc = SimpleNamespace(id="tc_metadata", name="fetch_quote", arguments=payload)
-    events, _, react_trace = _run_one_tool_call(_StubRegistry(json.dumps(payload)), tc, run_dir)
-    for surface in [_persisted_text(run_dir), json.dumps(events), json.dumps(react_trace)]:
+    events, _, records = _run_one_tool_call(_StubRegistry(json.dumps(payload)), tc, run_dir)
+    for surface in [_persisted_text(run_dir), json.dumps(events), json.dumps(records)]:
         assert "opaque-test-credential" not in surface
         assert "nested-test-credential" not in surface
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     call = next(entry for entry in entries if entry["type"] == "tool_call")
     result = next(entry for entry in entries if entry["type"] == "tool_result")
     assert call["args"]["totalInputTokens"] == 23

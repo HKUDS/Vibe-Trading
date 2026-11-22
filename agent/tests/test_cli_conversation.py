@@ -25,7 +25,7 @@ from src.agent.tools import BaseTool, ToolRegistry
 from src.session.models import Message, Session
 from src.session.service import STOPPED_MARKER
 from src.session.store import SessionStore
-from src.session.thread import INTERRUPTED_RESULT_CONTENT, STOPPED_TURN_NOTES
+from src.session.thread import project_turn, INTERRUPTED_RESULT_CONTENT, STOPPED_TURN_NOTES
 
 cli_main = importlib.import_module("cli.main")
 
@@ -207,7 +207,7 @@ def test_cli_turn_writes_the_thread_items_and_the_display_rows_of_a_web_turn(cli
     assert reply.content == "The US value is 42."
     assert reply.metadata["status"] == "completed"
     assert reply.metadata["run_id"] == Path(result["run_dir"]).name
-    assert [(e["tool"], e["status"]) for e in reply.tool_trail] == [("lookup", "ok")]
+    assert [(e["tool"], e["status"]) for e in project_turn(cli.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results] == [("lookup", "ok")]
 
 
 def test_cli_turn_without_a_session_id_runs_unrecorded(cli):
@@ -355,7 +355,7 @@ def test_cmd_interactive_keeps_one_session_and_replays_it(cli, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_session_resume_falls_back_to_the_text_rows_then_continues_on_the_thread(cli):
+def test_migrated_session_resume_replays_old_turns_then_continues_on_the_thread(cli):
     sid = cli.new_session("legacy")
     run_id = "20261026_230021_46_a7d6f2"
     stamps = [f"2026-10-26T23:{minute:02d}:00+00:00" for minute in range(12)]
@@ -365,9 +365,14 @@ def test_legacy_session_resume_falls_back_to_the_text_rows_then_continues_on_the
                             created_at=stamps[pair * 2]))
         rows.append(Message(session_id=sid, role="assistant", content=f"old answer {pair}",
                             metadata={"run_id": run_id}, created_at=stamps[pair * 2 + 1]))
-    for row in rows:
-        cli.store.append_message(row)
-    assert not cli.store.thread_path(sid).exists()
+    log = cli.store.thread_log(sid)
+    for pair in range(5):
+        turn = f"old-{pair}"
+        prompt = rows[pair * 2].content
+        log.append("turn_start", turn, prompt=prompt)
+        log.append("user", turn, content=prompt, llm_content=prompt)
+        log.append("assistant", turn, content=f"[prev_run: {run_id}]\nold answer {pair}", phase="final")
+        log.append("turn_end", turn, status="completed")
 
     cli.run("Quote Apple", sid)
     cli.run("What was its value?", sid)
@@ -453,7 +458,7 @@ def test_stopped_cli_turn_keeps_its_results_and_text_and_the_next_turn_sees_them
     reply = cli.rows(sid)[-1]
     assert reply.metadata["status"] == "cancelled"
     assert reply.content == f"Two of three markets are loaded\n\n{STOPPED_MARKER}"
-    assert [e["call_id"] for e in reply.tool_trail] == ["c-first"]
+    assert [e["call_id"] for e in project_turn(cli.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results] == ["c-first"]
     assert cli.thread(sid)[-1].get("status") == "cancelled"
 
     cli.run("continue", sid)
@@ -486,7 +491,7 @@ def test_forced_quit_closes_the_turn_so_the_next_one_replays_it_as_stopped(cli):
     assert cli.thread(sid)[-1].get("status") == "cancelled"
     reply = cli.rows(sid)[-1]
     assert reply.metadata["status"] == "cancelled" and reply.content == STOPPED_MARKER
-    assert [e["call_id"] for e in reply.tool_trail] == ["c-first"]
+    assert [e["call_id"] for e in project_turn(cli.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results] == ["c-first"]
 
     cli.run("again", sid)
 

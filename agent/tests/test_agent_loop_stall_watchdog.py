@@ -18,7 +18,7 @@ import pytest
 
 from src.agent.loop import AgentLoop
 from src.agent.tools import ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at
 from src.core.state import RunStateStore
 
 
@@ -59,7 +59,7 @@ def test_watchdog_fails_a_run_with_no_forward_progress(
     agent, run_dir = loop_and_run_dir
     captured = _events(agent)
     agent._last_activity_wall = time.time() - 10_000
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
 
     agent._stall_watchdog(trace, run_dir, RunStateStore(), stall_timeout=1.0)
     trace.close()
@@ -75,7 +75,7 @@ def test_watchdog_fails_a_run_with_no_forward_progress(
     assert state["status"] == "failed"
     assert "stall watchdog" in state["reason"]
 
-    end_records = [rec for rec in TraceWriter.read(run_dir) if rec.get("type") == "end"]
+    end_records = [rec for rec in records_at(run_dir) if rec.get("type") == "end"]
     assert len(end_records) == 1
     assert end_records[0]["status"] == "failed"
     assert end_records[0]["stalled"] is True
@@ -91,7 +91,7 @@ def test_forward_progress_clears_the_pending_warning(
     """
     agent, run_dir = loop_and_run_dir
     captured = _events(agent)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     agent._last_activity_wall = time.time() - 10_000
 
     polls = {"n": 0}
@@ -127,7 +127,7 @@ def test_watchdog_exits_when_the_run_completes(
     captured = _events(agent)
     agent._last_activity_wall = time.time() - 10_000
     agent._run_done.set()
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
 
     agent._stall_watchdog(trace, run_dir, RunStateStore(), stall_timeout=1.0)
     trace.close()
@@ -151,7 +151,7 @@ def test_watchdog_of_a_finished_run_does_not_fail_the_next_one(
     captured = _events(agent)
     first_run_done = agent._run_done
     agent._last_activity_wall = time.time() - 10_000
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
 
     original_wait = first_run_done.wait
     polls = {"n": 0}

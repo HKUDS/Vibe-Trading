@@ -57,7 +57,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--trace-dir",
         type=Path,
-        help="optional separate directory containing trace and manifest",
+        help="optional separate directory containing the conversation thread",
     )
     parser.add_argument(
         "--output",

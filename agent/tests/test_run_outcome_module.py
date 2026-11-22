@@ -178,7 +178,6 @@ class TestBuildResultDict:
         r = build_result_dict(
             RunOutcome("success", None, "success", False),
             Path("/tmp/runs/abc123"),
-            [{"type": "answer"}],
             4,
             12,
             "the answer",
@@ -198,7 +197,6 @@ class TestBuildResultDict:
         r = build_result_dict(
             RunOutcome("success", None, "success", False),
             Path("/tmp/runs/x"),
-            [],
             1,
             12,
             "",
@@ -213,7 +211,6 @@ class TestBuildResultDict:
         r = build_result_dict(
             RunOutcome("success", "degraded for a reason", "success", True),
             Path("/tmp/runs/x"),
-            [],
             1,
             12,
             "text",

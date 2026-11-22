@@ -191,7 +191,7 @@ class _OneCallLoop:
         )
         return build_result_dict(
             RunOutcome("success", None, "success", False), Path("/tmp/runs/model-selection"),
-            [], 1, 1, response.content or "", self.llm.runtime_snapshot,
+            1, 1, response.content or "", self.llm.runtime_snapshot,
             response.response_model, content_filter_count=0,
         )
 
@@ -593,7 +593,7 @@ def test_context_window_follows_the_session_clients_provider(server_settings, mo
 
 def test_empty_response_trace_names_the_session_clients_provider(server_settings, monkeypatch, tmp_path):
     from src.agent.loop import AgentLoop
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import records_at
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
     llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
@@ -605,7 +605,7 @@ def test_empty_response_trace_names_the_session_clients_provider(server_settings
 
     result = agent.run("hello")
 
-    empties = [e for e in TraceWriter.read(Path(result["run_dir"])) if e.get("type") == "empty_model_response"]
+    empties = [e for e in records_at(Path(result["run_dir"])) if e.get("type") == "empty_model_response"]
     assert empties
     assert {e["provider"] for e in empties} == {"groq"}
 

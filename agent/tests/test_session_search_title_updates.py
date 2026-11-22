@@ -1,5 +1,7 @@
 """Shipping rename routes must keep search's conversation labels current."""
 
+from tests.recording_helpers import seed_message
+
 import asyncio
 import json
 import sys
@@ -33,9 +35,7 @@ def owned_title_routes(tmp_path, monkeypatch):
     # store/index to avoid invoking an agent or provider during fixture setup.
     from src.session.models import Message
 
-    service.store.append_message(
-        Message(session_id=session.session_id, role="user", content=original)
-    )
+    seed_message(service.store, Message(session_id=session.session_id, role="user", content=original))
     index.index_message(session.session_id, "user", original)
     before = index.search("volatility")[0]
     host = SimpleNamespace(

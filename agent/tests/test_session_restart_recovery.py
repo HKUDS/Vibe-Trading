@@ -9,9 +9,10 @@ import pytest
 
 from src.session.checkpoint import ResponseCheckpoint
 from src.session.events import EventBus
-from src.session.models import Attempt, AttemptStatus, Message, Session
+from src.session.models import Attempt, AttemptStatus, Session
 from src.session.service import SessionService
 from src.session.store import SessionStore
+from src.session.runtime import SessionRuntime
 
 
 class _DummyIndex:
@@ -37,20 +38,20 @@ def test_stream_checkpoint_tracks_deltas_and_resets(tmp_path: Path) -> None:
 
     checkpoint.handle_event("text_delta", {"delta": "first"})
     checkpoint.handle_event("text_delta", {"delta": " second"})
-    assert store.get_partial_response(session.session_id, attempt.attempt_id) == "first"
+    assert SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id) == "first"
 
     checkpoint.flush()
     assert (
-        store.get_partial_response(session.session_id, attempt.attempt_id)
+        SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id)
         == "first second"
     )
 
     checkpoint.handle_event("stream_reset", {})
-    assert store.get_partial_response(session.session_id, attempt.attempt_id) == ""
+    assert SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id) == ""
 
     checkpoint.handle_event("text_delta", {"delta": "replacement"})
     assert (
-        store.get_partial_response(session.session_id, attempt.attempt_id)
+        SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id)
         == "replacement"
     )
 
@@ -64,9 +65,7 @@ def test_service_restart_recovers_partial_reply_once(
     attempt = Attempt(session_id=session.session_id, prompt="analyze")
     attempt.mark_running()
     store.create_attempt(attempt)
-    store.save_partial_response(
-        session.session_id, attempt.attempt_id, "Partial answer"
-    )
+    SessionRuntime(store.thread_log(session.session_id), session.session_id).record_checkpoint(attempt.attempt_id, "Partial answer")
 
     _service(store, tmp_path / "runs", monkeypatch)
 
@@ -86,7 +85,7 @@ def test_service_restart_recovers_partial_reply_once(
         "partial": True,
         "recovery_reason": "service_restart",
     }
-    assert store.get_partial_response(session.session_id, attempt.attempt_id) is None
+    assert not list(tmp_path.rglob("partial_response.json"))
 
     # Startup reconciliation must be safe to run repeatedly.
     _service(store, tmp_path / "runs", monkeypatch)
@@ -126,15 +125,8 @@ def test_restart_finishes_attempt_when_terminal_reply_was_already_appended(
     attempt = Attempt(session_id=session.session_id, prompt="answer")
     attempt.mark_running()
     store.create_attempt(attempt)
-    store.append_message(
-        Message(
-            session_id=session.session_id,
-            role="assistant",
-            content="Complete answer",
-            linked_attempt_id=attempt.attempt_id,
-            metadata={"status": "completed"},
-        )
-    )
+    runtime = SessionRuntime(store.thread_log(session.session_id), session.session_id)
+    runtime.finish_turn(attempt.attempt_id, prompt=attempt.prompt, status="completed", summary="Complete answer")
 
     _service(store, tmp_path / "runs", monkeypatch)
 
@@ -142,7 +134,7 @@ def test_restart_finishes_attempt_when_terminal_reply_was_already_appended(
     assert recovered is not None
     assert recovered.status == AttemptStatus.COMPLETED
     assert recovered.summary == "Complete answer"
-    assert len(store.get_messages(session.session_id)) == 1
+    assert len([m for m in store.get_messages(session.session_id) if m.role == "assistant"]) == 1
 
 
 def test_event_loop_shutdown_remains_recoverable(tmp_path: Path, monkeypatch) -> None:

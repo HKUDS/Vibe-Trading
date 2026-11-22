@@ -198,7 +198,6 @@ def build_end_event(
 def build_result_dict(
     outcome: RunOutcome,
     run_dir: Path,
-    react_trace: Any,
     iterations: int,
     max_iterations: int,
     final_content: str,
@@ -212,7 +211,6 @@ def build_result_dict(
         "run_dir": str(run_dir),
         "run_id": run_dir.name,
         "content": final_content,
-        "react_trace": react_trace,
         "iterations": iterations,
         "max_iterations": max_iterations,
     }

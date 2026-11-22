@@ -101,9 +101,7 @@ class FinalAnswerHandler:
         if state.goal_continuations >= maximum or (no_new_progress and state.goal_continuations > 0):
             state.trace.write({"type": "goal_continuation_suppressed", "iter": state.current_iter, "goal_id": state.active_goal_id, "progress": progress, "continuations": state.goal_continuations})
             return False
-        state.trace.write_text_entry({"type": "goal_intermediate_answer", "iter": state.current_iter, "goal_id": state.active_goal_id, "progress": progress}, field="content", value=state.final_content, offload_kind=f"goal-intermediate-answer-{state.current_iter}")
-        state.trace.write_text_entry({"type": "message", "iter": state.current_iter, "role": "assistant"}, field="content", value=state.final_content, offload_kind=f"assistant-message-{state.current_iter}")
-        state.react_trace.append({"type": "goal_intermediate_answer", "content": state.final_content[:500]})
+        state.trace.write({"type": "goal_intermediate_answer", "iter": state.current_iter, "goal_id": state.active_goal_id, "progress": progress, "content": state.final_content})
         self.owner._append_assistant(state.messages, {"role": "assistant", "content": state.final_content}, phase="commentary")
         self.owner._inject(state.messages, format_goal_continuation_prompt(snapshot, previous_answer=state.final_content))
         state.goal_last_progress = progress
@@ -114,7 +112,4 @@ class FinalAnswerHandler:
         """Record and release the final answer."""
         if stream_finish:
             state.stream.finish(state.final_content)
-        state.trace.write_text_entry({"type": "answer", "iter": state.current_iter}, field="content", value=state.final_content, offload_kind=f"answer-{state.current_iter}")
-        state.trace.write_text_entry({"type": "message", "iter": state.current_iter, "role": "assistant"}, field="content", value=state.final_content, offload_kind=f"assistant-message-{state.current_iter}")
-        state.react_trace.append({"type": "answer", "content": state.final_content[:500]})
         self.owner._record_final_answer(state.final_content)

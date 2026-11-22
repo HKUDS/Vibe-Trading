@@ -13,8 +13,8 @@ the core accountability chain.
 
 **Three sinks (SPEC §5).** Every redacted record fans out to up to three
 append-only destinations: (1) the dedicated compliance ledger above; (2) the
-per-run ``TraceWriter`` (``type="live_action"``, sitting alongside
-``tool_call`` / ``tool_result`` in the run dir) when one is supplied; and (3)
+conversation ``TurnRecorder`` (a ``live_action`` diagnostic event in
+``thread.jsonl``) when one is supplied; and (3)
 the surfacing ``event_callback`` (``"live.action"``) so the CLI/frontend can
 render the action inline. Sinks 2 and 3 are optional — when absent they are
 silently skipped — and the dedicated ledger is always written.
@@ -29,9 +29,8 @@ elsewhere as the mandate→consent accountability chain.
 
 **Durability + tamper-evidence (2026-08-06 governance hardening).** The
 dedicated ledger write is now fsynced on every append — closing a gap where
-the per-run diagnostic trace (``src.agent.trace.TraceWriter``) already
-fsynced every record but this compliance ledger did not, so a host crash
-could lose the last live-action record while losing nothing from the trace.
+the historical diagnostic stream already fsynced records but this compliance
+ledger did not. Conversation diagnostics now use the durable thread log.
 This applies unconditionally; it changes no on-disk record shape and no
 function signature.
 
@@ -80,8 +79,7 @@ _fsync_warned = False
 def _warn_fsync_failure(exc: OSError, target: Path) -> None:
     """Log the first ledger fsync failure for this process, then stay quiet.
 
-    Mirrors ``src.agent.trace.TraceWriter._warn_fsync_failure``: the write
-    already landed in the OS page cache, so we degrade to flush-only rather
+    The write already landed in the OS page cache, so we degrade to flush-only rather
     than raising out of an audit call sitting downstream of a live order
     that has already happened.
     """
@@ -103,10 +101,10 @@ _LIVE_ACTION_EVENT = "live.action"
 _LIVE_ACTION_TRACE_TYPE = "live_action"
 
 
-class _TraceWriterLike(Protocol):
-    """Structural type for the per-run trace sink.
+class _DiagnosticWriter(Protocol):
+    """Structural type for the conversation diagnostic sink.
 
-    Matches :class:`src.agent.trace.TraceWriter` without importing the
+    Matches :class:`src.session.runtime.TurnRecorder` without importing the
     protected agent core into the live module.
     """
 
@@ -249,7 +247,7 @@ def write_live_action(
     event: LiveActionEvent,
     *,
     event_callback: EventCallback | None = None,
-    trace_writer: _TraceWriterLike | None = None,
+    trace_writer: _DiagnosticWriter | None = None,
     chain: bool = True,
     require_durable: bool = False,
 ) -> dict[str, Any]:
@@ -265,7 +263,7 @@ def write_live_action(
        mode so concurrent writers cannot truncate it (append-only). The directory
        tree is created ``0700`` on first write. The write is flushed and
        fsynced before this call returns (2026-08-06: previously flush-only,
-       unlike the per-run trace writer — see module docstring).
+       unlike the diagnostic record writer — see module docstring).
     2. **Per-run trace** (when ``trace_writer`` is given) — written via
        ``trace_writer.write({...})`` with ``type="live_action"`` so it sits
        alongside ``tool_call`` / ``tool_result`` in the run dir.

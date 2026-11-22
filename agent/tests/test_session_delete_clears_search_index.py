@@ -1,6 +1,7 @@
 """Deleting a session must purge its text from the always-on search index."""
 
 from __future__ import annotations
+from tests.recording_helpers import seed_message
 
 import json
 import sqlite3
@@ -36,9 +37,7 @@ def owned_delete_index(tmp_path, monkeypatch):
         (doomed, f"my secret thesis: short {DELETED_TERM} into earnings"),
         (sibling, f"unrelated {SIBLING_TERM} notes"),
     ):
-        service.store.append_message(
-            Message(session_id=session.session_id, role="user", content=text)
-        )
+        seed_message(service.store, Message(session_id=session.session_id, role="user", content=text))
         index.index_message(session.session_id, "user", text)
     try:
         yield service, index, doomed, sibling

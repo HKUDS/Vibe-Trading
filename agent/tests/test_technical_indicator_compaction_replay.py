@@ -58,7 +58,7 @@ def test_indicator_replay_preserves_dated_evidence_and_refreshes(monkeypatch, tm
 
     def run(arguments, number):
         call = SimpleNamespace(name="technical_indicators", arguments=arguments, id=f"call-{number}")
-        loop._process_tool_calls([call], _Context(), messages, trace, [], number)
+        loop._process_tool_calls([call], _Context(), messages, trace, number)
         return json.loads(messages[-1]["content"])
 
     original = run(args, 1)

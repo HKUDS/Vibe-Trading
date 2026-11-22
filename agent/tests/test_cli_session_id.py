@@ -7,13 +7,14 @@ while the run still reported success. The same omission affected
 """
 
 from __future__ import annotations
+from tests.recording_helpers import seed_message
 
 from pathlib import Path
 
 import pytest
 
 from cli import _legacy
-from src.agent.trace import TraceWriter
+from src.session.thread import ThreadLog
 from src.goal import GoalStore
 from src.tools.goal_tool import StartResearchGoalTool
 
@@ -122,10 +123,9 @@ def test_cmd_continue_reuses_one_session_across_continuations(
 ) -> None:
     """Goals must accumulate across continuations, so the id has to be stable."""
     trace_dir = sessions_dir / "session-1"
-    writer = TraceWriter(trace_dir)
-    writer.write({"type": "start", "prompt": "q"})
-    writer.write({"type": "answer", "content": "a"})
-    writer.close()
+    writer = ThreadLog(trace_dir / "thread.jsonl")
+    writer.append("turn_start", "initial", prompt="q")
+    writer.append("assistant", "initial", content="a", phase="final")
 
     seen = _capture_session_ids(monkeypatch)
 
@@ -143,9 +143,8 @@ def test_cmd_continue_derives_an_id_for_a_plain_run(
 ) -> None:
     runs_dir = tmp_path / "runs"
     trace_dir = runs_dir / "run-x"
-    writer = TraceWriter(trace_dir)
-    writer.write({"type": "start", "prompt": "q"})
-    writer.close()
+    writer = ThreadLog(trace_dir / "thread.jsonl")
+    writer.append("turn_start", "initial", prompt="q")
 
     seen = _capture_session_ids(monkeypatch)
 
@@ -185,16 +184,12 @@ def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -
     store = SessionStore(base_dir=sessions_dir)
     session = Session(title="existing")
     store.create_session(session)
-    store.append_message(
-        Message(session_id=session.session_id, role="user", content="earlier question")
-    )
-    store.append_message(
-        Message(
+    seed_message(store, Message(session_id=session.session_id, role="user", content="earlier question"))
+    seed_message(store, Message(
             session_id=session.session_id,
             role="assistant",
             content="earlier answer",
-        )
-    )
+        ))
 
     seen = []
 

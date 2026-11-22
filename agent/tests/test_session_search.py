@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -28,7 +27,7 @@ class TestIndexing:
     def test_index_session(self, index: SessionSearchIndex) -> None:
         index.index_session("s1", "My first session")
         # No crash, session stored
-        results = index.search("first session")
+        index.search("first session")
         # May or may not match depending on FTS5 availability
         # At minimum: no crash
 
@@ -225,11 +224,12 @@ class TestReindex:
             "title": "Reindex test",
             "created_at": "2026-01-01T00:00:00",
         }), encoding="utf-8")
-        (s_dir / "messages.jsonl").write_text(
-            json.dumps({"role": "user", "content": "reindex probe message"}) + "\n"
-            + json.dumps({"role": "assistant", "content": "reindex probe reply"}) + "\n",
-            encoding="utf-8",
-        )
+        from src.session.thread import ThreadLog
+        log = ThreadLog(s_dir / "thread.jsonl")
+        log.append("turn_start", "t", prompt="reindex probe message")
+        log.append("user", "t", content="reindex probe message", llm_content="reindex probe message")
+        log.append("assistant", "t", content="reindex probe reply", phase="final")
+        log.append("turn_end", "t", status="completed")
 
         count = index.reindex_from_store(store_dir)
         assert count == 2
@@ -253,11 +253,10 @@ class TestReindex:
             }),
             encoding="utf-8",
         )
-        (s_dir / "messages.jsonl").write_text(
-            json.dumps({"role": "user", "content": "before\u2028searchable\u2029after"}, ensure_ascii=False)
-            + "\n",
-            encoding="utf-8",
-        )
+        from src.session.thread import ThreadLog
+        log = ThreadLog(s_dir / "thread.jsonl")
+        log.append("turn_start", "t", prompt="before\u2028searchable\u2029after")
+        log.append("user", "t", content="before\u2028searchable\u2029after", llm_content="before\u2028searchable\u2029after")
 
         assert index.reindex_from_store(store_dir) == 1
         results = index.search("searchable")

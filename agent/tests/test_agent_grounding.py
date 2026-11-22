@@ -25,7 +25,8 @@ from evals.grounding.evidence import (
 )
 from src.agent.loop import AgentLoop, _is_tool_success
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, run_recorded_tools
+from src.session.runtime import TurnRecorder
 from tests.message_roles_helpers import assert_system_messages_only_lead
 
 
@@ -162,7 +163,7 @@ def _tool_call(call_id: str, tool_name: str, **arguments: Any) -> SimpleNamespac
 def _build_direct_agent(
     tmp_path: Path,
     resolver_result: str,
-) -> tuple[AgentLoop, _ResolverTool, _MarketTool, _PrivateCompanySkillTool, TraceWriter]:
+) -> tuple[AgentLoop, _ResolverTool, _MarketTool, _PrivateCompanySkillTool, TurnRecorder]:
     resolver = _ResolverTool(resolver_result)
     market = _MarketTool(_market_payload())
     private_skill = _PrivateCompanySkillTool("private company workflow")
@@ -177,7 +178,7 @@ def _build_direct_agent(
         run_dir=run_dir,
         user_message="分析机器人ETF并给出买入价",
     )
-    return agent, resolver, market, private_skill, TraceWriter(run_dir)
+    return agent, resolver, market, private_skill, recorder_at(run_dir)
 
 
 def test_canadian_symbols_have_grounding_identity() -> None:
@@ -370,10 +371,8 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
         _resolver_payload(),
     )
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [
+    run_recorded_tools(agent, [
             _tool_call("resolve", "search_symbol", query="机器人ETF"),
             _tool_call(
                 "prices-too-early",
@@ -382,13 +381,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
                 start_date="2026-06-23",
                 end_date="2026-06-24",
             ),
-        ],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
+        ], ContextBuilder, messages, trace, 1)
 
     assert resolver.calls == 1
     assert market.calls == 1
@@ -396,8 +389,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
     blocked = [json.loads(message["content"]) for message in messages]
     assert not any(item.get("error_code") == "identity_required" for item in blocked)
 
-    agent._process_tool_calls(
-        [
+    run_recorded_tools(agent, [
             _tool_call(
                 "prices-after-lock",
                 "get_market_data",
@@ -406,13 +398,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
                 end_date="2026-06-24",
                 source="auto",
             )
-        ],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+        ], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert market.calls == 2
@@ -438,31 +424,16 @@ def test_skill_read_does_not_require_identity(
     """Methodology reads are independent of instrument identity."""
     agent, resolver, _, skill, trace = _build_direct_agent(tmp_path, _resolver_payload())
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [
+    run_recorded_tools(agent, [
             _tool_call("resolve", "search_symbol", query="机器人ETF"),
             _tool_call("workflow-too-early", "load_skill", name="valuation-model"),
-        ],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
+        ], ContextBuilder, messages, trace, 1)
 
     assert resolver.calls == 1
     assert skill.calls == 1
 
-    agent._process_tool_calls(
-        [_tool_call("workflow-after-lock", "load_skill", name="valuation-model")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+    run_recorded_tools(agent, [_tool_call("workflow-after-lock", "load_skill", name="valuation-model")], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert skill.calls == 2
@@ -756,24 +727,9 @@ def test_single_clean_not_found_source_is_not_enough_for_private_routing(
     )
     agent, _, _, private_skill, trace = _build_direct_agent(tmp_path, resolver_result)
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [_tool_call("resolve", "search_symbol", query="Acme")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
-    agent._process_tool_calls(
-        [_tool_call("private", "load_skill", name="private-company-research")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+    run_recorded_tools(agent, [_tool_call("resolve", "search_symbol", query="Acme")], ContextBuilder, messages, trace, 1)
+    run_recorded_tools(agent, [_tool_call("private", "load_skill", name="private-company-research")], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert agent._identity.identity_status == "invalidated"
@@ -899,24 +855,9 @@ def test_locked_symbol_rejects_silent_exchange_rewrite(
     """The consumer may not move the locked listing to another exchange."""
     agent, _, market, _, trace = _build_direct_agent(tmp_path, _resolver_payload())
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [_tool_call("resolve", "search_symbol", query="机器人ETF")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
-    agent._process_tool_calls(
-        [_tool_call("wrong-venue", "get_market_data", codes=["562500.SZ"])],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+    run_recorded_tools(agent, [_tool_call("resolve", "search_symbol", query="机器人ETF")], ContextBuilder, messages, trace, 1)
+    run_recorded_tools(agent, [_tool_call("wrong-venue", "get_market_data", codes=["562500.SZ"])], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert market.calls == 0
@@ -944,24 +885,9 @@ def test_reading_private_methodology_does_not_relabel_listed_identity(
         _resolver_payload("SPCX.US", candidates=candidates, query="SpaceX"),
     )
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [_tool_call("resolve", "search_symbol", query="SpaceX")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
-    agent._process_tool_calls(
-        [_tool_call("private", "load_skill", name="private-company-research")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+    run_recorded_tools(agent, [_tool_call("resolve", "search_symbol", query="SpaceX")], ContextBuilder, messages, trace, 1)
+    run_recorded_tools(agent, [_tool_call("private", "load_skill", name="private-company-research")], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert private_skill.calls == 1
@@ -982,24 +908,9 @@ def test_not_found_identity_allows_private_company_workflow(
         _resolver_payload(candidates=[], query="Acme Private Labs"),
     )
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [_tool_call("resolve", "search_symbol", query="Acme Private Labs")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
-    agent._process_tool_calls(
-        [_tool_call("private", "load_skill", name="private-company-research")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+    run_recorded_tools(agent, [_tool_call("resolve", "search_symbol", query="Acme Private Labs")], ContextBuilder, messages, trace, 1)
+    run_recorded_tools(agent, [_tool_call("private", "load_skill", name="private-company-research")], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert private_skill.calls == 1
@@ -1017,24 +928,9 @@ def test_ambiguous_resolution_keeps_consumers_blocked(tmp_path: Path) -> None:
         _resolver_payload(candidates=candidates, query="ABC"),
     )
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._process_tool_calls(
-        [_tool_call("resolve", "search_symbol", query="ABC")],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        1,
-    )
-    agent._process_tool_calls(
-        [_tool_call("prices", "get_market_data", codes=["ABC.US"])],
-        ContextBuilder,
-        messages,
-        trace,
-        react_trace,
-        2,
-    )
+    run_recorded_tools(agent, [_tool_call("resolve", "search_symbol", query="ABC")], ContextBuilder, messages, trace, 1)
+    run_recorded_tools(agent, [_tool_call("prices", "get_market_data", codes=["ABC.US"])], ContextBuilder, messages, trace, 2)
     trace.close()
 
     assert agent._identity.identity_status == "ambiguous"
@@ -1696,12 +1592,9 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
         user_message="推荐A股低价高增长股票并给出买入价",
     )
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
     def batch(*calls: SimpleNamespace, iteration: int) -> None:
-        agent._process_tool_calls(
-            list(calls), ContextBuilder, messages, trace, react_trace, iteration
-        )
+        run_recorded_tools(agent, list(calls), ContextBuilder, messages, trace, iteration)
 
     batch(_tool_call("shortlist", "search_symbol", query=_SHORTLIST_QUERY), iteration=1)
     batch(_tool_call("workflow", "load_skill", name="stock-selection"), iteration=2)

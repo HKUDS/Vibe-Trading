@@ -91,7 +91,7 @@ def test_round_trip_keeps_every_field_and_type(tmp_path: Path) -> None:
         "run_dir": None,
         "provider": None,
         "model": None,
-        "pending_inputs": None,
+        "pending_inputs": None, "metadata": None,
     }
     assert items[7].data == {"content": "<system>go on</system>", "role": "user"}
     assert items[8].data == {"summary": "sum", "replaces_through_seq": 3}
@@ -100,7 +100,7 @@ def test_round_trip_keeps_every_field_and_type(tmp_path: Path) -> None:
     assert json.loads(lines[0])["prompt"] == "AAPL drawdown?"
     assert set(json.loads(lines[6])) == {
         "seq", "ts", "turn_id", "type", "status", "usage", "elapsed_ms",
-        "summary", "error", "run_dir", "provider", "model", "pending_inputs",
+        "summary", "error", "run_dir", "provider", "model", "pending_inputs", "metadata",
     }
 
 

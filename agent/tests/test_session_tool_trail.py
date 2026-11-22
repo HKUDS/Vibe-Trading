@@ -16,7 +16,7 @@ from src.session.events import EventBus
 from src.session.models import Attempt, Message, Session
 from src.session.service import SessionService
 from src.session.store import SessionStore
-from src.session.thread import ThreadLog
+from src.session.thread import ThreadLog, project_turn
 
 
 class _DummyIndex:
@@ -88,7 +88,7 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
     assert response.status_code == 200
     stored = service.store.get_messages(session.session_id)[-1]
     assert isinstance(stored, Message)
-    assert stored.tool_trail == expected_trail
+    assert project_turn(service.store.thread_log(session.session_id).read(), attempt.attempt_id).tool_results == expected_trail
     payload = response.json()
     assert len(payload) == 2
     assert payload[0]["role"] == "user"
@@ -104,7 +104,6 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
         "content": "AAPL is trading near 195.",
         "created_at": stored.created_at,
         "linked_attempt_id": attempt.attempt_id,
-        "tool_trail": expected_trail,
     }
 
 
@@ -156,7 +155,7 @@ def test_unfinished_attempt_keeps_its_tool_trail(
 
     stored = service.store.get_messages(session.session_id)[-1]
     assert stored.metadata["status"] == attempt_status
-    assert stored.tool_trail == trail
+    assert project_turn(service.store.thread_log(session.session_id).read(), attempt.attempt_id).tool_results == trail
 
 
 def test_run_with_agent_consolidates_tool_results_by_call_id(
@@ -233,7 +232,6 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
 
     asyncio.run(service._run_attempt(session, attempt))
 
-    reply = service.store.get_messages(session.session_id)[-1]
     assert [
         {
             key: entry[key]
@@ -246,7 +244,7 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
                 "preview",
             )
         }
-        for entry in reply.tool_trail
+        for entry in project_turn(service.store.thread_log(session.session_id).read(), attempt.attempt_id).tool_results
     ] == [
         {
             "tool": "get_market_data",

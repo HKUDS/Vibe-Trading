@@ -82,3 +82,29 @@ def test_loop_compaction_projection_calls_thread_sink() -> None:
 
     assert calls == [(1, [current])]
 
+
+
+def test_channel_poll_waits_for_terminal_thread_reply(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+    from src.channels.runtime import ChannelRuntime
+    from src.channels.bus.queue import MessageBus
+
+    async def scenario():
+        store = SessionStore(tmp_path / "sessions")
+        runtime = SessionRuntime(store.thread_log("s"), "s")
+        recorder = runtime.begin_turn("t", [])
+        recorder.start(prompt="q", message={"content": "q"}, provider=None, model=None)
+        recorder.assistant({"content": "draft"}, phase="final")
+        channel = ChannelRuntime(bus=MessageBus(), session_service=SimpleNamespace(get_messages=store.get_messages),
+                                 manager=None, session_map_path=tmp_path / "channels.json", poll_interval_s=0.001)
+        task = asyncio.create_task(channel._wait_for_reply("s", "t"))
+        await asyncio.sleep(0.01)
+        assert not task.done(), "streamed draft must not be delivered as the completed reply"
+        runtime.finish_turn("t", prompt="q", status="completed", summary="released", metadata={"generated_reports": []})
+        reply = await asyncio.wait_for(task, 1)
+        assert reply.content == "released"
+        assert reply.linked_attempt_id == "t"
+        assert not list(tmp_path.rglob("messages.jsonl"))
+
+    asyncio.run(scenario())

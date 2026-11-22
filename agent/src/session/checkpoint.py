@@ -37,7 +37,9 @@ class ResponseCheckpoint:
             min_interval_seconds: Minimum time between snapshot writes.
         """
         self._store = store
-        self._runtime = runtime
+        from src.session.runtime import SessionRuntime
+
+        self._runtime = runtime or SessionRuntime(store.thread_log(attempt.session_id), attempt.session_id)
         self._session_id = attempt.session_id
         self._attempt_id = attempt.attempt_id
         self._min_interval_seconds = max(0.0, min_interval_seconds)
@@ -94,12 +96,5 @@ class ResponseCheckpoint:
             return
         if self._runtime is not None:
             self._runtime.record_checkpoint(self._attempt_id, self._text)
-        else:
-            # Legacy sessions without a thread keep the old recovery file.
-            self._store.save_partial_response(
-                self._session_id,
-                self._attempt_id,
-                self._text,
-            )
         self._dirty = False
         self._last_flush = time.monotonic() if now is None else now

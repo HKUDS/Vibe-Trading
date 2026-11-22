@@ -1,4 +1,4 @@
-"""project_turn(): one finished turn -> the legacy messages.jsonl row fields."""
+"""project_turn(): one finished turn -> the derived display fields."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_projection_matches_the_live_tool_trail_shape(tmp_path: Path) -> None:
     assert projection.content == "The answer."
     assert projection.usage == {"input_tokens": 5}
     assert projection.elapsed_ms == 900
-    assert projection.tool_trail == [
+    assert projection.tool_results == [
         {
             "tool": "get_market_data",
             "status": "ok",
@@ -78,7 +78,7 @@ def test_projection_matches_the_retired_live_trail_recorder(tmp_path: Path) -> N
                content='{"status": "error"}', status="error", elapsed_ms=4)
     log.append("turn_end", "t1", status="completed")
 
-    projected = project_turn(log.read(), "t1").tool_trail
+    projected = project_turn(log.read(), "t1").tool_results
 
     strip = lambda entries: [{k: v for k, v in e.items() if k != "timestamp"} for e in entries]  # noqa: E731
     assert strip(projected) == [
@@ -102,7 +102,7 @@ def test_run_dir_argument_is_shown_as_the_live_event_showed_it(tmp_path: Path) -
         _call("c2", "read_file", {"path": "a"}),
     ])
 
-    trail = project_turn(log.read(), "t1", run_dir=run_dir).tool_trail
+    trail = project_turn(log.read(), "t1", run_dir=run_dir).tool_results
 
     assert trail[0]["arguments"] == {"run_dir": str(Path(run_dir).resolve())}
     assert trail[1]["arguments"] == {"path": "a", "run_dir": run_dir}
@@ -122,11 +122,11 @@ def test_cancelled_turn_projection_has_no_final_text_and_no_running_entries(tmp_
 
     assert projection.status == "cancelled"
     assert projection.content is None
-    assert [(e["call_id"], e["status"]) for e in projection.tool_trail] == [
+    assert [(e["call_id"], e["status"]) for e in projection.tool_results] == [
         ("c1", "ok"), ("c2", "error"), ("ghost", "error"),
     ]
-    assert projection.tool_trail[1]["preview"] == INTERRUPTED_RESULT_CONTENT[:200]
-    assert projection.tool_trail[2]["arguments"] == {}
+    assert projection.tool_results[1]["preview"] == INTERRUPTED_RESULT_CONTENT[:200]
+    assert projection.tool_results[2]["arguments"] == {}
     # A turn still running keeps its calls running.
     assert project_turn(log.read(), "t2").status is None
 

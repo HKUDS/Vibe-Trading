@@ -421,7 +421,6 @@ class SessionSearchIndex:
                 continue
 
             session_file = session_dir / "session.json"
-            messages_file = session_dir / "messages.jsonl"
 
             if not session_file.exists():
                 continue
@@ -440,32 +439,12 @@ class SessionSearchIndex:
 
                 self.index_session(sid, title, ts=ts)
 
-                if messages_file.exists():
-                    # JSONL uses LF as its record separator.  ``splitlines``
-                    # incorrectly treats U+2028/U+2029 inside message text as
-                    # separators and drops the affected record during rebuild.
-                    for line in messages_file.read_text(encoding="utf-8").strip().split("\n"):
-                        if not line.strip():
-                            continue
-                        try:
-                            msg = json.loads(line)
-                            role = msg.get("role", "")
-                            content = msg.get("content", "")
-                            if content and role in ("user", "assistant"):
-                                self.index_message(sid, role, content)
-                                count += 1
-                        except json.JSONDecodeError:
-                            continue
-                else:
-                    from src.session.thread import ThreadLog
+                from src.session.store import SessionStore
 
-                    for item in ThreadLog(session_dir / "thread.jsonl").read():
-                        if item.type == "user" and item.get("content"):
-                            self.index_message(sid, "user", str(item.get("content")))
-                            count += 1
-                        elif item.type == "assistant" and item.get("content"):
-                            self.index_message(sid, "assistant", str(item.get("content")))
-                            count += 1
+                for message in SessionStore(store_base_dir).get_messages(sid, limit=None):
+                    if message.content:
+                        self.index_message(sid, message.role, message.content)
+                        count += 1
             # One corrupt session must not abort the remaining reindex.
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to index session %s: %s", session_dir.name, exc)

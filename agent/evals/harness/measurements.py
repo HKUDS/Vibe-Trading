@@ -129,5 +129,5 @@ def measurement_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verd
                 status = VerdictStatus.PASS if observed <= timing["max_seconds"] else VerdictStatus.FAIL
             else:
                 status = VerdictStatus.INVALID_ARTIFACT
-        verdicts.append(Verdict(status, "latency.total_seconds", timing, observed, ("trace.jsonl:start/end.ts",)))
+        verdicts.append(Verdict(status, "latency.total_seconds", timing, observed, ("thread.jsonl:start/end.ts",)))
     return verdicts

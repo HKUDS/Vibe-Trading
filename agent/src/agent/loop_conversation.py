@@ -68,11 +68,4 @@ class ConversationState:
             or owner._budget_stop_reason is not None
         ):
             return
-        for index, message in enumerate(self.queued_inputs.deliver(), start=1):
-            messages.append(message)
-            trace.write_text_entry(
-                {"type": "message", "iter": current_iter, "role": "user", "queued": True},
-                field="content",
-                value=message.get("content") or "",
-                offload_kind=f"queued-user-message-{current_iter}-{index}",
-            )
+        messages.extend(self.queued_inputs.deliver())

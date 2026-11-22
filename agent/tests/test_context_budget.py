@@ -31,7 +31,7 @@ from src.agent.context_budget import (
 from src.agent.loop import AgentLoop
 import src.agent.tuning as tuning_mod
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import records_at
 from src.config.accessor import reset_env_config
 from src.providers.chat import ProviderStreamError
 
@@ -249,7 +249,7 @@ def _run(tmp_path: Path, monkeypatch, *, provider: str, model: str, payload_char
     run_dir.mkdir()
     loop.memory.run_dir = str(run_dir)
     result = loop.run("Compare these twelve game companies' annual indicators.")
-    return result, tool, llm, loop, TraceWriter.read(run_dir)
+    return result, tool, llm, loop, records_at(run_dir)
 
 
 def _cleared_codes(loop_messages_trace: list[dict]) -> list[str]:
@@ -338,7 +338,7 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
     run_dir.mkdir()
     loop.memory.run_dir = str(run_dir)
     loop.run("Compare four companies.")
-    trace = TraceWriter.read(run_dir)
+    trace = records_at(run_dir)
 
     assert [e for e in trace if e.get("type") == "compact_declined"]
     assert not [e for e in trace if e.get("type") in ("compact", "compact_requested")]

@@ -13,7 +13,7 @@ from langchain_core.messages import AIMessageChunk
 from src.agent.llm_usage import _normalize_llm_usage
 from src.agent.loop import AgentLoop
 from src.agent.tools import ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at
 from src.config.accessor import reset_env_config
 from src.providers.chat import ChatLLM, LLMResponse, ToolCallRequest
 
@@ -42,7 +42,7 @@ def _agent(tmp_path, callback=None):
 def test_every_summary_chunk_is_persisted_and_reported(tmp_path):
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
-    trace = TraceWriter(tmp_path)
+    trace = recorder_at(tmp_path)
     try:
         agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
     finally:
@@ -111,7 +111,7 @@ def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypa
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
     llm.chat.side_effect = RuntimeError("Provider disconnected")
     monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 0)
-    trace = TraceWriter(tmp_path)
+    trace = recorder_at(tmp_path)
     try:
         with pytest.raises(RuntimeError, match="Provider disconnected"):
             agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
@@ -188,7 +188,7 @@ def test_goal_token_budget_stops_current_turn_and_blocks_unfunded_retry(tmp_path
     assert result["status"] == "failed"
     assert "goal_token_budget_exhausted" in result["reason"]
     llm.stream_chat.assert_called_once()
-    assert result["react_trace"] == []
+    assert "react_trace" not in result
     assert store.get_goal(goal.goal_id).tokens_used == 1100
 
     # An ordinary retry cannot silently restart spending on the exhausted goal.

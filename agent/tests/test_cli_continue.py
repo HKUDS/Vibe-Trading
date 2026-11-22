@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cli import _legacy
-from src.agent.trace import TraceWriter
+from src.session.thread import ThreadLog
 
 
 def test_repeated_continue_reads_and_appends_one_canonical_trace(
@@ -21,10 +21,9 @@ def test_repeated_continue_reads_and_appends_one_canonical_trace(
     sessions_dir = tmp_path / "sessions"
     trace_dir = sessions_dir / "session-1"
 
-    writer = TraceWriter(trace_dir)
-    writer.write({"type": "start", "prompt": "initial question"})
-    writer.write({"type": "answer", "content": "initial answer"})
-    writer.close()
+    writer = ThreadLog(trace_dir / "thread.jsonl")
+    writer.append("turn_start", "initial", prompt="initial question")
+    writer.append("assistant", "initial", content="initial answer", phase="final")
 
     seen = []
 
@@ -32,10 +31,9 @@ def test_repeated_continue_reads_and_appends_one_canonical_trace(
         # The caller no longer builds a history: ``_run_agent`` replays it.
         assert "history" not in kwargs
         seen.append((prompt, run_dir_override, kwargs["session_id"]))
-        continuation = TraceWriter(Path(run_dir_override))
-        continuation.write({"type": "start", "prompt": prompt})
-        continuation.write({"type": "answer", "content": f"answer to {prompt}"})
-        continuation.close()
+        continuation = ThreadLog(Path(run_dir_override) / "thread.jsonl")
+        continuation.append("turn_start", prompt, prompt=prompt)
+        continuation.append("assistant", prompt, content=f"answer to {prompt}", phase="final")
         return {"status": "success", "run_id": "session-1", "run_dir": run_dir_override}
 
     monkeypatch.setattr(_legacy, "RUNS_DIR", runs_dir)

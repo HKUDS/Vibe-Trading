@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from evals.harness.schema import HarnessCase
+from .thread_fixture import write_records
 from src.governance.manifest import build_run_manifest
 
 PROMPT = "只分析 A 股恒瑞医药，给出最新财务与行业证据。"
@@ -144,10 +145,7 @@ def artifact_dir(tmp_path: Path) -> Path:
         },
         {"type": "end", "iter": 2, "iterations": 2, "status": "success"},
     ]
-    (run_dir / "trace.jsonl").write_text(
-        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
-        encoding="utf-8",
-    )
+    write_records(run_dir / "thread.jsonl", records)
     manifest = build_run_manifest(
         run_id="synthetic",
         timestamp="2026-08-30T00:00:00Z",
