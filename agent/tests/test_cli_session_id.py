@@ -227,3 +227,26 @@ def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -
             "session_id": session.session_id,
         }
     ]
+
+
+def test_cmd_sessions_counts_complete_history(sessions_dir, capsys) -> None:
+    from src.session.models import Message, Session
+    from src.session.store import SessionStore
+
+    store = SessionStore(base_dir=sessions_dir)
+    session = Session(title="long-history")
+    store.create_session(session)
+    for index in range(105):
+        store.append_message(
+            Message(session_id=session.session_id, role="user", content=str(index))
+        )
+
+    _legacy.cmd_sessions()
+
+    row = next(
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if session.session_id in line
+    )
+    assert "105" in row
+    assert "100" not in row
