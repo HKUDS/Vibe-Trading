@@ -466,12 +466,26 @@ def _convert_tool_output(content: Any) -> Any:
             output.append({"type": "input_text", "text": part.get("text", "")})
         elif part.get("type") == "image_url":
             url = (part.get("image_url") or {}).get("url")
-            if isinstance(url, str) and Path(url).is_file():
-                mime = "image/png" if url.lower().endswith(".png") else "image/jpeg"
-                encoded = base64.b64encode(Path(url).read_bytes()).decode("ascii")
-                url = f"data:{mime};base64,{encoded}"
-            if url:
-                output.append({"type": "input_image", "image_url": url, "detail": "auto"})
+            try:
+                from src.config.paths import get_sessions_dir
+                from src.tools.path_utils import safe_document_path, safe_path
+
+                if not isinstance(url, str) or not url or "://" in url or url.startswith("data:"):
+                    raise ValueError("tool images must reference local artifacts")
+                try:
+                    path = safe_document_path(url)
+                except ValueError:
+                    session_id = current_llm_session_id()
+                    if not session_id:
+                        raise
+                    session_root = safe_path(session_id, get_sessions_dir())
+                    workspace = safe_path("workspace", session_root)
+                    path = safe_path(url, workspace)
+                mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+                encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+                output.append({"type": "input_image", "image_url": f"data:{mime};base64,{encoded}", "detail": "auto"})
+            except (OSError, ValueError, RuntimeError):
+                output.append({"type": "input_text", "text": "[image artifact unavailable: missing or outside allowed roots]"})
     return output or ""
 
 

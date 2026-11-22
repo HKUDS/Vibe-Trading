@@ -1117,8 +1117,8 @@ def register_sessions_routes(app: FastAPI) -> None:
         The items are what ``thread.jsonl`` records, in the client view of
         ``display_item``: tool results as delivered (redacted), tool-call
         arguments redacted, and no model-only envelopes or state records.
-        A session recorded before the thread log existed has no items here;
-        ``GET /sessions/{id}/messages`` still serves it.
+        Pre-thread sessions are migrated on first access, so this route uses
+        the same canonical log for archived and newly recorded sessions.
         """
         _host_validate_path_param(session_id, "session_id")
         svc, _session = _get_existing_session_or_404(session_id)

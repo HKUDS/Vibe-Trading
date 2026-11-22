@@ -316,8 +316,6 @@ class TurnRecorder:
         """Record a redacted command-hook decision in the thread audit."""
         self._write("hook_decision", None, **dict(decision))
 
-    hook_decision = hook
-
     def write(self, event: Dict[str, Any]) -> None:
         """Record a diagnostic event in the conversation thread.
 

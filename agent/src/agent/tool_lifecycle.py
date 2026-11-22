@@ -24,7 +24,7 @@ from src.agent.tool_results import (
     _archive_backtest_result, _failure_code, _is_tool_success, _normalize_tool_run_dir,
 )
 from src.agent.result_artifacts import deliver_tool_result
-from src.tools.redaction import redact_payload, redact_tool_result
+from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
 
 logger = logging.getLogger("src.agent.loop")
 
@@ -104,7 +104,7 @@ class ToolCallLifecycle:
             {
                 "kind": "tool.progress",
                 "live_id": getattr(self, "_live_tool_ids", {}).get(payload.get("call_id")),
-                "progress": dict(payload),
+                "progress": redact_payload(payload, sink=RESULT_SINK),
                 "heartbeat": heartbeat,
             },
         )
@@ -1145,6 +1145,21 @@ class ToolCallLifecycle:
         # Scrub before caching, truncation and model context, not just the
         # downstream trace/event preview. Shell stdout may hold credentials.
         result = redact_tool_result(result)
+        # Image bytes belong in artifacts, never in the canonical result or
+        # its metadata. Keep one reference-only payload for all later sinks.
+        try:
+            payload = json.loads(result)
+            if isinstance(payload, dict) and isinstance(payload.get("images"), list):
+                payload["images"] = [
+                    {key: image[key] for key in ("path", "mime_type", "alt", "download_url")
+                     if isinstance(image.get(key), str) and not image[key].startswith("data:")}
+                    for image in payload["images"]
+                    if isinstance(image, dict) and isinstance(image.get("path"), str)
+                    and not image["path"].startswith("data:")
+                ]
+                result = json.dumps(payload, ensure_ascii=False)
+        except (TypeError, ValueError):
+            pass
         if update_memory:
             self._update_memory(tc.name)
 

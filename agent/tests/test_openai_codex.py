@@ -34,6 +34,54 @@ from src.providers.openai_codex import (
 DEFAULT_CODEX_MODEL = "openai-codex/gpt-6-sol"
 
 
+@pytest.mark.parametrize("reference", ["outside", "symlink", "other_session", "remote", "inline"])
+def test_tool_image_refuses_untrusted_paths(tmp_path, monkeypatch, reference):
+    """Tool-provided image references cannot expand provider file access."""
+    from src.providers.openai_codex import _convert_tool_output
+    from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    outside = tmp_path / "auth" / "secret.png"
+    outside.parent.mkdir()
+    outside.write_bytes(b"private credential bytes")
+    workspace = tmp_path / "sessions" / "active" / "workspace"
+    workspace.mkdir(parents=True)
+    link = workspace / "escape.png"
+    link.symlink_to(outside)
+    other = tmp_path / "sessions" / "other" / "workspace" / "image.png"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(b"other session bytes")
+    refs = {"outside": str(outside), "symlink": str(link), "other_session": str(other),
+            "remote": "https://untrusted.invalid/image.png", "inline": "data:image/png;base64,YQ=="}
+    token = bind_llm_session_id("active")
+    try:
+        output = _convert_tool_output([{"type": "image_url", "image_url": {"url": refs[reference]}}])
+    finally:
+        reset_llm_session_id(token)
+    assert output and all(part["type"] == "input_text" for part in output)
+    assert "unavailable" in output[0]["text"]
+
+
+@pytest.mark.parametrize("location", ["uploads", "sessions/active/workspace"])
+def test_tool_image_reads_existing_allowed_roots(tmp_path, monkeypatch, location):
+    """Valid uploaded and owning-session artifacts still reach the provider."""
+    import base64
+    from src.providers.openai_codex import _convert_tool_output
+    from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    image = tmp_path / location / "plot.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"synthetic image fixture")
+    token = bind_llm_session_id("active")
+    try:
+        output = _convert_tool_output([{"type": "image_url", "image_url": {"url": str(image)}}])
+    finally:
+        reset_llm_session_id(token)
+    assert output == [{"type": "input_image", "image_url": "data:image/png;base64," +
+                       base64.b64encode(image.read_bytes()).decode("ascii"), "detail": "auto"}]
+
+
 @pytest.mark.parametrize("effort", ["none", "minimal", "ultra", "persistent"])
 def test_explicit_catalog_effort_reaches_the_wire(effort):
     adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL, reasoning_effort=effort)

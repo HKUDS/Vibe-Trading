@@ -437,6 +437,49 @@ def _persisted_text(run_dir: Path) -> str:
     )
 
 
+def test_tool_progress_redacts_secrets_before_streaming(tmp_path: Path) -> None:
+    """Progress crosses the same public boundary as the final tool result."""
+    from src.agent.progress import emit_progress
+
+    class ProgressRegistry(_StubRegistry):
+        def execute(self, tool_name, args):
+            emit_progress("fetching", current=1, total=2,
+                          message="Connecting api_key=progress-secret")
+            return super().execute(tool_name, args)
+
+    events, _, _ = _run_one_tool_call(
+        ProgressRegistry('{"status": "ok"}'),
+        SimpleNamespace(id="progress", name="fetch_quote", arguments={}),
+        tmp_path,
+    )
+    progress = [data["progress"] for kind, data in events
+                if kind == "item.delta" and data.get("kind") == "tool.progress"
+                and data["progress"].get("stage") == "fetching"]
+    assert len(progress) == 1
+    assert progress[0]["message"] == "Connecting api_key=[redacted]"
+    assert progress[0]["current"] == 1
+    assert progress[0]["total"] == 2
+    assert "progress-secret" not in json.dumps(events)
+
+
+def test_tool_images_persist_only_artifact_references(tmp_path: Path) -> None:
+    """Inline image bytes cannot hide in the thread's image metadata."""
+    inline = "aW5saW5lLWltYWdlLWJ5dGVz"
+    image = {"path": str(tmp_path / "plot.png"), "mime_type": "image/png",
+             "alt": "plot", "data": inline}
+    events, messages, _ = _run_one_tool_call(
+        _StubRegistry(json.dumps({"status": "ok", "images": [image]})),
+        SimpleNamespace(id="image", name="render_chart", arguments={}), tmp_path,
+    )
+    persisted = _persisted_text(tmp_path)
+    assert inline not in persisted
+    assert inline not in json.dumps(messages)
+    assert inline not in json.dumps(events)
+    items = [json.loads(line) for line in (tmp_path / "thread.jsonl").read_text().splitlines()]
+    result = next(item for item in items if item["type"] == "tool_result")
+    assert result["images"] == [{key: value for key, value in image.items() if key != "data"}]
+
+
 def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     tmp_path: Path,
 ) -> None:

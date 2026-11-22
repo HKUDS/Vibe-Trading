@@ -152,7 +152,7 @@ class HookManager:
         elif callable(sink):
             self.audit = sink
         else:
-            self.audit = getattr(sink, "hook", None) or getattr(sink, "hook_decision", None)
+            self.audit = getattr(sink, "hook", None)
 
     def configured(self, event: str) -> bool:
         """Return whether an event has at least one matching declaration."""
