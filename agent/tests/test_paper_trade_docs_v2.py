@@ -152,4 +152,4 @@ def test_mcp_module_docstring_publishes_the_live_tool_count() -> None:
         encoding="utf-8"
     )
 
-    assert "Surfaces 83 tools" in mcp_server
+    assert "Surfaces 85 tools" in mcp_server

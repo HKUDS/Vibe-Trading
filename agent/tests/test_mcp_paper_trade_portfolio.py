@@ -41,7 +41,7 @@ if str(AGENT_DIR) not in sys.path:
 
 # Baseline before task 17: replacing the hand-written wrapper with a mirrored
 # registration must not add or remove a tool.
-EXPECTED_MCP_TOOL_COUNT = 83
+EXPECTED_MCP_TOOL_COUNT = 85
 
 _DAY = "2026-11-13"
 _PRIOR = "2026-11-12"
