@@ -655,6 +655,25 @@ def open_turns(items: Iterable[ThreadItem]) -> List[str]:
 
 
 
+def durable_tool_calls(message: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Copy tool calls and redact their serialized argument objects."""
+    from src.tools.redaction import redact_payload, redact_text
+
+    calls = copy.deepcopy(list(message.get("tool_calls") or []))
+    for call in calls:
+        function = call.get("function") or {}
+        arguments = function.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                original = json.loads(arguments)
+                redacted = redact_payload(original)
+                if redacted != original:
+                    function["arguments"] = json.dumps(redacted, ensure_ascii=False)
+            except (ValueError, TypeError):
+                function["arguments"] = redact_text(arguments)
+    return calls
+
+
 def _item_message(
     item: ThreadItem,
     *,
@@ -716,6 +735,16 @@ def replay(
     Returns:
         A fresh list of message dicts; mutating it does not touch ``items``.
     """
+    return replay_with_seqs(items, provider=provider, model=model)[0]
+
+
+def replay_with_seqs(
+    items: Iterable[ThreadItem],
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> tuple[list[dict[str, Any]], list[Optional[int]]]:
+    """Pair messages while retaining source seqs for compaction and recovery."""
     items = list(items)
     compaction = last_compaction(items)
     replayer = MessagePairing()
@@ -726,22 +755,33 @@ def replay(
     # exact message that was sent after the in-memory mutation, while layer 3
     # starts a new replay view at its summary boundary.
     message_by_seq: Dict[int, Dict[str, Any]] = {}
-    for item in items:
-        message = _item_message(item, target_provider=provider, target_model=model)
-        if message is not None:
-            message_by_seq[item.seq] = message
+    replacements = {}
     for event in items:
-        if event.type != "compaction":
-            continue
-        layer = event.get("layer", 3)
-        if layer in {1, 2}:
+        if event.type == "compaction" and event.get("layer", 3) in {1, 2}:
             for change in event.get("changes") or []:
-                if not isinstance(change, dict):
-                    continue
-                seq = change.get("seq")
-                message = change.get("message")
-                if _is_int(seq) and isinstance(message, dict) and seq in message_by_seq:
-                    message_by_seq[seq] = copy.deepcopy(message)
+                if isinstance(change, dict) and _is_int(change.get("seq")) and isinstance(change.get("message"), dict):
+                    replacements[change["seq"]] = change["message"]
+    for item in items:
+        if item.seq <= start_after:
+            continue
+        message = _item_message(item, target_provider=provider, target_model=model)
+        if message is None:
+            continue
+        replacement = replacements.get(item.seq)
+        if replacement is not None and replacement.get("role") == message["role"]:
+            if item.type == "assistant":
+                message = assistant_message(
+                    {
+                        **replacement,
+                        "tool_calls": durable_tool_calls(replacement),
+                        "provider": item.get("provider"),
+                        "model": item.get("model"),
+                    },
+                    target_provider=provider, target_model=model,
+                )
+            else:
+                message = copy.deepcopy(replacement)
+        message_by_seq[item.seq] = message
 
     if compaction is not None:
         replayer.messages.append({"role": "user", "content": compaction.get("summary")})
@@ -779,27 +819,10 @@ def replay(
             continue
         effective = message_by_seq.get(item.seq)
         if effective is not None:
-            if effective.get("role") == "assistant":
-                replayer.assistant_message(copy.deepcopy(effective))
-            elif effective.get("role") == "tool":
-                replayer.tool_result_message(copy.deepcopy(effective))
-            elif effective.get("role") in {"user", "system"}:
-                replayer.other(copy.deepcopy(effective))
-            continue
-        if item.type == "user":
-            replayer.other({"role": "user", "content": copy.deepcopy(item.get("llm_content"))})
-        elif item.type == "assistant":
-            replayer.assistant_message(
-                assistant_message(
-                    item, target_provider=provider, target_model=model
-                )
-            )
-        elif item.type == "tool_result":
-            replayer.tool_result(item)
-        elif item.type == "inject":
-            replayer.other({"role": item.get("role"), "content": copy.deepcopy(item.get("content"))})
+            replayer.add(effective)
     replayer.close_block()
-    return replayer.messages
+    source_seqs = {id(message): seq for seq, message in message_by_seq.items()}
+    return replayer.messages, [source_seqs.get(id(message)) for message in replayer.messages]
 
 
 # ---- Display projection ----

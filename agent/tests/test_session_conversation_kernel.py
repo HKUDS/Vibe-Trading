@@ -800,3 +800,43 @@ def test_second_turn_request_body_repeats_the_first_turn_byte_for_byte(tmp_path,
     assert replayed[-1]["role"] == "user" and replayed[-1]["content"].endswith("And again")
     assert len(replayed) == len(sent) + 2
     assert encode(turn_two_first["tools"]) == encode(turn_one_last["tools"])
+
+
+@pytest.mark.parametrize("source", ["question", "queue", "direct"])
+def test_only_direct_turn_prompt_can_seed_instrument_identity(tmp_path, monkeypatch, source):
+    market_calls = []
+    factory, _ = _market_registry(market_calls, monkeypatch)
+
+    def policy(llm, messages, tools, on_text):
+        if len(llm.requests) == 1:
+            return _response(calls=(_call("quote", "get_market_data", codes=["NVDA.US"]),))
+        return _response(content="done")
+
+    service = _service(tmp_path, monkeypatch, factory, _PolicyLLM(policy))
+    session = service.create_session(title="input provenance")
+    sid = session.session_id
+    log = service.store.thread_log(sid)
+    if source == "question":
+        log.append("question", "prior", question_id="q1", prompt="Choose a comparison",
+                   options=["NVDA.US", "AAPL.US"], allow_free_text=True)
+
+    async def scenario():
+        if source == "queue":
+            service.pending_inputs.add(sid, "NVDA.US", queued_during="prior", include_shell_tools=False)
+            service._start_next_input(sid)
+            await service._active_tasks[sid]
+        else:
+            await _send(service, sid, "NVDA.US")
+
+    asyncio.run(scenario())
+    items = log.read()
+    user = next(item for item in items if item.type == "user")
+    assert user.get("content") == "NVDA.US"
+    if source == "question":
+        assert user.get("answer_to_question_id") == "q1"
+    result = next(item for item in items if item.get("tool_call_id") == "quote")
+    if source == "direct":
+        assert result.get("status") == "ok" and len(market_calls) == 1
+    else:
+        assert json.loads(result.get("content")).get("error_code") == "identity_required"
+        assert market_calls == []

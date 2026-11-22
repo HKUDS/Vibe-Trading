@@ -340,3 +340,15 @@ def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypat
 
     assert seen, "the compaction made no summary call"
     assert seen == ["vibe-session-42"] * len(seen)
+
+
+def test_compaction_pairs_reused_call_ids_within_their_own_blocks():
+    call = {"id": "reused", "function": {"name": "read_file"}}
+    first = {"role": "assistant", "tool_calls": [call]}
+    second = {"role": "assistant", "tool_calls": [call]}
+    result = {"role": "tool", "name": "read_file", "tool_call_id": "reused", "content": "second"}
+    messages = [first, second, result]
+    _fix_tool_pairs(messages)
+    assert len(messages) == 4
+    assert messages[0] is first and messages[2] is second and messages[3] is result
+    assert messages[1]["content"] == _STUB_RESULT_CONTENT

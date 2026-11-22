@@ -550,7 +550,7 @@ class SessionService:
         run_dir = Path(self.runs_dir) / "compactions" / compact_id
         run_dir.mkdir(parents=True, exist_ok=True)
         trace = recorder
-        messages = [{"role": "system", "content": ""}, *copy.deepcopy(history)]
+        messages = [{"role": "system", "content": ""}, *history]
         agent = AgentLoop(
             registry=ToolRegistry(),
             llm=llm,
@@ -756,6 +756,8 @@ class SessionService:
 
         if attempt is None:
             attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+        if queued is not None:
+            attempt.queued_input_id = queued.input_id
         self.store.create_attempt(attempt)
         session.config["include_shell_tools"] = include_shell_tools
         session.last_attempt_id = attempt.attempt_id
@@ -1259,6 +1261,7 @@ class SessionService:
             runtime_snapshot = getattr(llm, "runtime_snapshot", None)
             recorder = runtime.begin_turn(
                 attempt_id,
+                queued_input_id=attempt.queued_input_id,
                 provider=getattr(runtime_snapshot, "provider", None),
                 model=getattr(runtime_snapshot, "configured_model", None),
             )

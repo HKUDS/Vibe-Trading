@@ -494,6 +494,7 @@ class IdentityLedger:
         history: Sequence[Mapping[str, Any]] | None = None,
         contextual_identity_constraints: bool = True,
         restored_state: Mapping[str, Any] | None = None,
+        seed_prompt_symbols: bool = True,
     ) -> None:
         """Initialize identity state from explicit symbols and relevant constraints.
 
@@ -506,6 +507,7 @@ class IdentityLedger:
                 They only ever narrow a resolver query; no symbol in them is
                 authorized.
             contextual_identity_constraints: Enable those contextual constraints.
+            seed_prompt_symbols: Only a direct request can introduce an explicit symbol.
             restored_state: This conversation's earlier ledger, exactly as
                 :meth:`export_state` returned it. It is the only source of
                 carried-over authorization.
@@ -520,7 +522,7 @@ class IdentityLedger:
         self._identity_required = False
         if restored_state is not None:
             self._restore_state(restored_state)
-        if _REQUEST_IS_USER_AUTHORED.get():
+        if seed_prompt_symbols and _REQUEST_IS_USER_AUTHORED.get():
             self._seed_symbols(user_message, source="user_message")
         self.persist()
 

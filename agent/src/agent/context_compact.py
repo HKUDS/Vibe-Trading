@@ -392,60 +392,14 @@ def _tail_cut_index(body: list, budget: int = TAIL_TOKEN_BUDGET) -> int:
 
 
 def _fix_tool_pairs(messages: list) -> None:
-    """Repair orphaned tool_call / tool_result pairs after compression.
+    """Repair the compacted tail in place, retaining surviving message identities."""
+    from src.providers.messages import MessagePairing
 
-    Two fixes:
-      1. Remove tool results whose matching tool_call was compressed away.
-      2. Insert stub results for tool_calls whose results were compressed away.
-
-    Args:
-        messages: Message list (mutated in place).
-    """
-    # Collect all tool_call IDs from assistant messages
-    call_ids: set[str] = set()
-    for msg in messages:
-        if msg.get("role") == "assistant":
-            for tc in msg.get("tool_calls", []):
-                tc_id = tc.get("id", "")
-                if tc_id:
-                    call_ids.add(tc_id)
-
-    # Remove orphaned tool results
-    i = 0
-    while i < len(messages):
-        msg = messages[i]
-        if msg.get("role") == "tool" and msg.get("tool_call_id") not in call_ids:
-            messages.pop(i)
-        else:
-            i += 1
-
-    # Collect existing result IDs
-    result_ids: set[str] = set()
-    for msg in messages:
-        if msg.get("role") == "tool":
-            tcid = msg.get("tool_call_id", "")
-            if tcid:
-                result_ids.add(tcid)
-
-    # Insert stub results for orphaned tool_calls
-    inserts: list[tuple[int, dict]] = []
-    for idx, msg in enumerate(messages):
-        if msg.get("role") != "assistant":
-            continue
-        for tc in msg.get("tool_calls", []):
-            tc_id = tc.get("id", "")
-            if tc_id and tc_id not in result_ids:
-                stub = {
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "name": tc.get("function", {}).get("name", "unknown"),
-                    "content": _STUB_RESULT_CONTENT,
-                }
-                inserts.append((idx + 1, stub))
-                result_ids.add(tc_id)
-
-    for pos, stub in reversed(inserts):
-        messages.insert(pos, stub)
+    pairing = MessagePairing(_STUB_RESULT_CONTENT, missing_first=True)
+    for message in messages:
+        pairing.add(message)
+    pairing.close_block()
+    messages[:] = pairing.messages
 
 
 def _attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:

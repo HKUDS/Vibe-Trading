@@ -35,12 +35,6 @@ def assistant_message(
     Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
     response and the loop's plain ``{"role", "content"}`` for a final answer.
     """
-    message: Dict[str, Any] = {"role": "assistant", "content": copy.deepcopy(item.get("llm_content") if item.get("llm_content") is not None else item.get("content"))}
-    tool_calls = item.get("tool_calls") or []
-    if tool_calls:
-        message["tool_calls"] = copy.deepcopy(tool_calls)
-        if any(call.get("extra_content") for call in tool_calls):
-            message["additional_kwargs"] = {"tool_calls": copy.deepcopy(tool_calls)}
     source_provider = item.get("provider")
     source_model = item.get("model")
     same_runtime = (
@@ -51,6 +45,26 @@ def assistant_message(
         and source_provider == target_provider
         and source_model == target_model
     )
+    content = item.get("llm_content")
+    message = {"role": "assistant", "content": copy.deepcopy(item.get("content") if content is None else content)}
+    tool_calls = copy.deepcopy(item.get("tool_calls") or [])
+    if tool_calls:
+        if not same_runtime:
+            for call in tool_calls:
+                extra = call.get("extra_content")
+                if not isinstance(extra, dict):
+                    continue
+                for metadata in (extra, extra.get("google")):
+                    if isinstance(metadata, dict):
+                        metadata.pop("thought_signature", None)
+                        metadata.pop("thoughtSignature", None)
+                if extra.get("google") == {}:
+                    extra.pop("google")
+                if not extra:
+                    call.pop("extra_content")
+        message["tool_calls"] = tool_calls
+        if any(call.get("extra_content") for call in tool_calls):
+            message["additional_kwargs"] = {"tool_calls": copy.deepcopy(tool_calls)}
     if same_runtime and item.get("reasoning_content") is not None:
         message["reasoning_content"] = item.get("reasoning_content")
     if same_runtime and item.get("provider_items"):
@@ -72,72 +86,49 @@ class MessagePairing:
     call ids from a per-response counter reuse them across turns.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, missing_result: str = INTERRUPTED_RESULT_CONTENT, *, missing_first: bool = False,
+    ) -> None:
+        self._missing_result = missing_result
+        self._missing_first = missing_first
+        self._result_start = 0
         self.messages: List[Dict[str, Any]] = []
         self._pending: Dict[str, str] = {}
         self._answered: set = set()
         self._held: List[Dict[str, Any]] = []
 
-    def assistant(self, item: Mapping[str, Any]) -> None:
-        self.close_block()
-        message = assistant_message(item)
-        self.assistant_message(message)
-
-    def assistant_message(self, message: Dict[str, Any]) -> None:
-        """Append an already reconstructed assistant message."""
-        self.close_block()
-        self.messages.append(message)
-        for call in message.get("tool_calls", []):
-            self._pending[call["id"]] = call["function"]["name"]
-
-    def tool_result(self, item: Mapping[str, Any]) -> None:
-        self.tool_result_message({
-            "role": "tool",
-            "tool_call_id": item.get("tool_call_id"),
-            "name": item.get("name"),
-            "content": item.get("content"),
-        })
-
-    def tool_result_message(self, message: Dict[str, Any]) -> None:
-        """Append an already reconstructed tool result."""
-        call_id = message.get("tool_call_id")
-        if call_id not in self._pending or call_id in self._answered:
-            logger.debug("Replay dropped a tool result without an open call: %s", call_id)
-            return
-        self._answered.add(call_id)
-        self.messages.append(copy.deepcopy(message))
-
-    def other(self, message: Dict[str, Any]) -> None:
-        if self._pending:
+    def add(self, message: Dict[str, Any]) -> None:
+        """Consume an independently owned message, preserving its identity."""
+        role = message.get("role")
+        if role == "assistant":
+            self.close_block()
+            self.messages.append(message)
+            self._result_start = len(self.messages)
+            for call in message.get("tool_calls", []):
+                self._pending[call["id"]] = call["function"]["name"]
+        elif role == "tool":
+            call_id = message.get("tool_call_id")
+            if call_id not in self._pending or call_id in self._answered:
+                logger.debug("Dropped a tool result without an open call: %s", call_id)
+                return
+            self._answered.add(call_id)
+            self.messages.append(message)
+        elif self._pending:
             self._held.append(message)
         else:
             self.messages.append(message)
 
     def close_block(self) -> None:
-        for call_id, name in self._pending.items():
-            if call_id not in self._answered:
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "name": name,
-                        "content": INTERRUPTED_RESULT_CONTENT,
-                    }
-                )
+        stubs = [
+            {"role": "tool", "tool_call_id": call_id, "name": name, "content": self._missing_result}
+            for call_id, name in self._pending.items() if call_id not in self._answered
+        ]
+        position = self._result_start if self._missing_first else len(self.messages)
+        self.messages[position:position] = stubs
         self._pending = {}
         self._answered = set()
         self.messages.extend(self._held)
         self._held = []
-
-
-
-class _MessageItem(dict):
-    """Minimal thread-item adapter used by the shared pairing replayer."""
-
-    def __init__(self, item_type: str, message: dict[str, Any]) -> None:
-        super().__init__(copy.deepcopy(message))
-        self.type = item_type
-        self.seq = 0
 
 
 def repair_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -156,17 +147,9 @@ def repair_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
     """
     replayer = MessagePairing()
     for message in messages:
-        role = message.get("role")
-        if role == "assistant" and message.get("tool_calls"):
-            replayer.assistant(_MessageItem("assistant", message))
-        elif role == "tool":
-            replayer.tool_result(_MessageItem("tool_result", message))
-        elif role == "assistant":
-            replayer.close_block()
-            replayer.messages.append(copy.deepcopy(message))
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            replayer.add(assistant_message(message))
         else:
-            replayer.other(copy.deepcopy(message))
+            replayer.add(copy.deepcopy(message))
     replayer.close_block()
     return replayer.messages
-
-

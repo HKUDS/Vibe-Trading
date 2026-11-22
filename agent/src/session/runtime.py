@@ -21,22 +21,20 @@ what the model said or saw.
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import threading
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from src.providers.messages import assistant_message
 from src.session.thread import (
     ThreadItem,
     ThreadItemError,
     ThreadLog,
     TurnProjection,
-    last_compaction,
+    durable_tool_calls,
     open_turns,
     project_turn,
-    replay,
+    replay_with_seqs,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,85 +42,6 @@ logger = logging.getLogger(__name__)
 #: Directory, inside a run directory, that ``deliver_tool_result`` and
 #: ``persist_calculation_result`` offload complete tool results into.
 TOOL_RESULTS_DIRNAME = "tool-results"
-
-def _message_key(message: Mapping[str, Any]) -> str:
-    return json.dumps(message, sort_keys=True, ensure_ascii=False, default=str)
-
-
-def _item_message(
-    item: ThreadItem,
-    *,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """The message replay builds from one item, or None for non-model items."""
-    if item.type == "user":
-        return {"role": "user", "content": item.get("llm_content")}
-    if item.type == "assistant":
-        return assistant_message(item, target_provider=provider, target_model=model)
-    if item.type == "tool_result":
-        return {
-            "role": "tool",
-            "tool_call_id": item.get("tool_call_id"),
-            "name": item.get("name"),
-            "content": item.get("content"),
-        }
-    if item.type == "inject":
-        return {"role": item.get("role"), "content": item.get("content")}
-    return None
-
-
-def replay_with_seqs(
-    items: Sequence[ThreadItem],
-    *,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-) -> Tuple[List[Dict[str, Any]], List[Optional[int]]]:
-    """Replay the thread and name the item each replayed message came from.
-
-    A compaction recorded mid-turn has to say which items its summary
-    replaces, and the messages it folds include replayed history. Messages
-    replay synthesised (the compaction summary, interrupted-call stubs,
-    stopped-turn notes) have no item and map to None.
-
-    Args:
-        items: Thread items in write order.
-
-    Returns:
-        ``(messages, seqs)`` of equal length.
-    """
-    messages = replay(items, provider=provider, model=model)
-    compaction = last_compaction(items)
-    start_after = compaction.get("replaces_through_seq") if compaction is not None else 0
-    pool: Dict[str, List[int]] = {}
-    for item in items:
-        if item.seq <= start_after:
-            continue
-        message = _item_message(item, provider=provider, model=model)
-        if message is not None:
-            pool.setdefault(_message_key(message), []).append(item.seq)
-    for item in items:
-        if item.type != "compaction" or item.get("layer", 3) == 3:
-            continue
-        for change in item.get("changes") or []:
-            if not isinstance(change, Mapping):
-                continue
-            seq = change.get("seq")
-            message = change.get("message")
-            if isinstance(seq, int) and seq > start_after and isinstance(message, Mapping):
-                pool.setdefault(_message_key(message), []).append(seq)
-    seqs: List[Optional[int]] = []
-    for message in messages:
-        queue = pool.get(_message_key(message))
-        seqs.append(queue.pop(0) if queue else None)
-    return messages, seqs
-
-
-# ---- Workspace ----
-
-
-# ---- Recorder ----
-
 
 class TurnRecorder:
     """Thread sink for one turn.
@@ -156,6 +75,7 @@ class TurnRecorder:
         history_seqs: List[Optional[int]],
         user_history: List[Dict[str, Any]],
         *,
+        queued_input_id: Optional[str] = None,
         provider: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
@@ -174,6 +94,8 @@ class TurnRecorder:
         self.user_history = user_history
         self.provider = provider
         self.model = model
+        self.answer_to_question_id = runtime.pending_question_id()
+        self.queued_input_id = queued_input_id
         state = runtime.state
         self.identity_state = copy.deepcopy(state.get("identity"))
         loaded = state.get("loaded_tools")
@@ -189,8 +111,6 @@ class TurnRecorder:
         # id(message) -> (seq, message); the message is held so its id is
         # never reused by another object while it is mapped.
         self._seqs: Dict[int, Tuple[int, Dict[str, Any]]] = {}
-        self._seq_by_key: Dict[str, int] = {}
-        self._seq_by_call_id: Dict[str, int] = {}
         for message, seq in zip(history, history_seqs):
             if seq is not None:
                 self._remember(message, seq)
@@ -218,7 +138,10 @@ class TurnRecorder:
             return
         self.started = True
         self._write("turn_start", None, prompt=prompt, model=model, provider=provider)
-        self._write("user", message, content=prompt, llm_content=message.get("content"), answer_to_question_id=self._runtime.pending_question_id())
+        self._write(
+            "user", message, content=prompt, llm_content=message.get("content"),
+            input_id=self.queued_input_id, answer_to_question_id=self.answer_to_question_id,
+        )
 
     def user(
         self, message: Dict[str, Any], *, content: str, input_id: Optional[str] = None
@@ -248,25 +171,11 @@ class TurnRecorder:
             message: OpenAI-format assistant message.
             phase: ``commentary`` (more steps follow) or ``final``.
         """
-        from src.tools.redaction import redact_payload, redact_text
-
-        calls = copy.deepcopy(list(message.get("tool_calls") or []))
-        for call in calls:
-            function = call.get("function") or {}
-            arguments = function.get("arguments")
-            if isinstance(arguments, str):
-                try:
-                    original = json.loads(arguments)
-                    redacted = redact_payload(original)
-                    if redacted != original:
-                        function["arguments"] = json.dumps(redacted, ensure_ascii=False)
-                except (ValueError, TypeError):
-                    function["arguments"] = redact_text(arguments)
         self._write(
             "assistant",
             message,
             content=message.get("content"),
-            tool_calls=calls,
+            tool_calls=durable_tool_calls(message),
             reasoning_content=message.get("reasoning_content"),
             provider_items=message.get("provider_items") or None,
             provider=self.provider,
@@ -364,7 +273,7 @@ class TurnRecorder:
         if item is not None:
             self._remember(message, item.seq)
 
-    def compaction_layer(self, layer: int, messages: Iterable[Dict[str, Any]], *, reason: str = "") -> None:
+    def compaction_layer(self, layer: int, messages: Iterable[Dict[str, Any]]) -> None:
         """Record an exact layer-1 or layer-2 view mutation.
 
         The source items stay immutable. Each replacement is keyed by the
@@ -377,7 +286,12 @@ class TurnRecorder:
         for message in messages:
             seq = self.seq_of(message)
             if seq is not None:
-                changes.append({"seq": seq, "message": copy.deepcopy(message)})
+                durable = copy.deepcopy(message)
+                if durable.get("role") == "assistant" and durable.get("tool_calls"):
+                    durable["tool_calls"] = durable_tool_calls(message)
+                    if "tool_calls" in (durable.get("additional_kwargs") or {}):
+                        durable["additional_kwargs"]["tool_calls"] = durable["tool_calls"]
+                changes.append({"seq": seq, "message": durable})
         if not changes:
             return
         payload: Dict[str, Any] = {
@@ -386,11 +300,6 @@ class TurnRecorder:
             "layer": layer,
             "changes": changes,
         }
-        if reason:
-            payload["reason"] = reason
-        # reason is intentionally omitted from the schema payload. The layer
-        # and exact replacements are the replay contract.
-        payload.pop("reason", None)
         self._write("compaction", None, **payload)
 
     def state(self, snapshot: Dict[str, Any]) -> None:
@@ -438,36 +347,12 @@ class TurnRecorder:
         entry = self._seqs.get(id(message))
         if entry is not None and entry[1] is message:
             return entry[0]
-        try:
-            seq = self._seq_by_key.get(json.dumps(message, sort_keys=True, ensure_ascii=False, default=str))
-            if seq is not None:
-                return seq
-            if message.get("role") == "tool" and isinstance(message.get("tool_call_id"), str):
-                return self._seq_by_call_id.get(message["tool_call_id"])
-            for call in message.get("tool_calls") or []:
-                if isinstance(call, Mapping) and isinstance(call.get("id"), str):
-                    seq = self._seq_by_call_id.get(call["id"])
-                    if seq is not None:
-                        return seq
-            return None
-        except (TypeError, ValueError):
-            return None
+        return None
 
     # ---- Internals ----
 
     def _remember(self, message: Dict[str, Any], seq: int) -> None:
         self._seqs[id(message)] = (seq, message)
-        try:
-            self._seq_by_key.setdefault(
-                json.dumps(message, sort_keys=True, ensure_ascii=False, default=str), seq
-            )
-        except (TypeError, ValueError):
-            pass
-        if message.get("role") == "tool" and isinstance(message.get("tool_call_id"), str):
-            self._seq_by_call_id.setdefault(message["tool_call_id"], seq)
-        for call in message.get("tool_calls") or []:
-            if isinstance(call, Mapping) and isinstance(call.get("id"), str):
-                self._seq_by_call_id.setdefault(call["id"], seq)
         self.max_seq = max(self.max_seq, seq)
 
     def _write(self, item_type: str, message: Optional[Dict[str, Any]], **payload: Any) -> Optional[ThreadItem]:
@@ -564,6 +449,7 @@ class SessionRuntime:
         self,
         turn_id: str,
         *,
+        queued_input_id: Optional[str] = None,
         provider: Optional[str] = None,
         model: Optional[str] = None,
     ) -> TurnRecorder:
@@ -583,13 +469,13 @@ class SessionRuntime:
         for stale in open_turns(items):
             if stale != turn_id:
                 self._append_safely("turn_end", stale, status="interrupted")
-        items = self.thread.read()
         history, history_seqs, user_history = self.replay_history(provider=provider, model=model)
         recorder = TurnRecorder(
             self,
             turn_id,
             history=history,
             history_seqs=history_seqs,
+            queued_input_id=queued_input_id,
             user_history=user_history,
             provider=provider,
             model=model,

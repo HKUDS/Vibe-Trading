@@ -510,6 +510,9 @@ class AgentLoop(ToolCallLifecycle):
             contextual_identity_constraints=(
                 get_env_config().agent_tuning.vibe_contextual_identity_constraints
             ),
+            seed_prompt_symbols=self._thread is None or (
+                self._thread.queued_input_id is None and self._thread.answer_to_question_id is None
+            ),
             restored_state=self._thread.identity_state if self._thread is not None else None,
         )
 

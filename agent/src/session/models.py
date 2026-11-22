@@ -277,6 +277,7 @@ class Attempt:
     completed_at: Optional[str] = None
     error: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
+    queued_input_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the attempt to a dictionary.
@@ -285,6 +286,8 @@ class Attempt:
             A JSON-serializable dictionary.
         """
         data = asdict(self)
+        if self.queued_input_id is None:
+            data.pop("queued_input_id")
         data["status"] = self.status.value
         return data
 
