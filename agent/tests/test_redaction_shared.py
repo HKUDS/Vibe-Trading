@@ -694,3 +694,10 @@ def test_metadata_validation_reaches_all_audit_sinks(tmp_path: Path, monkeypatch
         assert "opaque-test-credential" not in json.dumps(record)
         assert "nested-test-credential" not in json.dumps(record)
         assert record["broker_request"]["tokenUsage"]["totalInputTokens"] == 77
+
+
+def test_goal_usage_count_is_public_only_as_a_numeric_result():
+    assert redact_payload({"tokens_used": 11}, sink=RESULT_SINK) == {"tokens_used": 11}
+    for value in ("fixture-private", True, -1, {"value": 11}):
+        assert redact_payload({"tokens_used": value}, sink=RESULT_SINK) == {"tokens_used": "[redacted]"}
+    assert is_sensitive_arg("tokens_used", value=11)

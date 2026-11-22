@@ -320,6 +320,8 @@ def is_sensitive_arg(
     """
     normalized = name.strip().lower()
     folded = _fold_key(name)
+    if sink == RESULT_SINK and folded == "tokensused":
+        return not (type(value) is int and value >= 0)
     if folded in _BENIGN_TOKEN_FIELD_KEYS_FOLDED:
         if folded == "clobtokenid":
             return not (
