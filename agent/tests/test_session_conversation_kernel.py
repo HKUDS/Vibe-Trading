@@ -858,3 +858,45 @@ def test_failed_attempt_scrubs_exception_before_persistence_and_display(tmp_path
     assert "private-error-detail" not in str(service.get_messages(sid))
     if attempt.run_dir:
         assert "private-error-detail" not in (Path(attempt.run_dir) / "state.json").read_text()
+
+
+@pytest.mark.parametrize("first_response", ["text", "tool", "none"])
+def test_kernel_dispatch_reaches_provider_thread_and_sse(tmp_path, monkeypatch, first_response):
+    from src.kernel.contracts import LLMResponse, ToolCallRequest
+
+    def respond(llm, messages, tools, on_text):
+        if first_response == "none" and len(llm.requests) == 1:
+            return None
+        if first_response == "tool" and len(llm.requests) == 1:
+            return LLMResponse(tool_calls=[ToolCallRequest("quote", "lookup", {"key": "us"})])
+        if first_response == "tool":
+            assert [m["tool_call_id"] for m in _tool_messages(messages, "lookup")] == ["quote"]
+        on_text("Delivered.")
+        return LLMResponse(content="Delivered.")
+
+    llm = _PolicyLLM(respond)
+    service = _service(tmp_path, monkeypatch, _lookup_factory(), llm)
+
+    async def scenario():
+        sid = service.create_session("kernel dispatch").session_id
+        turn = await _send(service, sid, "Inspect the fixture")
+        items = _turn_items(service, sid, turn)
+        assert items[-1].type == "turn_end" and items[-1].get("status") == "completed"
+        stream = service.thread_events.stream(sid, cursor=0)
+        frames = []
+        try:
+            async for event in stream:
+                fields = dict(line.split(": ", 1) for line in event.to_sse().splitlines() if line)
+                frames.append((fields["event"], json.loads(fields["data"])))
+                if fields["event"] == "run.completed":
+                    break
+        finally:
+            await stream.aclose()
+        completed = [data["item"] for kind, data in frames if kind == "item.completed"]
+        answers = [row["content"] for row in completed if row["type"] == "assistant" and row["phase"] == "final"]
+        tool_results = [row["tool_call_id"] for row in completed if row["type"] == "tool_result"]
+        assert answers == ["Delivered."]
+        assert tool_results == (["quote"] if first_response == "tool" else [])
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=15))
+    assert len(llm.requests) == (1 if first_response == "text" else 2)

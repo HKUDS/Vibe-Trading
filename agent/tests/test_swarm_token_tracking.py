@@ -21,7 +21,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.providers.chat import ChatLLM, LLMResponse
+from src.kernel.contracts import LLMResponse
+from src.providers.chat import ChatLLM
 from src.swarm.worker import _estimate_tokens
 
 

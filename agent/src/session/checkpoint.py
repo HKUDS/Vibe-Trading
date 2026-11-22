@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from src.kernel import events as vocabulary
 from src.session.models import Attempt
 from src.session.store import SessionStore
 
@@ -55,11 +56,11 @@ class ResponseCheckpoint:
             event_type: Agent event name.
             data: Event payload.
         """
-        if event_type != "item.delta" or data.get("kind") not in {"text.delta", "text.reset"}:
+        if event_type != vocabulary.ITEM_DELTA or data.get("kind") not in {vocabulary.TEXT_DELTA, vocabulary.TEXT_RESET}:
             return
 
         with self._lock:
-            if data.get("kind") == "text.reset":
+            if data.get("kind") == vocabulary.TEXT_RESET:
                 self._text = ""
                 self._dirty = True
                 self._flush_locked()

@@ -6,7 +6,7 @@ import json
 import pytest
 
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.config.limits import truncate_tool_result
 from src.swarm.context import WorkerContext
 from src.swarm.models import SwarmAgentSpec, SwarmTask

@@ -15,7 +15,8 @@ import pytest
 
 from src.agent.context import ContextBuilder
 from src.agent.context_compact import _attach_tool_call_thought_signatures
-from src.providers.chat import ChatLLM, ToolCallRequest, _dedupe_finish_reason
+from src.kernel.contracts import ToolCallRequest
+from src.providers.chat import ChatLLM, _dedupe_finish_reason
 from src.providers.llm import ChatOpenAIWithReasoning
 
 
@@ -600,7 +601,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         """
         from src.agent.context import ContextBuilder
         from src.agent.context_compact import _attach_tool_call_thought_signatures
-        from src.providers.chat import ToolCallRequest
+        from src.kernel.contracts import ToolCallRequest
 
         instance = self._instance(model="gemini-3-pro-preview")
         tool_calls = [
@@ -628,7 +629,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         """
         from src.agent.context import ContextBuilder
         from src.agent.context_compact import _attach_tool_call_thought_signatures
-        from src.providers.chat import ToolCallRequest
+        from src.kernel.contracts import ToolCallRequest
 
         instance = self._instance(model="gemini-3-pro-preview")
         tool_calls = [

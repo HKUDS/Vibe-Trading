@@ -14,7 +14,7 @@ from src.agent.loop import AgentLoop
 from src.agent.context_compact import KEEP_RECENT
 from src.agent.tool_lifecycle import MAX_READONLY_REPLAY_RECOVERIES
 from src.agent.tool_progress import NO_PROGRESS_LIMIT, ToolProgress
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from tests.recording_helpers import recorder_at, records_at
 from src.tools.web_reader_tool import WebReaderTool
 

@@ -11,7 +11,7 @@ from src.agent.instrument_identity import IdentityLedger
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import records_at, recorder_at, run_recorded_tools
-from src.providers.chat import ToolCallRequest
+from src.kernel.contracts import ToolCallRequest
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 

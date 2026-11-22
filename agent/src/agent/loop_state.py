@@ -6,12 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.kernel.contracts import ModelMessage
+
 
 @dataclass
 class TurnState:
     """All per-turn values that formerly lived as local loop variables."""
 
-    messages: list
+    messages: list[ModelMessage]
     run_dir: Path
     trace: Any
     context: Any
@@ -42,8 +44,7 @@ class TurnState:
     final_answer_retry: bool = False
     compact_requested: bool = False
     focus_topic: str = ""
-    request_messages: list[dict[str, Any]] = field(default_factory=list)
-    response: Any = None
+    request_messages: list[ModelMessage] = field(default_factory=list)
     stream: Any = None
     tool_defs: Any = None
     thinking_text: str = ""

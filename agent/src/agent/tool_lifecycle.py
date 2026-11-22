@@ -16,6 +16,7 @@ import threading
 import time as _time
 from typing import Any, Dict, Mapping
 
+from src.kernel import events as vocabulary
 from src.agent.context import ContextBuilder
 from src.agent.context_compact import _replay_context_result, _result_data_gone
 from src.agent.progress import HeartbeatTimer, ProgressEvent, _set_emitter
@@ -62,9 +63,9 @@ class ToolCallLifecycle:
             self._live_tool_ids = {}
         live_id = self._live_tool_ids[tc.id] = f"tool:{uuid.uuid4().hex}"
         self._emit(
-            "item.started",
+            vocabulary.ITEM_STARTED,
             {
-                "kind": "tool.started",
+                "kind": vocabulary.TOOL_STARTED,
                 "live_id": live_id,
                 "item": {
                     "type": "tool_result",
@@ -80,9 +81,9 @@ class ToolCallLifecycle:
     def _emit_tool_completed(self, tc: Any, status: str, elapsed_ms: int, preview: str, *, artifact: dict | None = None, cached: bool = False) -> None:
         """Publish the canonical live outcome for a tool call."""
         self._emit(
-            "item.completed",
+            vocabulary.ITEM_COMPLETED,
             {
-                "kind": "tool.completed" if status == "ok" else "tool.failed",
+                "kind": vocabulary.TOOL_COMPLETED if status == "ok" else vocabulary.TOOL_FAILED,
                 "live_id": getattr(self, "_live_tool_ids", {}).pop(tc.id, f"tool:{uuid.uuid4().hex}"),
                 "item": {
                     "type": "tool_result",
@@ -100,9 +101,9 @@ class ToolCallLifecycle:
     def _emit_tool_progress(self, payload: Dict[str, Any], *, heartbeat: bool = False) -> None:
         """Publish canonical progress for a running tool item."""
         self._emit(
-            "item.delta",
+            vocabulary.ITEM_DELTA,
             {
-                "kind": "tool.progress",
+                "kind": vocabulary.TOOL_PROGRESS,
                 "live_id": getattr(self, "_live_tool_ids", {}).get(payload.get("call_id")),
                 "progress": redact_payload(payload, sink=RESULT_SINK),
                 "heartbeat": heartbeat,
@@ -176,7 +177,7 @@ class ToolCallLifecycle:
         provider tool messages with invented call IDs. Failures are attached to
         the requesting consumer's normal refusal so the model can see the cause.
         """
-        from src.providers.chat import ToolCallRequest
+        from src.kernel.contracts import ToolCallRequest
 
         outcomes = {}
         for tc in tool_calls:

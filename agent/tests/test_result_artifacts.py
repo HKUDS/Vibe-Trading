@@ -11,7 +11,7 @@ from src.agent.loop import AgentLoop
 from src.agent.result_artifacts import deliver_tool_result
 from src.agent.tools import BaseTool, ToolRegistry
 from src.config.limits import TOOL_RESULT_LIMIT
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.tools.read_file_tool import ReadFileTool
 import src.swarm.worker as worker

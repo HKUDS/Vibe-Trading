@@ -33,6 +33,7 @@ try:
 except ImportError:  # pragma: no cover - Windows has no fcntl
     fcntl = None  # type: ignore[assignment]
 
+from src.kernel.contracts import ModelMessage
 from src.providers.messages import MessagePairing, assistant_message
 from src.providers import messages as provider_messages
 from src.tools.redaction import redact_text
@@ -720,7 +721,7 @@ def replay(
     *,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> list[ModelMessage]:
     """Build the OpenAI-format history a new turn sends to the model.
 
     1. Start after the last ``compaction``'s ``replaces_through_seq``, with

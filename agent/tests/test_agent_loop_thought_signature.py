@@ -8,7 +8,8 @@ from langchain_core.messages import AIMessage, convert_to_messages
 
 from src.agent.context import ContextBuilder
 from src.agent.context_compact import _attach_tool_call_thought_signatures
-from src.providers.chat import ChatLLM, ToolCallRequest
+from src.kernel.contracts import ToolCallRequest
+from src.providers.chat import ChatLLM
 
 
 def _raw_tool_call(

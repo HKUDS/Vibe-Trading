@@ -6,7 +6,8 @@ from types import MethodType, SimpleNamespace
 import src.providers.chat as chat_module
 from src.agent.loop import AgentLoop
 from src.config.accessor import reset_env_config
-from src.providers.chat import ChatLLM, LLMResponse
+from src.kernel.contracts import LLMResponse
+from src.providers.chat import ChatLLM
 
 
 def test_parse_response_keeps_provider_reported_model() -> None:

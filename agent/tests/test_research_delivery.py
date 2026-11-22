@@ -4,7 +4,7 @@ import pytest
 from src.agent.loop import AgentLoop
 from src.agent.loop_streaming import TurnStream
 from src.agent.tools import ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 import src.swarm.worker as worker
 

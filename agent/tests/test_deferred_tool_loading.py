@@ -10,7 +10,7 @@ from src.agent.loop import AgentLoop
 from src.agent.memory import WorkspaceMemory
 from src.agent.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 class ExampleTool(BaseTool):

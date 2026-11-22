@@ -29,7 +29,7 @@ from fastmcp.client.client import CallToolResult
 from mcp import types as mcp_types
 
 from src.config.schema import MCPServerConfig
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask
 from src.swarm.worker import run_worker
 from src.tools.mcp import build_mcp_tool_wrappers

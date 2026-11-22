@@ -8,7 +8,9 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Mapping, Optional
+
+from src.kernel.contracts import ModelMessage
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ def assistant_message(
     *,
     target_provider: Optional[str] = None,
     target_model: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> ModelMessage:
     """Rebuild the assistant message the loop sent, in the loop's key order.
 
     Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
@@ -92,12 +94,12 @@ class MessagePairing:
         self._missing_result = missing_result
         self._missing_first = missing_first
         self._result_start = 0
-        self.messages: List[Dict[str, Any]] = []
-        self._pending: Dict[str, str] = {}
+        self.messages: list[ModelMessage] = []
+        self._pending: dict[str, str] = {}
         self._answered: set = set()
-        self._held: List[Dict[str, Any]] = []
+        self._held: list[ModelMessage] = []
 
-    def add(self, message: Dict[str, Any]) -> None:
+    def add(self, message: ModelMessage) -> None:
         """Consume an independently owned message, preserving its identity."""
         role = message.get("role")
         if role == "assistant":
@@ -131,11 +133,10 @@ class MessagePairing:
         self._held = []
 
 
-def repair_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
     """Repair tool blocks for one provider request without changing history.
 
-    The session thread's positional replayer is the single pairing
-    implementation. A fresh replayer output supplies one interrupted result
+    A new positional pairing supplies one interrupted result
     for an unanswered call and drops orphan results. The caller's message list
     is never mutated, so the repair remains request-local.
 

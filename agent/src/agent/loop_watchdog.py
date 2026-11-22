@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.kernel import events as vocabulary
+
 
 class StallWatchdog:
     """Watch one run's forward progress and cancel it after a hard idle limit."""
@@ -41,7 +43,7 @@ class StallWatchdog:
                 continue
             if not warned:
                 warned = True
-                self.owner._emit("item.delta", {"kind": "run.stall_warning", "idle_s": round(idle, 1), "timeout_s": timeout})
+                self.owner._emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_STALL_WARNING, "idle_s": round(idle, 1), "timeout_s": timeout})
                 continue
             self.reason = (
                 "run stalled: no LLM completion or tool result for "
@@ -56,6 +58,6 @@ class StallWatchdog:
                 state_store.mark_failure(run_dir, self.reason)
             except Exception:
                 pass
-            self.owner._emit("item.delta", {"kind": "run.stalled", "reason": self.reason})
+            self.owner._emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_STALLED, "reason": self.reason})
             self.owner._cancel_event.set()
             return

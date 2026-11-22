@@ -39,7 +39,7 @@ from unittest.mock import patch
 
 import mcp_server
 from src.config.schema import AgentConfig
-from src.providers.chat import LLMResponse
+from src.kernel.contracts import LLMResponse
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask
 from src.swarm.worker import run_worker
 

@@ -24,7 +24,8 @@ import src.agent.loop as loop_mod
 import src.agent.tuning as tuning_mod
 import src.swarm.worker as worker_mod
 from src.config.env_schema import AgentTuningConfig, SwarmConfig
-from src.providers.chat import LLMResponse, ProviderStreamError, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
+from src.providers.chat import ProviderStreamError
 
 # Substantive prose so _classify_deliverable accepts the tool-less worker.
 FINAL_TEXT = (

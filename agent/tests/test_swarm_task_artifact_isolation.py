@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import src.swarm.worker as worker
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore

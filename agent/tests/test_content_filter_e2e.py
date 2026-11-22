@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 import pytest
 
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 # ---------------------------------------------------------------------------

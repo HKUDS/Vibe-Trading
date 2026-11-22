@@ -15,7 +15,8 @@ from src.agent.loop import AgentLoop
 from src.agent.tools import ToolRegistry
 from tests.recording_helpers import recorder_at
 from src.config.accessor import reset_env_config
-from src.providers.chat import ChatLLM, LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
+from src.providers.chat import ChatLLM
 
 
 USAGE = {"input_tokens": 1000, "output_tokens": 100, "total_tokens": 1100}

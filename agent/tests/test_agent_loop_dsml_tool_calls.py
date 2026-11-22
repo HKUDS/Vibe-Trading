@@ -14,7 +14,7 @@ from src.agent.loop import AgentLoop
 from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool, ToolRegistry
 from src.memory.persistent import PersistentMemory
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 class _Chunk:

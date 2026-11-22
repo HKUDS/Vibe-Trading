@@ -22,7 +22,7 @@ from src.agent.loop import AgentLoop
 from src.agent.progress import _set_emitter
 from src.agent.tools import BaseTool, ToolRegistry
 from src.config.accessor import get_env_config, reset_env_config
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.tools.spawn_agent_tool import (
     SUBAGENT_DIRNAME,
     SpawnAgentTool,

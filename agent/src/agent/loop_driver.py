@@ -1,4 +1,4 @@
-"""Composable iteration driver for :class:`AgentLoop`."""
+"""Product and provider operations bound to the turn scheduler."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ import logging
 import time
 from typing import Any
 
+from src.kernel import events as vocabulary
 from src.agent.context_compact import _attach_tool_call_thought_signatures, _context_collapse
 from src.agent.context_budget import estimate_tokens, is_context_overflow
 from src.agent.tool_loading import request_definitions
-from src.agent.loop_final import FinalAnswerHandler
+from src.kernel.contracts import LLMResponse, LoopDecision
 from src.agent.loop_streaming import TurnStream
 from src.providers.messages import repair_provider_messages
 from src.agent.loop_state import TurnState
@@ -30,35 +31,20 @@ from src.providers.content_filter import CONTENT_FILTER_SKIP_MESSAGE, MAX_CONSEC
 logger = logging.getLogger(__name__)
 
 
-class IterationDriver:
-    """Drive bounded iterations and delegate each concern to a named step."""
+class IterationSteps:
+    """Prepare a turn, request a response, and apply tool results in the host."""
 
     def __init__(self, owner: Any) -> None:
         self.owner = owner
-        self.final_answers = FinalAnswerHandler(owner)
 
-    def run(self, state: TurnState) -> None:
-        """Run research iterations until a final answer or stop condition."""
-        while state.iteration < self.owner.max_iterations or state.final_answer_retry_pending:
-            state.final_answer_retry = state.final_answer_retry_pending
-            state.final_answer_retry_pending = False
-            if self._prepare_iteration(state):
-                break
-            if self._request_response(state):
-                break
-            if state.response is None:
-                continue
-            if self._handle_response(state):
-                break
-
-    def _prepare_iteration(self, state: TurnState) -> bool:
+    def prepare_iteration(self, state: TurnState) -> LoopDecision:
         """Apply budgets, compaction, background results, and directives."""
         owner = self.owner
         owner._context_compactor.tool_schema_tokens = estimate_tokens(request_definitions(owner.registry))
         if owner._budget_stop_reason is not None or owner._cancel_event.is_set():
             if owner._cancel_event.is_set():
                 state.trace.write({"type": "cancelled", "iter": owner._run_iteration + 1})
-            return True
+            return LoopDecision.STOP
         state.iteration += 1
         owner._run_iteration += 1
         state.current_iter = owner._run_iteration
@@ -68,9 +54,9 @@ class IterationDriver:
             owner._inject(state.messages, f"<background-results>\n{text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>")
         self._compact(state)
         if owner._cancel_event.is_set() or owner._budget_stop_reason is not None:
-            return True
+            return LoopDecision.STOP
         self._write_directives(state)
-        return False
+        return LoopDecision.CONTINUE
 
     def _compact(self, state: TurnState) -> None:
         """Run the configured estimate or model-window compaction path."""
@@ -111,7 +97,7 @@ class IterationDriver:
                 state.trace.write({"type": "pending_write_directive", "iter": state.current_iter})
                 owner._inject(state.messages, f"<system>{directive}</system>")
 
-    def _request_response(self, state: TurnState) -> bool:
+    def request(self, state: TurnState) -> LLMResponse | LoopDecision:
         """Request one provider response with bounded retry handling."""
         owner = self.owner
         state.stream = TurnStream(emit=owner._emit, iteration=state.current_iter, heartbeat_interval=_heartbeat_interval_s, reasoning_interval=_reasoning_delta_min_interval_s)
@@ -120,7 +106,7 @@ class IterationDriver:
             state.trace.write({"type": "forced_text_only", "iter": state.current_iter})
         timeout = _llm_timeout_seconds()
         try:
-            state.response = self._stream_request(state, timeout)
+            response = self._stream_request(state, timeout)
         except ProviderStreamError as exc:
             if not exc.retryable and not is_context_overflow(str(exc)):
                 raise
@@ -131,32 +117,32 @@ class IterationDriver:
             else:
                 state.stream_failure_streak += 1
                 delay = min(exc.retry_after_s, _stream_retry_max_delay_s()) if exc.retry_after_s is not None else _stream_retry_backoff_s(state.stream_failure_streak)
-            state.stream.emit("item.delta", {"kind": "text.reset", "iter": state.current_iter, "reason": "context_overflow" if context_overflow else "provider_stream_retry", "provider": exc.provider, "model": exc.model, "retry_delay_s": delay})
+            state.stream.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_RESET, "iter": state.current_iter, "reason": "context_overflow" if context_overflow else "provider_stream_retry", "provider": exc.provider, "model": exc.model, "retry_delay_s": delay})
             state.stream.reset_for_retry()
             owner._cancel_event.wait(delay)
             if owner._cancel_event.is_set() or owner._budget_stop_reason is not None:
-                return True
-            state.response = self._stream_request(state, timeout)
+                return LoopDecision.STOP
+            response = self._stream_request(state, timeout)
         else:
             state.stream_failure_streak = 0
         owner._consume_readonly_replay_visibility(state.messages, state.trace, state.current_iter)
         owner._last_activity_wall = time.time()
-        usage = getattr(state.response, "usage_metadata", None)
-        state.current_response_model = getattr(state.response, "response_model", None)
+        usage = getattr(response, "usage_metadata", None)
+        state.current_response_model = getattr(response, "response_model", None)
         owner._context_compactor.context_meter.observe(usage.get("context_input_tokens", usage.get("input_tokens")) if isinstance(usage, dict) else None, state.request_messages, tool_schema_tokens=estimate_tokens(state.tool_defs) if state.tool_defs else 0)
         if state.current_response_model:
             state.last_response_model = state.current_response_model
         owner._account_llm_usage(state.run_dir, usage, state.current_iter)
-        if owner._cancel_event.is_set() or (owner._budget_stop_reason is not None and state.response.has_tool_calls):
-            return True
+        if owner._cancel_event.is_set() or (owner._budget_stop_reason is not None and response.has_tool_calls):
+            return LoopDecision.STOP
         state.thinking_text = "".join(state.stream.thinking_chunks)
         self._record_thinking(state)
-        if getattr(state.response, "content_filter_triggered", False):
+        if getattr(response, "content_filter_triggered", False):
             return self._skip_content_filter(state)
         state.consecutive_content_filter_count = 0
-        return False
+        return LoopDecision.CONTINUE if response is None else response
 
-    def _stream_request(self, state: TurnState, timeout: float):
+    def _stream_request(self, state: TurnState, timeout: float) -> LLMResponse:
         """Send one provider request and charge failed-stream usage."""
         owner = self.owner
         state.request_messages = repair_provider_messages(state.messages)
@@ -172,31 +158,27 @@ class IterationDriver:
             return
         state.trace.write({"type": "thinking", "iter": state.current_iter, "content": state.thinking_text})
 
-    def _skip_content_filter(self, state: TurnState) -> bool:
+    def _skip_content_filter(self, state: TurnState) -> LoopDecision:
         """Skip filtered responses and trip the existing circuit breaker."""
         state.content_filter_count += 1
         state.consecutive_content_filter_count += 1
         if state.consecutive_content_filter_count >= MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS:
             state.trace.write({"type": "content_filter_circuit_breaker", "iter": state.current_iter, "count": state.content_filter_count})
             state.content_filter_circuit_breaker = True
-            return True
+            return LoopDecision.STOP
         state.trace.write({"type": "content_filter_skipped", "iter": state.current_iter})
         self.owner._inject(state.messages, f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>")
-        state.response = None
-        return False
+        return LoopDecision.CONTINUE
 
-    def _handle_response(self, state: TurnState) -> bool:
-        """Release final text or execute the response's tool batch."""
-        response = state.response
-        finish_reason = getattr(response, "finish_reason", None)
-        if finish_reason in {"length", "max_tokens"}:
-            state.final_content = response.content or ""
-            state.stream.finish(state.final_content)
-            state.truncation_reason = f"provider output truncated ({finish_reason}); partial answer retained"
-            self.owner._record_final_answer(state.final_content)
-            return True
-        if not response.has_tool_calls or state.final_answer_retry:
-            return self.final_answers.handle(state) == "done"
+    def record_partial(self, state: TurnState, response: LLMResponse, finish_reason: str) -> None:
+        """Retain a truncated answer and its original terminal reason."""
+        state.final_content = response.content or ""
+        state.stream.finish(state.final_content)
+        state.truncation_reason = f"provider output truncated ({finish_reason}); partial answer retained"
+        self.owner._record_final_answer(state.final_content)
+
+    def run_tools(self, state: TurnState, response: LLMResponse) -> LoopDecision:
+        """Record the assistant item and process its bound tool batch."""
         assistant = state.context.format_assistant_tool_calls(response.tool_calls, content=response.content, reasoning_content=response.reasoning_content or state.thinking_text or None, provider_items=getattr(response, "provider_items", None))
         _attach_tool_call_thought_signatures(assistant, response.tool_calls)
         self.owner._append_assistant(state.messages, assistant, phase="commentary")
@@ -209,10 +191,10 @@ class IterationDriver:
             if options:
                 state.final_content += "\n" + "\n".join(f"{i + 1}. {option}" for i, option in enumerate(options))
             self.owner._record_final_answer(state.final_content)
-            return True
+            return LoopDecision.STOP
         self.owner._sync_thread_state()
         self._after_tools(state, response)
-        return state.finished
+        return LoopDecision.STOP if state.finished else LoopDecision.CONTINUE
 
     def _after_tools(self, state: TurnState, response: Any) -> None:
         """Apply pacing, no-progress, manual compaction, and queued input."""
@@ -226,7 +208,7 @@ class IterationDriver:
             state.final_content = owner._tool_progress.recovery_message()
             state.no_progress_reason = "no_progress: " + state.final_content
             state.trace.write({"type": "no_progress", "iter": state.current_iter, "iterations_without_progress": owner._tool_progress.stalled_iterations})
-            state.stream.emit("item.delta", {"kind": "text.delta", "delta": state.final_content, "iter": state.current_iter, "phase": "final"})
+            state.stream.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_DELTA, "delta": state.final_content, "iter": state.current_iter, "phase": "final"})
             owner._record_final_answer(state.final_content)
             state.finished = True
             state.compact_requested = False

@@ -7,8 +7,9 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
+from src.kernel.contracts import ModelMessage
 from src.agent.instructions import build_instruction_block
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
@@ -248,7 +249,7 @@ class ContextBuilder:
         except Exception:  # noqa: BLE001 - prompt count must never break startup
             return 18
 
-    def build_messages(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    def build_messages(self, user_message: str, history: Optional[list[ModelMessage]] = None) -> list[ModelMessage]:
         """Build full message list.
 
         Auto-recalls relevant persistent memories and injects them into the
@@ -267,7 +268,7 @@ class ContextBuilder:
         Returns:
             OpenAI-format message list.
         """
-        messages: List[Dict[str, Any]] = [
+        messages: list[ModelMessage] = [
             {"role": "system", "content": self.build_system_prompt(user_message)},
         ]
         if history:
@@ -308,7 +309,7 @@ class ContextBuilder:
         return messages
 
     @staticmethod
-    def format_tool_result(tool_call_id: str, tool_name: str, result: str) -> Dict[str, Any]:
+    def format_tool_result(tool_call_id: str, tool_name: str, result: str) -> ModelMessage:
         """Format a tool result, preserving local image references as parts."""
         content: Any = result
         try:
@@ -337,7 +338,7 @@ class ContextBuilder:
         content: Optional[str] = None,
         reasoning_content: Optional[str] = None,
         provider_items: Optional[list] = None,
-    ) -> Dict[str, Any]:
+    ) -> ModelMessage:
         """Format an assistant tool_calls message, preserving thinking text.
 
         Args:

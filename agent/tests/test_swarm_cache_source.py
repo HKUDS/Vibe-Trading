@@ -28,7 +28,7 @@ from unittest.mock import patch
 import pytest
 
 from src.agent.llm_usage import _normalize_llm_usage
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmRun, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore

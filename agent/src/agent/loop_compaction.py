@@ -14,6 +14,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from src.kernel import events as vocabulary
 from src.config.accessor import get_env_config
 
 from src.agent.context_budget import (
@@ -426,7 +427,7 @@ class ContextCompactor:
                 "summary": summary,
             },
         )
-        self.owner._emit("item.delta", {"kind": "context.compacted", "tokens_before": tokens_before, "summary": summary[:200]})
+        self.owner._emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.CONTEXT_COMPACTED, "tokens_before": tokens_before, "summary": summary[:200]})
 
         # Reconstruct: system + summary + acknowledge + preserved tail
         state_summary = self.owner.memory.to_summary()

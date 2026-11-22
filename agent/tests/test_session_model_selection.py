@@ -20,7 +20,8 @@ import pytest
 import src.providers.chat as chat_module
 import src.providers.settings as provider_settings
 from src.config.accessor import reset_env_config
-from src.providers.chat import ChatLLM, LLMResponse
+from src.kernel.contracts import LLMResponse
+from src.providers.chat import ChatLLM
 from src.providers.selection import (
     SESSION_CONFIG_KEY,
     ModelSelectionError,
@@ -575,7 +576,7 @@ def test_effective_selection_reports_an_unreadable_stored_one():
 
 def test_context_window_follows_the_session_clients_provider(server_settings, monkeypatch):
     from src.agent.loop import AgentLoop
-    from src.providers.chat import LLMRuntimeSnapshot
+    from src.kernel.contracts import LLMRuntimeSnapshot
 
     # The server is configured for another provider; the catalog scopes this
     # model's 272K window to openai-codex only.

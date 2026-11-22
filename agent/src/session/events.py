@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
 
+from src.kernel import events as vocabulary
 from src.session.thread import ThreadItem, ThreadItemError, ThreadLog
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,7 @@ class EventBus:
             # ring buffer. Keep only live item events so reconnects can retain
             # an in-progress delta while the thread remains the source of
             # truth for everything that completed.
-            if event.seq is None and event.event_type in ITEM_EVENT_TYPES:
+            if event.seq is None and event.event_type in vocabulary.ITEM_EVENT_TYPES:
                 buffer.append(event)
             if len(buffer) > self.max_buffer_size:
                 self._buffers[session_id] = buffer[-self.max_buffer_size:]
@@ -429,27 +430,6 @@ DISPLAY_ITEM_TYPES = frozenset(
     {"turn_start", "user", "assistant", "tool_result", "plan", "question", "compaction", "turn_end"}
 )
 
-ITEM_STARTED = "item.started"
-ITEM_DELTA = "item.delta"
-ITEM_COMPLETED = "item.completed"
-ITEM_EVENT_TYPES = frozenset({ITEM_STARTED, ITEM_DELTA, ITEM_COMPLETED})
-
-RUN_STARTED = "run.started"
-#: ``turn_end`` status -> run event. A turn the process lost (``interrupted``)
-#: is reported as a failure whose ``status`` says so.
-RUN_TERMINAL_EVENTS: Dict[str, str] = {
-    "completed": "run.completed",
-    "failed": "run.failed",
-    "cancelled": "run.cancelled",
-    "interrupted": "run.failed",
-    "waiting_user": "run.waiting_user",
-}
-RUN_EVENT_TYPES = frozenset({RUN_STARTED, *RUN_TERMINAL_EVENTS.values()})
-
-#: Kind of a live item that the thread never recorded (a response the loop
-#: dropped, a call cut off by the end of its turn).
-DISCARDED_KIND = "item.discarded"
-
 # Rank of each event derived from one item, in emission order.
 _STARTED, _COMPLETED, _RUN = 0, 1, 2
 _DURABLE_SUFFIX = {_STARTED: "-started", _COMPLETED: "", _RUN: "-run"}
@@ -497,9 +477,9 @@ def cursor_from_event_id(event_id: Optional[str]) -> Optional[int]:
 
 def _event_key(event: SSEEvent) -> Tuple[int, int]:
     rank = _COMPLETED
-    if event.event_type == ITEM_STARTED:
+    if event.event_type == vocabulary.ITEM_STARTED:
         rank = _STARTED
-    elif event.event_type in RUN_EVENT_TYPES:
+    elif event.event_type in vocabulary.RUN_EVENT_TYPES:
         rank = _RUN
     return (event.seq or 0, rank)
 
@@ -624,8 +604,8 @@ def display_page(
 
 def _type_kinds(item_type: str, status: Optional[str]) -> Tuple[str, str]:
     if item_type == "tool_result":
-        return "tool.started", "tool.completed" if status == "ok" else "tool.failed"
-    return "item.started", "item.completed"
+        return vocabulary.TOOL_STARTED, vocabulary.TOOL_COMPLETED if status == "ok" else vocabulary.TOOL_FAILED
+    return vocabulary.ITEM_STARTED, vocabulary.ITEM_COMPLETED
 
 
 @dataclass
@@ -741,16 +721,16 @@ class ThreadEvents:
             self._pump(session_id, tail)
             if event_type in {"goal.created", "goal.updated", "goal.evidence", "swarm.started", "swarm.event"}:
                 return self.bus.emit(session_id, event_type, payload)
-            if event_type not in ITEM_EVENT_TYPES and event_type not in RUN_EVENT_TYPES:
+            if event_type not in vocabulary.ITEM_EVENT_TYPES and event_type not in vocabulary.RUN_EVENT_TYPES:
                 return None
             item = payload.get("item") or {}
-            if event_type == ITEM_COMPLETED and item.get("type") == "tool_result" and (
+            if event_type == vocabulary.ITEM_COMPLETED and item.get("type") == "tool_result" and (
                 payload.get("attempt_id") or payload.get("turn_id"), item.get("tool_call_id")
             ) in tail.completed_tools:
                 return None
             # A tool callback follows its durable result. Publish it only when
             # no recorder completed the same live item (standalone callers).
-            if event_type == ITEM_COMPLETED and payload.get("live_id") in tail.live_by_seq.values():
+            if event_type == vocabulary.ITEM_COMPLETED and payload.get("live_id") in tail.live_by_seq.values():
                 return None
             event = self._canonical_live_event(session_id, tail, event_type, payload)
             if event is not None:
@@ -895,14 +875,14 @@ class ThreadEvents:
         finished = {
             event.data.get("live_id")
             for event in buffer
-            if event.event_type == ITEM_COMPLETED and event.data.get("live_id")
+            if event.event_type == vocabulary.ITEM_COMPLETED and event.data.get("live_id")
         }
         finished.update(finished_live_ids or set())
         return [
             event for event in buffer[anchor:]
             if event.seq is None
             and not (
-                event.event_type in (ITEM_STARTED, ITEM_DELTA)
+                event.event_type in (vocabulary.ITEM_STARTED, vocabulary.ITEM_DELTA)
                 and event.data.get("live_id") in finished
             )
         ]
@@ -992,7 +972,7 @@ class ThreadEvents:
         events = [
             SSEEvent(
                 event_id=durable_event_id(item.seq, _COMPLETED),
-                event_type=ITEM_COMPLETED,
+                event_type=vocabulary.ITEM_COMPLETED,
                 data=data,
                 session_id=session_id,
                 seq=item.seq,
@@ -1001,7 +981,7 @@ class ThreadEvents:
         run_type = None
         run: Dict[str, Any] = {"turn_id": item.turn_id, "seq": item.seq, "cursor": item.seq}
         if item.type == "turn_start":
-            run_type = RUN_STARTED
+            run_type = vocabulary.RUN_STARTED
             run.update(
                 status="running",
                 started_at=item.ts,
@@ -1010,7 +990,7 @@ class ThreadEvents:
             )
         elif item.type == "turn_end":
             status = item.get("status")
-            run_type = RUN_TERMINAL_EVENTS.get(status, "run.failed")
+            run_type = vocabulary.RUN_TERMINAL_EVENTS.get(status, vocabulary.RUN_FAILED)
             started_at = next(
                 (candidate.ts for candidate in self._read(session_id)
                  if candidate.turn_id == item.turn_id and candidate.type == "turn_start"),
@@ -1081,7 +1061,7 @@ class ThreadEvents:
         if live is None:
             self._publish(
                 session_id,
-                ITEM_STARTED,
+                vocabulary.ITEM_STARTED,
                 {
                     "kind": started_kind,
                     "seq": item.seq,
@@ -1102,9 +1082,9 @@ class ThreadEvents:
     def _discard(self, session_id: str, tail: _Tail, live: _LiveItem) -> None:
         self._publish(
             session_id,
-            ITEM_COMPLETED,
+            vocabulary.ITEM_COMPLETED,
             {
-                "kind": DISCARDED_KIND,
+                "kind": vocabulary.DISCARDED_KIND,
                 "live_id": live.live_id,
                 "turn_id": live.turn_id,
                 "item": {"type": live.type, "turn_id": live.turn_id, "status": "discarded"},
@@ -1137,18 +1117,18 @@ class ThreadEvents:
         kind = payload.get("kind")
         item = payload.get("item") if isinstance(payload.get("item"), dict) else {}
         live_id = payload.get("live_id")
-        if event_type == ITEM_STARTED and not isinstance(live_id, str):
+        if event_type == vocabulary.ITEM_STARTED and not isinstance(live_id, str):
             tail.counter += 1
             live_id = f"{turn_id}:live:{tail.counter}"
             payload["live_id"] = live_id
-        if isinstance(live_id, str) and event_type == ITEM_STARTED:
-            item_type = item.get("type") or ("tool_result" if kind == "tool.started" else "assistant")
+        if isinstance(live_id, str) and event_type == vocabulary.ITEM_STARTED:
+            item_type = item.get("type") or ("tool_result" if kind == vocabulary.TOOL_STARTED else "assistant")
             live = _LiveItem(live_id, str(item_type), turn_id, payload.get("iter"))
             if item_type == "assistant":
                 if tail.assistant is not None:
                     self._discard(session_id, tail, tail.assistant)
                 tail.assistant = live
-            elif kind == "tool.started":
+            elif kind == vocabulary.TOOL_STARTED:
                 call_id = item.get("tool_call_id") or payload.get("call_id")
                 if isinstance(call_id, str):
                     tail.completed_tools.discard((turn_id, call_id))
@@ -1161,6 +1141,6 @@ class ThreadEvents:
                 if isinstance(input_id, str) and isinstance(content, str):
                     tail.inputs.append((input_id, content, live))
             payload["item"] = {"type": item_type, "turn_id": turn_id, "status": "in_progress", **item}
-        if event_type == ITEM_COMPLETED and kind == DISCARDED_KIND:
+        if event_type == vocabulary.ITEM_COMPLETED and kind == vocabulary.DISCARDED_KIND:
             tail.inputs = [entry for entry in tail.inputs if entry[2].live_id != live_id]
         return SSEEvent(event_type=event_type, data=payload, session_id=session_id)

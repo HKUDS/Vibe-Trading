@@ -13,7 +13,7 @@ from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
 from src.agent.tool_loading import loading_policy
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.config.accessor import get_env_config, reset_env_config
 
 pytestmark = pytest.mark.unit

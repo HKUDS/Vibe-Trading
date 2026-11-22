@@ -34,7 +34,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from src.providers.chat import LLMRuntimeSnapshot, reported_model_source
+from src.kernel.contracts import LLMRuntimeSnapshot
+from src.providers.chat import reported_model_source
 from src.providers.content_filter import (
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
     compute_content_filter_warnings,

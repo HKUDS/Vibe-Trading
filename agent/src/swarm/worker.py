@@ -22,7 +22,8 @@ from src.agent.skills import SkillsLoader
 from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.result_artifacts import deliver_tool_result
 from src.config.schema import AgentConfig
-from src.providers.chat import ChatLLM, LLMResponse, ProviderStreamError
+from src.kernel.contracts import LLMResponse
+from src.providers.chat import ChatLLM, ProviderStreamError
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
@@ -232,8 +233,6 @@ def _measure_usage(
         report it and the fallback couldn't compute it either (e.g.
         binary content).
     """
-    from src.providers.chat import LLMResponse
-
     if isinstance(response, LLMResponse) and response.usage_metadata:
         normalized = _normalize_llm_usage(response.usage_metadata)
         if normalized is not None:

@@ -18,7 +18,7 @@ import threading
 import traceback
 import time as _time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, Mapping, Optional
 
 from src.agent.tuning import (
     _stall_timeout_seconds,
@@ -39,7 +39,10 @@ from src.agent.tool_progress import ToolProgress
 from src.agent.tools import ToolRegistry
 from src.core.state import RunStateStore
 from src.goal.context import get_current_goal_context
-from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError, reported_model_source
+from src.kernel.contracts import LLMRuntimeSnapshot, LoopPorts, ModelMessage
+from src.kernel.events import EventSink
+from src.kernel.loop import run_loop
+from src.providers.chat import ChatLLM, ProviderStreamError, reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
@@ -54,7 +57,8 @@ from src.agent.loop_conversation import ConversationState
 from src.agent.loop_usage_state import UsageLedger
 from src.agent.loop_watchdog import StallWatchdog
 from src.agent.loop_compaction import ContextCompactor
-from src.agent.loop_driver import IterationDriver
+from src.agent.loop_driver import IterationSteps
+from src.agent.loop_final import FinalAnswerHandler
 from src.agent.loop_state import TurnSetup, TurnState
 from src.agent.loop_directives import WriteTargetState
 
@@ -96,7 +100,7 @@ class AgentLoop(ToolCallLifecycle):
         registry: ToolRegistry,
         llm: ChatLLM,
         memory: Optional[WorkspaceMemory] = None,
-        event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        event_callback: Optional[EventSink] = None,
         max_iterations: int = 50,
         persistent_memory: Optional[Any] = None,
         cancel_event: Optional[threading.Event] = None,
@@ -140,7 +144,14 @@ class AgentLoop(ToolCallLifecycle):
         self._queued_inputs = queued_inputs
         self._conversation = ConversationState(thread_recorder, queued_inputs)
         self._context_compactor = ContextCompactor(self)
-        self._iteration_driver = IterationDriver(self)
+        steps = IterationSteps(self)
+        self._loop_ports = LoopPorts(
+            prepare_iteration=steps.prepare_iteration,
+            request=steps.request,
+            record_partial=steps.record_partial,
+            after_text=FinalAnswerHandler(self).handle,
+            run_tools=steps.run_tools,
+        )
         self._write_targets = WriteTargetState()
         self.registry = prepare_registry(registry)
         self._hooks = getattr(self.registry, "hooks", None)
@@ -252,7 +263,7 @@ class AgentLoop(ToolCallLifecycle):
         if self._background_manager is not None:
             self._background_manager.cancel_all()
 
-    def _write_run_manifest(self, trace_dir: Path, messages: List[Dict[str, Any]]) -> None:
+    def _write_run_manifest(self, trace_dir: Path, messages: list[ModelMessage]) -> None:
         """Record what methodology produced this run, beside its trace.
 
         Answers "under what system prompt, which skills, and which tool set was
@@ -309,7 +320,7 @@ class AgentLoop(ToolCallLifecycle):
         except Exception as exc:  # noqa: BLE001
             logger.warning("run manifest not written (%s: %s)", type(exc).__name__, exc)
 
-    def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
+    def run(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
 
         Binds ``session_id`` as the active LLM session for the whole run so
@@ -355,7 +366,7 @@ class AgentLoop(ToolCallLifecycle):
             if result is None or result.get("status") not in {"success", "waiting_user"}:
                 self._background_manager.cancel_all()
 
-    def _run_bound(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
+    def _run_bound(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run the ReAct loop with the LLM session already bound.
 
         Args:
@@ -400,12 +411,12 @@ class AgentLoop(ToolCallLifecycle):
         state = setup.state
         assert state is not None
         try:
-            self._iteration_driver.run(state)
+            run_loop(state, self._loop_ports, max_iterations=self.max_iterations)
         except Exception as exc:
             return self._handle_bound_error(exc, setup)
         return self._complete_turn(setup)
 
-    def _prepare_turn(self, user_message: str, history: Optional[List[Dict[str, Any]]], session_id: str) -> TurnSetup:
+    def _prepare_turn(self, user_message: str, history: Optional[list[ModelMessage]], session_id: str) -> TurnSetup:
         """Build run resources and per-turn state before iteration."""
         self.registry = prepare_registry(self.registry)
         if self.memory.session_workspace:

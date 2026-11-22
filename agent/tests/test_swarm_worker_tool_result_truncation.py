@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.config.limits import TOOL_RESULT_LIMIT, truncate_tool_result
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 import src.swarm.worker as worker_mod
 from src.swarm.worker import run_worker

@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from src.kernel import events as vocabulary
 from src.session.checkpoint import ResponseCheckpoint
 from src.session.events import EventBus, ThreadEvents
 from src.session.pending_inputs import (
@@ -861,10 +862,10 @@ class SessionService:
         )
         self.thread_events.emit(
             session_id,
-            "item.started",
+            vocabulary.ITEM_STARTED,
             {
                 "attempt_id": running_turn,
-                "kind": "item.started",
+                "kind": vocabulary.ITEM_STARTED,
                 "live_id": f"input:{pending.input_id}",
                 "item": {
                     "type": "user",
@@ -942,10 +943,10 @@ class SessionService:
         if removed.queued_during:
             self.thread_events.emit(
                 session_id,
-                "item.completed",
+                vocabulary.ITEM_COMPLETED,
                 {
                     "attempt_id": removed.queued_during,
-                    "kind": "item.discarded",
+                    "kind": vocabulary.DISCARDED_KIND,
                     "live_id": f"input:{removed.input_id}",
                     "item": {"type": "user", "input_id": removed.input_id, "status": "discarded"},
                 },
