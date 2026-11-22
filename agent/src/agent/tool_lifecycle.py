@@ -1002,9 +1002,10 @@ class ToolCallLifecycle:
                     continue
         if exc is not None:
             if hooks is not None:
+                failure = json.dumps({"status": "error", "error": str(exc)})
                 hooks.run(
                     "PostToolUse",
-                    {**hook_payload, "result": json.dumps({"status": "error", "error": str(exc)}), "status": "error"},
+                    {**hook_payload, "result": redact_tool_result(failure), "status": "error"},
                 )
             raise exc
         result = result or ""

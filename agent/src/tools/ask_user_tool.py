@@ -4,6 +4,7 @@ import json
 import uuid
 from typing import Any, Callable, Optional
 from src.agent.tools import BaseTool
+from src.tools.redaction import redact_text
 
 class AskUserTool(BaseTool):
     name = "ask_user"
@@ -17,7 +18,12 @@ class AskUserTool(BaseTool):
         if not isinstance(prompt, str) or not prompt.strip() or not isinstance(options, list) or not 2 <= len(options) <= 4 or not all(isinstance(x, str) and x.strip() for x in options):
             return json.dumps({"status": "error", "error": "prompt and 2 to 4 non-empty options are required"})
         question_id = uuid.uuid4().hex
-        question = {"question_id": question_id, "prompt": prompt, "options": options, "allow_free_text": bool(allow_free_text)}
+        question = {
+            "question_id": question_id,
+            "prompt": redact_text(prompt),
+            "options": [redact_text(option) for option in options],
+            "allow_free_text": bool(allow_free_text),
+        }
         if self.event_callback:
             self.event_callback("item.started", {"kind": "item.started", "item": {"type": "question", **question}, "session_id": self.session_id})
         return json.dumps({"status": "waiting_user", **question}, ensure_ascii=False)

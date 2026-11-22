@@ -159,3 +159,25 @@ def test_hook_reason_is_redacted_before_return_and_thread_audit(tmp_path, monkey
     persisted = (tmp_path / "thread.jsonl").read_text()
     assert "hook_decision" in persisted
     assert secret not in persisted
+
+
+def test_post_tool_hook_receives_redacted_worker_exception(monkeypatch):
+    registry = ToolRegistry()
+    registry.register(_ProbeTool())
+    events = []
+
+    def observe(event, payload):
+        events.append((event, payload))
+        return SimpleNamespace(denied=False)
+
+    def fail(*_args):
+        raise RuntimeError("worker failed: api_key=private-exception-value")
+
+    registry.hooks = SimpleNamespace(run=observe)
+    monkeypatch.setattr(registry, "execute", fail)
+    with pytest.raises(RuntimeError, match="worker failed"):
+        _Lifecycle(registry)._invoke_tool("hook_probe", {}, call_id="c1")
+
+    event, payload = events[-1]
+    assert event == "PostToolUse" and payload["status"] == "error"
+    assert json.loads(payload["result"])["error"] == "worker failed: api_key=[redacted]"

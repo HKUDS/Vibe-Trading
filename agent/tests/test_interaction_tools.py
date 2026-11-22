@@ -35,3 +35,17 @@ def test_question_contract_is_waiting_and_cannot_grant_permission():
 def test_contracts_reject_invalid_shapes():
     assert json.loads(PlanTool().execute(steps=[]))["status"] == "error"
     assert json.loads(AskUserTool().execute(prompt="", options=["only"]))["status"] == "error"
+
+
+def test_interaction_previews_and_results_scrub_tool_output():
+    events = []
+    marker = "api_key=private-preview-value"
+
+    def publish(name, data):
+        events.append(data["item"])
+
+    question = json.loads(AskUserTool(event_callback=publish).execute(prompt=marker, options=["plain", marker]))
+    plan = json.loads(PlanTool(event_callback=publish).execute(steps=[{"step": marker, "status": "pending"}]))
+    assert "private-preview-value" not in str([events, question, plan])
+    assert events[0]["options"] == question["options"] == ["plain", "api_key=[redacted]"]
+    assert events[1]["steps"] == plan["steps"] == [{"step": "api_key=[redacted]", "status": "pending"}]

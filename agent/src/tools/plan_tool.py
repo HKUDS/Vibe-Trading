@@ -4,6 +4,7 @@ import json
 import uuid
 from typing import Any, Callable, Optional
 from src.agent.tools import BaseTool
+from src.tools.redaction import redact_text
 
 class PlanTool(BaseTool):
     name = "plan"
@@ -20,7 +21,7 @@ class PlanTool(BaseTool):
         for item in steps:
             if not isinstance(item, dict) or not isinstance(item.get("step"), str) or item.get("status") not in {"pending", "in_progress", "completed", "cancelled"}:
                 return json.dumps({"status": "error", "error": "each step needs step and a valid status"})
-            normalized.append({"step": item["step"], "status": item["status"]})
+            normalized.append({"step": redact_text(item["step"]), "status": item["status"]})
         plan_id = uuid.uuid4().hex
         if self.event_callback:
             self.event_callback("item.started", {"kind": "item.started", "item": {"type": "plan", "plan_id": plan_id, "steps": normalized}, "session_id": self.session_id})
