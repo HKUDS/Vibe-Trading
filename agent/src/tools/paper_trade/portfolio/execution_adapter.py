@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from .data import PreparedPortfolioData
 from .execution_common import _abort, _effective_models, _market_rules
 from .execution_outcome import _bucket_outcome, _validate_replayed_ledger
 from .execution_validation import _preflight_for_bucket, _validate_plan
 from .ledger import LedgerEvent, PortfolioLedger
-from .models import PortfolioRequest
+from .models import Market, PortfolioRequest
 from .numeric import EffectiveFeeModel
 from .orchestrator import (
     ExecutionCancellation,
@@ -33,6 +34,7 @@ class DecimalExecutionAdapter:
 
     fee_models: tuple[EffectiveFeeModel, ...] = ()
     hk_lot_sizes: Mapping[str, int] | None = None
+    limits_clients: Mapping[Market, Any] | None = None
 
     def match(
         self,
@@ -71,6 +73,7 @@ class DecimalExecutionAdapter:
                 entry=entry,
                 rules=rules[bucket.bucket_id],
                 hk_lot_sizes=self.hk_lot_sizes,
+                limits_clients=self.limits_clients,
             )
             fills.extend(bucket_fills)
             rejected.extend(bucket_rejected)

@@ -9,6 +9,7 @@ finite cash.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..rules import MarketRules
 from .data import BucketPreflight
@@ -17,7 +18,7 @@ from .execution_legacy_match import _run_legacy_match
 from .execution_rows import _check_fee, _fill_row, _nonfill_row, _terminal_rows
 from .execution_validation import _target_closes
 from .ledger import BucketLedger, LedgerEvent, PortfolioLedger
-from .models import PortfolioRequest
+from .models import Market, PortfolioRequest
 from .orchestrator import ExecutionCancellation, ExecutionFill, ExecutionRejection
 from .order_plan import PlannedOrder
 from .schema import PortfolioRequestError
@@ -31,13 +32,16 @@ def _bucket_outcome(
     entry: BucketPreflight,
     rules: MarketRules,
     hk_lot_sizes: Mapping[str, int] | None,
+    limits_clients: Mapping[Market, Any] | None = None,
 ) -> tuple[
     tuple[ExecutionFill, ...],
     tuple[ExecutionRejection, ...],
     tuple[ExecutionCancellation, ...],
     tuple[LedgerEvent, ...],
 ]:
-    legacy = _run_legacy_match(bucket, request, entry, rules, orders, hk_lot_sizes)
+    legacy = _run_legacy_match(
+        bucket, request, entry, rules, orders, hk_lot_sizes, limits_clients
+    )
     closes = _target_closes(bucket, entry)
     rows = _terminal_rows(legacy, bucket, orders, request.trade_date.isoformat())
     running_cash = {bucket.bucket_id: bucket.cash}

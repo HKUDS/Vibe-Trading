@@ -3,12 +3,15 @@
 ``_run_legacy_match`` calls ``engine.run_day_loop`` through the legacy
 engine MODULE ATTRIBUTE so monkeypatching ``engine.run_day_loop`` keeps
 intercepting, and aborts on any engine fault, in-band error, skipped day
-or post-fill FX conversion. ``limits_client=None`` is preserved verbatim.
+or post-fill FX conversion. Only a cn_a bucket consumes the optional
+``limits_clients`` mapping (hk/us never look up cn_a limits); the default
+``None`` keeps the engine's frozen board heuristic unchanged.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from .. import engine
 from ..rules import MarketRules
@@ -16,7 +19,7 @@ from ..schema import AccountState, Order, Position
 from .data import BucketPreflight
 from .execution_common import _PreparedDayCalendar, _abort
 from .ledger import BucketLedger
-from .models import PortfolioRequest
+from .models import Market, PortfolioRequest
 from .order_plan import PlannedOrder
 
 
@@ -54,8 +57,14 @@ def _run_legacy_match(
     rules: MarketRules,
     orders: Sequence[PlannedOrder],
     hk_lot_sizes: Mapping[str, int] | None,
+    limits_clients: Mapping[Market, Any] | None = None,
 ) -> engine.MatchOutcome:
     day = request.trade_date.isoformat()
+    limits_client = (
+        limits_clients.get("cn_a")
+        if bucket.market == "cn_a" and limits_clients is not None
+        else None
+    )
     try:
         outcome = engine.run_day_loop(
             market=bucket.market,
@@ -66,7 +75,7 @@ def _run_legacy_match(
             market_data=entry.market_data,
             fee_model=dict(rules.effective_fee_model),
             calendar_client=_bucket_day_calendar(entry) if bucket.market == "cn_a" else None,
-            limits_client=None,
+            limits_client=limits_client,
             corporate_action_unresolved_by_day=entry.corporate_actions.unresolved_by_day,
             hk_lot_sizes=hk_lot_sizes,
         )

@@ -416,6 +416,7 @@ def run_portfolio_step(
     loaders: Mapping[Market, Any],
     calendar_client: Any = None,
     ch_clients: Mapping[Market, Any] | None = None,
+    limits_clients: Mapping[Market, Any] | None = None,
     hk_lot_sizes: Mapping[str, int] | None = None,
     observer: StageObserver | None = None,
 ) -> PortfolioStepResult:
@@ -426,6 +427,11 @@ def run_portfolio_step(
     loaded and preflighted before the fixed orchestration starts; the
     orchestrator's own preflight stage then asserts that same prepared bundle,
     so no bucket can fetch or match ahead of an earlier validation failure.
+
+    ``limits_clients`` optionally injects per-market price-limit clients into
+    the legacy engine; only the cn_a entry is consumed (hk/us have no cn_a
+    limit lookups) and the default None keeps the frozen board heuristic.
+    Limit provenance stays engine-internal and never enters the document.
 
     Per-order rejects/cancels are ordinary rows with ``complete=False``.
     Validation, data, execution-adapter or internal identity faults raise and
@@ -478,6 +484,7 @@ def run_portfolio_step(
             execution=DecimalExecutionAdapter(
                 fee_models=fee_models,
                 hk_lot_sizes=hk_lot_sizes,
+                limits_clients=limits_clients,
             ),
             valuation=MarksValuation(marks=_valuation_marks(prepared)),
         ),
