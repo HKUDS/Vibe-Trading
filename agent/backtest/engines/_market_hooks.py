@@ -549,8 +549,8 @@ def calc_crypto_funding_fee(
             settlement count comes from the span (``max(1, span // 8)`` per
             bar), because a daily bar can never land on the 8h/16h slots:
             without this a daily-bar run charges a third of the documented
-            funding model (#1290). Narrower bars keep the slot logic below
-            unchanged.
+            funding model (#1290). Narrower known bars settle only on the
+            0h/8h/16h slots. Unknown intervals retain the daily fallback.
 
     Returns:
         Fee amount (positive = longs pay, negative = longs receive).
@@ -573,6 +573,10 @@ def calc_crypto_funding_fee(
         if key in applied_set:
             return 0.0
         applied_set.add(key)
+    elif bar_span_hours is not None:
+        # Known intraday bars settle only at the documented slots. A daily
+        # fallback would add a fourth charge on the first off-slot bar.
+        return 0.0
     else:
         day_key = (symbol, current_date)
         if day_key in daily_done_set:
