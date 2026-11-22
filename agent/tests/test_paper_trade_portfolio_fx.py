@@ -39,7 +39,9 @@ def _snapshot(
 
 
 def _bucket(bucket_id: str, market: str, currency: Currency, cash: str) -> PortfolioBucket:
-    return PortfolioBucket(bucket_id=bucket_id, market=market, currency=currency, cash=cash)
+    return PortfolioBucket(
+        bucket_id=bucket_id, market=market, currency=currency, cash=cash, positions=()
+    )
 
 
 def _request(

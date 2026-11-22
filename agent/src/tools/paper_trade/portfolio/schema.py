@@ -59,6 +59,8 @@ def _check_bucket_currency(bucket: JsonObject, path: str) -> None:
             _reject("non_hkd_hk_counter", f"{path}.fee_model.currency", bucket_id=identity)
         if fee_currency != currency:
             _reject("invalid_fee_currency", f"{path}.fee_model.currency", bucket_id=identity)
+    if "positions" not in bucket:
+        _reject("missing_positions", f"{path}.positions", bucket_id=identity)
     positions = _items(bucket.get("positions")) or []
     for index, raw_position in enumerate(positions):
         position = _object(raw_position)

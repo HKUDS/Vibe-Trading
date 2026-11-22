@@ -67,6 +67,7 @@ def _request(sessions: tuple[MarketSession, ...]) -> PortfolioRequest:
                     market="us",
                     currency="USD",
                     cash="3000.00",
+                    positions=(),
                 ),
             )
         ),

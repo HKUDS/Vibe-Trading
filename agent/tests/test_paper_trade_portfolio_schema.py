@@ -420,6 +420,70 @@ def test_packaged_contract_validates_the_three_market_request() -> None:
         assert errors == [], (contract_path, errors)
 
 
+def test_positions_is_required_at_runtime_and_json_schema() -> None:
+    # Given a request bucket whose positions key was omitted entirely.
+    payload = _valid_payload()
+    del payload["portfolio_state"]["buckets"][0]["positions"]
+
+    # When / Then the runtime parser rejects the omission at the bucket boundary.
+    _assert_invalid(
+        payload,
+        reason="missing_positions",
+        path="portfolio_state.buckets[0].positions",
+        bucket_id="cn",
+    )
+
+    # And both independently reachable request contracts require the same key.
+    for contract_path in (CONTRACT_PATH, MIRROR_CONTRACT_PATH):
+        document = json.loads(contract_path.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(
+            document["schemas"]["request"],
+            format_checker=FormatChecker(),
+        )
+        errors = list(validator.iter_errors(payload))
+        bucket_errors = [
+            error
+            for error in errors
+            if tuple(error.absolute_path) == ("portfolio_state", "buckets", 0)
+        ]
+        assert any(
+            error.validator == "required" and "positions" in error.validator_value
+            for error in bucket_errors
+        ), (contract_path, errors)
+
+    # When the key is present but empty, the parser and both contracts accept it.
+    payload["portfolio_state"]["buckets"][0]["positions"] = []
+    request = parse_portfolio_request(payload)
+    assert request.portfolio_state.buckets[0].positions == ()
+    for contract_path in (CONTRACT_PATH, MIRROR_CONTRACT_PATH):
+        document = json.loads(contract_path.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(
+            document["schemas"]["request"],
+            format_checker=FormatChecker(),
+        )
+        assert list(validator.iter_errors(payload)) == [], contract_path
+
+    # And a result bucket row never gains a positions requirement.
+    result_schema = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))["schemas"]["result"]
+    bucket_result_schema = {"$ref": "#/$defs/bucketResult", "$defs": result_schema["$defs"]}
+    bucket_result = {
+        "bucket_id": "cn",
+        "market": "cn_a",
+        "currency": "CNY",
+        "session": {
+            "market": "cn_a",
+            "status": "open",
+            "source": "caller-calendar",
+            "as_of": "2026-11-13T01:00:00+00:00",
+        },
+        "cash": "100000.00",
+        "position_value": "0",
+        "nav_base": "0",
+    }
+    assert "positions" not in result_schema["$defs"]["bucketResult"]["required"]
+    assert list(Draft202012Validator(bucket_result_schema).iter_errors(bucket_result)) == []
+
+
 def test_packaged_contract_and_published_mirror_are_byte_identical() -> None:
     # Given the packaged loader path and independent repository mirror.
     packaged = CONTRACT_PATH.read_bytes()

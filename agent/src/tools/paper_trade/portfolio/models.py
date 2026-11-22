@@ -83,7 +83,7 @@ class PortfolioBucket(PortfolioModel):
     market: Market
     currency: Currency
     cash: DecimalString
-    positions: tuple[PortfolioPosition, ...] = ()
+    positions: tuple[PortfolioPosition, ...]
     fee_model: FeeModel | None = None
 
 

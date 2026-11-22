@@ -55,7 +55,7 @@ def _request() -> PortfolioRequest:
                 bucket_id="hk", market="hk", currency="HKD", cash="2000.00",
                 positions=(PortfolioPosition(symbol="0700.HK", qty=7, avg_cost="300", currency="HKD"),),
             ),
-            PortfolioBucket(bucket_id="us", market="us", currency="USD", cash="3000.00"),
+            PortfolioBucket(bucket_id="us", market="us", currency="USD", cash="3000.00", positions=()),
         )),
         sessions=(
             MarketSession(market="cn_a", status="open", source="cn-calendar", as_of=AS_OF),
