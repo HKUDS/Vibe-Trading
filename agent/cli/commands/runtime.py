@@ -1,0 +1,5200 @@
+#!/usr/bin/env python3
+"""Vibe-Trading CLI for natural-language finance research and backtesting.
+
+Usage:
+    vibe-trading                           Interactive mode (default)
+    vibe-trading -p "Backtest AAPL MACD"   Single run
+    vibe-trading serve --port 8899         Start API server
+    vibe-trading chat                      Interactive mode
+    vibe-trading list                      List runs
+    vibe-trading show <run_id>             Show run details
+"""
+
+from __future__ import annotations
+
+# ruff: noqa: E402
+
+import argparse
+import csv
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+import warnings
+warnings.filterwarnings("ignore", message=".*Importing verbose from langchain.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain")
+
+for _s in ("stdout", "stderr"):
+    _r = getattr(getattr(sys, _s, None), "reconfigure", None)
+    if callable(_r):
+        _r(encoding="utf-8", errors="replace")
+
+from rich import box
+from rich.columns import Columns
+from rich.live import Live
+from rich.markup import escape as rich_escape
+from rich.panel import Panel
+from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
+
+from cli.theme import get_console
+from src.config.accessor import get_env_config, reset_env_config
+from src.config.paths import (
+    get_runs_dir,
+    get_sessions_dir,
+    get_swarm_runs_dir,
+    get_uploads_dir,
+)
+
+console = get_console()
+# AGENT_DIR is a code location (frontend defaults, dev-server cwd). State
+# lives under the user-level runtime root, never relative to the code (#904).
+AGENT_DIR = Path(__file__).resolve().parents[1]
+RUNS_DIR = get_runs_dir()
+SWARM_DIR = get_swarm_runs_dir()
+SESSIONS_DIR = get_sessions_dir()
+UPLOADS_DIR = get_uploads_dir()
+
+EXIT_SUCCESS = 0
+EXIT_RUN_FAILED = 1
+EXIT_USAGE_ERROR = 2
+
+# Rows printed by `vibe-trading portfolio show` before the combined-holdings table is cut.
+_PORTFOLIO_CLI_MAX_HOLDINGS = 25
+RICH_TAG_PATTERN = re.compile(r"\[/?[^\]]+\]")
+SWARM_RUN_USAGE = """--swarm-run PRESET '{"k":"v"}'"""
+SWARM_RUN_VARS_PREVIEW_CHARS = 80
+
+from cli._version import __version__ as _VERSION  # noqa: E402 — single source of truth
+
+if TYPE_CHECKING:
+    from src.agent.loop import AgentLoop
+
+# Agent color assignments for swarm display
+_AGENT_STYLES = ["cyan", "magenta", "green", "yellow", "blue", "bright_red", "bright_cyan", "bright_magenta"]
+_agent_color_map: dict[str, str] = {}
+
+
+def _truncate_swarm_vars_preview(value: str) -> str:
+    """Return a compact preview for a CLI JSON token."""
+    if len(value) <= SWARM_RUN_VARS_PREVIEW_CHARS:
+        return value
+    return value[: SWARM_RUN_VARS_PREVIEW_CHARS - 3] + "..."
+
+
+def _print_swarm_vars_json_error(vars_json: str, exc: json.JSONDecodeError) -> None:
+    """Print actionable JSON diagnostics for ``--swarm-run`` vars."""
+    preview = rich_escape(_truncate_swarm_vars_preview(vars_json))
+    console.print(
+        "[red]Invalid JSON for --swarm-run VARS.[/red]\n"
+        f"Offending string: {preview}\n"
+        f"JSON parse error: {rich_escape(str(exc))}\n"
+        f"Correct usage: {SWARM_RUN_USAGE}\n"
+        "shell quoting is the usual culprit; wrap the JSON in single quotes."
+    )
+
+
+def _parse_swarm_run_args(values: list[str]) -> tuple[str, Optional[str]] | None:
+    """Validate ``--swarm-run`` values before starting the swarm."""
+    if len(values) > 2:
+        extras = ", ".join(rich_escape(repr(token)) for token in values[2:])
+        console.print(
+            "[red]Invalid --swarm-run arguments:[/red] "
+            f"unexpected extra token(s): {extras}\n"
+            f"Correct usage: {SWARM_RUN_USAGE}"
+        )
+        return None
+
+    preset = values[0]
+    vars_json = values[1] if len(values) > 1 else None
+    if vars_json:
+        try:
+            json.loads(vars_json)
+        except json.JSONDecodeError as exc:
+            _print_swarm_vars_json_error(vars_json, exc)
+            return None
+    return preset, vars_json
+
+def serve_main(argv: list[str] | None = None) -> int:
+    """Delegate server startup to api_server."""
+    from api_server import serve_main as api_serve_main
+
+    return api_serve_main(argv)
+
+
+def _strip_rich_tags(text: str) -> str:
+    """Remove Rich markup from plain-text output."""
+    return RICH_TAG_PATTERN.sub("", text)
+
+
+def _print_json_result(result: dict) -> None:
+    """Print a machine-readable run summary."""
+    payload = {
+        "status": result.get("status", "unknown"),
+        "run_id": result.get("run_id"),
+        "run_dir": result.get("run_dir"),
+        "reason": result.get("reason"),
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+
+
+def _result_exit_code(result: dict) -> int:
+    """Map run results to stable exit codes."""
+    return EXIT_SUCCESS if result.get("status") == "success" else EXIT_RUN_FAILED
+
+
+def _coerce_exit_code(value: Optional[int]) -> int:
+    """Normalize command return values to an integer exit code."""
+    return EXIT_SUCCESS if value is None else int(value)
+
+
+def _read_prompt_source(
+    prompt: Optional[str],
+    prompt_file: Optional[Path],
+    *,
+    no_rich: bool,
+    allow_interactive: bool = True,
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve prompt text from CLI args, file, stdin, or interactive input."""
+    if prompt is not None:
+        return prompt.strip(), None
+
+    if prompt_file is not None:
+        try:
+            return prompt_file.read_text(encoding="utf-8").strip(), None
+        except OSError as exc:
+            return None, f"Failed to read prompt file: {exc}"
+
+    if not sys.stdin.isatty():
+        return sys.stdin.read().strip(), None
+
+    if not allow_interactive:
+        return None, "A prompt is required."
+
+    try:
+        if no_rich:
+            return input("Enter strategy request: ").strip(), None
+        return Prompt.ask("Enter strategy request").strip(), None
+    except (EOFError, KeyboardInterrupt):
+        return None, "Prompt input cancelled."
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _read_json(path: Path) -> dict:
+    """Safely read JSON."""
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _read_metrics(path: Path) -> dict:
+    """Read metrics from metrics.csv, return formatted string dict."""
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            return {}
+        out = {}
+        for k, v in rows[0].items():
+            if not v:
+                continue
+            try:
+                fv = float(v)
+                out[k] = f"{fv:.4f}" if abs(fv) < 100 else f"{fv:.0f}"
+            except ValueError:
+                out[k] = v
+        return out
+    except Exception:
+        return {}
+
+
+def _read_metric_values(path: Path) -> dict[str, float]:
+    """Read metrics.csv as raw floats, for callers that must do arithmetic.
+
+    ``_read_metrics`` above pre-formats every value into a display string, so a
+    caller that renders a ratio as a percentage cannot use it. An empty result
+    also serves as the "this turn produced no backtest" signal.
+    """
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            row = next(csv.DictReader(handle), None) or {}
+    except (OSError, csv.Error):
+        return {}
+    values: dict[str, float] = {}
+    for key, value in row.items():
+        try:
+            values[str(key)] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def _status_style(status: str) -> str:
+    """Return a consistent Rich color for status labels."""
+    return {
+        "success": "green",
+        "completed": "green",
+        "ready": "green",
+        "running": "cyan",
+        "failed": "red",
+        "error": "red",
+        "cancelled": "yellow",
+        "warning": "yellow",
+    }.get((status or "").lower(), "dim")
+
+
+def _format_seconds(seconds: float) -> str:
+    """Format elapsed seconds for compact terminal display."""
+    total = max(0, int(seconds))
+    mins, secs = divmod(total, 60)
+    if mins >= 60:
+        hours, mins = divmod(mins, 60)
+        return f"{hours:d}h {mins:02d}m"
+    if mins:
+        return f"{mins:d}m {secs:02d}s"
+    return f"{secs:d}s"
+
+
+def _state_badge(value: str | None, *, ready_label: str = "READY") -> str:
+    """Render a compact terminal status badge."""
+    return f"[black on green] {ready_label} [/]" if value else "[black on yellow] MISSING [/]"
+
+
+def _terminal_width() -> int:
+    """Return the active console width with a conservative fallback."""
+    try:
+        return max(40, int(console.size.width))
+    except Exception:
+        return 80
+
+
+def _ensure_cli_env() -> None:
+    """Load dotenv values before a CLI path reads configuration."""
+    try:
+        from src.providers.settings import _ensure_dotenv
+
+        _ensure_dotenv()
+    except Exception:
+        pass
+
+
+def _provider_key_env(provider: str | None) -> str | None:
+    """Return the credential environment variable for a provider."""
+    return {
+        "openrouter": "OPENROUTER_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
+        "nvidia-nim": "NVIDIA_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "novita": "NOVITA_API_KEY",
+        "dashscope": "DASHSCOPE_API_KEY",
+        "qwen": "DASHSCOPE_API_KEY",
+        "zhipu": "ZHIPU_API_KEY",
+        "moonshot": "MOONSHOT_API_KEY",
+        "minimax": "MINIMAX_API_KEY",
+        "mimo": "MIMO_API_KEY",
+        "spark": "SPARK_API_KEY",
+        "iflytek": "SPARK_API_KEY",
+        "zai": "ZAI_API_KEY",
+        "modelscope": "MODELSCOPE_API_KEY",
+    }.get((provider or "").lower())
+
+
+def _provider_base_env(provider: str | None) -> str | None:
+    """Return the base URL environment variable for a provider."""
+    return {
+        "openrouter": "OPENROUTER_BASE_URL",
+        "openai": "OPENAI_BASE_URL",
+        "openai-codex": "OPENAI_CODEX_BASE_URL",
+        "deepseek": "DEEPSEEK_BASE_URL",
+        "nvidia": "NVIDIA_BASE_URL",
+        "nvidia-nim": "NVIDIA_BASE_URL",
+        "gemini": "GEMINI_BASE_URL",
+        "groq": "GROQ_BASE_URL",
+        "novita": "NOVITA_BASE_URL",
+        "dashscope": "DASHSCOPE_BASE_URL",
+        "qwen": "DASHSCOPE_BASE_URL",
+        "zhipu": "ZHIPU_BASE_URL",
+        "moonshot": "MOONSHOT_BASE_URL",
+        "minimax": "MINIMAX_BASE_URL",
+        "mimo": "MIMO_BASE_URL",
+        "spark": "SPARK_BASE_URL",
+        "iflytek": "SPARK_BASE_URL",
+        "zai": "ZAI_BASE_URL",
+        "modelscope": "MODELSCOPE_BASE_URL",
+        "ollama": "OLLAMA_BASE_URL",
+    }.get((provider or "").lower())
+
+
+def _clip_inline(text: str, limit: int) -> str:
+    """Collapse whitespace and clip text for single-line terminal cells."""
+    clipped = " ".join(str(text or "").split())
+    if len(clipped) <= limit:
+        return clipped
+    return clipped[: max(0, limit - 3)] + "..."
+
+
+def _metric_value_style(key: str, value: str) -> str:
+    """Return a compact color style for numeric metric values."""
+    if key in {"total_return", "sharpe", "excess_return", "information_ratio"}:
+        try:
+            return "green" if float(value) >= 0 else "red"
+        except (TypeError, ValueError):
+            return "white"
+    if key == "max_drawdown":
+        return "yellow"
+    return "white"
+
+
+_SPINNER_GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+class _RunDashboard:
+    """Render a compact live view for a single agent run."""
+
+    def __init__(self, prompt: str, max_iter: int) -> None:
+        self.prompt = prompt
+        self.max_iter = max_iter
+        self.start_time = time.monotonic()
+        self.iterations = 0
+        self.current_tool = "thinking"
+        self.current_args = ""
+        self.latest_text = ""
+        self.timeline: list[tuple[str, str, str, float, str]] = []
+        self.status = "running"
+        self.live: Optional[Live] = None
+        # Per-tool live feedback keyed by tool name. Supports parallel
+        # readonly batches (loop._execute_parallel runs up to 8 tools in
+        # ThreadPoolExecutor and each gets its own HeartbeatTimer). Each
+        # entry: {start_ts, elapsed_s, stage, current, total, message,
+        # prev_stage, stage_started_at}.
+        self.tool_active: dict[str, dict[str, Any]] = {}
+        self._spinner_idx = 0
+        self._last_progress_render: float = 0.0
+
+    def refresh(self) -> None:
+        """Refresh the live display when attached to a Rich Live context."""
+        if self.live is not None:
+            self.live.update(self.render())
+
+    def _ensure_entry(self, tool: str) -> dict[str, Any]:
+        """Return the active per-tool entry, creating it on first use."""
+        entry = self.tool_active.get(tool)
+        if entry is None:
+            entry = {
+                "start_ts": time.monotonic(),
+                "elapsed_s": 0.0,
+                "stage": "",
+                "current": None,
+                "total": None,
+                "message": "",
+                "prev_stage": None,
+                "stage_started_at": time.monotonic(),
+            }
+            self.tool_active[tool] = entry
+        return entry
+
+    def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        """Update the dashboard from AgentLoop UI events."""
+        if event_type == "text_delta":
+            delta = data.get("delta", "")
+            if delta:
+                self.latest_text = (self.latest_text + delta).strip()[-260:]
+                self.refresh()
+            return
+
+        if event_type == "thinking_done":
+            self.current_tool = "thinking"
+            self.current_args = ""
+            self.refresh()
+            return
+
+        if event_type == "tool_call":
+            tool = data.get("tool", "")
+            args = data.get("arguments", {})
+            self.iterations += 1
+            self.current_tool = tool or "tool"
+            self.current_args = _strip_rich_tags(_format_tool_call_args(tool, args)).strip()
+            # If the prior timeline row is still "running" with no active
+            # entry in self.tool_active (i.e. its HeartbeatTimer is gone but
+            # no tool_result arrived), downgrade it to a warning (H2). Skip
+            # this when a parallel batch is still in flight — sibling tools
+            # legitimately remain "running" while a new call lands.
+            if self.timeline and self.timeline[-1][0] == "running":
+                prev_status, prev_tool, prev_args, _prev_el, _prev_pre = self.timeline[-1]
+                if prev_tool not in self.tool_active:
+                    self.timeline[-1] = (
+                        "warning",
+                        prev_tool,
+                        prev_args,
+                        0.0,
+                        "no result event",
+                    )
+            # Reset per-tool state on each call (handles repeat invocations).
+            now = time.monotonic()
+            self.tool_active[self.current_tool] = {
+                "start_ts": now,
+                "elapsed_s": 0.0,
+                "stage": "",
+                "current": None,
+                "total": None,
+                "message": "",
+                "prev_stage": None,
+                "stage_started_at": now,
+            }
+            self.timeline.append(("running", self.current_tool, self.current_args, 0.0, ""))
+            self.timeline = self.timeline[-8:]
+            self.refresh()
+            return
+
+        if event_type == "tool_heartbeat":
+            # Keepalive while a long tool runs. Updates elapsed in-place.
+            tool = data.get("tool") or self.current_tool
+            entry = self._ensure_entry(tool)
+            entry["elapsed_s"] = float(data.get("elapsed_s", 0) or 0)
+            self.refresh()
+            return
+
+        if event_type == "tool_progress":
+            # Structured stage/current/total emitted from the tool.
+            tool = data.get("tool") or self.current_tool
+            entry = self._ensure_entry(tool)
+            stage = str(data.get("stage", "") or "")
+            if stage and stage != entry.get("stage"):
+                entry["prev_stage"] = entry.get("stage") or None
+                entry["stage_started_at"] = time.monotonic()
+            entry["stage"] = stage
+            entry["current"] = data.get("current")
+            entry["total"] = data.get("total")
+            entry["message"] = str(data.get("message", "") or "")
+            elapsed = data.get("elapsed_s")
+            if elapsed is not None:
+                entry["elapsed_s"] = float(elapsed)
+            # Throttle redraws so a chatty tool can't peg the renderer (M1).
+            now = time.monotonic()
+            if now - self._last_progress_render >= 0.25:
+                self._last_progress_render = now
+                self.refresh()
+            return
+
+        if event_type == "tool_result":
+            tool = data.get("tool", self.current_tool)
+            status = data.get("status", "ok")
+            elapsed_s = float(data.get("elapsed_ms", 0) or 0) / 1000
+            preview = _strip_rich_tags(_format_tool_result_preview(tool, status, data.get("preview", "")))
+            row_status = "success" if status == "ok" else "failed"
+            # Find the matching running row for this tool (may not be the last
+            # row when tools run in parallel).
+            matched = False
+            for idx in range(len(self.timeline) - 1, -1, -1):
+                row = self.timeline[idx]
+                if row[0] == "running" and row[1] == tool:
+                    self.timeline[idx] = (row_status, tool, row[2], elapsed_s, preview)
+                    matched = True
+                    break
+            if not matched:
+                self.timeline.append((row_status, tool, "", elapsed_s, preview))
+            self.timeline = self.timeline[-8:]
+            # Drop the per-tool entry so it disappears from the active list.
+            self.tool_active.pop(tool, None)
+            if not self.tool_active:
+                self.current_tool = "thinking"
+                self.current_args = ""
+            self.refresh()
+            return
+
+        if event_type == "compact":
+            tokens = data.get("tokens_before", "?")
+            self.timeline.append(("warning", "context", "", 0.0, f"compressed after {tokens} tokens"))
+            self.timeline = self.timeline[-8:]
+            self.refresh()
+
+    def _render_progress_row(
+        self,
+        tool: str,
+        entry: Dict[str, Any],
+        spinner: str,
+        bar_width: int,
+        compact: bool,
+        detail_width: int,
+    ) -> str:
+        """Render a single active-tool progress row for the Current grid."""
+        stage = str(entry.get("stage") or "")
+        current_val = entry.get("current")
+        total_val = entry.get("total")
+        message = str(entry.get("message") or "")
+        elapsed_s = float(entry.get("elapsed_s") or 0.0)
+        has_count = (
+            isinstance(current_val, int)
+            and isinstance(total_val, int)
+            and total_val > 0
+        )
+        has_structured = bool(stage or has_count or message)
+        if not has_structured and elapsed_s <= 0:
+            return ""
+        if not has_structured:
+            # Heartbeat-only fallback. No bar, no decimal precision (L4).
+            plain = f"{spinner} {tool} · still running… {elapsed_s:.0f}s elapsed"
+            return f"[dim]{_clip_inline(plain, detail_width)}[/dim]"
+        # Build a plain prefix + dim suffix so markup survives clipping.
+        prefix_plain_parts: list[str] = [spinner]
+        prefix_styled_parts: list[str] = [f"[cyan]{spinner}[/cyan]"]
+        if stage:
+            prefix_plain_parts.append(stage)
+            prefix_styled_parts.append(f"[bold cyan]{stage}[/bold cyan]")
+        if has_count:
+            filled = max(0, min(bar_width, int(bar_width * current_val / total_val)))
+            bar = "#" * filled + "-" * (bar_width - filled)
+            prefix_plain_parts.append(f"[{bar}]")
+            prefix_styled_parts.append(f"[cyan]\\[{bar}][/cyan]")
+            count_str = f"{current_val}/{total_val}"
+            prefix_plain_parts.append(count_str)
+            prefix_styled_parts.append(f"[cyan]{count_str}[/cyan]")
+        else:
+            prefix_plain_parts.append(f"{elapsed_s:.1f}s")
+            prefix_styled_parts.append(f"[cyan]{elapsed_s:.1f}s[/cyan]")
+        prefix_plain = " ".join(prefix_plain_parts)
+        prefix_styled = " ".join(prefix_styled_parts)
+        suffix_plain_parts: list[str] = []
+        if message:
+            suffix_plain_parts.append(f"· {message}")
+        # ETA: only when count is known, we're past ~10% and at least 3 units,
+        # and the stage hasn't just changed (L1). Suppressed in compact mode.
+        if has_count and not compact and current_val >= 3 and current_val >= total_val * 0.1:
+            stage_started_at = entry.get("stage_started_at")
+            prev_stage = entry.get("prev_stage")
+            stable_stage = (
+                prev_stage is None
+                or (
+                    stage_started_at is not None
+                    and (time.monotonic() - float(stage_started_at)) >= 1.0
+                )
+            )
+            if stable_stage and elapsed_s > 0:
+                try:
+                    eta = (elapsed_s / current_val) * (total_val - current_val)
+                except ZeroDivisionError:
+                    eta = 0.0
+                if eta > 0 and eta == eta:  # NaN check
+                    suffix_plain_parts.append(f"· ~{eta:.0f}s left")
+        suffix_plain = " ".join(suffix_plain_parts)
+        # Clip the dim suffix to whatever space is left after the prefix.
+        remaining = max(0, detail_width - len(prefix_plain) - 1)
+        if suffix_plain and remaining > 4:
+            clipped_suffix = _clip_inline(suffix_plain, remaining)
+            return f"{prefix_styled} [dim]{clipped_suffix}[/dim]"
+        return prefix_styled
+
+    def render(self) -> Panel:
+        """Build the Rich renderable shown while the run is active."""
+        term_width = _terminal_width()
+        compact = term_width < 86
+        content_width = max(32, term_width - (6 if compact else 10))
+        elapsed = _format_seconds(time.monotonic() - self.start_time)
+        prompt_preview = _clip_inline(self.prompt, min(96, max(22, content_width - 12)))
+
+        meta = Table.grid(expand=True)
+        meta.add_column(ratio=1)
+        progress = min(1.0, self.iterations / max(1, self.max_iter))
+        bar_width = 12 if compact else 20
+        filled = max(1, int(progress * bar_width)) if self.iterations else 0
+        bar = "#" * filled + "-" * (bar_width - filled)
+        progress_text = f"[cyan]{elapsed}[/cyan]  [dim]{bar} {self.iterations}/{self.max_iter}[/dim]"
+        if compact:
+            meta.add_row("[bold cyan]Running agent[/bold cyan]")
+            meta.add_row(progress_text)
+            meta.add_row(f"[dim]Request: {prompt_preview}[/dim]")
+        else:
+            meta.add_column(justify="right")
+            meta.add_row("[bold cyan]Running agent[/bold cyan]", progress_text)
+            meta.add_row(f"[dim]Request: {prompt_preview}[/dim]", "")
+
+        current = Table.grid(expand=True)
+        current.add_column(width=8 if compact else 9, style="dim")
+        current.add_column(ratio=1)
+        tool_label = self.current_tool
+        if self.current_args:
+            tool_label = f"{tool_label} [dim]{_clip_inline(self.current_args, max(20, content_width - 18))}[/dim]"
+        current.add_row("Current", f"[cyan]{tool_label}[/cyan]")
+        # One row per active tool (caps at 3 to keep dashboard height bounded).
+        # Snapshot via list(...) first: Rich's refresh thread calls render()
+        # concurrently with heartbeat/worker threads mutating self.tool_active,
+        # so a bare ``.items()`` would race and may raise "dictionary changed
+        # size during iteration". list() materialization is GIL-atomic.
+        active_entries = sorted(
+            list(self.tool_active.items()), key=lambda kv: kv[1].get("start_ts", 0.0)
+        )
+        if len(active_entries) > 3:
+            active_entries = active_entries[:3]
+        # Advance the spinner once per render so all active rows step together.
+        self._spinner_idx = (self._spinner_idx + 1) % len(_SPINNER_GLYPHS)
+        spinner = _SPINNER_GLYPHS[self._spinner_idx]
+        bar_width = 6 if compact else 8
+        detail_width = max(20, content_width - 18)
+        for tool, entry in active_entries:
+            row_text = self._render_progress_row(
+                tool, entry, spinner, bar_width, compact, detail_width
+            )
+            if row_text:
+                current.add_row("Progress", row_text)
+
+        timeline = Table(
+            box=box.SIMPLE,
+            show_header=True,
+            header_style="dim",
+            padding=(0, 1),
+            expand=True,
+        )
+        timeline.add_column("State", width=7 if compact else 8, no_wrap=True)
+        timeline.add_column("Tool", width=12 if compact else 20, no_wrap=True)
+        timeline.add_column("Time", width=6 if compact else 8, justify="right")
+        timeline.add_column("Detail", ratio=1, overflow="fold")
+        rows = self.timeline[-6:] or [("running", "waiting", "", 0.0, "starting")]
+        for status, tool, args, elapsed_s, preview in rows:
+            style = _status_style(status)
+            label = "running" if status == "running" else ("ok" if status == "success" else "check")
+            detail = _clip_inline(preview or args, max(18, content_width - (35 if compact else 48)))
+            timeline.add_row(
+                f"[{style}]{label}[/{style}]",
+                _clip_inline(tool, 12 if compact else 20),
+                f"{elapsed_s:.1f}s" if elapsed_s else "",
+                detail,
+            )
+
+        latest = self.latest_text.replace("\n", " ").strip()
+        latest = _clip_inline(latest[-220:], max(24, content_width - 4))
+        body = Table.grid(expand=True)
+        body.add_row(meta)
+        body.add_row("")
+        body.add_row(current)
+        body.add_row("")
+        body.add_row(timeline)
+        if latest:
+            body.add_row("")
+            body.add_row(Panel(Text(latest, style="dim"), title="Latest answer", border_style="dim", padding=(0, 1)))
+
+        return Panel(body, title="Vibe-Trading", border_style="cyan", padding=(1, 1 if compact else 2))
+
+
+from cli.ui.rail import RailRunDashboard as _RunDashboard  # noqa: E402,F811
+
+
+# ---------------------------------------------------------------------------
+# Agent execution core
+# ---------------------------------------------------------------------------
+
+def _format_tool_call_args(tool: str, args: Dict[str, str]) -> str:
+    """Smart-format tool argument summary."""
+    if tool == "load_skill":
+        return f'("{args.get("name", "")}")'
+    if tool in ("write_file", "read_file", "edit_file"):
+        return f' {args.get("path", args.get("file_path", ""))}'
+    if tool in ("bash", "background_run"):
+        cmd = args.get("command", "")[:80]
+        return f' [yellow]{cmd}[/yellow]'
+    if tool == "check_background":
+        tid = args.get("task_id", "")
+        return f' {tid}' if tid else ""
+    if tool in ("backtest", "compact"):
+        return ""
+    for v in args.values():
+        if v and v != "None":
+            return f" {v[:60]}"
+    return ""
+
+
+def _format_tool_result_preview(tool: str, status: str, preview: str) -> str:
+    """Smart-format tool result preview."""
+    if status != "ok":
+        return f"[red]{preview[:80]}[/red]"
+    if tool == "backtest":
+        sharpe = re.search(r'"sharpe":\s*([\d.eE+-]+)', preview)
+        ret = re.search(r'"total_return":\s*([\d.eE+-]+)', preview)
+        parts = []
+        if sharpe:
+            parts.append(f"sharpe={sharpe.group(1)}")
+        if ret:
+            parts.append(f"return={float(ret.group(1))*100:.1f}%")
+        return ", ".join(parts) if parts else ""
+    if tool == "render_shadow_report":
+        url = re.search(r'"report_url":\s*"([^"]+)"', preview)
+        if url:
+            return f"[bold cyan]report:[/bold cyan] [link]{url.group(1)}[/link]"
+        return ""
+    if tool in ("extract_shadow_strategy", "run_shadow_backtest"):
+        sid = re.search(r'"shadow_id":\s*"([^"]+)"', preview)
+        return f"shadow_id={sid.group(1)}" if sid else ""
+    if tool in ("bash", "background_run"):
+        if "OK" in preview[:50]:
+            return "OK"
+        return preview[:60].replace("\n", " ")
+    if tool in ("read_file", "load_skill", "compact"):
+        return ""
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# In-process mandate.proposal relay (CLI mirror of api_server's
+# _mandate_proposal_frame_from_tool_result, SPEC.md Consent §1/§2)
+# ---------------------------------------------------------------------------
+#
+# The agent loop emits the propose tool's output only as a generic
+# ``tool_result`` event (``loop.py`` ``_finalize_tool_result`` → preview =
+# result[:200]); it NEVER emits a top-level ``mandate.proposal`` event. So in
+# the in-process REPL path nothing ever arms ``ctx.pending_proposal`` and the
+# user's numeric pick falls through to the model as chat. The frontend solved
+# the same gap server-side by relaying the propose-tool ``tool_result`` into a
+# top-level ``mandate.proposal`` SSE frame (api_server
+# ``_mandate_proposal_frame_from_tool_result``). The CLI needs the identical
+# relay in its own ``on_event`` handler — done below, WITHOUT touching the
+# protected ``loop.py``.
+
+_PROPOSAL_TOOL_NAME = "propose_mandate_profiles"
+_PROPOSAL_ID_RE = re.compile(r'"proposal_id"\s*:\s*"(mp_[0-9a-f]{32})"')
+_SCHEDULED_PROPOSAL_TOOL_NAME = "scheduled_research"
+_SCHEDULED_PROPOSAL_ID_RE = re.compile(
+    r'"proposal_id"\s*:\s*"(srp_[0-9a-f]{32})"'
+)
+
+
+def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
+    """Reload a persisted ``mandate.proposal`` payload by id, broker-agnostic.
+
+    The propose tool persists the full proposal under
+    ``<runtime_root>/live/<broker>/proposals/<proposal_id>.json`` before
+    returning. The ``tool_result`` preview is only the first 200 chars of the
+    JSON body, far too short to carry the full proposal, so the relay reloads it
+    from disk. The broker segment is unknown from the preview alone, so every
+    broker's proposals directory is searched (mirrors api_server).
+
+    Args:
+        proposal_id: The ``mp_...`` id parsed from the tool_result preview.
+
+    Returns:
+        The full proposal dict, or ``None`` when not found / unreadable.
+    """
+    try:
+        from src.live.paths import live_root
+
+        for proposal_path in live_root().glob(f"*/proposals/{proposal_id}.json"):
+            try:
+                data = json.loads(proposal_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict) and data.get("type") == "mandate.proposal":
+                return data
+    except Exception:  # noqa: BLE001 — relay must never break the turn
+        pass
+    return None
+
+
+def _mandate_proposal_from_tool_result(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Recover a full ``mandate.proposal`` payload from a propose-tool result.
+
+    Detection mirrors api_server's ``_mandate_proposal_frame_from_tool_result``:
+    the event must be a successful ``tool_result`` for ``propose_mandate_profiles``
+    whose preview carries a ``proposal_id``. The full proposal is then reloaded
+    from disk (the preview is truncated).
+
+    Args:
+        data: The ``tool_result`` event payload (``tool`` / ``status`` /
+            ``preview``).
+
+    Returns:
+        The full proposal dict ready to feed ``proposal_sink`` (arming
+        ``ctx.pending_proposal``), or ``None`` when this is not a recoverable
+        propose-tool result.
+    """
+    if data.get("tool") != _PROPOSAL_TOOL_NAME or data.get("status") != "ok":
+        return None
+    match = _PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
+    if not match:
+        return None
+    return _load_full_proposal(match.group(1))
+
+
+def _scheduled_proposal_from_tool_result(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Recover the full scheduled-research proposal from a tool preview."""
+    if data.get("tool") != _SCHEDULED_PROPOSAL_TOOL_NAME or data.get("status") != "ok":
+        return None
+    match = _SCHEDULED_PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
+    if not match:
+        return None
+    try:
+        from src.scheduled_research.proposals import load_proposal
+
+        return load_proposal(match.group(1))
+    except Exception:  # noqa: BLE001 - relay must never break the turn
+        return None
+
+
+def _ensure_session_id(title: str, *, session_id: Optional[str] = None) -> str:
+    """Return a host-owned session id, registering the session record if new.
+
+    The research-goal tools are registered unconditionally and resolve their
+    session from the host runtime, so any entry point that calls
+    :func:`_run_agent` without an id makes every goal call fail validation with
+    ``session_id is required`` while the run still reports success (#885).
+
+    Persistence is best effort. ``Session`` populates ``session_id`` on
+    construction, so a store or index failure still yields a usable id rather
+    than falling back to the empty string that caused the bug.
+
+    Args:
+        title: Text used as the session title; truncated for display.
+        session_id: Explicit id to register, for callers that need the same
+            session across repeated invocations. Defaults to a fresh id.
+
+    Returns:
+        A non-empty session id.
+    """
+    from src.session.models import Session, SessionStatus
+    from src.session.store import SessionStore
+
+    session = Session(
+        title=title.strip()[:60] or "untitled",
+        status=SessionStatus.ACTIVE,
+    )
+    if session_id:
+        session.session_id = session_id
+    try:
+        SessionStore(base_dir=SESSIONS_DIR).create_session(session)
+    except Exception:  # noqa: BLE001 — an existing or unwritable session must not block the run
+        return session.session_id
+
+    # Index for FTS5 cross-session search, mirroring the interactive REPL.
+    try:
+        from src.session.search import get_shared_index
+
+        get_shared_index().index_session(session.session_id, session.title)
+    except Exception:  # noqa: BLE001 — search index is optional
+        pass
+    return session.session_id
+
+
+def _run_agent(
+    prompt: str,
+    run_dir_override: Optional[str] = None,
+    max_iter: int = 50,
+    *,
+    no_rich: bool = False,
+    stream_output: bool = True,
+    dashboard: Optional[_RunDashboard] = None,
+    session_id: str = "",
+    proposal_sink: Optional[Any] = None,
+) -> dict:
+    """Build AgentLoop and execute, return result dict.
+
+    A turn with a ``session_id`` is recorded like a web turn
+    (:mod:`cli.conversation`): the history the model sees is replayed from the
+    session's thread log, never passed in by the caller, and the turn's items
+    and reply row are written back to the session.
+
+    Args:
+        proposal_sink: Optional callable invoked with the payload of every
+            ``mandate.proposal`` event the agent emits. The interactive REPL
+            uses this to capture an outstanding live-trading mandate proposal so
+            it can intercept the user's numeric pick *before* the model — a pick
+            is a privileged surface action (commit), never a tool the model can
+            call (SPEC.md Consent §2).
+    """
+    from src.tools import build_registry
+    from src.session.model_selection import (
+        ModelSelectionError,
+        chat_llm_for_stored_session,
+        unavailable_selection_result,
+    )
+    from src.agent.loop import AgentLoop
+
+    # Closure-level state for the no-rich path so dots and progress lines
+    # don't shoulder-bump each other (M3) and progress prints are throttled
+    # to ≤1/0.5s per tool (M1).
+    no_rich_state: dict[str, Any] = {
+        "dot_pending": False,
+        "last_progress_ts": {},  # type: ignore[var-annotated]
+    }
+
+    streamed_text: list[str] = []
+
+    def on_event(event_type: str, data: Dict[str, Any]) -> None:
+        # Text streamed so far, kept for the reply of a turn the user stops.
+        if event_type == "stream_reset":
+            streamed_text.clear()
+        elif event_type == "text_delta" and isinstance(data.get("delta"), str):
+            streamed_text.append(data["delta"])
+        # Live mandate proposals are surfaced to the REPL out-of-band so the
+        # user's pick is intercepted before the model (SPEC.md Consent §2).
+        # This fires regardless of stream_output / rich state — capturing the
+        # proposal must not depend on rendering.
+        if event_type == "mandate.proposal" and proposal_sink is not None:
+            try:
+                proposal_sink(data)
+            except Exception:  # noqa: BLE001 — capture must never kill the turn
+                pass
+            return
+        # The agent loop never emits a top-level ``mandate.proposal`` — it only
+        # emits the propose tool's output as a generic ``tool_result``. Relay it
+        # here (CLI mirror of api_server's SSE relay) so the REPL arms
+        # ``ctx.pending_proposal`` and intercepts the pick before the model
+        # (SPEC.md Consent §1/§2). Fires regardless of stream_output / rich
+        # state — arming must not depend on rendering — and does NOT return:
+        # the tool_result still flows on to the dashboard / no-rich printers.
+        if event_type == "tool_result" and proposal_sink is not None:
+            proposal = _mandate_proposal_from_tool_result(data)
+            if proposal is None:
+                proposal = _scheduled_proposal_from_tool_result(data)
+            if proposal is not None:
+                try:
+                    proposal_sink(proposal)
+                except Exception:  # noqa: BLE001 — relay must never kill the turn
+                    pass
+        if not stream_output:
+            return
+        if dashboard is not None and not no_rich:
+            dashboard.handle_event(event_type, data)
+            return
+        if no_rich and event_type == "thinking_done":
+            print()
+            return
+        if no_rich and event_type == "tool_call":
+            tool = data.get("tool", "")
+            args = data.get("arguments", {})
+            args_preview = _format_tool_call_args(tool, args)
+            print(f"  - {tool}{_strip_rich_tags(args_preview)}", end="")
+            no_rich_state["dot_pending"] = False
+            return
+        if no_rich and event_type == "tool_result":
+            tool = data.get("tool", "")
+            status = data.get("status", "ok")
+            elapsed_ms = data.get("elapsed_ms", 0)
+            elapsed_s = elapsed_ms / 1000
+            preview = _format_tool_result_preview(tool, status, data.get("preview", ""))
+            suffix = f"  {preview}" if preview else ""
+            mark = "OK" if status == "ok" else "FAIL"
+            # If a heartbeat dot is open on the line, break it cleanly.
+            if no_rich_state["dot_pending"]:
+                no_rich_state["dot_pending"] = False
+            print(f"  {mark} {elapsed_s:.1f}s{_strip_rich_tags(suffix)}")
+            no_rich_state["last_progress_ts"].pop(tool, None)
+            return
+        if no_rich and event_type == "compact":
+            tokens = data.get("tokens_before", "?")
+            if no_rich_state["dot_pending"]:
+                no_rich_state["dot_pending"] = False
+                print()
+            print(f"\n  context compressed ({tokens} tokens -> summary)\n")
+            return
+        if no_rich and event_type == "tool_heartbeat":
+            # Print a dot per tick so the user sees the tool is alive.
+            print(".", end="", flush=True)
+            no_rich_state["dot_pending"] = True
+            return
+        if no_rich and event_type == "tool_progress":
+            tool = data.get("tool", "") or ""
+            now = time.monotonic()
+            last_ts = no_rich_state["last_progress_ts"].get(tool, 0.0)
+            if now - last_ts < 0.5:
+                # Throttle: max one progress line per 0.5s per tool (M1).
+                return
+            no_rich_state["last_progress_ts"][tool] = now
+            stage = data.get("stage", "")
+            current_idx = data.get("current")
+            total = data.get("total")
+            message = data.get("message", "")
+            bits = [stage]
+            if isinstance(current_idx, int) and isinstance(total, int) and total > 0:
+                bits.append(f"{current_idx}/{total}")
+            if message:
+                bits.append(message)
+            label = " · ".join(b for b in bits if b)
+            if label:
+                # Break a pending dot line before printing the progress detail.
+                if no_rich_state["dot_pending"]:
+                    no_rich_state["dot_pending"] = False
+                    print()
+                print(f"    {label}", flush=True)
+            return
+        if event_type == "text_delta":
+            if no_rich:
+                print(data.get("delta", ""), end="")
+            else:
+                console.print(data.get("delta", ""), end="", style="dim")
+        elif event_type == "thinking_done":
+            console.print()
+        elif event_type == "tool_call":
+            tool = data.get("tool", "")
+            args = data.get("arguments", {})
+            args_preview = _format_tool_call_args(tool, args)
+            console.print(f"  [cyan]\u25b6 {tool}[/cyan]{args_preview}", end="")
+        elif event_type == "tool_result":
+            tool = data.get("tool", "")
+            status = data.get("status", "ok")
+            elapsed_ms = data.get("elapsed_ms", 0)
+            elapsed_s = elapsed_ms / 1000
+            ok = status == "ok"
+            mark = "[green]\u2713[/green]" if ok else "[red]\u2717[/red]"
+            preview = _format_tool_result_preview(tool, status, data.get("preview", ""))
+            suffix = f"  {preview}" if preview else ""
+            console.print(f"  {mark} [dim]{elapsed_s:.1f}s[/dim]{suffix}")
+        elif event_type == "compact":
+            tokens = data.get("tokens_before", "?")
+            console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
+
+    from src.memory.persistent import PersistentMemory
+
+    pm = PersistentMemory()
+    from src.config.loader import load_agent_config
+
+    agent_config = load_agent_config()
+
+    def _mcp_warn(msg: str) -> None:
+        if no_rich:
+            print(f"WARNING: {msg}", flush=True)
+        else:
+            console.print(f"[yellow]WARNING:[/yellow] {msg}")
+
+    # One owner for the whole CLI run: background results stay with the
+    # conversation that started them, and a bare run gets a private owner
+    # instead of a view shared with every other run in the process.
+    from src.tools.background_tools import BackgroundScope, get_background_manager
+
+    background_scope = BackgroundScope(
+        owner_id=f"session:{session_id}" if session_id else f"cli:{uuid.uuid4().hex}"
+    )
+    background = get_background_manager().for_scope(background_scope)
+    cancel_event = threading.Event()
+
+    try:
+        llm = chat_llm_for_stored_session(SESSIONS_DIR, session_id)
+    except ModelSelectionError as exc:
+        return unavailable_selection_result(exc)
+
+    registry = build_registry(
+        persistent_memory=pm,
+        include_shell_tools=True,
+        agent_config=agent_config,
+        session_id=session_id or None,
+        warn_callback=_mcp_warn,
+        background_manager=background,
+        background_scope=background_scope,
+        cancel_event=cancel_event,
+    )
+
+    # Opened only once the agent can run: it writes the user's message and
+    # replays the session's history, and a turn left open would be replayed
+    # as interrupted.
+    turn = None
+    if session_id:
+        from cli.conversation import open_turn
+        from src.session.store import SessionStore
+
+        snapshot = getattr(llm, "runtime_snapshot", None)
+        turn = open_turn(
+            SessionStore(base_dir=SESSIONS_DIR), session_id, prompt,
+            provider=getattr(snapshot, "provider", None),
+            model=getattr(snapshot, "configured_model", None),
+        )
+
+    try:
+        agent = AgentLoop(
+            registry=registry,
+            llm=llm,
+            event_callback=on_event,
+            max_iterations=max_iter,
+            persistent_memory=pm,
+            background_manager=background,
+            cancel_event=cancel_event,
+            thread_recorder=turn.recorder if turn is not None else None,
+        )
+        agent.instruction_launch_dir = Path.cwd()
+        if run_dir_override:
+            agent.memory.run_dir = run_dir_override
+
+        result = _run_with_graceful_cancel(
+            agent,
+            prompt,
+            (turn.history or None) if turn is not None else None,
+            no_rich=no_rich,
+            session_id=session_id,
+        )
+    except BaseException as exc:
+        # A forced quit (second Ctrl+C) or a crash: close the turn so the
+        # next one replays it as stopped instead of finding it open.
+        if turn is not None:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                turn.abort("cancelled", "Interrupted")
+            else:
+                turn.abort("failed", str(exc))
+        raise
+    if turn is not None:
+        result = turn.finish(result, "".join(streamed_text))
+    return result
+
+
+def _run_with_graceful_cancel(
+    agent: "AgentLoop",
+    prompt: str,
+    history: Optional[List[Dict]],
+    *,
+    no_rich: bool,
+    session_id: str = "",
+) -> dict:
+    """Run an agent loop with first-Ctrl+C = graceful cancel.
+
+    First SIGINT during the run sets ``agent._cancelled`` so the loop exits
+    cleanly after the current LLM/tool step finishes. A second SIGINT within
+    two seconds restores the default handler and re-raises ``KeyboardInterrupt``
+    for hard quit. Outside of a run the parent CLI's normal SIGINT handling
+    (exit on input prompt) is unaffected — the handler is restored in
+    ``finally``.
+
+    Args:
+        agent: AgentLoop instance ready to ``run()``.
+        prompt: User prompt.
+        history: Recent message history.
+        no_rich: Whether the parent caller is rendering with Rich Live.
+
+    Returns:
+        AgentLoop result dict.
+    """
+    import signal as _signal
+
+    state = {"requested": False, "last_ts": 0.0}
+    try:
+        original = _signal.getsignal(_signal.SIGINT)
+    except (ValueError, AttributeError):
+        # Not on a thread that can receive signals — skip the handler swap.
+        return agent.run(user_message=prompt, history=history, session_id=session_id)
+
+    def _on_sigint(_signum, _frame) -> None:
+        now = time.time()
+        if state["requested"] and (now - state["last_ts"]) < 2.0:
+            # Second Ctrl+C within 2s — hand control back to the default handler.
+            _signal.signal(_signal.SIGINT, original)
+            raise KeyboardInterrupt
+        state["requested"] = True
+        state["last_ts"] = now
+        agent.cancel()
+        notice = "Cancelling… current step will finish, then exit. Ctrl+C again to force quit."
+        if no_rich:
+            print(f"\n[{notice}]", flush=True)
+        else:
+            console.print(f"\n[yellow]{notice}[/yellow]")
+
+    try:
+        _signal.signal(_signal.SIGINT, _on_sigint)
+    except (ValueError, OSError):
+        # signal.signal only works on the main thread of the main interpreter.
+        return agent.run(user_message=prompt, history=history, session_id=session_id)
+
+    try:
+        return agent.run(user_message=prompt, history=history, session_id=session_id)
+    finally:
+        try:
+            _signal.signal(_signal.SIGINT, original)
+        except (ValueError, OSError):
+            pass
+
+
+def _build_benchmark_table(m: dict) -> Optional[Table]:
+    """Build a benchmark comparison table from metrics dict.
+
+    Args:
+        m: Metrics dictionary (from _read_metrics or result dict).
+
+    Returns:
+        Rich Table, or None if no benchmark data is present.
+    """
+    bench_ticker  = m.get("benchmark_ticker")
+    bench_ret_str = m.get("benchmark_return")
+    bench_ret_raw = m.get("_benchmark_return_raw")
+
+    # Fall back to equity.csv if benchmark cols not in metrics.csv yet
+    if not bench_ticker:
+        return None
+
+    # Parse benchmark return
+    if bench_ret_raw is not None:
+        bench_ret = bench_ret_raw
+    elif bench_ret_str is not None:
+        try:
+            bench_ret = float(bench_ret_str)
+        except (ValueError, TypeError):
+            bench_ret = None
+    else:
+        bench_ret = None
+
+    strategy_ret_str = m.get("total_return")
+    strategy_ret     = float(strategy_ret_str) if strategy_ret_str else None
+
+    table = Table(show_header=False, padding=(0, 2))
+    table.add_column("Label", style="dim", width=20)
+    table.add_column("Value", style="white no_wrap")
+
+    table.add_row("[dim]Benchmark[/dim]",  bench_ticker)
+
+    if bench_ret is not None:
+        table.add_row("[dim]Benchmark Return[/dim]", f"{bench_ret * 100:+.2f}%")
+
+    if strategy_ret is not None and bench_ret is not None:
+        excess = strategy_ret - bench_ret
+        sign   = "+" if excess >= 0 else ""
+        style  = "green" if excess >= 0 else "red"
+        table.add_row(
+            "[dim]vs Benchmark[/dim]",
+            f"[{style}]{sign}{excess * 100:+.2f}%[/{style}]",
+        )
+
+    ir_str = m.get("information_ratio")
+    if ir_str:
+        table.add_row("[dim]Info Ratio[/dim]", ir_str)
+
+    excess_str = m.get("excess_return")
+    if excess_str and excess_str != "0" and excess_str != "0.0000":
+        table.add_row("[dim]Excess Return[/dim]", f"{float(excess_str) * 100:+.2f}%")
+
+    return table
+
+
+def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> None:
+    """Print execution result panel."""
+    status = result.get("status", "unknown")
+    style = _status_style(status)
+    run_dir = result.get("run_dir")
+    m = _read_metrics(Path(run_dir) / "artifacts" / "metrics.csv") if run_dir else {}
+
+    if no_rich:
+        print(f"Status: {status.upper()}")
+        print(f"Elapsed: {_format_seconds(elapsed)}")
+        if result.get("run_id"):
+            print(f"Run ID: {result['run_id']}")
+        review = result.get("review")
+        if review and review.get("overall_score") is not None:
+            review_status = "PASS" if review.get("passed") else "FAIL"
+            print(f"Review: {review_status} {review['overall_score']}pts")
+        if run_dir:
+            print(f"Run dir: {run_dir}")
+        if result.get("reason"):
+            print(f"Reason: {result['reason']}")
+        metric_parts = [f"{label}={m[key]}" for key, label in (
+            ("total_return", "return"),
+            ("sharpe", "sharpe"),
+            ("max_drawdown", "max_dd"),
+            ("trade_count", "trades"),
+        ) if key in m]
+        if metric_parts:
+            print(f"Metrics: {', '.join(metric_parts)}")
+        content = result.get("content", "").strip()
+        if content:
+            print(f"\n{content}")
+        return
+
+    summary = Table.grid(expand=True)
+    summary.add_column(width=12, style="dim")
+    summary.add_column(ratio=1)
+    summary.add_row("Status", f"[bold {style}]{status.upper()}[/bold {style}]")
+    summary.add_row("Elapsed", _format_seconds(elapsed))
+    if result.get("run_id"):
+        summary.add_row("Run ID", f"[cyan]{result['run_id']}[/cyan]")
+    review = result.get("review")
+    if review and review.get("overall_score") is not None:
+        review_status = "PASS" if review.get("passed") else "FAIL"
+        review_style = "green" if review.get("passed") else "red"
+        summary.add_row("Review", f"[{review_style}]{review_status}[/{review_style}] {review['overall_score']}pts")
+    if run_dir:
+        summary.add_row("Run dir", f"[dim]{run_dir}[/dim]")
+
+    if result.get("reason"):
+        summary.add_row("Reason", f"[red]{result['reason']}[/red]")
+
+    panels = [Panel(summary, border_style=style, title="Summary", padding=(0, 1))]
+
+    metric_table = Table.grid(expand=True)
+    metric_table.add_column(width=12, style="dim")
+    metric_table.add_column(ratio=1)
+    has_metrics = False
+    for key, label in (
+        ("total_return", "Return"),
+        ("sharpe", "Sharpe"),
+        ("max_drawdown", "Max DD"),
+        ("trade_count", "Trades"),
+    ):
+        if key not in m:
+            continue
+        value = m[key]
+        value_style = _metric_value_style(key, value)
+        metric_table.add_row(label, f"[{value_style}]{value}[/{value_style}]")
+        has_metrics = True
+    if has_metrics:
+        panels.append(Panel(metric_table, border_style="cyan", title="Metrics", padding=(0, 1)))
+
+    if result.get("run_id"):
+        rid = result["run_id"]
+        actions = Table(box=None, show_header=False, padding=(0, 1))
+        actions.add_column(style="cyan", no_wrap=True)
+        actions.add_column(style="dim")
+        actions.add_row(f"vibe-trading show {rid}", "details")
+        actions.add_row(f"vibe-trading code {rid}", "generated Python")
+        actions.add_row(f"vibe-trading continue {rid} \"...\"", "refine this run")
+        panels.append(Panel(actions, border_style="dim", title="Next", padding=(0, 1)))
+
+    if _terminal_width() < 104:
+        for panel in panels:
+            console.print(panel)
+    else:
+        console.print(Columns(panels, expand=True, equal=True))
+
+    # Benchmark comparison panel.
+    bench_table = _build_benchmark_table(m)
+    if bench_table:
+        console.print(Panel(
+            bench_table,
+            border_style="cyan",
+            title="Benchmark Comparison",
+            padding=(0, 1),
+        ))
+    # End benchmark comparison panel.
+
+    content = result.get("content", "").strip()
+    if content:
+        console.print(f"\n{content}")
+
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: bool = False) -> int:
+    """Single run."""
+    if not json_mode:
+        from src.preflight import run_preflight
+        results = run_preflight(console)
+        if any(r.critical and r.status != "ready" for r in results):
+            return EXIT_RUN_FAILED
+
+    if not json_mode:
+        preview = prompt[:120]
+        suffix = "..." if len(prompt) > 120 else ""
+        if no_rich:
+            print(f"Prompt: {preview}{suffix}\n")
+        else:
+            console.print(f"[dim]Prompt:[/dim] {preview}{suffix}\n")
+    start = time.perf_counter()
+    session_id = _ensure_session_id(prompt)
+    try:
+        if json_mode or no_rich:
+            result = _run_agent(
+                prompt,
+                max_iter=max_iter,
+                no_rich=no_rich,
+                stream_output=not json_mode,
+                session_id=session_id,
+            )
+        else:
+            dashboard = _RunDashboard(prompt, max_iter)
+            with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
+                dashboard.live = live
+                result = _run_agent(
+                    prompt, max_iter=max_iter, dashboard=dashboard, session_id=session_id
+                )
+                dashboard.finish(result, time.perf_counter() - start)
+    except KeyboardInterrupt:
+        if json_mode:
+            _print_json_result({"status": "cancelled", "run_id": None, "run_dir": None, "reason": "Interrupted"})
+            return EXIT_RUN_FAILED
+        if no_rich:
+            print("\nInterrupted")
+            return EXIT_RUN_FAILED
+        console.print("\n[yellow]Interrupted[/yellow]")
+        return EXIT_RUN_FAILED
+    if json_mode:
+        _print_json_result(result)
+        return _result_exit_code(result)
+    _print_result(result, time.perf_counter() - start, no_rich=no_rich)
+    if result.get("run_id") and result.get("run_dir"):
+        # Point at the dashboard without starting anything. Spawning a server
+        # from a result-printing path would leave an unsupervised process behind
+        # after the command exits.
+        if _read_metric_values(Path(result["run_dir"]) / "artifacts" / "metrics.csv"):
+            hint = (
+                f"Dashboard: run `vibe-trading serve`, then open "
+                f"/runs/{result['run_id']}?view=dashboard"
+            )
+            if no_rich:
+                print(hint)
+            else:
+                console.print(f"[dim]{hint}[/dim]")
+    if result.get("run_id"):
+        tip = f"--show {result['run_id']}  |  --continue {result['run_id']} \"...\"  |  --code {result['run_id']}  |  --pine {result['run_id']}"
+        if no_rich:
+            print(tip)
+        else:
+            console.print(f"[dim]{tip}[/dim]")
+    return _result_exit_code(result)
+
+
+def cmd_continue(
+    run_id: str,
+    prompt: str,
+    max_iter: int,
+    *,
+    json_mode: bool = False,
+    no_rich: bool = False,
+) -> int:
+    """Continue an existing run."""
+    from src.agent.trace import TraceWriter
+
+    run_dir = RUNS_DIR / run_id
+    session_trace_dir = SESSIONS_DIR / run_id
+    if not run_dir.exists() and not session_trace_dir.exists():
+        if no_rich:
+            print(f"Run {run_id} not found")
+            return EXIT_USAGE_ERROR
+        console.print(f"[red]Run {run_id} not found[/red]")
+        return EXIT_USAGE_ERROR
+    trace_dir = TraceWriter.find_trace_dir(
+        run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR
+    )
+    if trace_dir is None:
+        # Preserve support for an existing, empty run/session directory. Once a
+        # trace exists, ``find_trace_dir`` is authoritative so every later
+        # continuation reads and appends to the same conversation.
+        trace_dir = session_trace_dir if session_trace_dir.exists() else run_dir
+    trace_dir.mkdir(parents=True, exist_ok=True)
+
+    # Continuations of one run share a session so goals and evidence accumulate
+    # across them, and so does the history the model sees: ``_run_agent``
+    # replays it from that session's thread log. A session-backed run_id
+    # already *is* a session id (sessions and their traces share
+    # ``SESSIONS_DIR``); a plain run gets a derived id.
+    session_id = _ensure_session_id(
+        prompt,
+        session_id=run_id if session_trace_dir.exists() else f"run-{run_id}",
+    )
+    if not json_mode and no_rich:
+        print(f"Continue {run_id}: {prompt[:120]}\n")
+    if json_mode or no_rich:
+        start = time.perf_counter()
+        try:
+            result = _run_agent(
+                prompt,
+                run_dir_override=str(trace_dir),
+                max_iter=max_iter,
+                no_rich=no_rich,
+                stream_output=not json_mode,
+                session_id=session_id,
+            )
+        except KeyboardInterrupt:
+            if json_mode:
+                _print_json_result(
+                    {
+                        "status": "cancelled",
+                        "run_id": run_id,
+                        "run_dir": str(trace_dir),
+                        "reason": "Interrupted",
+                    }
+                )
+            else:
+                print("\nInterrupted")
+            return EXIT_RUN_FAILED
+        if json_mode:
+            _print_json_result(result)
+            return _result_exit_code(result)
+        _print_result(result, time.perf_counter() - start, no_rich=True)
+        return _result_exit_code(result)
+
+    console.print(f"[dim]Continue {run_id}:[/dim] {prompt[:120]}\n")
+    start = time.perf_counter()
+    try:
+        dashboard = _RunDashboard(prompt, max_iter)
+        with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
+            dashboard.live = live
+            result = _run_agent(
+                prompt,
+                run_dir_override=str(trace_dir),
+                max_iter=max_iter,
+                dashboard=dashboard,
+                session_id=session_id,
+            )
+            dashboard.finish(result, time.perf_counter() - start)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted[/yellow]")
+        return EXIT_RUN_FAILED
+    _print_result(result, time.perf_counter() - start)
+    return _result_exit_code(result)
+
+
+def _show_settings() -> None:
+    """Show current runtime settings."""
+    _ensure_cli_env()
+    term_width = _terminal_width()
+    compact = term_width < 104
+    value_limit = max(18, min(56, term_width - 28))
+    _cfg = get_env_config()
+    provider = _cfg.llm.langchain_provider or "(not set)"
+    model = _cfg.llm.langchain_model_name or "(not set)"
+    provider_key_env = _provider_key_env(provider)
+    provider_base_env = _provider_base_env(provider)
+    provider_key = os.getenv(provider_key_env or "")  # noqa: env-gate — dynamic provider key display
+    provider_base_url = os.getenv(provider_base_env or "") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "(not set)"  # noqa: env-gate — dynamic provider URL display
+
+    provider_table = Table.grid(expand=True)
+    provider_table.add_column(width=12, style="dim")
+    provider_table.add_column(ratio=1)
+    provider_table.add_row("Provider", f"[bold]{provider}[/bold]")
+    provider_table.add_row("Model", _clip_inline(model, value_limit))
+    provider_table.add_row("Base URL", _clip_inline(provider_base_url, value_limit))
+
+    runtime_table = Table.grid(expand=True)
+    runtime_table.add_column(width=13, style="dim")
+    runtime_table.add_column(ratio=1)
+    from src.config.gildata_features import selected_features
+
+    runtime_table.add_row("Gildata opt-ins", ", ".join(selected_features()) or "(none)")
+    runtime_table.add_row("Temperature", str(_cfg.llm.langchain_temperature))
+    runtime_table.add_row("Timeout", str(_cfg.llm.timeout_seconds) + "s")
+    runtime_table.add_row("Retries", str(_cfg.llm.max_retries))
+
+    credential_table = Table.grid(expand=True)
+    credential_table.add_column(width=21, style="dim")
+    credential_table.add_column(ratio=1)
+
+    if provider in {"ollama", "openai-codex"}:
+        credential_table.add_row("Provider key", "[green]not required[/green]")
+        credential_ready = True
+    elif provider_key_env:
+        credential_table.add_row(provider_key_env, "***" if provider_key else "(not set)")
+        credential_ready = bool(provider_key)
+    else:
+        credential_table.add_row("Provider key", "(unknown provider)")
+        credential_ready = False
+    credential_table.add_row("TUSHARE_TOKEN", "***" if _cfg.data.tushare_token else "(optional)")
+
+    panels = [
+        Panel(provider_table, title=f"Provider {_state_badge(provider if provider != '(not set)' else None)}", border_style="cyan", padding=(0, 1)),
+        Panel(runtime_table, title="Runtime", border_style="dim", padding=(0, 1)),
+        Panel(credential_table, title=f"Credentials {_state_badge('ok' if credential_ready else None)}", border_style="green" if credential_ready else "yellow", padding=(0, 1)),
+    ]
+    if compact:
+        for panel in panels:
+            console.print(panel)
+    else:
+        console.print(Columns(panels, expand=True, equal=True))
+    console.print("[dim]Edit configuration in ~/.vibe-trading/.env, or run vibe-trading init.[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# Swarm live streaming (Rich Live panel)
+# ---------------------------------------------------------------------------
+
+def _get_agent_style(agent_id: str) -> str:
+    """Assign a consistent color to each agent."""
+    if agent_id not in _agent_color_map:
+        idx = len(_agent_color_map) % len(_AGENT_STYLES)
+        _agent_color_map[agent_id] = _AGENT_STYLES[idx]
+    return _agent_color_map[agent_id]
+
+
+class _SwarmDashboard:
+    """Track swarm state and render a Rich Live panel."""
+
+    def __init__(self, preset: str, run_id: str) -> None:
+        self.preset = preset
+        self.run_id = run_id
+        self.start_time = time.monotonic()
+        self.current_layer = 0
+        self.total_layers = 0
+        self.agents: Dict[str, Dict[str, Any]] = {}
+        self.agent_order: List[str] = []
+        self.completed_summaries: List[tuple[str, str]] = []
+        self.finished = False
+        self.final_status = ""
+
+    def _ensure_agent(self, agent_id: str) -> str:
+        """Register an agent by its ID if not already tracked. Return its key."""
+        if agent_id in self.agents:
+            return agent_id
+        self.agents[agent_id] = {
+            "name": agent_id, "status": "waiting",
+            "tool": "\u2014", "elapsed": 0.0, "iters": 0,
+            "started_at": 0.0, "layer": self.current_layer,
+            "last_text": "",
+        }
+        self.agent_order.append(agent_id)
+        return agent_id
+
+    def handle_event(self, event) -> None:
+        """Process a swarm event and update internal state."""
+        agent_id = event.agent_id or ""
+        etype = event.type
+        data = event.data
+
+        if etype == "layer_started":
+            self.current_layer = data.get("layer", 0)
+            self.total_layers = max(self.total_layers, self.current_layer + 1)
+            return
+
+        if etype == "run_completed":
+            self.finished = True
+            self.final_status = data.get("status", "unknown")
+            return
+
+        if not agent_id:
+            return
+
+        key = self._ensure_agent(agent_id)
+        agent = self.agents[key]
+
+        if etype == "task_started":
+            agent["status"] = "running"
+            agent["started_at"] = time.monotonic()
+        elif etype == "tool_call":
+            agent["tool"] = data.get("tool", "?")
+            agent["iters"] += 1
+        elif etype == "tool_result":
+            agent["elapsed"] = (time.monotonic() - agent["started_at"]) if agent["started_at"] else 0
+            tool_name = agent["tool"]
+            status_char = "\u2713" if data.get("status", "ok") == "ok" else "\u2717"
+            agent["tool"] = f"{tool_name} {status_char}"
+        elif etype == "task_completed":
+            agent["status"] = "done"
+            agent["elapsed"] = (time.monotonic() - agent["started_at"]) if agent["started_at"] else 0
+            agent["iters"] = data.get("iterations", agent["iters"])
+            summary = data.get("summary", "")
+            if summary:
+                self.completed_summaries.append((agent["name"], summary))
+        elif etype == "task_resumed":
+            agent["status"] = "resumed"
+            agent["tool"] = "kept"
+        elif etype == "task_failed":
+            agent["status"] = "failed"
+            agent["elapsed"] = (time.monotonic() - agent["started_at"]) if agent["started_at"] else 0
+            error = data.get("error", "")[:80]
+            self.completed_summaries.append((agent["name"], f"[red]FAILED: {error}[/red]"))
+        elif etype == "task_cancelled":
+            agent["status"] = "cancelled"
+            agent["elapsed"] = (time.monotonic() - agent["started_at"]) if agent["started_at"] else 0
+            agent["iters"] = data.get("iterations", agent["iters"])
+            self.completed_summaries.append((agent["name"], "[yellow]CANCELLED[/yellow]"))
+        elif etype == "task_blocked":
+            agent["status"] = "blocked"
+            blocked_by = ", ".join(data.get("blocked_by", []))
+            self.completed_summaries.append(
+                (agent["name"], f"[yellow]BLOCKED by: {blocked_by}[/yellow]")
+            )
+        elif etype == "task_retry":
+            attempt = data.get("attempt", "?")
+            agent["status"] = "retry"
+            agent["tool"] = f"retry {attempt}"
+        elif etype == "worker_text":
+            content = data.get("content", "").strip()
+            if content:
+                # Keep last non-empty line for display
+                last_line = content.split("\n")[-1].strip()
+                if last_line:
+                    agent["last_text"] = last_line[:60]
+
+    def build_table(self) -> Table:
+        """Build the Rich Table for the live panel."""
+        elapsed_total = time.monotonic() - self.start_time
+        mins, secs = divmod(int(elapsed_total), 60)
+
+        if self.finished:
+            color = "green" if self.final_status == "completed" else "red"
+            title_status = f"[{color}]{self.final_status.upper()}[/{color}]"
+        else:
+            title_status = "[cyan]RUNNING[/cyan]"
+
+        title = f"{self.preset}  {title_status}  {mins}:{secs:02d}"
+
+        table = Table(
+            title=title,
+            border_style="cyan" if not self.finished else ("green" if self.final_status == "completed" else "red"),
+            show_lines=False,
+            pad_edge=True,
+            expand=True,
+        )
+        table.add_column("Agent", style="bold", width=20, no_wrap=True)
+        table.add_column("Status", width=12, justify="center")
+        table.add_column("Tool", width=14, no_wrap=True)
+        table.add_column("Time", width=7, justify="right")
+        table.add_column("Iters", width=5, justify="right")
+        table.add_column("Output", no_wrap=True, style="dim")
+
+        for agent_key in self.agent_order:
+            agent = self.agents[agent_key]
+            name = agent["name"]
+            style = _get_agent_style(name)
+            styled_name = f"[{style}]{name}[/{style}]"
+
+            status = agent["status"]
+            if status == "running":
+                status_str = "[\u25b6 running]"
+                elapsed = time.monotonic() - agent["started_at"] if agent["started_at"] else 0
+            elif status == "done":
+                status_str = "[green][\u2713 done  ][/green]"
+                elapsed = agent["elapsed"]
+            elif status == "resumed":
+                status_str = "[green][\u2713 kept  ][/green]"
+                elapsed = agent["elapsed"]
+            elif status == "failed":
+                status_str = "[red][\u2717 failed][/red]"
+                elapsed = agent["elapsed"]
+            elif status == "retry":
+                status_str = "[yellow][\u21bb retry ][/yellow]"
+                elapsed = time.monotonic() - agent["started_at"] if agent["started_at"] else 0
+            elif status == "cancelled":
+                status_str = "[yellow][\u2298 cancel][/yellow]"
+                elapsed = agent["elapsed"]
+            else:
+                status_str = "[dim][\u25cb waiting][/dim]"
+                elapsed = 0
+
+            time_str = f"{elapsed:.1f}s" if elapsed > 0 else "\u2014"
+            iter_str = str(agent["iters"]) if agent["iters"] > 0 else "\u2014"
+            last_text = agent.get("last_text", "")
+
+            table.add_row(styled_name, status_str, agent["tool"], time_str, iter_str, last_text)
+
+        # Progress bar row
+        done_count = sum(1 for a in self.agents.values() if a["status"] in ("done", "resumed", "failed", "cancelled"))
+        total_count = len(self.agents) or 1
+        pct = int(done_count / total_count * 100)
+        bar_width = 40
+        filled = int(bar_width * pct / 100)
+        bar = "\u2501" * filled + "[dim]" + "\u2501" * (bar_width - filled) + "[/dim]"
+
+        if self.finished:
+            bar_color = "green" if self.final_status == "completed" else "red"
+            progress_label = f"[{bar_color}]{self.final_status.upper()}[/{bar_color}]"
+        else:
+            progress_label = f"Layer {self.current_layer}"
+
+        table.add_section()
+        table.add_row(
+            progress_label,
+            f"{bar}",
+            f"[bold]{pct}%[/bold]",
+            f"{mins}:{secs:02d}",
+            "",
+            "",
+        )
+
+        return table
+
+
+def _watch_swarm_run(store, runtime, run, dashboard: _SwarmDashboard) -> Optional[int]:
+    """Keep the CLI alive while a swarm run streams to its dashboard."""
+    from rich.live import Live
+    from src.swarm.models import RunStatus
+
+    dashboard.run_id = run.id
+
+    with Live(dashboard.build_table(), console=console, refresh_per_second=4, transient=False) as live:
+        try:
+            while True:
+                time.sleep(0.25)
+                live.update(dashboard.build_table())
+                current = store.load_run(run.id)
+                if current is None:
+                    console.print("[red]Run record lost[/red]")
+                    return
+                if current.status in (RunStatus.completed, RunStatus.failed, RunStatus.cancelled):
+                    dashboard.finished = True
+                    dashboard.final_status = current.status.value
+                    live.update(dashboard.build_table())
+                    break
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelling...[/yellow]")
+            runtime.cancel_run(run.id)
+            time.sleep(1)
+            current = store.load_run(run.id)
+
+    if current is None:
+        return
+
+    for agent_name, summary in dashboard.completed_summaries:
+        style = _get_agent_style(agent_name)
+        console.print(f"\n[{style}]\u2500\u2500 {agent_name} \u2500\u2500[/{style}]")
+        lines = summary.strip().split("\n")
+        preview = "\n".join(lines[:8])
+        if len(lines) > 8:
+            preview += "\n[dim]...[/dim]"
+        console.print(preview)
+
+    status_color = {
+        RunStatus.completed: "green",
+        RunStatus.failed: "red",
+        RunStatus.cancelled: "yellow",
+    }.get(current.status, "dim")
+
+    elapsed_total = time.monotonic() - dashboard.start_time
+    mins, secs = divmod(int(elapsed_total), 60)
+
+    tokens_in = current.total_input_tokens
+    tokens_out = current.total_output_tokens
+    token_str = ""
+    if tokens_in or tokens_out:
+        token_str = f"\nTokens: ~{tokens_in + tokens_out:,} (in: {tokens_in:,} out: {tokens_out:,})"
+
+    if current.final_report:
+        label = "Partial results" if current.report_is_partial else "Final Report"
+        console.print(f"\n[bold]── {label} ──[/bold]")
+        console.print(current.final_report, markup=False)
+
+    console.print(f"\n[{status_color}]{current.status.value.upper()}[/{status_color}]  Time: {mins}m {secs}s{token_str}")
+
+
+def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> Optional[int]:
+    """Run a swarm preset with Rich Live dashboard."""
+    from src.config import load_swarm_agent_config
+    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.store import SwarmStore
+
+    user_vars: Dict[str, str] = {}
+    if vars_json:
+        try:
+            user_vars = json.loads(vars_json)
+        except json.JSONDecodeError as exc:
+            _print_swarm_vars_json_error(vars_json, exc)
+            return EXIT_USAGE_ERROR
+
+    store = SwarmStore(base_dir=SWARM_DIR)
+    agent_config = load_swarm_agent_config()
+    runtime = SwarmRuntime(store=store, agent_config=agent_config)
+    _agent_color_map.clear()
+
+    console.print(f"\n[dim]Starting swarm:[/dim] [cyan]{preset}[/cyan]")
+    if user_vars:
+        console.print(f"[dim]Variables:[/dim] {json.dumps(user_vars, ensure_ascii=False)}")
+
+    dashboard = _SwarmDashboard(preset, "")
+
+    try:
+        run = runtime.start_run(
+            preset,
+            user_vars,
+            live_callback=dashboard.handle_event,
+            include_shell_tools=True,
+        )
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return
+    except ValueError as exc:
+        console.print(f"[red]DAG validation failed: {exc}[/red]")
+        return
+
+    return _watch_swarm_run(store, runtime, run, dashboard)
+
+
+def cmd_swarm_retry_live(run_id: str, resume: bool = False) -> Optional[int]:
+    """Retry a prior swarm run, optionally keeping completed tasks."""
+    from src.config import load_swarm_agent_config
+    from src.swarm.models import RunStatus
+    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.store import SwarmStore
+
+    store = SwarmStore(base_dir=SWARM_DIR)
+    try:
+        loaded = store.load_run(run_id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    if loaded is None:
+        console.print(f"[red]Run {run_id} not found[/red]")
+        return EXIT_USAGE_ERROR
+
+    reconciled = store.reconcile_run(loaded, write=True)
+    if reconciled.status == RunStatus.running:
+        console.print("[red]Cannot retry a running run. Cancel or reap it first.[/red]")
+        return EXIT_USAGE_ERROR
+    if resume and reconciled.status not in (RunStatus.failed, RunStatus.cancelled):
+        console.print(
+            f"[red]Cannot resume a run in status '{reconciled.status.value}'; "
+            "resume only applies to failed or cancelled runs.[/red]"
+        )
+        return EXIT_USAGE_ERROR
+
+    runtime = SwarmRuntime(store=store, agent_config=load_swarm_agent_config())
+    _agent_color_map.clear()
+    action = "Resuming swarm" if resume else "Retrying swarm"
+    console.print(f"\n[dim]{action}:[/dim] [cyan]{reconciled.preset_name}[/cyan]")
+    console.print(f"[dim]Source run:[/dim] {run_id}")
+
+    dashboard = _SwarmDashboard(reconciled.preset_name, "")
+    try:
+        run = runtime.start_run(
+            reconciled.preset_name,
+            reconciled.user_vars or {},
+            live_callback=dashboard.handle_event,
+            include_shell_tools=True,
+            resume_from=reconciled if resume else None,
+        )
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    except ValueError as exc:
+        console.print(f"[red]DAG validation failed: {exc}[/red]")
+        return EXIT_USAGE_ERROR
+
+    return _watch_swarm_run(store, runtime, run, dashboard)
+
+
+# ---------------------------------------------------------------------------
+# Legacy subcommands (used by flags and slash commands)
+# ---------------------------------------------------------------------------
+
+def cmd_list(limit: int = 20) -> None:
+    """List run history."""
+    if not RUNS_DIR.exists():
+        console.print("[dim]No runs yet[/dim]")
+        return
+    dirs = sorted([d for d in RUNS_DIR.iterdir() if d.is_dir()], key=lambda d: d.name, reverse=True)[:limit]
+    if not dirs:
+        console.print("[dim]No runs yet[/dim]")
+        return
+
+    table = Table(title="Recent Runs", show_lines=False, border_style="dim", box=box.SIMPLE_HEAVY)
+    table.add_column("Run ID", style="cyan", no_wrap=True)
+    table.add_column("Status", width=10)
+    table.add_column("Return", width=10)
+    table.add_column("Sharpe", width=8)
+    table.add_column("Prompt", max_width=58)
+
+    for d in dirs:
+        st = _read_json(d / "state.json").get("status", "?")
+        m = _read_metrics(d / "artifacts" / "metrics.csv")
+        c = _status_style(st)
+        prompt = (_read_json(d / "req.json").get("prompt") or "").replace("\n", " ")
+        if len(prompt) > 58:
+            prompt = prompt[:55] + "..."
+        table.add_row(
+            d.name,
+            f"[{c}]{st.upper()}[/{c}]",
+            m.get("total_return", ""),
+            m.get("sharpe", ""),
+            prompt,
+        )
+
+    console.print(table)
+    console.print("[dim]Use /show <run_id>, /code <run_id>, or /continue <run_id> <prompt>.[/dim]")
+
+
+def cmd_show(run_id: str) -> None:
+    """Show run details."""
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.exists():
+        console.print(f"[red]{run_id} not found[/red]")
+        return
+
+    state = _read_json(run_dir / "state.json")
+    req = _read_json(run_dir / "req.json")
+    metrics = _read_metrics(run_dir / "artifacts" / "metrics.csv")
+
+    st = state.get("status", "unknown")
+    c = _status_style(st)
+    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]"]
+    if req.get("prompt"):
+        lines.append(f"[bold]Prompt:[/bold] {req['prompt'][:500]}{'...' if len(req['prompt']) > 500 else ''}")
+    if metrics:
+        lines.append("\n[bold]Metrics:[/bold]")
+        lines.extend(f"  {k}: {v}" for k, v in metrics.items())
+
+    from src.agent.trace import TraceWriter
+    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
+    entries = (
+        TraceWriter.read(trace_dir, resolve_offloads=True, resolve_fields={"content"})
+        if trace_dir
+        else []
+    )
+    answers = [e["content"] for e in entries if e.get("type") == "answer" and e.get("content")]
+    if answers:
+        summary = answers[-1][:200]
+        lines.append(f"\n[bold]Answer:[/bold] {summary}{'...' if len(answers[-1]) > 200 else ''}")
+
+    if state.get("reason"):
+        lines.append(f"\n[bold]Reason:[/bold] {state['reason']}")
+
+    console.print(Panel("\n".join(lines), border_style=c, title=run_id))
+    console.print(f"[dim]{run_dir}[/dim]")
+
+
+def cmd_code(run_id: str) -> None:
+    """Show generated code."""
+    code_dir = RUNS_DIR / run_id / "code"
+    if not code_dir.exists():
+        console.print(f"[red]{run_id}/code not found[/red]")
+        return
+    for name in ("signal_engine.py",):
+        path = code_dir / name
+        if path.exists():
+            code = path.read_text(encoding="utf-8")
+            console.print(Syntax(code, "python", theme="monokai", line_numbers=True), width=120)
+            console.print()
+
+
+def cmd_pine(run_id: str) -> None:
+    """Show Pine Script for a run."""
+    pine_path = RUNS_DIR / run_id / "artifacts" / "strategy.pine"
+    if not pine_path.exists():
+        console.print(f"[red]{run_id}/artifacts/strategy.pine not found[/red]")
+        console.print("[dim]Ask the agent: \"export this strategy to Pine Script\"[/dim]")
+        return
+    code = pine_path.read_text(encoding="utf-8")
+    console.print(Syntax(code, "javascript", theme="monokai", line_numbers=True), width=120)
+    console.print()
+    console.print("[dim]Copy and paste into TradingView Pine Editor, then Add to Chart[/dim]")
+
+
+def cmd_skills() -> None:
+    """List available skills."""
+    from src.agent.skills import SkillsLoader
+    loader = SkillsLoader()
+
+    table = Table(title="Skills", show_lines=False)
+    table.add_column("Name", style="cyan")
+    table.add_column("Description")
+
+    for s in loader.skills:
+        table.add_row(s.name, s.description)
+
+    console.print(table)
+
+
+def cmd_trace(run_id: str) -> None:
+    """Replay trace.jsonl to show full execution."""
+    from src.agent.trace import TraceWriter
+
+    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
+    if trace_dir is None:
+        console.print(f"[red]{run_id}/trace.jsonl not found[/red]")
+        return
+
+    entries = TraceWriter.read(
+        trace_dir,
+        resolve_offloads=True,
+        resolve_fields={"prompt", "content", "summary"},
+    )
+    if not entries:
+        console.print(f"[red]{run_id}/trace.jsonl is empty or missing[/red]")
+        return
+
+    console.print(Panel(f"[bold]Trace replay: {run_id}[/bold]  ({len(entries)} entries)", border_style="cyan"))
+
+    for entry in entries:
+        etype = entry.get("type", "?")
+        ts = entry.get("ts", 0)
+        ts_str = datetime.fromtimestamp(ts).strftime("%H:%M:%S") if ts else ""
+        it = entry.get("iter", "")
+        iter_tag = f"[dim]#{it}[/dim] " if it else ""
+
+        if etype == "start":
+            console.print(f"\n[bold cyan]{ts_str}[/bold cyan] {iter_tag}[bold]START[/bold]  {entry.get('prompt', '')[:120]}")
+        elif etype == "thinking":
+            content = entry.get("content", "")
+            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[dim italic]{content[:200]}[/dim italic]")
+        elif etype == "tool_call":
+            tool = entry.get("tool", "")
+            args = entry.get("args", {})
+            args_str = ", ".join(f"{k}={str(v)[:40]}" for k, v in args.items()) if args else ""
+            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[cyan]\u25b6 {tool}[/cyan]({args_str})")
+        elif etype == "tool_result":
+            tool = entry.get("tool", "")
+            status = entry.get("status", "ok")
+            elapsed = entry.get("elapsed_ms", 0)
+            ok = status == "ok"
+            mark = "\u2713" if ok else "\u2717"
+            color = "green" if ok else "red"
+            preview = (entry.get("preview") or entry.get("result_preview") or entry.get("result") or "")[:80]
+            size_hint = ""
+            if entry.get("result_path"):
+                size_hint = f" [{int(entry.get('result_size') or 0) // 1024}K offloaded]"
+            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[{color}]{mark} {tool}[/{color}] [dim]{elapsed}ms[/dim]  {preview}{size_hint}")
+        elif etype == "tool_skipped":
+            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[yellow]\u2298 {entry.get('tool', '')} (skipped)[/yellow]")
+        elif etype == "message":
+            role = entry.get("role", "?")
+            content = entry.get("content") or entry.get("content_preview") or ""
+            role_color = "cyan" if role == "user" else "green"
+            console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold {role_color}]{role.upper()}[/bold {role_color}] {content[:120]}")
+        elif etype == "answer":
+            content = entry.get("content", "")
+            console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold green]ANSWER[/bold green]\n{content}")
+        elif etype == "end":
+            status = entry.get("status", "?")
+            iters = entry.get("iterations", "?")
+            color = "green" if status == "success" else "red"
+            console.print(f"\n[bold {color}]{ts_str} END[/bold {color}]  status={status}  iterations={iters}")
+
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Swarm subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_swarm_presets() -> None:
+    """List available swarm presets."""
+    from src.swarm.presets import list_presets
+
+    presets = list_presets()
+    if not presets:
+        console.print("[dim]No presets available[/dim]")
+        return
+
+    table = Table(title="Swarm Presets", show_lines=False)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Title")
+    table.add_column("Agents", width=8, justify="right")
+    table.add_column("Variables")
+    table.add_column("Description", max_width=40)
+
+    for p in presets:
+        raw_vars = p.get("variables", [])
+        var_names = [
+            v["name"] if isinstance(v, dict) else str(v) for v in raw_vars
+        ]
+        vars_str = ", ".join(var_names)
+        table.add_row(
+            p["name"],
+            p.get("title", ""),
+            str(p.get("agent_count", 0)),
+            vars_str,
+            p.get("description", "")[:40],
+        )
+
+    console.print(table)
+
+
+def cmd_swarm_run(preset: str, vars_json: Optional[str] = None) -> Optional[int]:
+    """Run swarm preset (legacy polling mode, use cmd_swarm_run_live for streaming)."""
+    return cmd_swarm_run_live(preset, vars_json)
+
+
+def cmd_swarm_inspect(preset: str) -> int:
+    """Inspect a swarm preset without starting workers."""
+    from src.swarm.presets import inspect_preset
+
+    try:
+        report = inspect_preset(preset)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    except Exception as exc:
+        console.print(f"[red]Failed to inspect preset:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    status = "OK" if report["valid"] else "INVALID"
+    status_color = "green" if report["valid"] else "red"
+    lines = [
+        f"[bold]Preset:[/bold] {report['name']}",
+        f"[bold]Title:[/bold] {report.get('title') or '-'}",
+        f"[bold]Status:[/bold] [{status_color}]{status}[/{status_color}]",
+        f"[bold]Agents:[/bold] {len(report['agents'])}",
+        f"[bold]Tasks:[/bold] {len(report['tasks'])}",
+        f"[bold]Variables:[/bold] {', '.join(report['variables']) or '-'}",
+    ]
+    if report.get("description"):
+        lines.append(f"[bold]Description:[/bold] {report['description']}")
+    console.print(Panel("\n".join(lines), border_style=status_color, title="Swarm Preset Inspect"))
+
+    agent_table = Table(title="Agents", show_lines=False)
+    agent_table.add_column("ID", style="cyan", no_wrap=True)
+    agent_table.add_column("Role")
+    agent_table.add_column("Tools", max_width=40)
+    for agent in report["agents"]:
+        agent_table.add_row(
+            agent["id"],
+            agent.get("role", ""),
+            ", ".join(agent.get("tools", [])),
+        )
+    console.print(agent_table)
+
+    dag_table = Table(title="DAG Execution Plan", show_lines=False)
+    dag_table.add_column("Layer", justify="right", width=6)
+    dag_table.add_column("Task", style="cyan")
+    dag_table.add_column("Agent")
+    dag_table.add_column("Depends On")
+    task_details = {task["id"]: task for task in report["tasks"]}
+    for idx, layer in enumerate(report["layers"], start=1):
+        for item in layer:
+            task = task_details[item["task_id"]]
+            dag_table.add_row(
+                str(idx),
+                item["task_id"],
+                item["agent_id"],
+                ", ".join(task.get("depends_on", [])) or "-",
+            )
+    console.print(dag_table)
+
+    validation_table = Table(title="Validation", show_lines=False)
+    validation_table.add_column("Level", width=8)
+    validation_table.add_column("Message")
+    if report["errors"]:
+        for error in report["errors"]:
+            validation_table.add_row("[red]ERROR[/red]", error)
+    if report["warnings"]:
+        for warning in report["warnings"]:
+            validation_table.add_row("[yellow]WARN[/yellow]", warning)
+    if not report["errors"] and not report["warnings"]:
+        validation_table.add_row("[green]OK[/green]", "No issues found")
+    console.print(validation_table)
+
+    return EXIT_SUCCESS if report["valid"] else EXIT_RUN_FAILED
+
+
+def cmd_swarm_list() -> None:
+    """List swarm run history."""
+    from src.swarm.store import SwarmStore
+
+    store = SwarmStore(base_dir=SWARM_DIR)
+    runs = store.list_runs()
+
+    if not runs:
+        console.print("[dim]No swarm runs yet[/dim]")
+        return
+
+    table = Table(title="Swarm Runs", show_lines=False)
+    table.add_column("Run ID", style="cyan", no_wrap=True)
+    table.add_column("Preset")
+    table.add_column("Status", width=12)
+    table.add_column("Tasks", width=6, justify="right")
+    table.add_column("Created", width=20)
+
+    for run in runs:
+        sc = {
+            "completed": "green",
+            "failed": "red",
+            "cancelled": "yellow",
+            "running": "blue",
+        }.get(run.status.value, "dim")
+        table.add_row(
+            run.id,
+            run.preset_name,
+            f"[{sc}]{run.status.value}[/{sc}]",
+            str(len(run.tasks)),
+            run.created_at[:19],
+        )
+
+    console.print(table)
+
+
+def cmd_swarm_show(run_id: str) -> None:
+    """Show swarm run details."""
+    from src.swarm.store import SwarmStore
+    from src.swarm.models import TaskStatus
+
+    store = SwarmStore(base_dir=SWARM_DIR)
+    run = store.load_run(run_id)
+
+    if run is None:
+        console.print(f"[red]Swarm run {run_id} not found[/red]")
+        return
+
+    status_color = {
+        "completed": "green",
+        "failed": "red",
+        "cancelled": "yellow",
+        "running": "blue",
+    }.get(run.status.value, "dim")
+
+    lines = [
+        f"[bold]Status:[/bold] [{status_color}]{run.status.value.upper()}[/{status_color}]",
+        f"[bold]Preset:[/bold] {run.preset_name}",
+        f"[bold]Created:[/bold] {run.created_at}",
+    ]
+    if run.completed_at:
+        lines.append(f"[bold]Completed:[/bold] {run.completed_at}")
+    if run.user_vars:
+        lines.append(f"[bold]Variables:[/bold] {json.dumps(run.user_vars, ensure_ascii=False)}")
+
+    tokens_in = run.total_input_tokens
+    tokens_out = run.total_output_tokens
+    if tokens_in or tokens_out:
+        lines.append(f"[bold]Tokens:[/bold] ~{tokens_in + tokens_out:,} (in: {tokens_in:,} out: {tokens_out:,})")
+
+    lines.append(f"\n[bold]Tasks ({len(run.tasks)}):[/bold]")
+    for task in run.tasks:
+        tc = "green" if task.status == TaskStatus.completed else "red" if task.status == TaskStatus.failed else "dim"
+        dep_str = f" (deps: {', '.join(task.depends_on)})" if task.depends_on else ""
+        task_line = f"  [{tc}]{task.id}[/{tc}] -> {task.agent_id}{dep_str} [{task.status.value}]"
+        lines.append(task_line)
+        if task.summary:
+            lines.append(f"    {task.summary[:100]}")
+        if task.error:
+            lines.append(f"    [red]{task.error[:100]}[/red]")
+
+    if run.final_report:
+        lines.append(f"\n[bold]Final Report:[/bold]\n{run.final_report[:800]}")
+
+    console.print(Panel("\n".join(lines), border_style=status_color, title=run_id))
+
+
+def cmd_swarm_cancel(run_id: str) -> None:
+    """Cancel a swarm run."""
+    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.store import SwarmStore
+
+    store = SwarmStore(base_dir=SWARM_DIR)
+    runtime = SwarmRuntime(store=store)
+
+    if runtime.cancel_run(run_id):
+        console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")
+    else:
+        console.print(f"[red]Run {run_id} not found or already finished[/red]")
+
+
+# ---------------------------------------------------------------------------
+# Session subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_sessions() -> None:
+    """List chat sessions."""
+    from src.session.store import SessionStore
+
+    store = SessionStore(base_dir=SESSIONS_DIR)
+    sessions = store.list_sessions()
+
+    if not sessions:
+        console.print("[dim]No sessions yet[/dim]")
+        return
+
+    table = Table(title="Sessions", show_lines=False)
+    table.add_column("Session ID", style="cyan", no_wrap=True)
+    table.add_column("Title", max_width=30)
+    table.add_column("Status", width=10)
+    table.add_column("Messages", width=8, justify="right")
+    table.add_column("Updated", width=20)
+
+    for s in sessions:
+        messages = store.get_messages(s.session_id)
+        sc = "green" if s.status.value == "active" else "dim"
+        table.add_row(
+            s.session_id,
+            s.title or "[dim]untitled[/dim]",
+            f"[{sc}]{s.status.value}[/{sc}]",
+            str(len(messages)),
+            s.updated_at[:19],
+        )
+
+    console.print(table)
+
+
+def cmd_session_chat(session_id: str, max_iter: int) -> None:
+    """Continue a session through the canonical interactive loop."""
+    from src.session.store import SessionStore
+
+    store = SessionStore(base_dir=SESSIONS_DIR)
+    session = store.get_session(session_id)
+
+    if session is None:
+        console.print(f"[red]Session {session_id} not found[/red]")
+        return
+
+    messages = store.get_messages(session_id, limit=None)
+    console.print(
+        Panel(
+            f"[bold cyan]Session: {session.title or session_id}[/bold cyan]\n"
+            f"[dim]History: {len(messages)} messages | Type q or /quit to exit[/dim]",
+            border_style="cyan",
+        )
+    )
+
+    from cli.main import _interactive_loop
+
+    _interactive_loop(max_iter, resume_session_id=session_id, session_store=store)
+
+
+# ---------------------------------------------------------------------------
+# Upload subcommand
+# ---------------------------------------------------------------------------
+
+def cmd_upload(file_path: str) -> None:
+    """Upload a file to the server."""
+    src = Path(file_path)
+    if not src.exists():
+        console.print(f"[red]File not found: {file_path}[/red]")
+        return
+    if not src.is_file():
+        console.print(f"[red]Not a file: {file_path}[/red]")
+        return
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = src.suffix
+    dest_name = f"{uuid.uuid4().hex[:12]}{ext}"
+    dest = UPLOADS_DIR / dest_name
+
+    shutil.copy2(str(src), str(dest))
+    console.print(f"[green]Uploaded:[/green] {dest}")
+
+
+def cmd_provider_login(provider: str) -> int:
+    """Authenticate OAuth-backed LLM providers."""
+    normalized = provider.strip().lower().replace("_", "-")
+    if normalized in {"copilot", "github-copilot"}:
+        return _login_copilot()
+    if normalized == "claude-cli":
+        return _login_claude_cli()
+    if normalized != "openai-codex":
+        console.print(
+            "[red]Unknown OAuth provider.[/red] Supported: openai-codex, copilot, claude-cli"
+        )
+        return EXIT_USAGE_ERROR
+    try:
+        from src.providers.openai_codex import login_openai_codex
+
+        console.print("[cyan]Starting OpenAI Codex OAuth login...[/cyan]\n")
+        token = login_openai_codex(
+            print_fn=lambda text: console.print(text),
+            prompt_fn=lambda text: Prompt.ask(text),
+        )
+        account = getattr(token, "account_id", None) or "ChatGPT"
+        console.print(f"[green]Authenticated with OpenAI Codex[/green]  [dim]{account}[/dim]")
+        return EXIT_SUCCESS
+    except EOFError:
+        # ``docker exec`` does not allocate stdin/TTY unless explicitly asked
+        # to do so. oauth-cli-kit prompts for the browser callback URL after
+        # printing the authorization link, so an unattended stdin otherwise
+        # fails with the opaque ``EOF when reading a line`` error.
+        console.print(
+            "[red]Authentication error:[/red] OpenAI Codex OAuth needs an "
+            "interactive terminal to paste the callback URL."
+        )
+        console.print(
+            "[yellow]Docker:[/yellow] run `docker compose exec vibe-trading "
+            "vibe-trading provider login openai-codex` or add `-it` to "
+            "`docker exec`."
+        )
+        return EXIT_RUN_FAILED
+    except Exception as exc:
+        console.print(f"[red]Authentication error:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+
+def _login_copilot() -> int:
+    """Report supported GitHub Copilot SDK authentication options."""
+    from src.providers.copilot_auth import get_copilot_auth_status
+
+    authenticated, status = get_copilot_auth_status()
+    if authenticated:
+        console.print(
+            f"[green]Already authenticated with GitHub Copilot[/green]  [dim]{status}[/dim]"
+        )
+        return EXIT_SUCCESS
+
+    console.print(
+        "[yellow]No GitHub credential found.[/yellow]\n"
+        "Run [bold]copilot[/bold] and sign in, run [bold]gh auth login[/bold], "
+        "or set [bold]COPILOT_GITHUB_TOKEN[/bold]."
+    )
+    return EXIT_RUN_FAILED
+
+
+def _login_claude_cli() -> int:
+    """Report the local Claude Code CLI login used by the claude-cli provider."""
+    from src.providers.claude_cli import get_claude_cli_auth_status
+
+    logged_in, method = get_claude_cli_auth_status()
+    if logged_in:
+        console.print(f"[green]Claude Code CLI is logged in[/green]  [dim]{method}[/dim]")
+        return EXIT_SUCCESS
+
+    console.print(
+        f"[yellow]Claude Code CLI is not logged in[/yellow] ({method}).\n"
+        "Run [bold]claude auth login[/bold], or set [bold]CLAUDE_CLI_PATH[/bold] "
+        "to the claude executable."
+    )
+    return EXIT_RUN_FAILED
+
+
+# ---------------------------------------------------------------------------
+# Live connector runtime internals.
+#
+# Every state-changing verb here is a PRIVILEGED USER-SIDE action: none is
+# reachable from the agent loop / tool registry. There is deliberately NO
+# `live commit` verb — committing a mandate happens only through the consent
+# flow's `POST /mandate/commit`, never a CLI command (the CLI cannot create or
+# widen a mandate). The public CLI surface is `vibe-trading connector ...`;
+# `cmd_live_*` helpers remain only as the broker-runtime implementation behind
+# connector profiles.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_LIVE_BROKER = "robinhood"
+_LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS = 300.0
+_LIVE_AUTHORIZE_TIMEOUT_ENV = "VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS"
+
+
+def _authorize_timeout_seconds() -> float:
+    """Resolve the OAuth authorize handshake deadline in seconds.
+
+    Reads ``VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS`` and falls back to
+    :data:`_LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS` (300 s) when it is unset,
+    empty, non-numeric, or not strictly positive. This deadline bounds the
+    interactive ``list_tools`` handshake that drives the broker OAuth flow, so
+    a multi-minute human sign-in (e.g. Robinhood's face scan) has room to
+    complete.
+
+    Returns:
+        The authorize deadline in seconds (a positive float).
+    """
+    raw = get_env_config().agent_tuning.vibe_live_authorize_timeout_s
+    return float(raw) if raw and raw > 0 else float(_LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS)
+
+
+def _live_api_base() -> str:
+    """Return the base URL of the running API server for runner-control calls.
+
+    Mirrors :func:`cli.main._commit_mandate`: the base is read from
+    ``VIBE_TRADING_API_URL`` (falling back to ``http://127.0.0.1:8000``). The
+    persistent runner (SPEC §7.5) is controlled through the R6 surface endpoints
+    (``POST /live/runner/start|stop`` / ``GET /live/status``), never from the
+    agent loop, so the CLI only ever relays intent.
+
+    Returns:
+        The API base URL with any trailing slash removed.
+    """
+    return get_env_config().api.vibe_trading_api_url.rstrip("/")
+
+
+def _api_auth_headers() -> Dict[str, str]:
+    """Return Bearer auth headers for CLI-to-API control calls."""
+    reset_env_config()  # ensure fresh read of auth credentials
+    key = get_env_config().api.api_auth_key.strip()
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+def _live_api_call(
+    method: str, path: str, *, body: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Call an R6 live-runner endpoint and decode the JSON response.
+
+    Args:
+        method: HTTP verb (``"GET"`` or ``"POST"``).
+        path: Endpoint path beginning with ``/`` (e.g. ``"/live/runner/start"``).
+        body: JSON request body for ``POST`` calls.
+
+    Returns:
+        The decoded response object on success, or an ``{"status": "error",
+        "error": ...}`` envelope when the server is unreachable / returns a
+        non-2xx status — so a caller can surface a clean message instead of a
+        traceback when no server is running.
+    """
+    import httpx
+
+    url = f"{_live_api_base()}{path}"
+    headers = _api_auth_headers()
+    try:
+        if method.upper() == "GET":
+            response = httpx.get(url, headers=headers, timeout=30.0)
+        else:
+            response = httpx.post(url, json=body or {}, headers=headers, timeout=30.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:  # noqa: BLE001 — surface a clean error to the user
+        return {"status": "error", "error": str(exc)}
+
+
+def _channels_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Call an IM channel runtime endpoint on the local API server."""
+    import httpx
+
+    url = f"{_live_api_base()}{path}"
+    headers = _api_auth_headers()
+    try:
+        if method.upper() == "GET":
+            response = httpx.get(url, headers=headers, timeout=10.0)
+        else:
+            response = httpx.post(url, json=body or {}, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:  # noqa: BLE001 - CLI should explain offline API cleanly
+        return {"status": "error", "error": str(exc)}
+
+
+def _channels_local_status() -> Dict[str, Any]:
+    """Build local channel config/import status without starting adapters."""
+    from src.channels.config import load_channels_config
+    from src.channels.registry import inspect_channels
+
+    config = load_channels_config()
+    return {
+        "running": False,
+        "source": "local_config",
+        "channels": inspect_channels(config),
+    }
+
+
+def _print_channels_status(payload: Dict[str, Any]) -> None:
+    """Render IM channel status."""
+    table = Table(title="IM Channels", box=box.SIMPLE)
+    table.add_column("Channel")
+    table.add_column("Configured")
+    table.add_column("Enabled")
+    table.add_column("Available")
+    table.add_column("Loaded")
+    table.add_column("Running")
+    table.add_column("Recovery")
+    channels = payload.get("channels") if isinstance(payload, dict) else {}
+    if not isinstance(channels, dict):
+        channels = {}
+    for name, item in sorted(channels.items()):
+        if not isinstance(item, dict):
+            continue
+        recovery = item.get("install_hint") or item.get("error") or ""
+        table.add_row(
+            str(name),
+            "yes" if item.get("configured") else "no",
+            "yes" if item.get("enabled") else "no",
+            "yes" if item.get("available") else "no",
+            "yes" if item.get("loaded") else "no",
+            "yes" if item.get("running") else "no",
+            str(recovery),
+        )
+    console.print(table)
+    if payload.get("status") == "error":
+        console.print(f"[yellow]API unavailable:[/yellow] {payload.get('error')}")
+        console.print("[dim]Start the backend with `vibe-trading serve --port 8000`, or inspect local config with this status output.[/dim]")
+
+
+def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
+    """Show IM channel status."""
+    payload = _channels_local_status() if local else _channels_api_call("GET", "/channels/status")
+    if payload.get("status") == "error":
+        local_payload = _channels_local_status()
+        local_payload["status"] = "error"
+        local_payload["error"] = payload.get("error", "")
+        payload = local_payload
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        _print_channels_status(payload)
+    return EXIT_SUCCESS
+
+
+def cmd_channels_start(*, json_mode: bool = False) -> int:
+    """Start configured IM channels through the API runtime."""
+    payload = _channels_api_call("POST", "/channels/start")
+    failed = payload.get("status") == "error"
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    elif failed:
+        console.print(f"[red]Failed to start IM channels:[/red] {payload.get('error')}")
+        console.print(
+            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
+        )
+    else:
+        console.print("[green]IM channels started.[/green]")
+        _print_channels_status(payload)
+    return EXIT_RUN_FAILED if failed else EXIT_SUCCESS
+
+
+def cmd_channels_stop(*, json_mode: bool = False) -> int:
+    """Stop configured IM channels through the API runtime."""
+    payload = _channels_api_call("POST", "/channels/stop")
+    failed = payload.get("status") == "error"
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    elif failed:
+        console.print(f"[red]Failed to stop IM channels:[/red] {payload.get('error')}")
+        console.print(
+            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
+        )
+    else:
+        console.print("[green]IM channels stopped.[/green]")
+        _print_channels_status(payload)
+    return EXIT_RUN_FAILED if failed else EXIT_SUCCESS
+
+
+def cmd_channels_pairing(channel: str, command: str) -> int:
+    """Run a pairing command against the shared local pairing store."""
+    from src.channels.pairing import handle_pairing_command
+
+    console.print(handle_pairing_command(channel, command))
+    return EXIT_SUCCESS
+
+
+def cmd_channels_login(channel_name: str, *, force: bool = False) -> int:
+    """Run a channel adapter's interactive login hook when available."""
+    import asyncio
+
+    from src.channels.config import load_channels_config
+    from src.channels.manager import ChannelManager
+    from src.channels.bus.queue import MessageBus
+
+    config = load_channels_config()
+    section = dict(config.get(channel_name, {})) if isinstance(config.get(channel_name), dict) else {}
+    if channel_name == "websocket":
+        console.print("[green]WebSocket channel does not require interactive login.[/green]")
+        console.print("[dim]Configure channels.websocket in ~/.vibe-trading/agent.json, then run `vibe-trading channels start`.[/dim]")
+        return EXIT_SUCCESS
+    if not section:
+        console.print(f"[red]No config found for channel '{channel_name}'.[/red]")
+        console.print("[dim]Add it under channels.<name> in ~/.vibe-trading/agent.json, then retry.[/dim]")
+        return EXIT_USAGE_ERROR
+    section["enabled"] = True
+    manager = ChannelManager({channel_name: section}, MessageBus())
+    adapter = manager.get_channel(channel_name)
+    if adapter is None:
+        status = manager.get_status().get(channel_name, {})
+        recovery = status.get("install_hint") or status.get("error") or "adapter unavailable"
+        console.print(f"[red]Channel '{channel_name}' is unavailable.[/red] {recovery}")
+        return EXIT_RUN_FAILED
+    ok = asyncio.run(adapter.login(force=force))
+    if ok:
+        console.print(f"[green]Channel '{channel_name}' login completed.[/green]")
+        return EXIT_SUCCESS
+    console.print(f"[red]Channel '{channel_name}' login failed.[/red]")
+    return EXIT_RUN_FAILED
+
+
+def _dispatch_channels(args: argparse.Namespace) -> int:
+    """Dispatch IM channel subcommands."""
+    command = args.channels_command
+    if command == "status":
+        return cmd_channels_status(json_mode=args.channels_json, local=args.local)
+    if command == "start":
+        return cmd_channels_start(json_mode=args.channels_json)
+    if command == "stop":
+        return cmd_channels_stop(json_mode=args.channels_json)
+    if command == "pairing":
+        text = " ".join([args.pairing_command, *args.pairing_args]).strip()
+        return cmd_channels_pairing(args.channel, text or "list")
+    if command == "login":
+        return cmd_channels_login(args.channel_name, force=args.force)
+    console.print("[red]channels requires a subcommand.[/red] Try: vibe-trading channels status")
+    return EXIT_USAGE_ERROR
+def _dispatch_data(args: argparse.Namespace) -> int:
+    """Show the optional data partner and the features selected for this process."""
+    from src.config.gildata_features import selected_features
+
+    _ensure_cli_env()
+    console.print("Gildata: " + (", ".join(selected_features()) or "no optional research features selected"))
+    console.print("Gildata: https://www.gildata.com/products/datamap")
+    return EXIT_SUCCESS
+
+
+def _live_server_config(broker: str):
+    """Resolve the protected MCP server config for ``broker``.
+
+    The config is read at boot from the user-side protected agent config file
+    (never from caller input / agent tool args / ``variables``), exactly as the
+    #142 swarm-config trust template requires.
+
+    Args:
+        broker: Broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        The :class:`MCPServerConfig` for ``broker``, or ``None`` when the broker
+        has no entry in the protected config.
+    """
+    from src.config.loader import load_agent_config
+
+    agent_config = load_agent_config()
+    servers = getattr(agent_config, "mcp_servers", {}) or {}
+    return servers.get(broker.strip().lower())
+
+
+def _raw_live_server_config_entry(broker: str) -> dict[str, Any] | None:
+    """Best-effort raw lookup used only to explain invalid live config."""
+    from src.config.loader import _read_config_file
+    from src.config.paths import get_config_path
+    from src.config.schema import live_broker_key_for_url
+
+    try:
+        path = get_config_path()
+        if not path.exists():
+            return None
+        raw = _read_config_file(path)
+    except Exception:  # noqa: BLE001 — diagnostics must not mask the real CLI error
+        return None
+
+    servers = raw.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = raw.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return None
+
+    key = broker.strip().lower()
+    for server_key, server in servers.items():
+        if isinstance(server, dict) and str(server_key).strip().lower() == key:
+            return server
+
+    if key != "robinhood":
+        return None
+
+    for server in servers.values():
+        if isinstance(server, dict) and live_broker_key_for_url(str(server.get("url") or "")) == key:
+            return server
+    return None
+
+
+def _raw_server_entry_uses_wildcard(entry: dict[str, Any] | None) -> bool:
+    """Return whether a raw MCP server entry uses a wildcard enabledTools list."""
+    if entry is None:
+        return False
+    enabled_tools = entry.get("enabledTools", entry.get("enabled_tools"))
+    if not isinstance(enabled_tools, list):
+        return False
+    return "*" in {str(tool).strip() for tool in enabled_tools}
+
+
+def _print_missing_live_channel_config(key: str) -> None:
+    """Print actionable guidance when a live broker config cannot be loaded."""
+    if key == "robinhood":
+        from src.config.schema import format_robinhood_mcp_config_guidance
+
+        reason = "wildcard" if _raw_server_entry_uses_wildcard(_raw_live_server_config_entry(key)) else "missing"
+        console.print("[red]Robinhood live channel is not configured safely.[/red]")
+        console.print(format_robinhood_mcp_config_guidance(reason=reason), markup=False, soft_wrap=True)
+        return
+
+    console.print(
+        f"[red]No live channel configured for '{key}'.[/red] "
+        "Add the broker's mcpServers entry to ~/.vibe-trading/agent.json first."
+    )
+
+
+def cmd_live_authorize(broker: str) -> int:
+    """Bootstrap the OAuth handshake for a live broker channel (desktop only).
+
+    Builds the broker's MCP tool wrappers, which forces a connection and — when
+    no valid token is cached — triggers the native FastMCP OAuth flow: a browser
+    opens to the broker's authorize page and the token is persisted to the
+    protected cache. This is the only way to turn the channel on.
+
+    Args:
+        broker: Broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        Process exit code.
+    """
+    key = broker.strip().lower()
+    server_config = _live_server_config(key)
+    if server_config is None:
+        _print_missing_live_channel_config(key)
+        return EXIT_USAGE_ERROR
+    if getattr(server_config, "auth", None) is None:
+        console.print(
+            f"[red]Live channel '{key}' has no OAuth auth configured[/red] — "
+            "cannot authorize."
+        )
+        return EXIT_USAGE_ERROR
+
+    console.print(f"[cyan]Opening browser to authorize {key}…[/cyan]")
+    console.print(
+        "[dim]Complete the sign-in in your browser; this terminal will continue "
+        "once the broker redirects back.[/dim]"
+    )
+    try:
+        from src.tools.mcp import build_mcp_tool_wrappers
+
+        # The OAuth flow is driven lazily by the first request to the server —
+        # the `list_tools` discovery handshake — which is bounded by the
+        # per-call `tool_timeout` (default 30 s), NOT `init_timeout`. Raise both
+        # to the authorize deadline so a multi-minute human sign-in (e.g.
+        # Robinhood's face scan) does not trip the handshake. Raise-only: never
+        # shrink an already-larger user-configured timeout.
+        authorize_timeout = _authorize_timeout_seconds()
+        if hasattr(server_config, "model_copy"):
+            updates: dict[str, float] = {}
+            configured_init_timeout = getattr(server_config, "init_timeout", None)
+            if (
+                configured_init_timeout is None
+                or float(configured_init_timeout) < authorize_timeout
+            ):
+                updates["init_timeout"] = authorize_timeout
+            configured_tool_timeout = getattr(server_config, "tool_timeout", None)
+            if (
+                configured_tool_timeout is None
+                or float(configured_tool_timeout) < authorize_timeout
+            ):
+                updates["tool_timeout"] = authorize_timeout
+            if updates:
+                server_config = server_config.model_copy(update=updates)
+
+        # Single attempt: a transient-retry would open a fresh client context
+        # that starts a SECOND OAuth callback server on a new port, orphaning
+        # the sign-in the user just completed against the first one (see #259).
+        tools = build_mcp_tool_wrappers(
+            key, server_config, max_list_tools_attempts=1
+        )
+    except Exception as exc:  # noqa: BLE001 — surface any handshake failure
+        console.print(f"[red]Authorization failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    console.print(
+        f"[green]Authorized {key}[/green] "
+        f"[dim]({len(tools)} read-only tool(s) available)[/dim]"
+    )
+    console.print(
+        "[dim]The channel is read-only until you commit a mandate and enable "
+        "order tools. Use `vibe-trading connector status` to check state.[/dim]"
+    )
+    return EXIT_SUCCESS
+
+
+def cmd_provider_doctor() -> int:
+    """Print redacted provider diagnostics."""
+    from src.providers.llm import provider_diagnostics
+
+    console.print_json(data=provider_diagnostics())
+    return EXIT_SUCCESS
+
+
+def _format_expiry_countdown(expires_at: str) -> str:
+    """Return a human-readable countdown to ``expires_at`` (ISO-8601 UTC)."""
+    from datetime import datetime, timezone
+
+    try:
+        parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return f"{expires_at} (unparseable)"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    delta = parsed - datetime.now(timezone.utc)
+    secs = int(delta.total_seconds())
+    if secs <= 0:
+        return f"{expires_at} (EXPIRED)"
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        human = f"{days}d {hours}h"
+    elif hours:
+        human = f"{hours}h {minutes}m"
+    else:
+        human = f"{minutes}m"
+    return f"{expires_at} (in {human})"
+
+
+def _runner_id_for(broker: str) -> str:
+    """Return the persistent-runner identity key for ``broker`` (SPEC §7.5)."""
+    return f"live-{broker}"
+
+
+def _add_runner_liveness_rows(table: Table, broker: str) -> None:
+    """Append persistent-runner liveness rows to a ``live status`` table.
+
+    Liveness is reported from the local heartbeat files via the runtime
+    contract (:func:`src.live.runtime.liveness.is_runner_alive` /
+    :func:`~src.live.runtime.liveness.last_tick`), so it works without a running
+    API server. If the liveness module is not yet present (it lands concurrently
+    with this parcel), the rows degrade to ``unknown`` rather than crashing the
+    read-only status command.
+
+    Args:
+        table: The Rich table being built by :func:`cmd_live_status`.
+        broker: Broker key the runner is bound to.
+    """
+    runner_id = _runner_id_for(broker)
+    try:
+        from src.live.runtime.liveness import is_runner_alive, last_tick
+    except Exception:  # noqa: BLE001 — liveness lands concurrently; degrade cleanly
+        table.add_row("Runner", "[dim]unknown (runtime not available)[/dim]")
+        return
+
+    try:
+        alive = is_runner_alive(runner_id)
+    except Exception as exc:  # noqa: BLE001 — never let a status read raise
+        table.add_row("Runner", f"[dim]unknown ({exc})[/dim]")
+        return
+
+    if alive:
+        table.add_row("Runner", "[green]running[/green]")
+    else:
+        table.add_row("Runner", "[yellow]stopped[/yellow]")
+
+    try:
+        tick = last_tick(runner_id)
+    except Exception:  # noqa: BLE001
+        tick = None
+    if tick is not None:
+        table.add_row("  Last tick", _format_last_tick(tick))
+
+
+def _format_last_tick(tick: Any) -> str:
+    """Render a runner's last-tick timestamp as an absolute + relative string.
+
+    Args:
+        tick: A ``datetime`` or ISO-8601 string from the liveness heartbeat.
+
+    Returns:
+        Human-readable ``"<iso> (<n>s ago)"`` (or the raw value if unparseable).
+    """
+    from datetime import datetime, timezone
+
+    if isinstance(tick, datetime):
+        parsed = tick
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(tick).replace("Z", "+00:00"))
+        except ValueError:
+            return str(tick)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    ago = int((datetime.now(timezone.utc) - parsed).total_seconds())
+    iso = parsed.isoformat()
+    if ago < 0:
+        return iso
+    if ago < 60:
+        return f"{iso} ({ago}s ago)"
+    if ago < 3600:
+        return f"{iso} ({ago // 60}m ago)"
+    return f"{iso} ({ago // 3600}h ago)"
+
+
+def cmd_live_status(broker: Optional[str] = None) -> int:
+    """Show auth state, active mandate, and halt state for live channels.
+
+    Read-only: it loads the mandate via :func:`src.live.mandate.store.load_mandate`
+    and checks the halt sentinel via :func:`src.live.halt.halt_flag_set`; it never
+    writes anything.
+
+    Args:
+        broker: Limit the report to a single broker. ``None`` reports the
+            default broker (``robinhood``).
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.halt import halt_flag_set, read_halt
+    from src.live.mandate.model import MANDATE_SCHEMA_VERSION
+    from src.live.mandate.store import load_mandate
+
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+
+    table = Table(title=f"Live channel: {key}", box=box.SIMPLE)
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value")
+
+    server_config = _live_server_config(key)
+    authorized = server_config is not None and getattr(server_config, "auth", None) is not None
+    table.add_row("Configured", "yes" if server_config is not None else "[red]no[/red]")
+    table.add_row("OAuth auth", "yes" if authorized else "no")
+
+    halted = halt_flag_set(key)
+    if halted:
+        meta = read_halt(key) or read_halt() or {}
+        reason = meta.get("reason", "")
+        by = meta.get("by", "")
+        detail = f" [dim]({by}: {reason})[/dim]" if (by or reason) else ""
+        table.add_row("Halt", f"[bold red]HALTED[/bold red]{detail}")
+    else:
+        table.add_row("Halt", "[green]clear[/green]")
+
+    _add_runner_liveness_rows(table, key)
+
+    mandate = load_mandate(key)
+    if mandate is None:
+        table.add_row("Mandate", "[yellow]none on file[/yellow] (read-only)")
+    elif mandate.schema_version != MANDATE_SCHEMA_VERSION:
+        table.add_row(
+            "Mandate",
+            f"[red]unknown schema v{mandate.schema_version}[/red] (gate fail-closed)",
+        )
+    else:
+        caps = mandate.hard_caps
+        table.add_row("Mandate", "[green]active[/green]")
+        table.add_row("  Max order", f"${caps.max_order_notional_usd:,.0f}")
+        table.add_row("  Max exposure", f"${caps.max_total_exposure_usd:,.0f}")
+        table.add_row("  Max leverage", f"{caps.max_leverage:g}x")
+        table.add_row("  Trades/day", str(caps.max_trades_per_day))
+        table.add_row(
+            "  Instruments",
+            ", ".join(i.value for i in caps.allowed_instruments) or "[red]none[/red]",
+        )
+        table.add_row("  Expires", _format_expiry_countdown(mandate.consent.expires_at))
+
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def cmd_live_mandate(broker: Optional[str] = None) -> int:
+    """Print the committed mandate for a broker (read-only).
+
+    Args:
+        broker: Broker key. ``None`` uses the default broker (``robinhood``).
+
+    Returns:
+        Process exit code. ``EXIT_RUN_FAILED`` when no mandate is on file.
+    """
+    from dataclasses import asdict
+
+    from src.live.mandate.store import load_mandate
+
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    mandate = load_mandate(key)
+    if mandate is None:
+        console.print(
+            f"[yellow]No committed mandate for '{key}'.[/yellow] "
+            "The channel is read-only until a mandate is committed via the consent flow."
+        )
+        return EXIT_RUN_FAILED
+
+    payload = asdict(mandate)
+    # asdict leaves enums as Enum members; render their string values.
+    caps = payload["hard_caps"]
+    caps["allowed_instruments"] = [i.value for i in mandate.hard_caps.allowed_instruments]
+    payload["universe"]["asset_classes"] = [a.value for a in mandate.universe.asset_classes]
+    console.print_json(data=payload)
+    return EXIT_SUCCESS
+
+
+def cmd_live_halt(broker: Optional[str] = None) -> int:
+    """Trip the kill switch — write the HALT sentinel (privileged).
+
+    With no broker, trips the global switch (halts all brokers); with a broker,
+    trips only that broker's sentinel. The gate rejects all order attempts until
+    the switch is cleared with ``vibe-trading connector resume``.
+
+    Args:
+        broker: Broker key, or ``None`` for the global switch.
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.halt import trip_halt
+
+    target = broker.strip().lower() if broker else None
+    path = trip_halt(by="cli", reason="cli live halt", broker=target)
+    scope = target or "ALL brokers"
+    console.print(f"[bold red]Live trading halted[/bold red] for {scope}.")
+    console.print(f"[dim]Sentinel: {path}[/dim]")
+    console.print("[dim]Run `vibe-trading connector resume` to re-enable.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_resume(broker: Optional[str] = None) -> int:
+    """Clear a tripped kill switch (privileged, explicit re-enable).
+
+    Args:
+        broker: Broker key, or ``None`` for the global switch. Each scope is
+            cleared independently.
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.halt import clear_halt
+
+    target = broker.strip().lower() if broker else None
+    cleared = clear_halt(broker=target)
+    scope = target or "ALL brokers"
+    if cleared:
+        console.print(f"[green]Halt cleared[/green] for {scope}.")
+    else:
+        console.print(f"[dim]No active halt for {scope}.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_revoke(broker: str) -> int:
+    """Revoke the OAuth token and delete the mandate — full channel off.
+
+    Deletes the broker's OAuth token cache directory and its ``mandate.json``
+    so the channel reverts to fully off. This is a privileged user-side action.
+
+    Args:
+        broker: Broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.paths import broker_dir
+
+    key = broker.strip().lower()
+    try:
+        base = broker_dir(key)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+
+    removed: list[str] = []
+
+    # OAuth token cache. Prefer the configured cache_dir; fall back to the
+    # canonical per-broker oauth/ subtree.
+    server_config = _live_server_config(key)
+    cache_dir: Optional[Path] = None
+    auth = getattr(server_config, "auth", None) if server_config is not None else None
+    if auth is not None and getattr(auth, "cache_dir", None):
+        cache_dir = Path(auth.cache_dir).expanduser()
+    if cache_dir is None or not cache_dir.exists():
+        cache_dir = base / "oauth"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        removed.append(f"OAuth token cache ({cache_dir})")
+
+    mandate_path = base / "mandate.json"
+    if mandate_path.exists():
+        try:
+            mandate_path.unlink()
+            removed.append(f"mandate ({mandate_path})")
+        except OSError as exc:
+            console.print(f"[red]Failed to delete mandate: {exc}[/red]")
+            return EXIT_RUN_FAILED
+
+    if removed:
+        console.print(f"[green]Revoked live channel '{key}'.[/green]")
+        for item in removed:
+            console.print(f"  [dim]- removed {item}[/dim]")
+    else:
+        console.print(f"[dim]Nothing to revoke for '{key}' (no token or mandate on file).[/dim]")
+    return EXIT_SUCCESS
+
+
+def _preview_live_spending(broker: str) -> bool:
+    """Show operator settings before either foreground or background start."""
+    from urllib.parse import urlencode
+
+    preview = _live_api_call("GET", "/live/runner/settings?" + urlencode({"broker": broker}))
+    if preview.get("status") == "error":
+        console.print("[red]Could not read runner model-spending settings; not starting.[/red]")
+        return False
+    console.print("[yellow]Model calls are billed independently of trade limits.[/yellow]")
+    console.print_json(data=preview)
+    return True
+
+
+def cmd_live_start(broker: Optional[str] = None) -> int:
+    """Start the persistent live runner in the background (SPEC §7.5).
+
+    Relays a start request to the R6 surface endpoint
+    (``POST /live/runner/start``); the server owns the durable scheduler + job
+    store. This never touches the agent loop. The runner is read-only until a
+    mandate is committed (the consent flow), so starting it is safe even before
+    any mandate exists.
+
+    Args:
+        broker: Broker key, or ``None`` for the default broker (``robinhood``).
+
+    Returns:
+        Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
+    """
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    if not _preview_live_spending(key):
+        return EXIT_RUN_FAILED
+    result = _live_api_call(
+        "POST", "/live/runner/start", body={"broker": key, "foreground": False}
+    )
+    if result.get("status") == "error":
+        console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
+        console.print(
+            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
+        )
+        return EXIT_RUN_FAILED
+
+    runner_id = result.get("runner_id") or _runner_id_for(key)
+    console.print(f"[green]Live runner started[/green] for {key} [dim]({runner_id})[/dim].")
+    console.print("[dim]Check it with `vibe-trading connector status`.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_stop(broker: Optional[str] = None) -> int:
+    """Stop the persistent live runner (SPEC §7.5).
+
+    Relays a stop request to ``POST /live/runner/stop``. Stopping the runner
+    halts autonomous activity but does NOT clear a tripped kill switch or revoke
+    the mandate — use ``connector resume`` / ``connector revoke`` for those.
+
+    Args:
+        broker: Broker key, or ``None`` for the default broker (``robinhood``).
+
+    Returns:
+        Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
+    """
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    result = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
+    if result.get("status") == "error":
+        console.print(f"[red]Could not stop the live runner:[/red] {result.get('error')}")
+        console.print(
+            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
+        )
+        return EXIT_RUN_FAILED
+
+    console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
+    return EXIT_SUCCESS
+
+
+def cmd_live_run(broker: Optional[str] = None) -> int:
+    """Run the persistent live runner in the foreground (SPEC §7.5).
+
+    The foreground variant of ``live start``: it starts the runner via
+    ``POST /live/runner/start`` and then tails its heartbeat in a Rich ``Live``
+    panel until Ctrl+C, at which point it requests a clean stop. This mirrors
+    how ``serve`` runs a long-lived process attached to the terminal. The runner
+    is read-only until a mandate is committed through the consent flow.
+
+    Args:
+        broker: Broker key, or ``None`` for the default broker (``robinhood``).
+
+    Returns:
+        Process exit code.
+    """
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    runner_id = _runner_id_for(key)
+
+    if not _preview_live_spending(key):
+        return EXIT_RUN_FAILED
+
+    result = _live_api_call(
+        "POST", "/live/runner/start", body={"broker": key, "foreground": True}
+    )
+    if result.get("status") == "error":
+        console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
+        console.print(
+            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
+        )
+        return EXIT_RUN_FAILED
+
+    console.print(
+        f"[green]Live runner running[/green] for {key} [dim]({runner_id})[/dim] — "
+        "press Ctrl+C to stop."
+    )
+
+    try:
+        from src.live.runtime.liveness import is_runner_alive, last_tick
+    except Exception:  # noqa: BLE001 — runtime lands concurrently; fall back to a wait
+        is_runner_alive = None  # type: ignore[assignment]
+        last_tick = None  # type: ignore[assignment]
+
+    def _panel() -> Panel:
+        alive = bool(is_runner_alive(runner_id)) if is_runner_alive else True
+        state = "[green]running[/green]" if alive else "[yellow]stopped[/yellow]"
+        lines = [f"Runner: {state}", f"Broker: {key}"]
+        if last_tick:
+            try:
+                tick = last_tick(runner_id)
+            except Exception:  # noqa: BLE001
+                tick = None
+            if tick is not None:
+                lines.append(f"Last tick: {_format_last_tick(tick)}")
+        return Panel("\n".join(lines), title=f"live run · {key}", box=box.ROUNDED)
+
+    try:
+        with Live(_panel(), console=console, refresh_per_second=2, transient=False) as live:
+            while True:
+                time.sleep(1.0)
+                live.update(_panel())
+                if is_runner_alive and not is_runner_alive(runner_id):
+                    break
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopping live runner…[/dim]")
+    finally:
+        stop = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
+        if stop.get("status") == "error":
+            console.print(f"[red]Failed to stop the runner cleanly:[/red] {stop.get('error')}")
+        else:
+            console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# Trading connector commands
+# ---------------------------------------------------------------------------
+
+def _profile_id(value: Optional[str]) -> Optional[str]:
+    """Normalize an optional connector profile id."""
+    if value is None:
+        return None
+    text = value.strip().lower()
+    return text or None
+
+
+def _selected_profile_or(value: Optional[str]):
+    """Resolve the selected or explicit trading profile."""
+    from src.trading.profiles import profile_by_id
+
+    return profile_by_id(_profile_id(value))
+
+
+def cmd_connector_list() -> int:
+    """List selectable trading connector profiles."""
+    from src.trading.profiles import list_profiles, load_selected_profile_id
+
+    selected = load_selected_profile_id()
+    table = Table(title="Trading Connectors", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Selected", justify="center", width=8)
+    table.add_column("Profile")
+    table.add_column("Connector")
+    table.add_column("Env")
+    table.add_column("Transport")
+    table.add_column("Capabilities")
+    for profile in list_profiles():
+        table.add_row(
+            "[green]*[/green]" if profile.id == selected else "",
+            f"[cyan]{profile.id}[/cyan]\n[dim]{profile.label}[/dim]",
+            profile.connector,
+            profile.environment,
+            profile.transport,
+            ", ".join(profile.capabilities),
+        )
+    console.print(table)
+    console.print("[dim]Use `vibe-trading connector use <profile>` to set the default profile.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_connector_init(connector_id: str, destination: str = ".") -> int:
+    """Create a local-only read connector template.
+
+    Args:
+        connector_id: Lowercase connector id used for the template directory.
+        destination: Parent directory the template is created in.
+
+    Returns:
+        The process exit code.
+    """
+    from src.trading.plugin_scaffold import scaffold_connector
+
+    try:
+        path = scaffold_connector(connector_id, Path(destination))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    console.print(f"[green]Created local connector template[/green] {path}")
+    console.print(
+        "[dim]Implement adapter.py from the broker's official read-only API docs, "
+        "then run connector validate and connector install.[/dim]"
+    )
+    return EXIT_SUCCESS
+
+
+def cmd_connector_validate(directory: str) -> int:
+    """Validate a local read-only connector manifest.
+
+    Args:
+        directory: Directory holding the connector manifest.
+
+    Returns:
+        The process exit code.
+    """
+    from src.trading.plugin_scaffold import validate_connector
+
+    try:
+        plugin = validate_connector(Path(directory))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    console.print(f"[green]Valid read-only connector[/green] {plugin.profile.id}")
+    return EXIT_SUCCESS
+
+
+def cmd_connector_install(directory: str) -> int:
+    """Install a validated connector into the user's private connector directory.
+
+    Args:
+        directory: Directory holding the validated connector.
+
+    Returns:
+        The process exit code.
+    """
+    from src.trading.plugin_scaffold import install_connector
+
+    try:
+        path = install_connector(Path(directory))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    console.print(f"[green]Installed local connector[/green] {path}")
+    return EXIT_SUCCESS
+
+
+def _portfolio_service(service: Any | None = None) -> Any:
+    """Return the injected portfolio service, or build the default one.
+
+    Args:
+        service: Optional pre-built service (tests inject a stub).
+
+    Returns:
+        A ``PortfolioService`` instance.
+    """
+    if service is not None:
+        return service
+    from src.portfolio.service import PortfolioService
+
+    return PortfolioService()
+
+
+def _print_portfolio_snapshot(snapshot: dict[str, Any]) -> None:
+    """Render one portfolio snapshot: totals, per-source accounts, holdings, warnings.
+
+    Args:
+        snapshot: A snapshot envelope as produced by ``PortfolioService``.
+    """
+    totals = snapshot.get("totals") or {}
+    usd = float(totals.get("usd") or 0.0)
+    cny = float(totals.get("cny") or 0.0)
+    state = "[green]complete[/green]" if snapshot.get("complete") else "[yellow]INCOMPLETE[/yellow]"
+    console.print(
+        f"Snapshot [cyan]{rich_escape(str(snapshot.get('created_at') or '?'))}[/cyan] · {state} · "
+        f"total [bold]{usd:,.2f} USD[/bold] / {cny:,.0f} CNY"
+    )
+
+    accounts = Table(title="Sources", box=box.SIMPLE_HEAVY, show_lines=False)
+    accounts.add_column("Source")
+    accounts.add_column("Connector")
+    accounts.add_column("Status", justify="center")
+    accounts.add_column("Total USD", justify="right")
+    accounts.add_column("Last success")
+    for row in snapshot.get("accounts") or []:
+        ok = row.get("status") == "ok"
+        total = row.get("total_usd")
+        accounts.add_row(
+            rich_escape(str(row.get("label") or row.get("source_id") or "?")),
+            rich_escape(str(row.get("broker") or "")),
+            "[green]ok[/green]" if ok else f"[red]{rich_escape(str(row.get('status')))}[/red]",
+            f"{float(total):,.2f}" if total is not None else "[dim]excluded[/dim]",
+            rich_escape(str(row.get("last_success_at") or "never")),
+        )
+    console.print(accounts)
+    for row in snapshot.get("accounts", []):
+        if row.get("status") == "ok" and row.get("balance_details"):
+            console.print(rich_escape(str(row.get("label") or row.get("broker") or "")))
+            _print_balance_details(row["balance_details"])
+        if row.get("import_metadata"):
+            meta = row["import_metadata"]
+            console.print(f"extraETF file mtime: {rich_escape(meta['source_mtime'])}; expires: {rich_escape(meta['expires_at'])}; holdings only, no cash")
+
+    holdings = Table(title="Holdings (combined across sources)", box=box.SIMPLE_HEAVY, show_lines=False)
+    holdings.add_column("Symbol")
+    holdings.add_column("Type")
+    holdings.add_column("Value USD", justify="right")
+    holdings.add_column("Weight", justify="right")
+    holdings.add_column("Unrealized P/L USD", justify="right")
+    holdings.add_column("Sources")
+    for row in (snapshot.get("combined_holdings") or [])[:_PORTFOLIO_CLI_MAX_HOLDINGS]:
+        value = float(row.get("market_value_usd") or 0.0)
+        pnl = row.get("unrealized_pnl_usd")
+        holdings.add_row(
+            rich_escape(str(row.get("symbol") or "?")),
+            rich_escape(str(row.get("asset_type") or "")),
+            f"{value:,.2f}",
+            f"{(value / usd * 100):.1f}%" if usd > 0 else "—",
+            f"{float(pnl):,.2f}" if pnl is not None else "—",
+            rich_escape(", ".join(str(item) for item in (row.get("sources") or row.get("brokers") or []))),
+        )
+    console.print(holdings)
+    for warning in snapshot.get("warnings") or []:
+        console.print(f"[yellow]![/yellow] {rich_escape(str(warning))}")
+
+
+def cmd_portfolio_show(service: Any | None = None, snapshot_id: str | None = None) -> int:
+    """Print the latest snapshot or one exact stored observation.
+
+    Args:
+        service: Optional ``PortfolioService`` (tests inject a stub).
+        snapshot_id: Optional immutable snapshot id; never falls back to latest.
+
+    Returns:
+        The process exit code.
+    """
+    instance = _portfolio_service(service)
+    snapshot = instance.latest() if snapshot_id is None else instance.snapshot_by_id(snapshot_id)
+    if snapshot is None:
+        if snapshot_id is not None:
+            console.print("[red]The requested portfolio snapshot is unavailable.[/red]")
+            return EXIT_RUN_FAILED
+        console.print(
+            "[dim]No portfolio snapshot yet. Select sources on the Web UI Portfolio page "
+            "(or `vibe-trading portfolio sources`), then run `vibe-trading portfolio refresh`.[/dim]"
+        )
+        return EXIT_SUCCESS
+    _print_portfolio_snapshot(snapshot)
+    return EXIT_SUCCESS
+
+
+def cmd_portfolio_refresh(service: Any | None = None) -> int:
+    """Read every enabled source now, store a new snapshot, and print it.
+
+    A source that fails is reported and excluded from the totals; the command
+    then exits non-zero so scripts notice the portfolio is incomplete.
+
+    Args:
+        service: Optional ``PortfolioService`` (tests inject a stub).
+
+    Returns:
+        ``EXIT_SUCCESS`` for a complete snapshot, ``EXIT_RUN_FAILED`` otherwise.
+    """
+    try:
+        snapshot = _portfolio_service(service).refresh()
+    except RuntimeError as exc:
+        console.print(f"[red]{rich_escape(str(exc))}[/red]")
+        return EXIT_RUN_FAILED
+    _print_portfolio_snapshot(snapshot)
+    return EXIT_SUCCESS if snapshot.get("complete") else EXIT_RUN_FAILED
+
+
+def cmd_portfolio_sources(service: Any | None = None) -> int:
+    """List the local read-only connections and whether the portfolio uses them.
+
+    Args:
+        service: Optional ``PortfolioService`` (tests inject a stub).
+
+    Returns:
+        The process exit code.
+    """
+    rows = _portfolio_service(service).sources()
+    table = Table(title="Portfolio sources", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Selected", justify="center", width=8)
+    table.add_column("Connection")
+    table.add_column("Connector")
+    table.add_column("Env")
+    table.add_column("Transport")
+    table.add_column("Credentials", justify="center")
+    for row in rows:
+        connection_cell = (
+            f"[cyan]{rich_escape(str(row.get('connection_id') or row.get('id')))}[/cyan]"
+            f"\n[dim]{rich_escape(str(row.get('label') or ''))}[/dim]"
+        )
+        account_ref = str(row.get("account_ref") or "")
+        if account_ref:
+            connection_cell += f"\n[dim]account ····{rich_escape(account_ref[-4:])}[/dim]"
+        elif row.get("account_selection_required"):
+            connection_cell += "\n[yellow]no account selected[/yellow]"
+        table.add_row(
+            "[green]*[/green]" if row.get("selected") else "",
+            connection_cell,
+            rich_escape(str(row.get("connector") or "")),
+            rich_escape(str(row.get("environment") or "")),
+            rich_escape(str(row.get("transport") or "")),
+            "[green]ok[/green]" if row.get("credentials_configured") else "[dim]-[/dim]",
+        )
+    console.print(table)
+    if not rows:
+        console.print("[dim]No local connections yet. Create one on the Web UI Portfolio page (Manage accounts → Connection center).[/dim]")
+    return EXIT_SUCCESS
+
+
+def _dispatch_portfolio(args: argparse.Namespace) -> int:
+    """Route ``vibe-trading portfolio <subcommand>``; bare ``portfolio`` shows.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The process exit code.
+    """
+    sub = getattr(args, "portfolio_command", None) or "show"
+    if sub == "show":
+        return cmd_portfolio_show(snapshot_id=getattr(args, "snapshot_id", None))
+    if sub == "refresh":
+        return cmd_portfolio_refresh()
+    if sub == "sources":
+        return cmd_portfolio_sources()
+    if sub == "import-extraetf":
+        from datetime import datetime, timezone
+        from src.portfolio.imports import MAX_IMPORT_BYTES
+        try:
+            path = Path(args.file).expanduser()
+            with path.open("rb") as handle:
+                data = handle.read(MAX_IMPORT_BYTES + 1)
+                modified = os.fstat(handle.fileno()).st_mtime
+            if len(data) > MAX_IMPORT_BYTES:
+                raise ValueError("extraETF export exceeds the 4 MiB import limit")
+            instance = _portfolio_service()
+            imported = instance.settings_store.import_store.create(
+                csv_text=data.decode("utf-8-sig"), label=args.label,
+                source_mtime=datetime.fromtimestamp(modified, timezone.utc).isoformat(),
+                expected_positions=args.expected_positions, max_age_days=args.max_age_days,
+            )
+            if args.select:
+                settings = instance.settings()
+                settings["sources"].append({"connection_id": imported["id"], "source_kind": "extraetf",
+                                            "label": imported["label"], "include_cash": False})
+                instance.save_settings(settings)
+            console.print_json(data=imported)
+            return 0
+        except (ValueError, OSError) as exc:
+            console.print(f"[red]{rich_escape(str(exc))}[/red]")
+            return 1
+    if sub == "rebalance":
+        try:
+            target = json.loads(Path(args.targets).read_text())
+            console.print_json(data=_portfolio_service().rebalance(args.snapshot_id, target))
+            return 0
+        except (ValueError, OSError) as exc:
+            console.print(f"[red]{rich_escape(str(exc))}[/red]")
+            return 1
+    console.print(f"[red]Unknown portfolio subcommand: {sub}[/red]")
+    return EXIT_USAGE_ERROR
+
+
+def cmd_connector_use(profile_id: str) -> int:
+    """Select the default trading connector profile."""
+    from src.trading.profiles import profile_by_id, save_selected_profile_id
+
+    try:
+        profile = profile_by_id(profile_id)
+        path = save_selected_profile_id(profile.id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    console.print(f"[green]Selected trading connector[/green] {profile.id}")
+    console.print(f"[dim]{profile.label} · {profile.environment} · {profile.transport}[/dim]")
+    console.print(f"[dim]Config: {path}[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_connector_configure(
+    profile_id: str,
+    *,
+    host: str = "127.0.0.1",
+    port: int | None = None,
+    client_id: int = 77,
+    account: str | None = None,
+    yes: bool = False,
+) -> int:
+    """Configure a local connector profile."""
+    from src.trading.connectors.ibkr.local import IBKRLocalConfig, config_path, save_config
+
+    try:
+        profile = _selected_profile_or(profile_id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    if profile.transport != "local_tws" or profile.connector != "ibkr":
+        console.print(f"[red]{profile.id} is not a local TWS/Gateway profile.[/red]")
+        return EXIT_USAGE_ERROR
+
+    path = config_path()
+    if path.exists() and not yes:
+        console.print(f"[yellow]Local connector config already exists:[/yellow] {path}")
+        try:
+            if not Confirm.ask("Overwrite it?", default=False):
+                console.print("[dim]Aborted.[/dim]")
+                return EXIT_SUCCESS
+        except EOFError:
+            console.print("[dim]No input available; use --yes for non-interactive setup.[/dim]")
+            return EXIT_USAGE_ERROR
+
+    cfg = IBKRLocalConfig.from_mapping(
+        {
+            **profile.config,
+            "host": host,
+            "port": port or profile.config.get("port"),
+            "clientId": client_id,
+            "account": account,
+            "readonly": True,
+        }
+    )
+    path = save_config(cfg)
+    console.print(f"[green]Configured[/green] {profile.id} [dim]({path})[/dim]")
+    console.print(f"[dim]Run `vibe-trading connector check {profile.id}` to verify it.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_connector_check(
+    profile_id: Optional[str] = None,
+    *,
+    connection_id: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+    account: str | None = None,
+) -> int:
+    """Check selected or explicit trading connector profile."""
+    from src.trading.service import check_connection
+
+    try:
+        profile = _selected_profile_or(profile_id)
+        options = {
+            "host": host,
+            "port": port,
+            "client_id": client_id,
+            "account": account,
+        }
+        if connection_id is not None:
+            options["connection_id"] = connection_id
+        report = check_connection(profile.id, **options)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Connector check failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    title = f"Trading Connector: {profile.id}"
+    if profile.transport == "local_tws":
+        table = Table(title=title, box=box.SIMPLE_HEAVY, show_lines=False)
+        table.add_column("Endpoint")
+        table.add_column("Profile")
+        table.add_column("Address")
+        table.add_column("State")
+        for row in report.get("ports", []):
+            open_state = "[green]open[/green]" if row.get("open") else "[dim]closed[/dim]"
+            table.add_row(
+                str(row.get("label")),
+                str(row.get("profile")),
+                f"{row.get('host')}:{row.get('port')}",
+                open_state,
+            )
+        console.print(table)
+        target = report.get("target", {})
+        target_state = "open" if target.get("open") else "closed"
+        console.print(f"Target: [bold]{target.get('host')}:{target.get('port')}[/bold] ({target_state})")
+        sdk = report.get("sdk", {})
+        if not sdk.get("installed"):
+            console.print("[yellow]Missing optional dependency:[/yellow] pip install 'ib_async>=2.0'")
+        if report.get("account"):
+            accounts = ", ".join(report["account"].get("accounts", [])) or "(none)"
+            console.print(f"Accounts: [cyan]{rich_escape(accounts)}[/cyan]")
+    else:
+        table = Table(title=title, box=box.SIMPLE_HEAVY, show_lines=False)
+        table.add_column("Field", style="cyan")
+        table.add_column("Value")
+        table.add_row("Connector", profile.connector)
+        table.add_row("Environment", profile.environment)
+        table.add_row("Transport", profile.transport)
+        if profile.transport == "broker_sdk":
+            if "configured" in report:
+                table.add_row("Configured", "yes" if report.get("configured") else "[red]no[/red]")
+            if report.get("connection_state"):
+                table.add_row("Connection", str(report["connection_state"]))
+            sdk = report.get("sdk")
+            if isinstance(sdk, dict) and "installed" in sdk:
+                package = str(sdk.get("package") or "SDK")
+                state = "installed" if sdk.get("installed") else "[yellow]missing[/yellow]"
+                table.add_row(package, state)
+            if "tap" in report:
+                table.add_row("TAP", "enabled" if report.get("tap") else "disabled")
+            capabilities = report.get("capabilities")
+            if capabilities:
+                table.add_row("Capabilities", ", ".join(capabilities))
+        else:
+            table.add_row("Configured", "yes" if report.get("configured") else "[red]no[/red]")
+            table.add_row("OAuth token", "present" if report.get("oauth_token_present") else "[yellow]missing[/yellow]")
+            table.add_row("Capabilities", ", ".join(report.get("capabilities", [])))
+        console.print(table)
+
+    if report.get("status") not in {"ok"}:
+        console.print(f"[red]{rich_escape(str(report.get('error') or report.get('status') or 'not ready'))}[/red]")
+        return EXIT_RUN_FAILED
+    console.print("[green]Connector profile is ready.[/green]")
+    return EXIT_SUCCESS
+
+
+def cmd_connector_setup(
+    profile_id: str,
+    *,
+    connection_id: str | None = None,
+    label: str | None = None,
+    skip_check: bool = False,
+    account: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+) -> int:
+    """Create a local read-only connection and collect secrets outside AI prompts.
+
+    Args:
+        profile_id: Read-only portfolio profile to connect through.
+        connection_id: Local id; defaults to ``<connector>-<environment>``.
+        label: Display name; defaults to the profile label.
+        skip_check: Skip the connectivity check (and, for an account-scoped
+            profile, the account selection that needs the broker).
+        account: Account to scope an account-scoped connection to; without it
+            the user picks from the broker's account list.
+        host: Optional connection-specific IBKR/Futu gateway host; requires port.
+        port: Optional connection-specific gateway port; requires host.
+
+    Returns:
+        The process exit code.
+    """
+    from dataclasses import replace
+
+    from src.trading.connections import (
+        ConnectionStore,
+        credential_field_catalog,
+        is_readonly_connection_profile,
+        requires_account_selection,
+    )
+    from src.trading.profiles import profile_by_id
+    from src.trading.service import check_connection
+
+    try:
+        profile = profile_by_id(profile_id)
+        if not is_readonly_connection_profile(profile):
+            raise ValueError(f"{profile.id} is not a read-only connection profile")
+        if (host is None) != (port is None):
+            raise ValueError("gateway endpoint requires both --host and --port")
+        local_id = str(connection_id or f"{profile.connector}-{profile.environment}").strip().lower()
+        store = ConnectionStore()
+        connection = store.ensure(local_id, profile.id, label or profile.label)
+        if host is not None:
+            connection = store.save(replace(connection, endpoint={"host": host, "port": port}))
+        fields = credential_field_catalog(profile.id)
+        names = [str(field["name"]) for field in fields]
+        status = store.credentials.status(connection.id, names) if names else {}
+        values: dict[str, str] = {}
+        for field in fields:
+            name = str(field["name"])
+            required = bool(field.get("required", True))
+            while True:
+                saved = bool(status.get(name))
+                suffix = " [already saved; Enter keeps it]" if saved else ""
+                value = Prompt.ask(
+                    f"{field.get('label') or name}{suffix}",
+                    password=bool(field.get("secret", True)),
+                    default="",
+                    show_default=False,
+                )
+                if value:
+                    values[name] = value
+                    break
+                if saved or not required:
+                    break
+                console.print(f"[yellow]{field.get('label') or name} is required.[/yellow]")
+        if values:
+            store.credentials.save(connection.id, values)
+    except (RuntimeError, ValueError) as exc:
+        console.print(f"[red]Connector setup failed:[/red] {rich_escape(str(exc))}")
+        return EXIT_USAGE_ERROR
+
+    console.print(
+        f"[green]Local read-only connection ready[/green] "
+        f"{connection.id} [dim]({connection.profile_id})[/dim]"
+    )
+    needs_account = requires_account_selection(profile)
+    if skip_check:
+        if needs_account and not connection.account_ref:
+            console.print(
+                f"[yellow]Select the account this connection reads:[/yellow] "
+                f"vibe-trading connector select-account {connection.id}"
+            )
+        return EXIT_SUCCESS
+    try:
+        report = check_connection(profile.id, connection_id=connection.id)
+    except Exception as exc:  # noqa: BLE001 - return an actionable diagnostic
+        console.print(f"[red]Connection test failed:[/red] {rich_escape(str(exc))}")
+        return EXIT_RUN_FAILED
+    if report.get("status") != "ok":
+        console.print(
+            f"[red]Connection test failed:[/red] "
+            f"{rich_escape(str(report.get('error') or report.get('status')))}"
+        )
+        return EXIT_RUN_FAILED
+    console.print("[green]Connection test passed.[/green]")
+    if needs_account and (account is not None or not connection.account_ref):
+        return cmd_connector_select_account(connection.id, account=account)
+    return EXIT_SUCCESS
+
+
+def cmd_connector_select_account(
+    connection_id: str,
+    *,
+    account: str | None = None,
+    clear: bool = False,
+) -> int:
+    """Scope an account-scoped connection to one account from the broker's list.
+
+    There is no default: without ``account`` the user picks from the list, and
+    an account the broker does not list is refused.
+
+    Args:
+        connection_id: Connection to update.
+        account: Account reference to select; prompts when omitted.
+        clear: Remove the selection instead.
+
+    Returns:
+        The process exit code.
+    """
+    from src.trading.accounts import AccountListUnavailable, choose_account, connection_accounts
+    from src.trading.connections import ConnectionStore
+
+    store = ConnectionStore()
+    try:
+        connection = store.get(connection_id)
+        if clear:
+            store.select_account(connection.id, "")
+            console.print(f"[green]Cleared the account selection of[/green] {connection.id}")
+            return EXIT_SUCCESS
+        choices = connection_accounts(connection)
+        if account is None:
+            usable = [row for row in choices if not row.get("deactivated")]
+            if not usable:
+                raise ValueError("this login reaches no active account")
+            table = Table(title="Accounts", box=box.SIMPLE_HEAVY)
+            table.add_column("#", justify="right")
+            table.add_column("Account")
+            table.add_column("Broker default", justify="center")
+            table.add_column("Agentic trading", justify="center")
+            for index, row in enumerate(usable, start=1):
+                table.add_row(
+                    str(index),
+                    rich_escape(str(row.get("label") or "")),
+                    "yes" if row.get("is_default") else "",
+                    "allowed" if row.get("agentic_allowed") else "[dim]not allowed[/dim]",
+                )
+            console.print(table)
+            pick = Prompt.ask("Account", choices=[str(index) for index in range(1, len(usable) + 1)])
+            account = str(usable[int(pick) - 1]["account_ref"])
+        chosen = choose_account(choices, account.strip())
+        store.select_account(connection.id, str(chosen["account_ref"]))
+    except AccountListUnavailable as exc:
+        console.print(f"[red]Could not read the account list:[/red] {rich_escape(str(exc))}")
+        return EXIT_RUN_FAILED
+    except (RuntimeError, ValueError) as exc:
+        console.print(f"[red]Account selection failed:[/red] {rich_escape(str(exc))}")
+        return EXIT_USAGE_ERROR
+    console.print(f"[green]{connection.id} now reads[/green] {rich_escape(str(chosen.get('label') or ''))}")
+    return EXIT_SUCCESS
+
+
+def _first_present(row: dict[str, Any], *keys: str) -> Any:
+    """Return the first key whose value is not None (0/'' are kept), else None.
+
+    Connectors expose different result schemas (IBKR-style ``position``/``avg_cost``
+    vs Longbridge-style ``quantity``/``cost_price``); the shared CLI renderers use
+    this to read whichever key a given connector emitted without dropping a real
+    zero quantity via a falsy ``or`` chain.
+    """
+    for key in keys:
+        value = row.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _print_connector_balances(result: dict[str, Any]) -> int:
+    """Render the ``balances`` list returned by ``broker_sdk`` connectors.
+
+    Two row shapes arrive here. Longbridge reports one row per currency with
+    net assets, cash, buying power and margins. ccxt (Binance spot) reports one
+    row per asset with ``free`` / ``used`` / ``total``, where ``used`` is locked
+    in open orders. Each shape gets its own columns: read through the other
+    one's keys, every cell was empty (#1539), and a coin quantity is not a
+    net-asset figure.
+    """
+    cell = lambda v: "" if v is None else str(v)  # noqa: E731
+    rows = result.get("balances", [])
+    if any("asset" in row for row in rows):
+        table = Table(
+            title=f"Asset Balances · {result.get('profile_id')}",
+            caption=f"{len(rows)} non-zero balances",
+            box=box.SIMPLE_HEAVY,
+            show_lines=False,
+        )
+        table.add_column("Asset")
+        table.add_column("Free", justify="right")
+        table.add_column("Locked", justify="right")
+        table.add_column("Total", justify="right")
+        for row in rows:
+            table.add_row(cell(row.get("asset")), cell(row.get("free")), cell(row.get("used")), cell(row.get("total")))
+        console.print(table)
+        return EXIT_SUCCESS
+    table = Table(title=f"Account Balances · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Currency")
+    table.add_column("Net Assets", justify="right")
+    table.add_column("Total Cash", justify="right")
+    table.add_column("Buy Power", justify="right")
+    table.add_column("Init Margin", justify="right")
+    table.add_column("Maint Margin", justify="right")
+    for row in rows:
+        table.add_row(
+            cell(row.get("currency")),
+            cell(row.get("net_assets")),
+            cell(row.get("total_cash")),
+            cell(row.get("buy_power")),
+            cell(row.get("init_margin")),
+            cell(row.get("maintenance_margin")),
+        )
+    console.print(table)
+    _print_balance_details(rows)
+    return EXIT_SUCCESS
+
+
+def _print_balance_details(rows: list[dict[str, Any]]) -> None:
+    """Print broker cash legs and financing in each reported currency.
+
+    Args:
+        rows: Balance rows from a connector or a saved portfolio snapshot.
+    """
+    cell = lambda value: "—" if value is None else rich_escape(str(value))  # noqa: E731
+    for row in rows:
+        if not row.get("cash_infos") and all(row.get(key) is None for key in (
+            "max_finance_amount", "remaining_finance_amount"
+        )):
+            continue
+        currency = cell(row.get("currency"))
+        console.print(f"Cash and financing · {currency}")
+        console.print(f"Financing limit: {cell(row.get('max_finance_amount'))} {currency}; "
+                      f"Remaining financing: {cell(row.get('remaining_finance_amount'))} {currency}")
+        table = Table(box=box.SIMPLE_HEAVY)
+        for name in ("Currency", "Available", "Withdrawable", "Frozen", "Settling"):
+            table.add_column(name)
+        for cash in row.get("cash_infos") or []:
+            table.add_row(*(cell(cash.get(key)) for key in (
+                "currency", "available_cash", "withdraw_cash", "frozen_cash", "settling_cash"
+            )))
+        if table.row_count:
+            console.print(table)
+
+
+def _print_connector_assets(result: dict[str, Any]) -> int:
+    """Render Futu's per-currency ``assets`` rows from ``accinfo_query``."""
+    cell = lambda v: "" if v is None else str(v)  # noqa: E731
+    table = Table(title=f"Account Assets · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Currency")
+    table.add_column("Total Assets", justify="right")
+    table.add_column("Cash", justify="right")
+    table.add_column("Market Value", justify="right")
+    table.add_column("Available Funds", justify="right")
+    table.add_column("Buying Power", justify="right")
+    for row in result.get("assets", []):
+        table.add_row(
+            cell(row.get("currency")),
+            cell(row.get("total_assets")),
+            cell(row.get("cash")),
+            cell(row.get("market_val")),
+            cell(row.get("available_funds")),
+            cell(row.get("power")),
+        )
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def _normalize_mcp_value(value: Any) -> Any:
+    """Unwrap a value from a remote MCP call into plain JSON-safe data.
+
+    Remote connectors (e.g. Robinhood) return their payload as an instance of
+    ``fastmcp``'s auto-generated ``Root`` type — a *dataclass* built at runtime
+    via ``dataclasses.make_dataclass`` from the tool's JSON Schema, not a
+    Pydantic model. ``dataclasses.asdict()`` is the correct unwrap (it also
+    recurses into nested dataclass fields, e.g. ``buying_power``); a stray
+    Pydantic model elsewhere falls back to ``model_dump()``. Anything else
+    (already a dict/list/scalar) is returned as-is.
+    """
+    import dataclasses
+
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return value
+
+
+def _flatten_account_fields(
+    data: dict[str, Any],
+    prefix: str = "",
+    *,
+    skip_zero: bool = True,
+) -> list[tuple[str, str]]:
+    """Flatten a remote-MCP account payload into (tag, value) rows.
+
+    Nested one level (e.g. ``buying_power.buying_power``) rather than
+    recursing arbitrarily deep, since broker account payloads are shallow.
+    Skips ``None``. By default it also skips zero-valued numeric-looking fields,
+    matching remote-MCP guidance where zero means an absent asset-class balance.
+    Direct SDK account summaries can disable that behavior because a zero or
+    false risk/status field is meaningful account state.
+    """
+    rows: list[tuple[str, str]] = []
+    for key, value in data.items():
+        if key == "currency" or value is None:
+            continue
+        label = f"{prefix}{key}"
+        normalized = _normalize_mcp_value(value)
+        if isinstance(normalized, dict):
+            rows.extend(
+                _flatten_account_fields(
+                    normalized,
+                    prefix=f"{label}.",
+                    skip_zero=skip_zero,
+                )
+            )
+            continue
+        text = str(normalized)
+        if skip_zero:
+            try:
+                if float(text) == 0.0:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        rows.append((label, text))
+    return rows
+
+
+def _print_connector_account_mapping(
+    result: dict[str, Any],
+    account_data: dict[str, Any],
+) -> int:
+    """Render the flat/nested ``account`` mapping used by direct SDK brokers."""
+    account_label = (
+        account_data.get("account_number")
+        or result.get("account_number")
+        or result.get("profile_id")
+        or result.get("profile")
+        or "unknown"
+    )
+    table = Table(
+        title=f"Account Summary · {result.get('profile_id') or result.get('profile') or account_label}",
+        box=box.SIMPLE_HEAVY,
+        show_lines=False,
+    )
+    table.add_column("Field")
+    table.add_column("Value", justify="right")
+    currency = account_data.get("currency")
+    if currency is not None:
+        table.add_row("currency", str(currency))
+    for tag, value in _flatten_account_fields(account_data, skip_zero=False):
+        table.add_row(tag, value)
+    console.print(f"Account: [cyan]{rich_escape(str(account_label))}[/cyan]")
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def _enum_text(value: Any) -> str:
+    """Render ``OrderSide.BUY``-style enum reprs as ``BUY``.
+
+    broker_sdk connectors stringify SDK enums, so the raw repr reaches the
+    table. Only strips when the prefix looks like a CamelCase class name (it
+    must contain a lowercase letter), so ticker symbols such as ``BRK.B`` and
+    decimal values are left alone.
+    """
+    text = str(value or "")
+    match = re.fullmatch(r"([A-Z][A-Za-z0-9_]*)\.([A-Z][A-Z0-9_]*)", text)
+    if match and any(ch.islower() for ch in match.group(1)):
+        return match.group(2)
+    return text
+
+
+def _print_connector_account(result: dict[str, Any]) -> int:
+    if result.get("valuation_basis") == "margin_limits_not_net_liquidation":
+        console.print_json(data=result)
+        return EXIT_SUCCESS
+    accounts = ", ".join(result.get("accounts", [])) or "(none)"
+    rows = result.get("summary", [])
+    # broker_sdk connectors (Longbridge, …) return a ``balances`` list instead of
+    # IBKR-style ``summary`` tag/value rows; render that when present (#735).
+    if not rows and result.get("balances"):
+        label = accounts if accounts != "(none)" else result.get("profile_id", result.get("profile", "unknown"))
+        console.print(f"Accounts: [cyan]{rich_escape(str(label))}[/cyan]")
+        return _print_connector_balances(result)
+    if not rows and result.get("assets"):
+        return _print_connector_assets(result)
+    account_data = _normalize_mcp_value(result.get("account"))
+    if not rows and isinstance(account_data, dict) and account_data:
+        return _print_connector_account_mapping(result, account_data)
+    # Trading 212 returns its cash and account metadata as two separate mappings.
+    split = {key: result[key] for key in ("cash", "metadata") if isinstance(result.get(key), dict) and result[key]}
+    if not rows and split:
+        return _print_connector_account_mapping(result, split)
+    if not rows:
+        # Not the broker_sdk flat shape — try the remote-MCP nested shape.
+        # Robinhood's tool result double-wraps: result["data"] unwraps to
+        # {"data": <actual account fields>, "guide": "<advisory text>"},
+        # not the fields directly — drill one more level in when present.
+        wrapper = _normalize_mcp_value(result.get("data"))
+        raw_data = wrapper
+        guide = result.get("guide")
+        if isinstance(wrapper, dict) and "data" in wrapper and "guide" in wrapper:
+            raw_data = _normalize_mcp_value(wrapper.get("data"))
+            guide = wrapper.get("guide") or guide
+        if isinstance(raw_data, dict):
+            currency = raw_data.get("currency", "")
+            account_label = result.get("account_number") or accounts
+            table = Table(
+                title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False
+            )
+            table.add_column("Field")
+            table.add_column("Value", justify="right")
+            for tag, value in _flatten_account_fields(raw_data):
+                is_currency_code = tag.endswith("currency") or tag.endswith("_currency")
+                display = value if is_currency_code else f"{value} {currency}".strip()
+                table.add_row(tag, display)
+            console.print(f"Account: [cyan]{rich_escape(str(account_label))}[/cyan]")
+            console.print(table)
+            if guide:
+                console.print(f"[dim]{rich_escape(str(guide))}[/dim]")
+            return EXIT_SUCCESS
+        console.print(f"Accounts: [cyan]{rich_escape(accounts)}[/cyan]")
+        console.print("[dim]No account summary returned.[/dim]")
+        return EXIT_SUCCESS
+    console.print(f"Accounts: [cyan]{rich_escape(accounts)}[/cyan]")
+    table = Table(title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Account")
+    table.add_column("Tag")
+    table.add_column("Value", justify="right")
+    table.add_column("Currency")
+    for row in rows:
+        table.add_row(
+            str(row.get("account") or ""),
+            str(row.get("tag") or ""),
+            str(row.get("value") or ""),
+            str(row.get("currency") or ""),
+        )
+    console.print(table)
+    return EXIT_SUCCESS
+
+def cmd_connector_account(
+    profile_id: Optional[str] = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+    account: str | None = None,
+    connection_id: str | None = None,
+) -> int:
+    """Print account summary from a connector profile."""
+    from src.trading.service import get_account
+
+    try:
+        options = {"host": host, "port": port, "client_id": client_id, "account": account}
+        if connection_id is not None:
+            options["connection_id"] = connection_id
+        result = get_account(_profile_id(profile_id), **options)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Connector account failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+    if result.get("status") == "error":
+        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
+        return EXIT_RUN_FAILED
+    return _print_connector_account(result)
+
+
+def cmd_connector_positions(
+    profile_id: Optional[str] = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+    account: str | None = None,
+    connection_id: str | None = None,
+) -> int:
+    """Print positions from a connector profile."""
+    from src.trading.service import get_positions
+
+    try:
+        options = {"host": host, "port": port, "client_id": client_id, "account": account}
+        if connection_id is not None:
+            options["connection_id"] = connection_id
+        result = get_positions(_profile_id(profile_id), **options)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Connector positions failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+    if result.get("status") == "error":
+        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
+        return EXIT_RUN_FAILED
+    if result.get("valuation_basis") == "broker_books_unaggregated":
+        console.print_json(data=result)
+        return EXIT_SUCCESS
+    rows = result.get("positions", [])
+    if not rows:
+        # Not the broker_sdk flat shape — try the remote-MCP nested shape
+        # (same double-wrap as account: result["data"] -> {"data": {"positions":
+        # [...], "next": ...}, "guide": "..."}).
+        wrapper = _normalize_mcp_value(result.get("data"))
+        inner = wrapper
+        guide = result.get("guide")
+        if isinstance(wrapper, dict) and "data" in wrapper and "guide" in wrapper:
+            inner = _normalize_mcp_value(wrapper.get("data"))
+            guide = wrapper.get("guide") or guide
+        remote_positions = inner.get("positions") if isinstance(inner, dict) else None
+        if remote_positions:
+            account_label = result.get("account_number") or "(none)"
+            table = Table(title=f"Positions · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+            table.add_column("Symbol")
+            table.add_column("Type")
+            table.add_column("Qty", justify="right")
+            table.add_column("Avail. Sell", justify="right")
+            table.add_column("Avg Buy Price", justify="right")
+            for pos in remote_positions:
+                pos = _normalize_mcp_value(pos)
+                table.add_row(
+                    str(pos.get("symbol") or pos.get("local_symbol") or ""),
+                    str(pos.get("type") or pos.get("sec_type") or ""),
+                    str(pos.get("quantity") or pos.get("position") or ""),
+                    str(pos.get("shares_available_for_sells") or ""),
+                    str(pos.get("average_buy_price") or pos.get("avg_cost") or ""),
+                )
+            console.print(f"Account: [cyan]{rich_escape(str(account_label))}[/cyan]")
+            console.print(table)
+            if guide:
+                console.print(f"[dim]{rich_escape(str(guide))}[/dim]")
+            next_cursor = inner.get("next") if isinstance(inner, dict) else None
+            if next_cursor:
+                console.print(f"[dim]More results available (next={rich_escape(str(next_cursor))}).[/dim]")
+            return EXIT_SUCCESS
+        console.print("[dim]No positions returned.[/dim]")
+        return EXIT_SUCCESS
+    table = Table(title=f"Positions · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Account")
+    table.add_column("Symbol")
+    table.add_column("Type")
+    table.add_column("Qty", justify="right")
+    table.add_column("Avg Cost", justify="right")
+    table.add_column("Currency")
+    for row in rows:
+        # Tolerate both IBKR-style and broker_sdk (Longbridge, …) schemas (#735):
+        # position→quantity, avg_cost→cost_price, sec_type→market.
+        qty = _first_present(row, "position", "quantity")
+        avg_cost = _first_present(row, "avg_cost", "cost_price")
+        table.add_row(
+            str(row.get("account") or ""),
+            str(row.get("local_symbol") or row.get("symbol") or ""),
+            str(row.get("sec_type") or row.get("market") or ""),
+            "" if qty is None else str(qty),
+            "" if avg_cost is None else str(avg_cost),
+            str(row.get("currency") or ""),
+        )
+    console.print(table)
+    return EXIT_SUCCESS
+
+def cmd_connector_orders(
+    profile_id: Optional[str] = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+    account: str | None = None,
+    include_executions: bool = False,
+) -> int:
+    """Print open orders from a connector profile."""
+    from src.trading.service import get_open_orders
+
+    try:
+        result = get_open_orders(
+            _profile_id(profile_id),
+            host=host,
+            port=port,
+            client_id=client_id,
+            account=account,
+            include_executions=include_executions,
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Connector orders failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+    if result.get("status") == "error":
+        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
+        return EXIT_RUN_FAILED
+    orders = result.get("open_orders", [])
+    if not orders:
+        console.print("[dim]No open orders returned.[/dim]")
+        return EXIT_SUCCESS
+    table = Table(title=f"Open Orders · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Account")
+    table.add_column("Symbol")
+    table.add_column("Action")
+    table.add_column("Type")
+    table.add_column("Qty", justify="right")
+    table.add_column("Limit", justify="right")
+    table.add_column("Status")
+    for row in orders:
+        contract = row.get("contract") or {}
+        order = row.get("order") or row
+        # IBKR nests status as ``{"status": {"status": ...}}``; broker_sdk
+        # connectors (Alpaca, …) return it as a plain string on the flat row.
+        raw_status = row.get("status")
+        status_text = raw_status.get("status") if isinstance(raw_status, dict) else raw_status
+        table.add_row(
+            str(order.get("account") or ""),
+            str(contract.get("local_symbol") or contract.get("symbol") or order.get("symbol") or ""),
+            _enum_text(order.get("action") or order.get("side") or ""),
+            _enum_text(order.get("order_type") or ""),
+            str(order.get("total_quantity") or order.get("quantity") or ""),
+            str(order.get("limit_price") or ""),
+            _enum_text(status_text or ""),
+        )
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def cmd_connector_quote(
+    symbol: str,
+    profile_id: Optional[str] = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+    account: str | None = None,
+    exchange: str = "SMART",
+    currency: str = "USD",
+    sec_type: str = "STK",
+) -> int:
+    """Print a quote from a connector profile."""
+    from src.trading.service import get_quote
+
+    try:
+        result = get_quote(
+            symbol,
+            _profile_id(profile_id),
+            host=host,
+            port=port,
+            client_id=client_id,
+            account=account,
+            exchange=exchange,
+            currency=currency,
+            sec_type=sec_type,
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Connector quote failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+    if result.get("status") == "error":
+        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
+        return EXIT_RUN_FAILED
+    quote = result.get("quote", {})
+    table = Table(title=f"Quote {result.get('symbol', symbol)} · {result.get('profile_id')}", box=box.SIMPLE_HEAVY)
+    table.add_column("Bid", justify="right")
+    table.add_column("Ask", justify="right")
+    table.add_column("Last", justify="right")
+    table.add_column("Close", justify="right")
+    table.add_column("Volume", justify="right")
+    table.add_row(
+        str(quote.get("bid") or ""),
+        str(quote.get("ask") or ""),
+        str(quote.get("last") or ""),
+        str(quote.get("close") or ""),
+        str(quote.get("volume") or ""),
+    )
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def cmd_connector_history(
+    symbol: str,
+    profile_id: Optional[str] = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+    account: str | None = None,
+    exchange: str = "SMART",
+    currency: str = "USD",
+    sec_type: str = "STK",
+    duration: str = "30 D",
+    bar_size: str = "1 day",
+    what_to_show: str = "TRADES",
+    use_rth: bool = True,
+    period: str = "1d",
+    limit: int = 90,
+) -> int:
+    """Print historical bars from a connector profile."""
+    from src.trading.service import get_history
+
+    try:
+        result = get_history(
+            symbol,
+            _profile_id(profile_id),
+            host=host,
+            port=port,
+            client_id=client_id,
+            account=account,
+            exchange=exchange,
+            currency=currency,
+            sec_type=sec_type,
+            duration=duration,
+            bar_size=bar_size,
+            what_to_show=what_to_show,
+            use_rth=use_rth,
+            period=period,
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Connector history failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+    if result.get("status") == "error":
+        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
+        return EXIT_RUN_FAILED
+    rows = result.get("bars", [])
+    # The table used to keep only the last 20 bars, so --limit 40 still
+    # printed 20. Honor the same limit that was sent to the connector.
+    shown = rows[-limit:] if isinstance(limit, int) and limit >= 1 else []
+    if not shown:
+        console.print("[dim]No historical bars returned.[/dim]")
+        return EXIT_SUCCESS
+    table = Table(title=f"History {result.get('symbol', symbol)} · {result.get('profile_id')}", box=box.SIMPLE_HEAVY)
+    table.add_column("Date")
+    table.add_column("Open", justify="right")
+    table.add_column("High", justify="right")
+    table.add_column("Low", justify="right")
+    table.add_column("Close", justify="right")
+    table.add_column("Volume", justify="right")
+    for row in shown:
+        table.add_row(
+            str(row.get("date") or ""),
+            str(row.get("open") or ""),
+            str(row.get("high") or ""),
+            str(row.get("low") or ""),
+            str(row.get("close") or ""),
+            str(row.get("volume") or ""),
+        )
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def _live_profile_connector(
+    profile_id: Optional[str],
+    *,
+    require_runner: bool = False,
+) -> tuple[int, Optional[str]]:
+    """Resolve a profile to a live-capable connector key."""
+    try:
+        profile = _selected_profile_or(profile_id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR, None
+    if profile.environment != "live" or profile.transport != "remote_mcp":
+        console.print(f"[red]{profile.id} is not a live remote MCP connector profile.[/red]")
+        return EXIT_USAGE_ERROR, None
+    if require_runner:
+        from src.trading.service import profile_supports_live_runner
+
+        if not profile_supports_live_runner(profile):
+            console.print(f"[red]{profile.id} does not support live runner management.[/red]")
+            return EXIT_USAGE_ERROR, None
+    return EXIT_SUCCESS, profile.connector
+
+
+def cmd_connector_authorize(profile_id: Optional[str]) -> int:
+    """Authorize a remote MCP connector profile."""
+    code, broker = _live_profile_connector(profile_id)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    return cmd_live_authorize(broker)
+
+
+def cmd_connector_status(profile_id: Optional[str]) -> int:
+    """Show connector status."""
+    try:
+        profile = _selected_profile_or(profile_id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    if profile.environment == "live" and profile.transport == "remote_mcp":
+        check_code = cmd_connector_check(profile.id)
+        if check_code != EXIT_SUCCESS:
+            return check_code
+        return cmd_live_status(profile.connector)
+    return cmd_connector_check(profile.id)
+
+
+def cmd_connector_start(profile_id: Optional[str]) -> int:
+    """Start a live remote MCP connector runner."""
+    code, broker = _live_profile_connector(profile_id, require_runner=True)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    return cmd_live_start(broker)
+
+
+def cmd_connector_runner_settings(profile_id: Optional[str], settings_file: Optional[str] = None) -> int:
+    """Show model budgets or save a JSON settings file for a stopped runner.
+
+    Args:
+        profile_id: Selected live connector profile.
+        settings_file: Optional JSON file containing DecisionSettings fields.
+
+    Returns:
+        CLI process exit code.
+    """
+    from urllib.parse import urlencode
+
+    code, broker = _live_profile_connector(profile_id, require_runner=True)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    path = "/live/runner/settings?" + urlencode({"broker": broker})
+    body = None
+    if settings_file:
+        try:
+            from src.live.runtime.decision_budget import DecisionSettings
+
+            body = DecisionSettings.model_validate_json(Path(settings_file).read_text()).model_dump()
+        except (OSError, ValueError) as exc:
+            console.print(f"[red]Invalid runner settings:[/red] {exc}")
+            return EXIT_USAGE_ERROR
+    result = _live_api_call("PUT" if body is not None else "GET", path, body=body)
+    console.print_json(data=result)
+    return EXIT_RUN_FAILED if result.get("status") == "error" else EXIT_SUCCESS
+
+
+def cmd_connector_stop(profile_id: Optional[str]) -> int:
+    """Stop a live remote MCP connector runner."""
+    code, broker = _live_profile_connector(profile_id, require_runner=True)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    return cmd_live_stop(broker)
+
+
+def cmd_connector_halt(profile_id: Optional[str]) -> int:
+    """Trip the halt switch for a live remote MCP connector profile."""
+    code, broker = _live_profile_connector(profile_id, require_runner=True)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    return cmd_live_halt(broker)
+
+
+def cmd_connector_resume(profile_id: Optional[str]) -> int:
+    """Clear the halt switch for a live remote MCP connector profile."""
+    code, broker = _live_profile_connector(profile_id, require_runner=True)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    return cmd_live_resume(broker)
+
+
+def cmd_connector_revoke(profile_id: Optional[str]) -> int:
+    """Revoke a live remote MCP connector profile."""
+    code, broker = _live_profile_connector(profile_id)
+    if code != EXIT_SUCCESS or broker is None:
+        return code
+    return cmd_live_revoke(broker)
+
+
+def _dispatch_connector(args: argparse.Namespace) -> int:
+    """Route parsed ``connector`` subcommands."""
+    _ensure_cli_env()
+    sub = getattr(args, "connector_command", None)
+    if sub == "list":
+        return cmd_connector_list()
+    if sub == "init":
+        return cmd_connector_init(args.connector_id, args.destination)
+    if sub == "validate":
+        return cmd_connector_validate(args.directory)
+    if sub == "install":
+        return cmd_connector_install(args.directory)
+    if sub == "use":
+        return cmd_connector_use(args.profile)
+    if sub == "configure":
+        return cmd_connector_configure(
+            args.profile,
+            host=args.host,
+            port=args.port,
+            client_id=args.client_id,
+            account=args.account,
+            yes=args.yes,
+        )
+    if sub == "setup":
+        return cmd_connector_setup(
+            args.profile,
+            connection_id=args.connection_id,
+            label=args.label,
+            skip_check=args.skip_check,
+            account=args.account,
+            host=args.host,
+            port=args.port,
+        )
+    if sub == "select-account":
+        return cmd_connector_select_account(
+            args.connection_id,
+            account=args.account,
+            clear=args.clear,
+        )
+    if sub == "check":
+        options = {
+            "host": args.host,
+            "port": args.port,
+            "client_id": args.client_id,
+            "account": args.account,
+        }
+        if args.connection_id is not None:
+            options["connection_id"] = args.connection_id
+        return cmd_connector_check(args.profile, **options)
+    if sub == "account":
+        return cmd_connector_account(
+            args.profile,
+            host=args.host,
+            port=args.port,
+            client_id=args.client_id,
+            account=args.account,
+            **({"connection_id": args.connection_id} if getattr(args, "connection_id", None) else {}),
+        )
+    if sub == "positions":
+        return cmd_connector_positions(
+            args.profile,
+            host=args.host,
+            port=args.port,
+            client_id=args.client_id,
+            account=args.account,
+            **({"connection_id": args.connection_id} if getattr(args, "connection_id", None) else {}),
+        )
+    if sub == "orders":
+        return cmd_connector_orders(
+            args.profile,
+            host=args.host,
+            port=args.port,
+            client_id=args.client_id,
+            account=args.account,
+            include_executions=args.include_executions,
+        )
+    if sub == "quote":
+        return cmd_connector_quote(
+            args.symbol,
+            args.profile,
+            host=args.host,
+            port=args.port,
+            client_id=args.client_id,
+            account=args.account,
+            exchange=args.exchange,
+            currency=args.currency,
+            sec_type=args.sec_type,
+        )
+    if sub == "history":
+        return cmd_connector_history(
+            args.symbol,
+            args.profile,
+            host=args.host,
+            port=args.port,
+            client_id=args.client_id,
+            account=args.account,
+            exchange=args.exchange,
+            currency=args.currency,
+            sec_type=args.sec_type,
+            duration=args.duration,
+            bar_size=args.bar_size,
+            what_to_show=args.what_to_show,
+            use_rth=not args.no_rth,
+            period=args.period,
+            limit=args.bar_limit,
+        )
+    if sub == "authorize":
+        return cmd_connector_authorize(args.profile)
+    if sub == "status":
+        return cmd_connector_status(args.profile)
+    if sub == "start":
+        return cmd_connector_start(args.profile)
+    if sub == "runner-settings":
+        return cmd_connector_runner_settings(args.profile, args.file)
+    if sub == "stop":
+        return cmd_connector_stop(args.profile)
+    if sub == "halt":
+        return cmd_connector_halt(args.profile)
+    if sub == "resume":
+        return cmd_connector_resume(args.profile)
+    if sub == "revoke":
+        return cmd_connector_revoke(args.profile)
+    console.print("[red]connector requires a subcommand.[/red] Try: vibe-trading connector list")
+    return EXIT_USAGE_ERROR
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint
+# ---------------------------------------------------------------------------
+
+def _positive_int(value: str) -> int:
+    """argparse type for counts that must be at least one."""
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {value!r}") from None
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {number}")
+    return number
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Compatibility wrapper for the modular parser registry."""
+    from cli.commands.parser import build_parser
+
+    return build_parser()
+
+def _handle_prompt_command(
+    prompt: Optional[str],
+    prompt_file: Optional[Path],
+    *,
+    max_iter: int,
+    json_mode: bool,
+    no_rich: bool,
+) -> int:
+    """Resolve a prompt and execute it."""
+    resolved_prompt, error_message = _read_prompt_source(prompt, prompt_file, no_rich=no_rich)
+    if error_message:
+        if json_mode:
+            _print_json_result({"status": "failed", "run_id": None, "run_dir": None, "reason": error_message})
+        else:
+            message = error_message if no_rich else f"[red]{error_message}[/red]"
+            print(error_message) if no_rich else console.print(message)
+        return EXIT_USAGE_ERROR
+    if not resolved_prompt:
+        if json_mode:
+            _print_json_result({"status": "failed", "run_id": None, "run_dir": None, "reason": "Prompt cannot be empty"})
+        else:
+            print("Prompt cannot be empty") if no_rich else console.print("[red]Prompt cannot be empty[/red]")
+        return EXIT_USAGE_ERROR
+    return cmd_run(resolved_prompt, max_iter, json_mode=json_mode, no_rich=no_rich)
+
+
+_INIT_ENV_PATH = Path.home() / ".vibe-trading" / ".env"
+
+from src.providers.registry import setup_choices
+
+_PROVIDER_CHOICES = setup_choices()
+
+
+
+
+from src.config.dotenv import render_env as _render_env_content  # noqa: F401 — legacy cli export
+
+
+from src.memory.persistent import MEMORY_TYPES  # noqa: E402  source-of-truth for choices/invariants
+
+_MEMORY_TYPE_STYLES = {
+    "user": "cyan",
+    "feedback": "yellow",
+    "project": "green",
+    "reference": "magenta",
+}
+
+# Invariant: every persisted memory type has a display style. If a new type
+# is added in src.memory.persistent.MEMORY_TYPES, this assert fails fast
+# instead of silently rendering it in fallback white.
+assert set(_MEMORY_TYPE_STYLES) == set(MEMORY_TYPES), (
+    f"MEMORY_TYPES vs _MEMORY_TYPE_STYLES drift: "
+    f"types={sorted(MEMORY_TYPES)}, styles={sorted(_MEMORY_TYPE_STYLES)}"
+)
+
+
+
+
+
+
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Cross-platform frontend setup / dev commands.
+#
+# These exist to bridge a real Windows footgun: the package's frontend uses
+# TypeScript, but `npx tsc` on Windows does NOT resolve the locally-installed
+# TypeScript binary. Instead, npx hits the npm registry and downloads an
+# abandoned 10-year-old package called `tsc@2.0.4` that prints
+# "This is not the tsc command you are looking for". The fix is to always
+# invoke TypeScript via `npm exec --package=typescript tsc ...` (or
+# `npx --package=typescript tsc ...`) on Windows; on POSIX, `npm run build`
+# already works because npm prepends ./node_modules/.bin to PATH for local
+# scripts.
+# ---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint returning a process exit code."""
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = _build_parser()
+    try:
+        args = parser.parse_args(raw_argv)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE_ERROR
+    if not sys.stdout.isatty():
+        args.no_rich = True
+        if hasattr(args, "run_no_rich"):
+            args.run_no_rich = True
+
+    if args.command == "init":
+        return cmd_init()
+    if args.command == "setup":
+        return _coerce_exit_code(
+            cmd_setup(frontend_dir=Path(args.frontend_dir))
+        )
+    if args.command == "dev":
+        return _coerce_exit_code(
+            cmd_dev(
+                backend_port=args.port,
+                frontend_port=args.frontend_port,
+                frontend_dir=Path(args.frontend_dir),
+            )
+        )
+    if args.command == "serve":
+        return serve_main(raw_argv[1:])
+    if args.command == "office":
+        from src.pixel_agents.cli import main as office_main
+        office_main(args.office_args)
+        return 0
+    if args.command == "provider":
+        if args.provider_command == "login":
+            return cmd_provider_login(args.provider)
+        if args.provider_command == "list":
+            from src.providers.registry import provider_catalog as catalog
+
+            console.print_json(data=catalog())
+            return EXIT_SUCCESS
+        if args.provider_command == "doctor":
+            return cmd_provider_doctor()
+        if args.provider_command == "custom":
+            from cli.custom_providers import run as run_custom_providers
+            return run_custom_providers(args)
+        console.print("[red]provider requires a subcommand.[/red] Try: vibe-trading provider doctor")
+        return EXIT_USAGE_ERROR
+    if args.command == "channels":
+        return _coerce_exit_code(_dispatch_channels(args))
+    if args.command == "data":
+        if args.data_command == "scan":
+            from src.data_gateway.__main__ import run_scan
+            return run_scan(args)
+        if args.data_command == "history":
+            from src.data_gateway.__main__ import run_history
+            try:
+                run_history(args)
+                return 0
+            except SystemExit as exc:
+                return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE_ERROR
+        return _coerce_exit_code(_dispatch_data(args))
+    if args.command == "run":
+        return _handle_prompt_command(
+            args.run_prompt,
+            args.run_prompt_file,
+            max_iter=args.run_max_iter,
+            json_mode=args.run_json,
+            no_rich=args.run_no_rich,
+        )
+    if args.command == "list":
+        return _coerce_exit_code(cmd_list(args.list_limit))
+    if args.command == "show":
+        return _coerce_exit_code(cmd_show(args.run_id))
+    if args.command == "chat":
+        from cli.main import _interactive_loop
+
+        return _coerce_exit_code(_interactive_loop(args.chat_max_iter))
+    if args.command == "update":
+        from cli.commands.update import cmd_update
+
+        return _coerce_exit_code(cmd_update())
+    if args.command == "alpha":
+        from src.factors.cli_handlers import dispatch as _alpha_dispatch
+        return _coerce_exit_code(_alpha_dispatch(args))
+    if args.command == "hypothesis":
+        from src.hypotheses.cli_handlers import dispatch as _hyp_dispatch
+        return _coerce_exit_code(_hyp_dispatch(args))
+    if args.command == "research-artifact":
+        from src.research_artifacts.cli_handlers import dispatch as _research_artifact_dispatch
+        return _coerce_exit_code(_research_artifact_dispatch(args))
+    if args.command == "research-lab":
+        from src.research_lab.cli import dispatch as _research_lab_dispatch
+        return _coerce_exit_code(_research_lab_dispatch(args))
+    if args.command == "playbook":
+        from cli.commands.research_playbook import dispatch as _playbook_dispatch
+        return _coerce_exit_code(_playbook_dispatch(args))
+    if args.command == "strategy-evidence":
+        from cli.commands.strategy_evidence import dispatch as _strategy_evidence_dispatch
+        return _coerce_exit_code(_strategy_evidence_dispatch(args))
+    if args.command == "paper":
+        from cli.commands.paper_trade import dispatch as dispatch_paper
+        return dispatch_paper(args)
+    if args.command == "portfolio":
+        return _coerce_exit_code(_dispatch_portfolio(args))
+    if args.command == "connector":
+        return _coerce_exit_code(_dispatch_connector(args))
+    if args.command == "memory":
+        if args.memory_command == "list":
+            return _coerce_exit_code(cmd_memory_list(args.memory_type))
+        if args.memory_command == "show":
+            return _coerce_exit_code(cmd_memory_show(args.name))
+        if args.memory_command == "search":
+            return _coerce_exit_code(cmd_memory_search(args.query, args.memory_limit))
+        if args.memory_command == "forget":
+            return _coerce_exit_code(cmd_memory_forget(args.name, yes=args.yes))
+        console.print("[red]memory requires a subcommand.[/red] Try: vibe-trading memory list")
+        return EXIT_USAGE_ERROR
+
+    if args.list:
+        return _coerce_exit_code(cmd_list())
+    if args.show:
+        return _coerce_exit_code(cmd_show(args.show))
+    if args.code:
+        return _coerce_exit_code(cmd_code(args.code))
+    if args.pine:
+        return _coerce_exit_code(cmd_pine(args.pine))
+    if args.trace:
+        return _coerce_exit_code(cmd_trace(args.trace))
+    if args.skills:
+        return _coerce_exit_code(cmd_skills())
+
+    if args.swarm_presets:
+        return _coerce_exit_code(cmd_swarm_presets())
+    if args.swarm_inspect:
+        return _coerce_exit_code(cmd_swarm_inspect(args.swarm_inspect))
+    if args.swarm_run:
+        parsed_swarm_run = _parse_swarm_run_args(args.swarm_run)
+        if parsed_swarm_run is None:
+            return EXIT_USAGE_ERROR
+        preset_name, vars_json = parsed_swarm_run
+        return _coerce_exit_code(cmd_swarm_run_live(preset_name, vars_json))
+    if args.swarm_list:
+        return _coerce_exit_code(cmd_swarm_list())
+    if args.swarm_show:
+        return _coerce_exit_code(cmd_swarm_show(args.swarm_show))
+    if args.swarm_cancel:
+        return _coerce_exit_code(cmd_swarm_cancel(args.swarm_cancel))
+    if args.swarm_retry:
+        return _coerce_exit_code(cmd_swarm_retry_live(args.swarm_retry, resume=args.swarm_resume))
+    if args.swarm_resume:
+        console.print("[red]--swarm-resume requires --swarm-retry RUN_ID[/red]")
+        return EXIT_USAGE_ERROR
+
+    if args.sessions:
+        return _coerce_exit_code(cmd_sessions())
+    if args.session_chat:
+        return _coerce_exit_code(cmd_session_chat(args.session_chat, args.max_iter))
+    if args.upload:
+        return _coerce_exit_code(cmd_upload(args.upload))
+    if args.chat:
+        from cli.main import _interactive_loop
+
+        return _coerce_exit_code(_interactive_loop(args.max_iter))
+    if args.cont:
+        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
+
+    # No flags and no subcommand: check for a prompt, otherwise enter interactive mode.
+    if args.prompt or args.prompt_file or not sys.stdin.isatty():
+        return _handle_prompt_command(
+            args.prompt,
+            args.prompt_file,
+            max_iter=args.max_iter,
+            json_mode=args.json,
+            no_rich=args.no_rich,
+        )
+
+    # Default: interactive mode
+    from cli.main import _interactive_loop
+
+    return _coerce_exit_code(_interactive_loop(args.max_iter))
+
+
+
+# Handlers owned by the setup/memory command family. Imported after runtime
+# definitions so the family module can read shared runtime state safely.
+from cli.commands.setup_memory import (  # noqa: E402
+    _build_frontend_cmd,
+    _is_windows,
+    _resolve_node_and_npm,
+    _run_step,
+    _validate_api_key,
+    cmd_dev,
+    cmd_init,
+    cmd_memory_forget,
+    cmd_memory_list,
+    cmd_memory_search,
+    cmd_memory_show,
+    cmd_setup,
+)
+
+if __name__ == "__main__":
+    raise SystemExit(main())
