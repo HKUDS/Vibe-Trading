@@ -9,10 +9,12 @@ the engine refuses the run instead.
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from backtest.engines._market_hooks import code_currency
 from backtest.engines.composite import CompositeEngine, _reject_mixed_currency
+from backtest.models import Position
 
 
 class TestCodeCurrency:
@@ -156,3 +158,19 @@ class TestCompositeRunInterval:
         except Exception:
             pass  # the pipeline needs a real loader; only the re-read matters here
         assert engine._run_interval == "4H"
+
+
+class TestCompositeFunding:
+    def test_intraday_crypto_funding_skips_daily_fallback(self) -> None:
+        codes = ["BTC-USDT"]
+        engine = CompositeEngine(
+            {"initial_cash": 100_000, "interval": "4H", "funding_rate": 0.0001}, codes
+        )
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0
+        )
+        initial = engine.capital
+        bar = pd.Series({"close": 60000.0, "open": 60000.0})
+        for hour in (0, 4, 8, 12, 16, 20):
+            engine.on_bar("BTC-USDT", bar, pd.Timestamp(f"2025-01-01 {hour:02d}:00:00"))
+        assert initial - engine.capital == pytest.approx(18.0)
