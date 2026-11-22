@@ -579,8 +579,14 @@ class ScheduledResearchExecutor:
 
         changed = 0
         now = self._now_fn()
-        for job in list(self._store.load().values()):
-            if not job.delivery.session_id:
+        for job_id in list(self._store.load()):
+            # Read each job when its turn comes, not from one snapshot taken up
+            # front: the sends below are awaited, and a kernel tick or a PATCH
+            # can rewrite any job meanwhile. Writing a pre-await copy back
+            # would roll those changes back (an old next_run_at re-fires the
+            # job; an old delivery row resurrects the previous firing).
+            job = self._store.get(job_id)
+            if job is None or not job.delivery.session_id:
                 continue
             if job.delivery.status is DeliveryStatus.NONE:
                 # No briefing is owed to a channel, but this sweep is the only
@@ -651,10 +657,18 @@ class ScheduledResearchExecutor:
                 raise
             except Exception as exc:
                 logger.error("briefing delivery failed for job %s", job.id, exc_info=True)
-                self._mark_delivery_failed(current, exc, retryable=True)
-                changed += 1
+                latest = self._reload_claimed(current)
+                if latest is not None:
+                    self._mark_delivery_failed(latest, exc, retryable=True)
+                    changed += 1
                 continue
 
+            # The send was awaited: record its outcome on the job as it is now,
+            # so an edit or reschedule that landed during the send is kept.
+            latest = self._reload_claimed(current)
+            if latest is None:
+                continue
+            current = latest
             if receipt is None:
                 # Compatibility for pre-receipt injected senders used by
                 # embedders and older tests. Production adapters always return
@@ -679,6 +693,20 @@ class ScheduledResearchExecutor:
             self._store.upsert(current, validate=False)
             changed += 1
         return changed
+
+    def _reload_claimed(
+        self, claimed: ScheduledResearchJob
+    ) -> ScheduledResearchJob | None:
+        """Re-read a job whose delivery was claimed before an awaited send.
+
+        Returns:
+            The current record, or ``None`` when the job was deleted or its
+            outbox row now belongs to a different firing.
+        """
+        current = self._store.get(claimed.id)
+        if current is None or current.delivery.key != claimed.delivery.key:
+            return None
+        return current
 
     def _record_verdict_on(
         self, job: ScheduledResearchJob, session_id: str, text: str, now_ms: int
