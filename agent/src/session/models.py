@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from src.tools.redaction import redact_text
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -338,7 +340,7 @@ class Attempt:
         """
         self.status = AttemptStatus.FAILED
         self.completed_at = _utc_now_iso()
-        self.error = error
+        self.error = redact_text(error)
 
     def mark_cancelled(self, reason: str = "") -> None:
         """Mark the attempt as user-cancelled.
@@ -354,7 +356,7 @@ class Attempt:
         self.status = AttemptStatus.CANCELLED
         self.completed_at = _utc_now_iso()
         if reason:
-            self.error = reason
+            self.error = redact_text(reason)
 
     def mark_interrupted(self, reason: str = "") -> None:
         """Mark the attempt as interrupted by process lifecycle.
@@ -365,4 +367,4 @@ class Attempt:
         self.status = AttemptStatus.INTERRUPTED
         self.completed_at = _utc_now_iso()
         if reason:
-            self.error = reason
+            self.error = redact_text(reason)

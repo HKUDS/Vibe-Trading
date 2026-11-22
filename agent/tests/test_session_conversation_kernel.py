@@ -840,3 +840,21 @@ def test_only_direct_turn_prompt_can_seed_instrument_identity(tmp_path, monkeypa
     else:
         assert json.loads(result.get("content")).get("error_code") == "identity_required"
         assert market_calls == []
+
+
+@pytest.mark.parametrize("stage", ["registry", "stream"])
+def test_failed_attempt_scrubs_exception_before_persistence_and_display(tmp_path, monkeypatch, stage):
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("offline failure: api_key=private-error-detail")
+
+    llm = _PolicyLLM(fail)
+    service = _service(tmp_path, monkeypatch, fail if stage == "registry" else ToolRegistry, llm)
+    sid = service.create_session(title="error projection").session_id
+    turn = asyncio.run(_send(service, sid, "Inspect the failure"))
+    attempt = service.store.get_attempt(sid, turn)
+
+    assert attempt.error == "offline failure: api_key=[redacted]"
+    assert "private-error-detail" not in service.store.thread_log(sid).path.read_text()
+    assert "private-error-detail" not in str(service.get_messages(sid))
+    if attempt.run_dir:
+        assert "private-error-detail" not in (Path(attempt.run_dir) / "state.json").read_text()

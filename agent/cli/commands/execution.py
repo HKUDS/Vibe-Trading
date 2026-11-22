@@ -18,12 +18,14 @@ def _print_json_result(result: dict) -> None:
         "run_dir": result.get("run_dir"),
         "reason": result.get("reason"),
     }
+    if result.get("status") == "waiting_user":
+        payload["content"] = result.get("content")
     print(common.json.dumps(payload, ensure_ascii=False))
 
 
 def _result_exit_code(result: dict) -> int:
     """Map run results to stable exit codes."""
-    return common.EXIT_SUCCESS if result.get("status") == "success" else common.EXIT_RUN_FAILED
+    return common.EXIT_SUCCESS if result.get("status") in {"success", "waiting_user"} else common.EXIT_RUN_FAILED
 
 
 def _coerce_exit_code(value: common.Optional[int]) -> int:

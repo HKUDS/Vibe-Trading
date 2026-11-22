@@ -21,13 +21,14 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.tools.redaction import redact_text
 from src.session.runtime import SessionRuntime, TurnRecorder
 from src.session.service import STOPPED_MARKER
 from src.session.store import SessionStore
 
 logger = logging.getLogger(__name__)
 
-_THREAD_STATUS = {"success": "completed", "cancelled": "cancelled"}
+_THREAD_STATUS = {"success": "completed", "cancelled": "cancelled", "waiting_user": "waiting_user"}
 _EMPTY_REPLY = (
     "The run finished without producing any text output. "
     "Check the run artifacts, or rephrase the request and try again."
@@ -56,6 +57,8 @@ def _reply_text(status: str, result: Dict[str, Any], streamed_text: str) -> str:
     """
     if status == "completed":
         return str(result.get("content") or "").strip() or _EMPTY_REPLY
+    if status == "waiting_user":
+        return str(result.get("content") or "").strip() or "Please answer the question above."
     if status == "cancelled":
         streamed = streamed_text.strip()
         return f"{streamed}\n\n{STOPPED_MARKER}" if streamed else STOPPED_MARKER
@@ -115,6 +118,8 @@ class CliTurn:
             return result
         self._finished = True
         status = _THREAD_STATUS.get(str(result.get("status")), "failed")
+        if result.get("reason"):
+            result["reason"] = redact_text(result["reason"])
         elapsed_ms = max(0, round((time.perf_counter() - self._started) * 1000))
         run_dir = result.get("run_dir")
         reply_text = _reply_text(status, result, streamed_text)

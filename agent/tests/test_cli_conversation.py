@@ -599,3 +599,50 @@ def test_clear_leaves_the_session_so_the_model_forgets_the_conversation(cli, mon
     request = cli.llm.requests[before]["messages"]
     assert _tool_messages(request, "lookup") == []
     assert len(cli.lookup_calls) == 2
+
+
+def test_cli_question_survives_thread_projection_and_json_output(cli, monkeypatch, capsys):
+    from src.tools.ask_user_tool import AskUserTool
+
+    registry = ToolRegistry()
+    registry.register(AskUserTool())
+    monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: registry)
+    cli.llm.policy = lambda *args: _response(
+        calls=(_call("q", "ask_user", prompt="Which period?", options=["Day", "Week"]),)
+    )
+    sid = cli.new_session()
+    result = cli.run("Ask for a period", sid)
+    assert result["status"] == "waiting_user"
+    assert cli.thread(sid)[-1].get("status") == "waiting_user"
+    assert cli.rows(sid)[-1].content == "Which period?\n1. Day\n2. Week"
+    _cmd_execution._print_json_result(result)
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["content"] == cli.rows(sid)[-1].content
+    assert _cmd_execution._result_exit_code(result) == _cmd_common.EXIT_SUCCESS
+
+
+def test_cli_abort_redacts_the_persisted_exception(cli, monkeypatch):
+    sid = cli.new_session()
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("api_key=private-cli-detail")
+
+    monkeypatch.setattr(_cmd_execution, "_run_with_graceful_cancel", broken)
+    with pytest.raises(RuntimeError):
+        cli.run("Analyze", sid)
+    assert "private-cli-detail" not in (cli.sessions / sid / "thread.jsonl").read_text()
+    assert "private-cli-detail" not in cli.rows(sid)[-1].content
+
+
+def test_reused_loop_finishes_the_turn_after_a_question(cli, tmp_path):
+    from src.tools.ask_user_tool import AskUserTool
+
+    registry = ToolRegistry()
+    registry.register(AskUserTool())
+    loop = AgentLoop(registry=registry, llm=cli.llm, max_iterations=4)
+    loop.memory.run_dir = tmp_path / "runs" / "reused"
+    cli.llm.policy = lambda *args: _response(
+        calls=(_call("q", "ask_user", prompt="Which period?", options=["Day", "Week"]),)
+    )
+    assert loop.run("Ask for a period")["status"] == "waiting_user"
+    cli.llm.policy = lambda *args: _response(content="Weekly report.")
+    assert loop.run("Week")["status"] == "success"

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import traceback
 import time as _time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
@@ -42,6 +43,7 @@ from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError,
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
+from src.tools.redaction import redact_text
 from src.tools.background_tools import get_background_manager
 
 from src.agent.tool_lifecycle import (
@@ -373,6 +375,7 @@ class AgentLoop(ToolCallLifecycle):
         else:
             self._has_run = True
         self._called_ok = set()
+        self._waiting_user = None
         self._order_attempts.clear()
         self._successful_call_keys = {}
         self._context_compactor.reset()
@@ -606,13 +609,14 @@ class AgentLoop(ToolCallLifecycle):
         """Persist an iteration exception using the historical error envelope."""
         state = setup.state
         assert state is not None and setup.run_dir is not None and setup.trace is not None and setup.state_store is not None
-        logger.exception(f"AgentLoop error: {exc}")
+        reason = redact_text(exc)
+        logger.error("AgentLoop error: %s", redact_text(traceback.format_exc()))
         error_code = "provider_stream_error" if isinstance(exc, ProviderStreamError) else "agent_loop_error"
-        setup.trace.write({"type": "end", "iter": self._run_iteration, "status": "error", "reason": str(exc), "iterations": state.iteration})
-        setup.state_store.mark_failure(setup.run_dir, str(exc))
+        setup.trace.write({"type": "end", "iter": self._run_iteration, "status": "error", "reason": reason, "iterations": state.iteration})
+        setup.state_store.mark_failure(setup.run_dir, reason)
         self._end_thread_turn()
         self._run_done.set()
-        return {"status": "failed", "error_code": error_code, "reason": str(exc), "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "iterations": state.iteration, "max_iterations": self.max_iterations}
+        return {"status": "failed", "error_code": error_code, "reason": reason, "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "iterations": state.iteration, "max_iterations": self.max_iterations}
 
     def _complete_turn(self, setup: TurnSetup) -> Dict[str, Any]:
         """Resolve status, persist the terminal state, and return the result."""
