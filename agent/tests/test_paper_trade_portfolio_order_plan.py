@@ -569,3 +569,35 @@ def test_plan_json_is_float_free_and_realized_weights_stay_pending() -> None:
     assert payload["trade_date"] == date(2026, 11, 13).isoformat()
     assert isinstance(payload["orders"], list)
     assert isinstance(payload["weights"], list)
+
+
+def test_split_facade_reexports_moved_private_symbols() -> None:
+    # Given the order-plan implementation split into focused sibling modules.
+    from src.tools.paper_trade.portfolio import (
+        order_plan_builders,
+        order_plan_explicit,
+        order_plan_json,
+        order_plan_models,
+        order_plan_primitives,
+        order_plan_target,
+    )
+
+    # When moved private symbols are imported through the historic facade path.
+    from src.tools.paper_trade.portfolio.order_plan import (
+        _BucketSpec,
+        _exact_product,
+        _make_order,
+        _money_text,
+        _reject,
+        _validate_marks,
+        build_target_weight_order_plan,
+    )
+
+    # Then every binding is the owning module's object, so patch seams survive.
+    assert _reject is order_plan_primitives._reject
+    assert _exact_product is order_plan_primitives._exact_product
+    assert _BucketSpec is order_plan_models._BucketSpec
+    assert _make_order is order_plan_target._make_order
+    assert _validate_marks is order_plan_explicit._validate_marks
+    assert _money_text is order_plan_json._money_text
+    assert build_target_weight_order_plan is order_plan_builders.build_target_weight_order_plan
