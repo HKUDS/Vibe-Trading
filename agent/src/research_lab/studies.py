@@ -94,6 +94,22 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
     completed = 0
     defaults = constructor_defaults((manifest.parent / "signal_engine.py").read_text())
     baseline_parameters = {**defaults, **config.get("signal_parameters", {})}
+    trial_config = dict(config)
+    trial_config.pop("warmup_bars", None)
+
+    def evaluate(name: str, phase: str, start: int, stop: int, parameters: dict) -> dict:
+        window = calendar[start:stop]
+        # Keep the source input start for indicators. Both phases score only
+        # their sealed evaluation window.
+        settings = {
+            **trial_config,
+            "end_date": window[-1].isoformat(),
+            "evaluation_start_date": window[0].isoformat(),
+        }
+        measured = trial(root, name, settings, manifest, parameters=parameters)
+        if not measured["equity"].index.equals(window):
+            raise ValueError(f"{phase} trial did not evaluate exactly the sealed calendar window")
+        return measured
 
     def fit_and_test(number: int, boundary: int, end: int, holdout: bool = False):
         nonlocal completed
@@ -104,19 +120,9 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
             progress(
                 {"phase": "training", "completed": completed, "total": count, "fold": number, "label": candidate.name}
             )
-            # Keep the source input start; only scoring moves with the fold.
-            settings = {
-                **config,
-                "end_date": calendar[boundary - 1].isoformat(),
-                "evaluation_start_date": calendar[start].isoformat(),
-            }
-            settings.pop("warmup_bars", None)
-            measured = trial(
-                root,
+            measured = evaluate(
                 f"{'holdout' if holdout else 'fold'}-{number}-train-{index}",
-                settings,
-                manifest,
-                parameters=parameters,
+                "training", start, boundary, parameters,
             )
             score = measured["metrics"].get(request.objective)
             if score is None or not np.isfinite(score):
@@ -155,26 +161,15 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
                 "label": chosen["name"],
             }
         )
-        settings = {
-            **config,
-            "end_date": calendar[end - 1].isoformat(),
-            "evaluation_start_date": calendar[boundary].isoformat(),
-        }
-        settings.pop("warmup_bars", None)
-        measured = trial(
-            root,
+        measured = evaluate(
             f"{'holdout' if holdout else 'fold'}-{number}-test",
-            settings,
-            manifest,
-            parameters=chosen["parameters"],
+            "test", boundary, end, chosen["parameters"],
         )
         if digest(selection_path) != selection_hash or digest(manifest.parent / "signal_engine.py") != code_hash:
             raise ValueError("selected parameters or strategy changed during the frozen test")
         returns = period_returns(measured["equity"]["equity"], float(config.get("initial_cash", 1_000_000)))
         if returns.isna().any() or not np.isfinite(returns).all():
             raise ValueError("OOS equity contains unobserved or non-finite returns")
-        if len(returns) != end - boundary or not returns.index.equals(calendar[boundary:end]):
-            raise ValueError("test engine did not evaluate exactly the sealed calendar window")
         completed += 1
         return {
             **selection,

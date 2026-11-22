@@ -1,5 +1,6 @@
 """Exercise saved inputs -> sandboxed engine -> cost and frozen OOS reports."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -112,6 +113,62 @@ def test_training_selection_precedes_frozen_oos_and_holdout(saved_run, tmp_path)
     assert result["mode"] == "locked"
     assert (tmp_path / "wf-study/sealed_plan.json").is_file()
     assert (tmp_path / "wf-study/selection-1.json").is_file()
+
+
+def test_walk_forward_rejects_a_candidate_scored_on_a_different_calendar(
+    saved_run, tmp_path, monkeypatch,
+):
+    from src.research_lab import studies
+
+    evaluated = pd.read_csv(
+        saved_run / "artifacts/equity.csv", index_col=0, parse_dates=True,
+    )
+
+    def trial(root, name, config, manifest, *, parameters):
+        assert "train" in name
+        return {
+            "equity": evaluated.iloc[1:5],
+            "metrics": {"total_return": 0.15},
+            "run_dir": str(root),
+        }
+
+    monkeypatch.setattr(studies, "trial", trial)
+    root = tmp_path / "wf-study"
+    with pytest.raises(ValueError, match="training trial did not evaluate exactly"):
+        walk_forward(
+            WalkForwardRequest(
+                run_dir=str(saved_run), train_bars=5, test_bars=3,
+                objective="total_return", candidates=[{"name": "baseline"}],
+            ),
+            root,
+            lambda value: None,
+        )
+    assert not (root / "selection-1.json").exists()
+
+
+@pytest.mark.parametrize(
+    "saved_run",
+    [{"codes": ["local:AAPL.US", "local:MSFT.US"], "start_date": "2025-12-29"}],
+    indirect=True,
+)
+def test_frozen_study_uses_manifested_scored_dates_without_an_explicit_boundary(
+    saved_run, tmp_path,
+):
+    from src.research_lab.execution import freeze_run
+
+    equity = saved_run / "artifacts/equity.csv"
+    observed = pd.read_csv(equity, index_col=0, parse_dates=True).index
+    unused_prices = pd.read_csv(
+        saved_run / "artifacts/ohlcv_MSFT.US.csv", index_col=0, parse_dates=True,
+    )
+    assert unused_prices.index[0] < observed[0]
+    _, manifest, calendar, _ = freeze_run(
+        saved_run, tmp_path / "study", use_evaluation_calendar=True,
+    )
+    assert calendar.equals(observed)
+    assert json.loads(manifest.read_text())["source_equity_sha256"] == (
+        hashlib.sha256(equity.read_bytes()).hexdigest()
+    )
 
 
 @pytest.mark.parametrize("saved_run", [{"codes": ["local:000001.SZ"]}], indirect=True)

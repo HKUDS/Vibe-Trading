@@ -67,7 +67,7 @@ def freeze_run(
     Args:
         run: Completed source run.
         destination: New experiment root.
-        use_evaluation_calendar: Use evaluated dates if the source declared a boundary.
+        use_evaluation_calendar: Use the source run's manifested scored dates.
 
     Returns:
         Original config, sealed data manifest, study calendar and strategy hash.
@@ -132,7 +132,6 @@ def freeze_run(
         "config_sha256": config_hash,
     }
     manifest_path = snapshot / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False))
     if calendar is None or len(calendar) < 2:
         raise ValueError("snapshot needs at least two trading bars")
     # Training spans belong to the original evaluation, not its raw price
@@ -141,21 +140,32 @@ def freeze_run(
         config.get("warmup_bars") is not None
         or config.get("evaluation_start_date") is not None
     )
-    if use_evaluation_calendar and declared:
-        equity = run / "artifacts/equity.csv"
-        relative = "artifacts/equity.csv"
-        if relative not in entries:
+    relative = "artifacts/equity.csv"
+    if use_evaluation_calendar and (declared or relative in entries):
+        equity = (run / relative).resolve()
+        if relative not in entries or not equity.is_relative_to(run.resolve()) or not equity.is_file():
             raise ValueError(
                 "source run has no manifested evaluation calendar; rerun it before studying it"
             )
-        if digest(equity) != entries[relative]["sha256"]:
+        raw_equity = equity.read_bytes()
+        equity_hash = hashlib.sha256(raw_equity).hexdigest()
+        if equity_hash != entries[relative]["sha256"]:
             raise ValueError(
                 "source equity changed since its completed backtest; rerun it before studying it"
             )
-        observed = pd.read_csv(equity, index_col=0, parse_dates=True).index
-        calendar = calendar[calendar.isin(observed)]
+        observed = pd.read_csv(io.BytesIO(raw_equity), index_col=0, parse_dates=True).index
         if len(observed) < 2:
             raise ValueError("source run needs at least two evaluated bars")
+        if (
+            not isinstance(observed, pd.DatetimeIndex)
+            or not observed.is_unique
+            or not observed.is_monotonic_increasing
+            or not observed.isin(calendar).all()
+        ):
+            raise ValueError("source run's evaluation calendar does not match its price snapshots")
+        calendar = observed
+        manifest["source_equity_sha256"] = equity_hash
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False))
     return config, manifest_path, calendar.sort_values(), strategy_hash
 
 
