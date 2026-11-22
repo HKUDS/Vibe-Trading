@@ -9,15 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from src.agent.context import ContextBuilder
-from src.agent.loop import (
-    AgentLoop,
-    COLLAPSE_TEXT_MIN,
-    KEEP_RECENT,
-    _STUB_RESULT_CONTENT,
-    _context_collapse,
-    _fix_tool_pairs,
-    _is_cleared,
-)
+from src.agent.loop import AgentLoop
+from src.agent.context_compact import COLLAPSE_TEXT_MIN, KEEP_RECENT, _STUB_RESULT_CONTENT, _context_collapse, _fix_tool_pairs, _is_cleared
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 

@@ -371,7 +371,7 @@ def test_retry_billing_does_not_inflate_context_meter(tmp_path, monkeypatch):
         content="Hello.", usage_metadata={"input_tokens": 3000, "output_tokens": 90,
             "total_tokens": 3090, "calls": 3, "context_input_tokens": 1000})
     observed = []
-    monkeypatch.setattr(type(agent._context_meter), "observe", lambda self, n, *a, **kw: observed.append(n))
+    monkeypatch.setattr(type(agent._context_compactor.context_meter), "observe", lambda self, n, *a, **kw: observed.append(n))
     agent.run("Say hello.")
     assert observed == [1000]
     report = json.loads((tmp_path / "llm_usage.json").read_text())

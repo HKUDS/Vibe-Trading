@@ -9,11 +9,9 @@ from types import SimpleNamespace
 from src.agent import loop as loop_mod
 from src.agent.context import ContextBuilder
 from src.agent.memory import WorkspaceMemory
-from src.agent.loop import (
-    AgentLoop,
-    KEEP_RECENT,
-    MAX_READONLY_REPLAY_RECOVERIES,
-)
+from src.agent.loop import AgentLoop
+from src.agent.context_compact import KEEP_RECENT
+from src.agent.tool_lifecycle import MAX_READONLY_REPLAY_RECOVERIES
 from src.agent.tool_progress import NO_PROGRESS_LIMIT, ToolProgress
 from src.providers.chat import LLMResponse, ToolCallRequest
 from tests.recording_helpers import recorder_at, records_at

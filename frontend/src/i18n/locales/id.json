@@ -1232,6 +1232,8 @@
     "describeGoal": "Jelaskan tujuan riset yang ingin dikaitkan dengan sesi ini",
     "placeholder": "mis. Uji strategi moving average sederhana pada 000001.SZ selama 2024",
     "send": "Kirim pesan",
+    "answerPlaceholder": "Ketik jawaban",
+    "toolResultImageAlt": "Hasil alat",
     "messageInputLabel": "Pesan untuk Agent",
     "inputHint": "Enter untuk mengirim · Shift+Enter untuk baris baru",
     "editGoalObjectiveLabel": "Edit objektif tujuan riset",

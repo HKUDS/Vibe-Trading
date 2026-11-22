@@ -1232,6 +1232,8 @@
     "describeGoal": "هدف پژوهشی پیوست‌شده به این نشست را توصیف کنید",
     "placeholder": "مثلاً آزمون یک استراتژی ساده میانگین متحرک روی 000001.SZ در سال ۲۰۲۴",
     "send": "ارسال پیام",
+    "answerPlaceholder": "پاسخ را وارد کنید",
+    "toolResultImageAlt": "نتیجه ابزار",
     "messageInputLabel": "پیام به ایجنت",
     "inputHint": "Enter برای ارسال · Shift+Enter برای خط جدید",
     "editGoalObjectiveLabel": "ویرایش هدف پژوهشی",

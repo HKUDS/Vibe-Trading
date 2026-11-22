@@ -21,56 +21,18 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from src.agent.tuning import (
-    TOKEN_THRESHOLD as TOKEN_THRESHOLD,
-    _override as _override,
-    _token_threshold as _token_threshold,
-    _heartbeat_interval_s as _heartbeat_interval_s,
-    _reasoning_delta_min_interval_s as _reasoning_delta_min_interval_s,
-    _stream_retry_delay_s as _stream_retry_delay_s,
-    _stream_retry_max_delay_s as _stream_retry_max_delay_s,
-    _stream_retry_backoff_s as _stream_retry_backoff_s,
-    _tool_timeout_seconds as _tool_timeout_seconds,
-    _llm_timeout_seconds as _llm_timeout_seconds,
-    _goal_max_continuations as _goal_max_continuations,
-    _stall_timeout_seconds as _stall_timeout_seconds,
-    _mid_turn_nudge_rounds as _mid_turn_nudge_rounds,
-    _wrap_up_nudge_remaining as _wrap_up_nudge_remaining,
+    _stall_timeout_seconds,
+    _mid_turn_nudge_rounds,
+    _wrap_up_nudge_remaining,
 )
 
 from src.agent.context import ContextBuilder
 from src.agent.tool_loading import prepare_registry, request_definitions
 from src.agent.instrument_identity import IdentityLedger
 from src.agent.memory import WorkspaceMemory
-from src.agent.progress import HeartbeatTimer as HeartbeatTimer, ProgressEvent as ProgressEvent, _set_emitter as _set_emitter
 from src.agent.context_budget import (
     CompactionBudget,
     ContextMeter,
-)
-from src.agent.context_compact import (  # noqa: F401  (re-exported so loop imports keep working)
-    COLLAPSE_HEAD,
-    COLLAPSE_PRESERVE_RECENT,
-    COLLAPSE_TAIL,
-    COLLAPSE_TEXT_MIN,
-    KEEP_RECENT,
-    SUMMARY_CHUNK_CHARS,
-    TAIL_TOKEN_BUDGET,
-    _CLEARED_PREFIX,
-    _ITERATIVE_UPDATE_PROMPT,
-    _STRUCTURED_SUMMARY_PROMPT,
-    _FOCUS_SECTION,
-    _STUB_RESULT_CONTENT,
-    _attach_tool_call_thought_signatures,
-    _cleared_text,
-    _context_collapse,
-    _fix_tool_pairs,
-    _is_cleared,
-    _microcompact,
-    _msg_estimate_chars,
-    _replay_context_result as _replay_context_result,
-    _result_data_gone as _result_data_gone,
-    _summary_chunks,
-    _tail_cut_index,
-    _verification_ledger,
 )
 from src.agent.tool_progress import ToolProgress
 from src.agent.tools import ToolRegistry
@@ -81,13 +43,9 @@ from src.providers.session_context import bind_llm_session_id, reset_llm_session
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
 from src.tools.background_tools import get_background_manager
-from src.config.limits import truncate_tool_result as truncate_tool_result
-from src.tools.redaction import redact_payload as redact_payload, redact_tool_result as redact_tool_result
 
 from src.agent.tool_lifecycle import (
     ToolCallLifecycle,
-    MAX_READONLY_REPLAY_RECOVERIES as MAX_READONLY_REPLAY_RECOVERIES,
-    _format_timeout as _format_timeout,
 )
 from src.agent.hooks import HookDecision
 from src.agent.loop_conversation import ConversationState
@@ -152,23 +110,9 @@ def estimate_tokens(messages: list) -> int:
 
 
 # --- Tool-result helpers, moved to src.agent.tool_results (issue #1624) ---
-# Re-exported here so existing ``from src.agent.loop import ...`` keeps working.
-from src.agent.tool_results import (  # noqa: E402
-    _FORCED_TEXT_TOOL_CALL_RE as _FORCED_TEXT_TOOL_CALL_RE,
-    _DSML_BAR_TOOL_CALL_RE as _DSML_BAR_TOOL_CALL_RE,
-    _TARGET_PATH_RE as _TARGET_PATH_RE,
-    _TARGET_ACTION_RE as _TARGET_ACTION_RE,
-    _failure_code as _failure_code,
-    _is_tool_success as _is_tool_success,
-    _looks_like_tool_call_syntax,  # noqa: F401 - compatibility import
-    _named_target_paths as _named_target_paths,
-    _normalize_tool_run_dir as _normalize_tool_run_dir,
-    _previously_archived as _previously_archived,
-    _archive_backtest_result as _archive_backtest_result,
-)
+
 from src.agent.run_outcome import (  # noqa: E402
     OutcomeInputs,
-    RunOutcome as RunOutcome,  # noqa: F401 — re-exported for callers/tests
     build_end_event,
     build_result_dict,
     resolve_final_status,
@@ -176,14 +120,9 @@ from src.agent.run_outcome import (  # noqa: E402
 
 
 # --- LLM usage accounting, moved to src.agent.llm_usage (issue #1624) ---
-# Re-exported here so existing ``from src.agent.loop import ...`` keeps working.
+
 from src.agent.llm_usage import (  # noqa: E402
-    LLM_USAGE_ARTIFACT as LLM_USAGE_ARTIFACT,
-    _coerce_usage_int as _coerce_usage_int,
-    _normalize_llm_usage as _normalize_llm_usage,
-    _new_llm_usage_summary as _new_llm_usage_summary,
-    _record_llm_usage as _record_llm_usage,
-    _record_unreported_llm_call as _record_unreported_llm_call,
+    _new_llm_usage_summary,
 )
 
 
@@ -969,59 +908,11 @@ class AgentLoop(ToolCallLifecycle):
 
     def _record_compaction_layer(self, messages: list, layer: int, before: list[dict[str, Any]]) -> None:
         """Persist a compaction layer through the context component."""
-        # A few lightweight compatibility tests construct the loop without
-        # calling ``__init__``. Keep the projection helper usable for those
-        # instances while normal runs use the composed component directly.
-        compactor = getattr(self, "_context_compactor", None)
-        if compactor is None:
-            compactor = ContextCompactor(self)
-            self._context_compactor = compactor
-        compactor._record_compaction_layer(messages, layer, before)
+        self._context_compactor._record_compaction_layer(messages, layer, before)
 
     def _auto_compact(self, messages: list, run_dir: Path, trace: Any, focus_topic: str = "", iteration: int = 0) -> None:
         """Run structured or degraded compaction through the context component."""
         self._context_compactor.auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=iteration)
-
-    @property
-    def _context_meter(self) -> ContextMeter:
-        """Compatibility view of the composed context meter."""
-        return self._context_compactor.context_meter
-
-    @property
-    def _previous_summary(self) -> str:
-        """Compatibility view of the composed summary state."""
-        return self._context_compactor.previous_summary
-
-    @_previous_summary.setter
-    def _previous_summary(self, value: str) -> None:
-        self._context_compactor.previous_summary = value
-
-    @property
-    def _learned_context_window(self) -> int | None:
-        """Compatibility view of the learned provider window."""
-        return self._context_compactor.learned_context_window
-
-    @_learned_context_window.setter
-    def _learned_context_window(self, value: int | None) -> None:
-        self._context_compactor.learned_context_window = value
-
-    @property
-    def _compacted_to_tokens(self) -> int | None:
-        """Compatibility view of the last compacted size."""
-        return self._context_compactor.compacted_to_tokens
-
-    @_compacted_to_tokens.setter
-    def _compacted_to_tokens(self, value: int | None) -> None:
-        self._context_compactor.compacted_to_tokens = value
-
-    @property
-    def _tool_schema_tokens(self) -> int:
-        """Compatibility view of the schema-token measurement."""
-        return self._context_compactor.tool_schema_tokens
-
-    @_tool_schema_tokens.setter
-    def _tool_schema_tokens(self, value: int) -> None:
-        self._context_compactor.tool_schema_tokens = value
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""
@@ -1041,22 +932,3 @@ class AgentLoop(ToolCallLifecycle):
         except Exception as exc:  # pragma: no cover - defensive hook boundary
             logger.warning("Hook %s failed: %s", event, exc)
             return HookDecision(event=event, decision="deny" if event == "PreToolUse" else "error", reason=str(exc))
-
-
-_LEGACY_LAZY = {
-    "MICROCOMPACT_THRESHOLD": lambda: int(_token_threshold() * 0.5),
-    "COLLAPSE_THRESHOLD": lambda: int(_token_threshold() * 0.7),
-    "HEARTBEAT_INTERVAL_S": _heartbeat_interval_s,
-    "REASONING_DELTA_MIN_INTERVAL_S": _reasoning_delta_min_interval_s,
-    "STREAM_RETRY_DELAY_S": _stream_retry_delay_s,
-    "STREAM_RETRY_MAX_DELAY_S": _stream_retry_max_delay_s,
-    "TOOL_TIMEOUT_SECONDS": _tool_timeout_seconds,
-    "GOAL_MAX_CONTINUATIONS": _goal_max_continuations,
-    "STALL_TIMEOUT_SECONDS": _stall_timeout_seconds,
-}
-
-
-def __getattr__(name: str):
-    if name in _LEGACY_LAZY:
-        return _LEGACY_LAZY[name]()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

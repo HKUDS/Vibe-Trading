@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from src.agent.context import ContextBuilder
-from src.agent.loop import _attach_tool_call_thought_signatures
+from src.agent.context_compact import _attach_tool_call_thought_signatures
 from src.providers.chat import ChatLLM, ToolCallRequest, _dedupe_finish_reason
 from src.providers.llm import ChatOpenAIWithReasoning
 
@@ -599,7 +599,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         ``_convert_input`` must lift the signature back onto the converted message.
         """
         from src.agent.context import ContextBuilder
-        from src.agent.loop import _attach_tool_call_thought_signatures
+        from src.agent.context_compact import _attach_tool_call_thought_signatures
         from src.providers.chat import ToolCallRequest
 
         instance = self._instance(model="gemini-3-pro-preview")
@@ -627,7 +627,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         so we must neither drop the first nor fabricate the others.
         """
         from src.agent.context import ContextBuilder
-        from src.agent.loop import _attach_tool_call_thought_signatures
+        from src.agent.context_compact import _attach_tool_call_thought_signatures
         from src.providers.chat import ToolCallRequest
 
         instance = self._instance(model="gemini-3-pro-preview")

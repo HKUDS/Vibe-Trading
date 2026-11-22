@@ -9,6 +9,8 @@ retryable failures (capped exponential) and honors the provider's
 
 from __future__ import annotations
 
+import src.agent.tuning as _owner_tuning
+
 import types
 from pathlib import Path
 from time import perf_counter as _perf
@@ -433,10 +435,10 @@ def test_loop_backoff_helper_escalates_and_caps(monkeypatch) -> None:
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 1.0, raising=False)
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_MAX_DELAY_S", 8.0, raising=False)
 
-    assert loop_mod._stream_retry_backoff_s(1) == 1.0
-    assert loop_mod._stream_retry_backoff_s(2) == 2.0
-    assert loop_mod._stream_retry_backoff_s(3) == 4.0
-    assert loop_mod._stream_retry_backoff_s(7) == 8.0
+    assert _owner_tuning._stream_retry_backoff_s(1) == 1.0
+    assert _owner_tuning._stream_retry_backoff_s(2) == 2.0
+    assert _owner_tuning._stream_retry_backoff_s(3) == 4.0
+    assert _owner_tuning._stream_retry_backoff_s(7) == 8.0
 
 
 # ---------------------------------------------------------------------------

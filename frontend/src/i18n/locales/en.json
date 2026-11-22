@@ -1232,6 +1232,8 @@
     "describeGoal": "Describe the research goal to attach to this session",
     "placeholder": "e.g. Test a simple moving-average strategy on 000001.SZ over 2024",
     "send": "Send message",
+    "answerPlaceholder": "Type an answer",
+    "toolResultImageAlt": "Tool result",
     "messageInputLabel": "Message to the agent",
     "inputHint": "Enter to send · Shift+Enter for a new line",
     "editGoalObjectiveLabel": "Edit research goal objective",

@@ -1226,6 +1226,8 @@
     "describeGoal": "描述要附加到此会话的研究目标",
     "placeholder": "例如：为 000001.SZ 创建双均线交叉策略，回测 2024 年",
     "send": "发送",
+    "answerPlaceholder": "输入回答",
+    "toolResultImageAlt": "工具结果",
     "messageInputLabel": "发送给智能体的消息",
     "inputHint": "Enter 送出 · Shift+Enter 换行",
     "editGoalObjectiveLabel": "编辑研究目标内容",

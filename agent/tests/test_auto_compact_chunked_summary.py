@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import src.agent.context_compact as _owner_context_compact
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from src.agent.loop import AgentLoop, _summary_chunks
+from src.agent.loop import AgentLoop
+from src.agent.context_compact import _summary_chunks
 from src.agent.tools import ToolRegistry
 from tests.recording_helpers import recorder_at, records_at
 
@@ -30,7 +33,6 @@ def _build_agent(llm: Any) -> AgentLoop:
 
 
 def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_request(tmp_path):
-    from src.agent import loop as loop_mod
     payload = "replayed evidence " + "x" * 9000
     call = {"role": "assistant", "content": "", "tool_calls": [
         {"id": "leased", "type": "function", "function": {"name": "probe", "arguments": "{}"}}]}
@@ -39,7 +41,7 @@ def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_reque
                 call, result, *[{"role": "user", "content": "tail" + "t" * 30000} for _ in range(4)]]
     agent = _build_agent(_CompactionLLM(["Earlier work summarized."] * 10))
     agent._readonly_replay_visibility_pending = {"leased"}
-    loop_mod._context_collapse(messages, preserve_tool_call_ids={"leased"})
+    _owner_context_compact._context_collapse(messages, preserve_tool_call_ids={"leased"})
     assert result["content"] == payload
     with_trace = recorder_at(tmp_path / "trace")
     try:
@@ -141,7 +143,7 @@ def test_auto_compact_folds_all_head_chunks_and_preserves_empty_update(
     # The second response was empty; its predecessor must still be supplied to
     # the third fold and remain available after compaction.
     assert "summary-0" in llm.prompts[2]
-    assert agent._previous_summary == "summary-2"
+    assert agent._context_compactor.previous_summary == "summary-2"
 
     for marker in markers:
         assert sum(prompt.count(marker) for prompt in llm.prompts) == 1

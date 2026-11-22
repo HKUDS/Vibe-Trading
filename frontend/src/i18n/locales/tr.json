@@ -1192,6 +1192,8 @@
     "describeGoal": "Bu oturuma eklenecek araştırma hedefini açıklayın",
     "placeholder": "Örn. 000001.SZ üzerinde 2024 yılı için basit hareketli ortalama stratejisini test et",
     "send": "Mesaj gönder",
+    "answerPlaceholder": "Yanıt yazın",
+    "toolResultImageAlt": "Araç sonucu",
     "messageInputLabel": "Aracıya mesaj",
     "inputHint": "Göndermek için Enter · Yeni satır için Shift+Enter",
     "editGoalObjectiveLabel": "Araştırma hedefini düzenle",

@@ -72,7 +72,7 @@ def test_loop_compaction_projection_calls_thread_sink() -> None:
     from src.agent.loop import AgentLoop
 
     calls: list[tuple[int, list[dict]]] = []
-    loop = object.__new__(AgentLoop)
+    loop = AgentLoop(registry=SimpleNamespace(get=lambda name: None), llm=SimpleNamespace())
     loop._thread = SimpleNamespace(
         compaction_layer=lambda layer, messages: calls.append((layer, messages)),
         seq_of=lambda message: 1,

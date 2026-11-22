@@ -54,7 +54,7 @@ class IterationDriver:
     def _prepare_iteration(self, state: TurnState) -> bool:
         """Apply budgets, compaction, background results, and directives."""
         owner = self.owner
-        owner._tool_schema_tokens = estimate_tokens(request_definitions(owner.registry))
+        owner._context_compactor.tool_schema_tokens = estimate_tokens(request_definitions(owner.registry))
         if owner._budget_stop_reason is not None or owner._cancel_event.is_set():
             if owner._cancel_event.is_set():
                 state.trace.write({"type": "cancelled", "iter": owner._run_iteration + 1})
@@ -143,7 +143,7 @@ class IterationDriver:
         owner._last_activity_wall = time.time()
         usage = getattr(state.response, "usage_metadata", None)
         state.current_response_model = getattr(state.response, "response_model", None)
-        owner._context_meter.observe(usage.get("context_input_tokens", usage.get("input_tokens")) if isinstance(usage, dict) else None, state.request_messages, tool_schema_tokens=estimate_tokens(state.tool_defs) if state.tool_defs else 0)
+        owner._context_compactor.context_meter.observe(usage.get("context_input_tokens", usage.get("input_tokens")) if isinstance(usage, dict) else None, state.request_messages, tool_schema_tokens=estimate_tokens(state.tool_defs) if state.tool_defs else 0)
         if state.current_response_model:
             state.last_response_model = state.current_response_model
         owner._account_llm_usage(state.run_dir, usage, state.current_iter)

@@ -1226,6 +1226,8 @@
     "describeGoal": "이 세션에 첨부할 리서치 목표를 설명하세요",
     "placeholder": "예: 000001.SZ의 단순 이동평균 전략을 2024년 구간에서 테스트",
     "send": "보내기",
+    "answerPlaceholder": "답변 입력",
+    "toolResultImageAlt": "도구 결과",
     "messageInputLabel": "에이전트에게 보낼 메시지",
     "inputHint": "Enter로 전송 · Shift+Enter로 줄바꿈",
     "editGoalObjectiveLabel": "리서치 목표 편집",

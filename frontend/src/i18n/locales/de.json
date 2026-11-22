@@ -1232,6 +1232,8 @@
     "describeGoal": "Beschreiben Sie das Forschungsziel, das dieser Sitzung zugeordnet werden soll",
     "placeholder": "z. B. Testen Sie eine einfache Moving-Average-Strategie auf 000001.SZ über 2024",
     "send": "Nachricht senden",
+    "answerPlaceholder": "Antwort eingeben",
+    "toolResultImageAlt": "Werkzeugergebnis",
     "messageInputLabel": "Nachricht an den Agenten",
     "inputHint": "Eingabe zum Senden · Umschalt+Eingabe für eine neue Zeile",
     "editGoalObjectiveLabel": "Forschungsziel-Zielsetzung bearbeiten",

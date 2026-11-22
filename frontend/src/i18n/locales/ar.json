@@ -1226,6 +1226,8 @@
     "describeGoal": "صف هدف البحث لإرفاقه بهذه الجلسة",
     "placeholder": "مثال: اختبر استراتيجية بسيطة للمتوسط المتحرك على 000001.SZ خلال عام 2024",
     "send": "إرسال",
+    "answerPlaceholder": "اكتب إجابة",
+    "toolResultImageAlt": "نتيجة الأداة",
     "messageInputLabel": "رسالة إلى الوكيل",
     "inputHint": "Enter للإرسال · Shift+Enter لسطر جديد",
     "editGoalObjectiveLabel": "تعديل هدف البحث",

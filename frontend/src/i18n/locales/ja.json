@@ -1226,6 +1226,8 @@
     "describeGoal": "このセッションに添付するリサーチ目標を記述してください",
     "placeholder": "例: 000001.SZ で単純な移動平均戦略を2024年について検証する",
     "send": "送信",
+    "answerPlaceholder": "回答を入力",
+    "toolResultImageAlt": "ツールの結果",
     "messageInputLabel": "エージェントへのメッセージ",
     "inputHint": "Enter で送信 · Shift+Enter で改行",
     "editGoalObjectiveLabel": "リサーチ目標を編集",

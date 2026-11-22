@@ -23,7 +23,8 @@ from evals.grounding.evidence import (
     _symbol_from_csv_filename,
     _timestamp_matches_claim_date,
 )
-from src.agent.loop import AgentLoop, _is_tool_success
+from src.agent.loop import AgentLoop
+from src.agent.tool_results import _is_tool_success
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 from src.session.runtime import TurnRecorder

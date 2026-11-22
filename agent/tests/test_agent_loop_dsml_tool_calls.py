@@ -190,7 +190,7 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
 def test_closing_dsml_tags_alone_are_tool_call_syntax() -> None:
     """A DeepSeek draft once ended in closing tags only, inside its figures block;
     the opening-tag pattern missed them and the gate got three unreadable lines."""
-    from src.agent.loop import _looks_like_tool_call_syntax
+    from src.agent.tool_results import _looks_like_tool_call_syntax
 
     tail = "\n".join(
         [

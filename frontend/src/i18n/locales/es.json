@@ -1232,6 +1232,8 @@
     "describeGoal": "Describe el objetivo de investigación a asociar con esta sesión",
     "placeholder": "ej. Probar una estrategia simple de media móvil en 000001.SZ durante 2024",
     "send": "Enviar mensaje",
+    "answerPlaceholder": "Escribe una respuesta",
+    "toolResultImageAlt": "Resultado de la herramienta",
     "messageInputLabel": "Mensaje para el agente",
     "inputHint": "Enter para enviar · Shift+Enter para nueva línea",
     "editGoalObjectiveLabel": "Editar objetivo de la meta de investigación",

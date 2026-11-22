@@ -300,7 +300,7 @@ def test_a_context_length_error_teaches_the_window_and_the_run_recovers(tmp_path
 
     assert result["status"] == "success", result.get("reason")
     assert overflow and overflow[0]["stated_limit"] == 90_000
-    assert loop._learned_context_window == 90_000
+    assert loop._context_compactor.learned_context_window == 90_000
     assert llm.overflows == 1  # recovered once, never overflowed again
     assert max(llm.sent_tokens) <= 90_000
     # A summary keeps static prompt + ~20K tail, so on a 90K window the prompt
@@ -347,7 +347,7 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
 
 
 def test_layer_one_clears_oldest_results_only_until_the_prompt_fits() -> None:
-    from src.agent.loop import KEEP_RECENT, _is_cleared, _microcompact
+    from src.agent.context_compact import KEEP_RECENT, _is_cleared, _microcompact
 
     messages = [{"role": "system", "content": "s"}]
     for i in range(10):
