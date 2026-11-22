@@ -48,7 +48,7 @@ def loop_and_run_dir(tmp_path: Path) -> tuple[AgentLoop, Path]:
 def _events(agent: AgentLoop) -> list[tuple[str, dict]]:
     """Attach a capturing event callback and return the list it fills."""
     captured: list[tuple[str, dict]] = []
-    agent._event_callback = lambda name, data: captured.append((name, data))
+    agent._event_callback = lambda name, data: captured.append((data.get("kind", name), data))
     return captured
 
 
@@ -65,7 +65,7 @@ def test_watchdog_fails_a_run_with_no_forward_progress(
     trace.close()
 
     names = [name for name, _ in captured]
-    assert names == ["stall_warning", "stalled"]
+    assert names == ["run.stall_warning", "run.stalled"]
     assert agent._stall_reason is not None
     assert "stall watchdog" in agent._stall_reason
     # The loop must exit at its next boundary rather than stay "running".
@@ -113,7 +113,7 @@ def test_forward_progress_clears_the_pending_warning(
     agent._stall_watchdog(trace, run_dir, RunStateStore(), stall_timeout=1.0)
     trace.close()
 
-    assert [name for name, _ in captured] == ["stall_warning", "stall_warning"]
+    assert [name for name, _ in captured] == ["run.stall_warning", "run.stall_warning"]
     assert agent._stall_reason is None
     assert not agent._cancel_event.is_set()
     assert not (run_dir / "state.json").exists()
@@ -173,7 +173,7 @@ def test_watchdog_of_a_finished_run_does_not_fail_the_next_one(
     trace.close()
 
     # One warning is fine; ending a run that is no longer this thread's is not.
-    assert [name for name, _ in captured] == ["stall_warning"]
+    assert [name for name, _ in captured] == ["run.stall_warning"]
     assert agent._stall_reason is None
     assert not agent._cancel_event.is_set()
     assert not (run_dir / "state.json").exists()

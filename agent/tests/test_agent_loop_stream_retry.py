@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-import pytest
 
 import src.agent.tuning as tuning_mod
 from src.providers.chat import LLMResponse, ProviderStreamError
@@ -134,7 +133,7 @@ def _run(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(
-            (lambda event_type, data: events.append((event_type, data)))
+            (lambda event_type, data: events.append((data.get("kind", event_type), data)))
             if events is not None
             else None
         ),
@@ -161,13 +160,13 @@ def test_transient_stream_failure_is_retried_and_run_succeeds(
     assert llm.calls == 2
 
     event_types = [event_type for event_type, _ in events]
-    assert "stream_reset" in event_types
+    assert "text.reset" in event_types
     text_positions = [
-        index for index, event_type in enumerate(event_types) if event_type == "text_delta"
+        index for index, event_type in enumerate(event_types) if event_type == "text.delta"
     ]
-    reset_position = event_types.index("stream_reset")
+    reset_position = event_types.index("text.reset")
     assert text_positions[0] < reset_position < text_positions[-1]
-    reset = next(data for event_type, data in events if event_type == "stream_reset")
+    reset = next(data for event_type, data in events if event_type == "text.reset")
     assert reset["reason"] == "provider_stream_retry"
     assert reset["iter"] == 1
     assert reset["provider"] == "deepseek"

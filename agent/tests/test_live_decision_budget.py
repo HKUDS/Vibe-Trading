@@ -176,12 +176,12 @@ def test_real_agent_stops_before_tools_when_usage_monitor_cancels(tmp_path, repo
     agent, _, _ = build_loop(tmp_path, tool, llm)
     seen = []
     def monitor(name, data):
-        if name in {"llm_usage", "llm_usage_unavailable"}:
-            seen.append(name)
+        if name == "item.delta" and data.get("kind") in {"run.usage", "run.usage_unavailable"}:
+            seen.append(data["kind"])
             agent.cancel()
     agent._event_callback = monitor
     result = agent.run(user_message="inspect the artifact")
-    assert seen == ["llm_usage" if reported else "llm_usage_unavailable"]
+    assert seen == ["run.usage" if reported else "run.usage_unavailable"]
     assert tool.calls == 0
     assert llm.calls == 1
     assert result["status"] == "cancelled"

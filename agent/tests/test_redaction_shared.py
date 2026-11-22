@@ -462,7 +462,7 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     # The failure context survives redaction — the trace stays diagnosable.
     assert "connect failed" in tool_result["result"]
 
-    previews = [data["preview"] for event_type, data in events if event_type == "tool_result"]
+    previews = [data["item"]["content"] for event_type, data in events if event_type == "item.completed" and data.get("kind") in {"tool.completed", "tool.failed"}]
     assert previews, "expected a tool_result event"
     for preview in previews + [item["result_preview"] for item in react_trace]:
         assert _PLAINTEXT_KEY_SECRET not in preview
@@ -496,7 +496,7 @@ def test_write_file_content_argument_never_lands_in_the_trace(tmp_path: Path) ->
     assert tool_call["args"]["content"] == "[redacted]"
     assert tool_call["args"]["path"] == "notes.md"
 
-    call_events = [data for event_type, data in events if event_type == "tool_call"]
+    call_events = [data for event_type, data in events if event_type == "item.started" and data.get("kind") == "tool.started"]
     assert call_events, "expected a tool_call event"
     assert _WRITE_FILE_DOC_SECRET not in json.dumps(call_events, default=str)
 

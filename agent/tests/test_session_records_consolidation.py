@@ -55,10 +55,10 @@ def test_stream_checkpoint_is_thread_backed_for_new_sessions(tmp_path: Path) -> 
     session = store.create_session(Session(title="checkpoint"))
     runtime = SessionRuntime(store.thread_log(session.session_id), session.session_id)
     attempt = Attempt(session_id=session.session_id, prompt="write")
-    recorder = runtime.begin_turn(attempt.attempt_id, [])
+    recorder = runtime.begin_turn(attempt.attempt_id)
     recorder.start(prompt="write", message={"role": "user", "content": "write"}, model=None, provider=None)
     checkpoint = ResponseCheckpoint(store, attempt, runtime=runtime, min_interval_seconds=0)
-    checkpoint.handle_event("text_delta", {"delta": "partial"})
+    checkpoint.handle_event('item.delta', {"kind": 'text.delta', 'delta': 'partial'})
     checkpoint.flush()
 
     assert runtime.partial_response(attempt.attempt_id) == "partial"

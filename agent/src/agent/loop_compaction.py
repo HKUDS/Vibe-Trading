@@ -433,7 +433,7 @@ class ContextCompactor:
             value=summary,
             offload_kind=f"compact-summary-{iteration}",
         )
-        self.owner._emit("compact", {"tokens_before": tokens_before, "summary": summary[:200]})
+        self.owner._emit("item.delta", {"kind": "context.compacted", "tokens_before": tokens_before, "summary": summary[:200]})
 
         # Reconstruct: system + summary + acknowledge + preserved tail
         state_summary = self.owner.memory.to_summary()

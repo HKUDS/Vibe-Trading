@@ -53,11 +53,11 @@ class ResponseCheckpoint:
             event_type: Agent event name.
             data: Event payload.
         """
-        if event_type not in {"text_delta", "stream_reset"}:
+        if event_type != "item.delta" or data.get("kind") not in {"text.delta", "text.reset"}:
             return
 
         with self._lock:
-            if event_type == "stream_reset":
+            if data.get("kind") == "text.reset":
                 self._text = ""
                 self._dirty = True
                 self._flush_locked()
@@ -95,11 +95,8 @@ class ResponseCheckpoint:
         if self._runtime is not None:
             self._runtime.record_checkpoint(self._attempt_id, self._text)
         else:
-            # Legacy sessions without a thread keep the old recovery file.
-            self._store.save_partial_response(
-                self._session_id,
-                self._attempt_id,
-                self._text,
+            self._store.thread_log(self._session_id).append(
+                "checkpoint", self._attempt_id, content=self._text,
             )
         self._dirty = False
         self._last_flush = time.monotonic() if now is None else now

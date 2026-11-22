@@ -151,6 +151,7 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "answer_to_question_id": _Field(_optional(_is_str)),
     },
     "assistant": {
+        "llm_content": _Field(_optional(_is_message_content)),
         "content": _Field(_optional(_is_message_content)),
         "tool_calls": _Field(_is_tool_calls, default=[]),
         "reasoning_content": _Field(_optional(_is_str)),
@@ -214,6 +215,7 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "provider": _Field(_optional(_is_str)),
         "model": _Field(_optional(_is_str)),
         "pending_inputs": _Field(_optional(_is_list)),
+        "display": _Field(_optional(_is_dict)),
     },
 }
 
@@ -262,6 +264,10 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
         if not spec.check(value):
             raise ThreadItemError(f"{item_type} item has an invalid {name!r}")
         result[name] = copy.deepcopy(value)
+    if item_type == "assistant" and result.get("llm_content") is None:
+        result.pop("llm_content", None)
+    if item_type == "turn_end" and result.get("display") is None:
+        result.pop("display", None)
     if item_type == "compaction":
         # Keep the legacy on-disk shape byte-for-byte for summary-only
         # records. New layer events carry these fields explicitly.
@@ -655,7 +661,7 @@ def _assistant_message(
     Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
     response and the loop's plain ``{"role", "content"}`` for a final answer.
     """
-    message: Dict[str, Any] = {"role": "assistant", "content": copy.deepcopy(item.get("content"))}
+    message: Dict[str, Any] = {"role": "assistant", "content": copy.deepcopy(item.get("llm_content") if item.get("llm_content") is not None else item.get("content"))}
     tool_calls = item.get("tool_calls") or []
     if tool_calls:
         message["tool_calls"] = copy.deepcopy(tool_calls)

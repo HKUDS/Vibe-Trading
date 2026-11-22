@@ -767,7 +767,7 @@ class TestProposalArmingRelay:
         preview = json.dumps(
             {"type": "mandate.proposal", "proposal_id": proposal_id, "session_id": "sess_1"}
         )[:200]
-        on_event("tool_result", {"tool": "propose_mandate_profiles", "status": "ok", "preview": preview})
+        on_event('item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'propose_mandate_profiles', 'content': preview, 'status': 'ok'}, 'live_id': "tool:" + str('')})
 
         armed = captured["sink_result"]
         assert armed.get("proposal_id") == proposal_id
@@ -779,7 +779,7 @@ class TestProposalArmingRelay:
         """A non-propose tool_result must never arm a proposal (no false-positive)."""
         captured: Dict[str, Any] = {}
         on_event = _capture_on_event(captured)
-        on_event("tool_result", {"tool": "backtest", "status": "ok", "preview": '{"sharpe": 1.2}'})
+        on_event('item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'backtest', 'content': '{"sharpe": 1.2}', 'status': 'ok'}, 'live_id': "tool:" + str('')})
         assert captured["sink_result"] == {}
 
     def test_armed_then_bare_2_is_intercepted_not_sent_to_model(self, live_root: Path) -> None:
@@ -797,7 +797,7 @@ class TestProposalArmingRelay:
         captured: Dict[str, Any] = {}
         on_event = _capture_on_event(captured)
         preview = json.dumps({"type": "mandate.proposal", "proposal_id": proposal_id})[:200]
-        on_event("tool_result", {"tool": "propose_mandate_profiles", "status": "ok", "preview": preview})
+        on_event('item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'propose_mandate_profiles', 'content': preview, 'status': 'ok'}, 'live_id': "tool:" + str('')})
 
         ctx = InteractiveContext()
         ctx.pending_proposal = dict(captured["sink_result"])

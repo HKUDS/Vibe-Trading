@@ -932,7 +932,7 @@ class AgentLoop(ToolCallLifecycle):
         """Account one child-provider usage event in the parent run.
 
         Args:
-            event_type: ``llm_usage`` or ``llm_usage_unavailable``.
+            event_type: ``item.delta`` with ``run.usage`` or ``run.usage_unavailable``.
             data: Provider usage payload without the child's iteration keys.
 
         Returns:

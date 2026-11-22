@@ -419,21 +419,28 @@ class _RunDashboard:
         return entry
 
     def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Update the dashboard from AgentLoop UI events."""
-        if event_type == "text_delta":
+        """Update the dashboard from canonical item events."""
+        kind = data.get("kind", event_type)
+        heartbeat = bool(data.get("heartbeat"))
+        item = data.get("item") or {}
+        if kind in {"tool.started", "tool.completed", "tool.failed"}:
+            data = {**item, "tool": item.get("name"), "call_id": item.get("tool_call_id"), "preview": item.get("content")}
+        elif kind == "tool.progress":
+            data = data.get("progress") or {}
+        if kind == "text.delta":
             delta = data.get("delta", "")
             if delta:
                 self.latest_text = (self.latest_text + delta).strip()[-260:]
                 self.refresh()
             return
 
-        if event_type == "thinking_done":
+        if kind == "item.completed":
             self.current_tool = "thinking"
             self.current_args = ""
             self.refresh()
             return
 
-        if event_type == "tool_call":
+        if kind == "tool.started":
             tool = data.get("tool", "")
             args = data.get("arguments", {})
             self.iterations += 1
@@ -471,7 +478,7 @@ class _RunDashboard:
             self.refresh()
             return
 
-        if event_type == "tool_heartbeat":
+        if kind == "tool.progress" and heartbeat:
             # Keepalive while a long tool runs. Updates elapsed in-place.
             tool = data.get("tool") or self.current_tool
             entry = self._ensure_entry(tool)
@@ -479,7 +486,7 @@ class _RunDashboard:
             self.refresh()
             return
 
-        if event_type == "tool_progress":
+        if kind == "tool.progress":
             # Structured stage/current/total emitted from the tool.
             tool = data.get("tool") or self.current_tool
             entry = self._ensure_entry(tool)
@@ -501,7 +508,7 @@ class _RunDashboard:
                 self.refresh()
             return
 
-        if event_type == "tool_result":
+        if kind in {"tool.completed", "tool.failed"}:
             tool = data.get("tool", self.current_tool)
             status = data.get("status", "ok")
             elapsed_s = float(data.get("elapsed_ms", 0) or 0) / 1000
@@ -527,7 +534,7 @@ class _RunDashboard:
             self.refresh()
             return
 
-        if event_type == "compact":
+        if kind == "context.compacted":
             tokens = data.get("tokens_before", "?")
             self.timeline.append(("warning", "context", "", 0.0, f"compressed after {tokens} tokens"))
             self.timeline = self.timeline[-8:]
@@ -941,10 +948,18 @@ def _run_agent(
     streamed_text: list[str] = []
 
     def on_event(event_type: str, data: Dict[str, Any]) -> None:
+        kind = data.get("kind", event_type)
+        heartbeat = bool(data.get("heartbeat"))
+        envelope = data
+        item = data.get("item") or {}
+        if kind in {"tool.started", "tool.completed", "tool.failed"}:
+            data = {**item, "tool": item.get("name"), "call_id": item.get("tool_call_id"), "preview": item.get("content")}
+        elif kind == "tool.progress":
+            data = data.get("progress") or {}
         # Text streamed so far, kept for the reply of a turn the user stops.
-        if event_type == "stream_reset":
+        if kind == "text.reset":
             streamed_text.clear()
-        elif event_type == "text_delta" and isinstance(data.get("delta"), str):
+        elif kind == "text.delta" and isinstance(data.get("delta"), str):
             streamed_text.append(data["delta"])
         # Live mandate proposals are surfaced to the REPL out-of-band so the
         # user's pick is intercepted before the model (SPEC.md Consent §2).
@@ -963,7 +978,7 @@ def _run_agent(
         # (SPEC.md Consent §1/§2). Fires regardless of stream_output / rich
         # state — arming must not depend on rendering — and does NOT return:
         # the tool_result still flows on to the dashboard / no-rich printers.
-        if event_type == "tool_result" and proposal_sink is not None:
+        if kind == "tool.completed" and proposal_sink is not None:
             proposal = _mandate_proposal_from_tool_result(data)
             if proposal is None:
                 proposal = _scheduled_proposal_from_tool_result(data)
@@ -975,19 +990,19 @@ def _run_agent(
         if not stream_output:
             return
         if dashboard is not None and not no_rich:
-            dashboard.handle_event(event_type, data)
+            dashboard.handle_event(event_type, envelope)
             return
-        if no_rich and event_type == "thinking_done":
+        if no_rich and kind == "item.completed":
             print()
             return
-        if no_rich and event_type == "tool_call":
+        if no_rich and kind == "tool.started":
             tool = data.get("tool", "")
             args = data.get("arguments", {})
             args_preview = _format_tool_call_args(tool, args)
             print(f"  - {tool}{_strip_rich_tags(args_preview)}", end="")
             no_rich_state["dot_pending"] = False
             return
-        if no_rich and event_type == "tool_result":
+        if no_rich and kind in {"tool.completed", "tool.failed"}:
             tool = data.get("tool", "")
             status = data.get("status", "ok")
             elapsed_ms = data.get("elapsed_ms", 0)
@@ -1001,19 +1016,19 @@ def _run_agent(
             print(f"  {mark} {elapsed_s:.1f}s{_strip_rich_tags(suffix)}")
             no_rich_state["last_progress_ts"].pop(tool, None)
             return
-        if no_rich and event_type == "compact":
+        if no_rich and kind == "context.compacted":
             tokens = data.get("tokens_before", "?")
             if no_rich_state["dot_pending"]:
                 no_rich_state["dot_pending"] = False
                 print()
             print(f"\n  context compressed ({tokens} tokens -> summary)\n")
             return
-        if no_rich and event_type == "tool_heartbeat":
+        if no_rich and kind == "tool.progress" and heartbeat:
             # Print a dot per tick so the user sees the tool is alive.
             print(".", end="", flush=True)
             no_rich_state["dot_pending"] = True
             return
-        if no_rich and event_type == "tool_progress":
+        if no_rich and kind == "tool.progress":
             tool = data.get("tool", "") or ""
             now = time.monotonic()
             last_ts = no_rich_state["last_progress_ts"].get(tool, 0.0)
@@ -1038,19 +1053,19 @@ def _run_agent(
                     print()
                 print(f"    {label}", flush=True)
             return
-        if event_type == "text_delta":
+        if kind == "text.delta":
             if no_rich:
                 print(data.get("delta", ""), end="")
             else:
                 console.print(data.get("delta", ""), end="", style="dim")
-        elif event_type == "thinking_done":
+        elif kind == "item.completed":
             console.print()
-        elif event_type == "tool_call":
+        elif kind == "tool.started":
             tool = data.get("tool", "")
             args = data.get("arguments", {})
             args_preview = _format_tool_call_args(tool, args)
             console.print(f"  [cyan]\u25b6 {tool}[/cyan]{args_preview}", end="")
-        elif event_type == "tool_result":
+        elif kind in {"tool.completed", "tool.failed"}:
             tool = data.get("tool", "")
             status = data.get("status", "ok")
             elapsed_ms = data.get("elapsed_ms", 0)
@@ -1060,7 +1075,7 @@ def _run_agent(
             preview = _format_tool_result_preview(tool, status, data.get("preview", ""))
             suffix = f"  {preview}" if preview else ""
             console.print(f"  {mark} [dim]{elapsed_s:.1f}s[/dim]{suffix}")
-        elif event_type == "compact":
+        elif kind == "context.compacted":
             tokens = data.get("tokens_before", "?")
             console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
 
@@ -1672,13 +1687,13 @@ class _SwarmDashboard:
         if etype == "task_started":
             agent["status"] = "running"
             agent["started_at"] = time.monotonic()
-        elif etype == "tool_call":
-            agent["tool"] = data.get("tool", "?")
+        elif etype == "item.started" and data.get("kind") == "tool.started":
+            agent["tool"] = data["item"].get("name", "?")
             agent["iters"] += 1
-        elif etype == "tool_result":
+        elif etype == "item.completed" and data.get("kind") in {"tool.completed", "tool.failed"}:
             agent["elapsed"] = (time.monotonic() - agent["started_at"]) if agent["started_at"] else 0
             tool_name = agent["tool"]
-            status_char = "\u2713" if data.get("status", "ok") == "ok" else "\u2717"
+            status_char = "\u2713" if data["item"].get("status", "ok") == "ok" else "\u2717"
             agent["tool"] = f"{tool_name} {status_char}"
         elif etype == "task_completed":
             agent["status"] = "done"
@@ -2402,6 +2417,16 @@ def cmd_sessions() -> None:
         )
 
     console.print(table)
+
+
+def cmd_migrate_sessions() -> int:
+    """Convert every pre-thread session into the canonical thread log."""
+    from src.session.migration import migrate_all
+
+    results = migrate_all(SESSIONS_DIR)
+    migrated = sum(result.migrated for result in results)
+    console.print(f"Migrated {migrated} of {len(results)} sessions.")
+    return 0
 
 
 def cmd_session_chat(session_id: str, max_iter: int) -> None:
@@ -4929,6 +4954,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
 
+    sessions_parser = subparsers.add_parser("sessions", help="Manage chat sessions")
+    sessions_parser.add_subparsers(dest="sessions_command").add_parser(
+        "migrate", help="Migrate pre-thread sessions"
+    )
+
     run_parser = subparsers.add_parser("run", help="Run a prompt")
     run_parser.add_argument("-p", "--prompt", dest="run_prompt", type=str, help="Prompt text")
     run_parser.add_argument("-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file")
@@ -5986,6 +6016,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.sessions:
         return _coerce_exit_code(cmd_sessions())
+    if args.command == "sessions" and args.sessions_command == "migrate":
+        return _coerce_exit_code(cmd_migrate_sessions())
     if args.session_chat:
         return _coerce_exit_code(cmd_session_chat(args.session_chat, args.max_iter))
     if args.upload:

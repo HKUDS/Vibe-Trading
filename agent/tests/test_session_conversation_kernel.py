@@ -487,7 +487,7 @@ def test_crash_mid_tool_then_restart_closes_the_turn_and_keeps_finished_results(
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_session_falls_back_to_text_history_and_keeps_it_after_the_thread_starts(tmp_path, monkeypatch):
+def test_pre_thread_session_migrates_and_replays_after_new_turns(tmp_path, monkeypatch):
     def policy(llm, messages, tools, on_text):
         del tools, on_text
         return _response(content=f"answer {len(llm.requests)}")
@@ -502,6 +502,7 @@ def test_legacy_session_falls_back_to_text_history_and_keeps_it_after_the_thread
     service.store.append_message(Message(session_id=sid, role="assistant", content="done",
                                          metadata={"run_id": run_id}, linked_attempt_id="old",
                                          created_at="2026-10-26T23:01:00+00:00"))
+    (service.store.thread_path(sid).parent / "thread_migration.json").unlink()
     assert not service.store.thread_path(sid).exists()
 
     async def scenario() -> None:

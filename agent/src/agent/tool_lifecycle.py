@@ -11,6 +11,7 @@ import contextvars
 import json
 import logging
 import queue
+import uuid
 import threading
 import time as _time
 from typing import Any, Dict, Mapping
@@ -54,6 +55,60 @@ class ToolCallLifecycle:
     _thread: Any = None
     _turn_messages: list | None = None
     _dependency_message_lists: tuple = ()
+
+    def _emit_tool_started(self, tc: Any, arguments: Mapping[str, Any], iteration: int, *, blocked: bool = False) -> None:
+        """Publish the canonical live item for a tool call."""
+        redacted = redact_payload(arguments)
+        if not hasattr(self, "_live_tool_ids"):
+            self._live_tool_ids = {}
+        live_id = self._live_tool_ids[tc.id] = f"tool:{uuid.uuid4().hex}"
+        self._emit(
+            "item.started",
+            {
+                "kind": "tool.started",
+                "live_id": live_id,
+                "item": {
+                    "type": "tool_result",
+                    "tool_call_id": tc.id,
+                    "name": tc.name,
+                    "arguments": {key: str(value)[:200] for key, value in redacted.items()},
+                    **({"blocked": True} if blocked else {}),
+                },
+                "iter": iteration,
+            },
+        )
+
+    def _emit_tool_completed(self, tc: Any, status: str, elapsed_ms: int, preview: str, *, artifact: dict | None = None, cached: bool = False) -> None:
+        """Publish the canonical live outcome for a tool call."""
+        self._emit(
+            "item.completed",
+            {
+                "kind": "tool.completed" if status == "ok" else "tool.failed",
+                "live_id": getattr(self, "_live_tool_ids", {}).pop(tc.id, f"tool:{uuid.uuid4().hex}"),
+                "item": {
+                    "type": "tool_result",
+                    "tool_call_id": tc.id,
+                    "name": tc.name,
+                    "status": status,
+                    "elapsed_ms": elapsed_ms,
+                    "content": preview,
+                    **({"artifact": artifact} if artifact else {}),
+                    **({"cached": True} if cached else {}),
+                },
+            },
+        )
+
+    def _emit_tool_progress(self, payload: Dict[str, Any], *, heartbeat: bool = False) -> None:
+        """Publish canonical progress for a running tool item."""
+        self._emit(
+            "item.delta",
+            {
+                "kind": "tool.progress",
+                "live_id": getattr(self, "_live_tool_ids", {}).get(payload.get("call_id")),
+                "progress": dict(payload),
+                "heartbeat": heartbeat,
+            },
+        )
 
     def _records_into(self, messages: list) -> bool:
         """Whether results appended to ``messages`` belong in the thread."""
@@ -276,10 +331,7 @@ class ToolCallLifecycle:
             # Layer 4: compact tool — mark then defer execution
             if tc.name == "compact":
                 self._tool_progress.note("compact", "compact")
-                self._emit(
-                    "tool_call",
-                    {"tool": "compact", "arguments": {}, "iter": iteration, "call_id": tc.id},
-                )
+                self._emit_tool_started(tc, {}, iteration)
                 budget = None if _override("TOKEN_THRESHOLD") is not None else self._context_budget(messages)
                 tokens = self._prompt_tokens(messages) if budget is not None else 0
                 if budget is not None and tokens <= budget.micro_at:
@@ -304,10 +356,7 @@ class ToolCallLifecycle:
                         '{"status":"ok","message":"Compressing..."}', status="ok", elapsed_ms=0,
                     )
                     trace.write({"type": "compact_requested", "iter": iteration})
-                self._emit(
-                    "tool_result",
-                    {"tool": "compact", "status": "ok", "elapsed_ms": 0, "call_id": tc.id},
-                )
+                self._emit_tool_completed(tc, "ok", 0, "")
                 continue
 
             tool_def = self.registry.get(tc.name)
@@ -347,10 +396,7 @@ class ToolCallLifecycle:
                     else self._identity.reusable_resolution(tc.arguments)
                 )
                 if reused is not None:
-                    self._emit("tool_call", {
-                        "tool": tc.name, "arguments": redact_payload(tc.arguments),
-                        "iter": iteration, "call_id": tc.id,
-                    })
+                    self._emit_tool_started(tc, tc.arguments, iteration)
                     trace.write({
                         "type": "identity_reused", "iter": iteration, "tool": tc.name,
                         "call_id": tc.id, "args": redact_payload(tc.arguments),
@@ -420,18 +466,7 @@ class ToolCallLifecycle:
                 })
                 react_trace.append({"type": "tool_result_replayed", "tool": tc.name})
                 self._tool_progress.note("replayed", tc.name)
-                self._emit(
-                    "tool_result",
-                    {
-                        "tool": tc.name,
-                        "status": "ok",
-                        "elapsed_ms": 0,
-                        "preview": redact_tool_result(cached)[:200],
-                        "call_id": tc.id,
-                        "cached": True,
-                        "replayed": True,
-                    },
-                )
+                self._emit_tool_completed(tc, "ok", 0, redact_tool_result(cached)[:200], cached=True)
                 continue
 
             if (
@@ -484,17 +519,7 @@ class ToolCallLifecycle:
                     })
                     react_trace.append({"type": "tool_result_cached", "tool": tc.name})
                     self._tool_progress.note("cached", tc.name)
-                    self._emit(
-                        "tool_result",
-                        {
-                            "tool": tc.name,
-                            "status": "ok",
-                            "elapsed_ms": 0,
-                            "preview": cached[:200],
-                            "call_id": tc.id,
-                            "cached": True,
-                        },
-                    )
+                    self._emit_tool_completed(tc, "ok", 0, cached[:200], cached=True)
                     continue
 
             execution_plan.append((tc, None))
@@ -583,17 +608,7 @@ class ToolCallLifecycle:
         self._tool_progress.note("blocked", tc.name, _failure_code(result))
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
         redacted_args = redact_payload(args)
-        event_args = {key: str(value)[:200] for key, value in redacted_args.items()}
-        self._emit(
-            "tool_call",
-            {
-                "tool": tc.name,
-                "arguments": event_args,
-                "iter": iteration,
-                "call_id": tc.id,
-                **({"blocked": True} if blocked else {}),
-            },
-        )
+        self._emit_tool_started(tc, args, iteration, blocked=blocked)
         trace.write(
             {
                 "type": "tool_call",
@@ -727,16 +742,7 @@ class ToolCallLifecycle:
         for tc in tool_calls:
             args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
             redacted_args = redact_payload(args)
-            event_args = {k: str(v)[:200] for k, v in redacted_args.items()}
-            self._emit(
-                "tool_call",
-                {
-                    "tool": tc.name,
-                    "arguments": event_args,
-                    "iter": iteration,
-                    "call_id": tc.id,
-                },
-            )
+            self._emit_tool_started(tc, args, iteration)
             trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": redacted_args})
             runnable.append((tc, args))
 
@@ -782,16 +788,7 @@ class ToolCallLifecycle:
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
 
         redacted_args = redact_payload(args)
-        event_args = {k: str(v)[:200] for k, v in redacted_args.items()}
-        self._emit(
-            "tool_call",
-            {
-                "tool": tc.name,
-                "arguments": event_args,
-                "iter": iteration,
-                "call_id": tc.id,
-            },
-        )
+        self._emit_tool_started(tc, args, iteration)
         trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": redacted_args})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
 
@@ -865,13 +862,13 @@ class ToolCallLifecycle:
             payload = event.to_dict()
             payload["tool"] = tool_name
             payload["call_id"] = call_id
-            self._emit("tool_progress", payload)
+            self._emit_tool_progress(payload)
 
         def _on_heartbeat(payload: Dict[str, Any]) -> None:
             if timed_out.is_set():
                 return
             payload["call_id"] = call_id
-            self._emit("tool_heartbeat", payload)
+            self._emit_tool_progress(payload, heartbeat=True)
 
         t0 = _time.perf_counter()
         _tool_timeout = _tool_timeout_seconds()
@@ -921,7 +918,7 @@ class ToolCallLifecycle:
                 "elapsed_s": round(elapsed_ms / 1000, 2),
             }
             payload.update(extra)
-            self._emit("tool_progress", payload)
+            self._emit_tool_progress(payload)
             return elapsed_ms
 
         # Every tool runs in a daemon worker. Python cannot safely kill an
@@ -1273,17 +1270,7 @@ class ToolCallLifecycle:
         )
         preview = trace_result[:200]
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
-        self._emit(
-            "tool_result",
-            {
-                "tool": tc.name,
-                "status": status,
-                "elapsed_ms": elapsed_ms,
-                "preview": preview,
-                "call_id": tc.id,
-                **({"artifact": artifact} if artifact else {}),
-            },
-        )
+        self._emit_tool_completed(tc, status, elapsed_ms, preview, artifact=artifact)
 
     def _update_memory(self, tool_name: str) -> None:
         """Update workspace memory counters after tool execution."""

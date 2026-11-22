@@ -1164,7 +1164,7 @@ def _stream(tmp_path: Path, content: str) -> tuple[dict[str, Any], str, AgentLoo
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
     result = agent.run("总结一下这周的复盘心得")
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "item.delta" and data.get("kind") == "text.delta")
     return result, streamed, agent
 
 
@@ -1187,13 +1187,13 @@ def test_the_tool_call_syntax_fallback_reaches_the_stream_once(tmp_path: Path) -
 
     result, events, _ = _run(tmp_path, llm, max_iterations=1)
 
-    deltas = [data.get("delta", "") for event, data in events if event == "text_delta"]
+    deltas = [data.get("delta", "") for event, data in events if event == "item.delta" and data.get("kind") == "text.delta"]
     assert sum("tool-call syntax" in delta for delta in deltas) == 1
     visible = ""
     for event, data in events:
-        if event == "stream_reset":
+        if event == "item.delta" and data.get("kind") == "text.reset":
             visible = ""
-        elif event == "text_delta":
+        elif event == "item.delta" and data.get("kind") == "text.delta":
             visible += data["delta"]
     assert result["content"] == visible
 
@@ -1236,7 +1236,7 @@ def test_a_held_back_line_in_a_tool_call_turn_is_shown(tmp_path: Path) -> None:
 
     agent.run("总结一下这周的复盘心得")
 
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "item.delta" and data.get("kind") == "text.delta")
     assert "`先写结论`" in streamed
 
 

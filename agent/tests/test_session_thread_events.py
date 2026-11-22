@@ -28,6 +28,7 @@ from src.session.events import (
     display_item,
 )
 from src.session.models import Session
+from src.agent.loop_streaming import TurnStream
 from src.session.service import SessionService
 from src.session.store import SessionStore
 from src.session.thread import ThreadLog
@@ -52,6 +53,9 @@ def _events(tmp_path: Path, *, buffer: int = 500, heartbeat: float = 0.05):
     store = SessionStore(tmp_path / "sessions")
     bus = EventBus(max_buffer_size=buffer, heartbeat_interval_s=heartbeat)
     return store, bus, ThreadEvents(bus, store.thread_path)
+
+def _stream(events, iteration):
+    return TurnStream(emit=lambda name, data: events.emit(SESSION, name, {**data, "attempt_id": TURN}), iteration=iteration, heartbeat_interval=lambda: 0, reasoning_interval=lambda: 0)
 
 
 def _assistant_call(thread: ThreadLog, turn: str, call_id: str, args: Dict[str, Any]) -> None:
@@ -107,21 +111,19 @@ def test_live_items_are_started_streamed_and_completed_with_their_seq(tmp_path: 
     thread = store.thread_log(SESSION)
     observed: list[SSEEvent] = []
     bus.add_listener(observed.append)
-    events.emit(SESSION, "attempt.created", {"attempt_id": TURN})
+    events.sync(SESSION)
     thread.append("turn_start", TURN, prompt="go")
     thread.append("user", TURN, content="go", llm_content="go")
 
-    events.emit(SESSION, "text_delta", {"delta": "Let me ", "iter": 1, "attempt_id": TURN})
-    events.emit(SESSION, "text_delta", {"delta": "check.", "iter": 1, "attempt_id": TURN})
+    stream1 = _stream(events, 1)
+    stream1.on_text('Let me ')
+    stream1.on_text('check.')
     _assistant_call(thread, TURN, "c1", {"symbol": "AAPL"})
-    events.emit(SESSION, "tool_call", {"tool": "get_market_data", "arguments": {"symbol": "AAPL"},
-                                       "iter": 1, "call_id": "c1", "attempt_id": TURN})
-    events.emit(SESSION, "tool_progress", {"tool": "get_market_data", "call_id": "c1",
-                                           "stage": "fetch", "attempt_id": TURN})
+    events.emit(SESSION, 'item.started', {"kind": 'tool.started', 'iter': 1, 'attempt_id': TURN, 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'c1', 'arguments': {'symbol': 'AAPL'}}, 'live_id': "tool:" + str('c1')})
+    events.emit(SESSION, 'item.delta', {"kind": 'tool.progress', 'attempt_id': TURN, 'progress': {'tool': 'get_market_data', 'call_id': 'c1', 'stage': 'fetch', 'attempt_id': TURN}, 'heartbeat': False, 'live_id': "tool:" + str('c1')})
     thread.append("tool_result", TURN, tool_call_id="c1", name="get_market_data",
                   content='{"status": "error"}', status="error", elapsed_ms=4)
-    events.emit(SESSION, "tool_result", {"tool": "get_market_data", "status": "error",
-                                         "call_id": "c1", "attempt_id": TURN})
+    events.emit(SESSION, 'item.completed', {"kind": 'tool.failed', 'attempt_id': TURN, 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'c1', 'status': 'error'}, 'live_id': "tool:" + str('c1')})
 
     item_events = [e for e in observed if e.event_type in ITEM_AND_RUN]
     summary = [(e.event_type, e.data["kind"] if "kind" in e.data else None, e.seq) for e in item_events]
@@ -155,7 +157,7 @@ def test_live_items_are_started_streamed_and_completed_with_their_seq(tmp_path: 
     ]
 
 
-def test_legacy_callbacks_are_translated_without_publication(tmp_path: Path) -> None:
+def test_removed_callbacks_are_rejected_without_publication(tmp_path: Path) -> None:
     store, bus, events = _events(tmp_path)
     thread = store.thread_log(SESSION)
     emitted = [
@@ -180,12 +182,14 @@ def test_a_response_the_thread_never_recorded_is_discarded_explicitly(tmp_path: 
     thread = store.thread_log(SESSION)
     observed: list[SSEEvent] = []
     bus.add_listener(observed.append)
-    events.emit(SESSION, "attempt.created", {"attempt_id": TURN})
+    events.sync(SESSION)
     thread.append("turn_start", TURN, prompt="go")
-    events.emit(SESSION, "text_delta", {"delta": "x", "iter": 1, "attempt_id": TURN})
+    stream1 = _stream(events, 1)
+    stream1.on_text('x')
     # Iteration 1 was filtered and never recorded; iteration 2 streams anew.
-    events.emit(SESSION, "text_delta", {"delta": "y", "iter": 2, "attempt_id": TURN})
-    events.emit(SESSION, "tool_call", {"tool": "t", "call_id": "c9", "attempt_id": TURN})
+    stream2 = _stream(events, 2)
+    stream2.on_text('y')
+    events.emit(SESSION, 'item.started', {"kind": 'tool.started', 'attempt_id': TURN, 'item': {'type': 'tool_result', 'name': 't', 'tool_call_id': 'c9'}, 'live_id': "tool:" + str('c9')})
     thread.append("turn_end", TURN, status="cancelled")
     events.emit(SESSION, "attempt.cancelled", {"attempt_id": TURN})
 
@@ -292,7 +296,7 @@ def test_reconnects_see_every_recorded_seq_once_while_a_writer_runs(tmp_path: Pa
                           content=str(index), status="ok")
             if index % 7 == 0:
                 thread.append("state", TURN, loaded_tools=[str(index)])
-            events.emit(SESSION, "tool_result", {"call_id": f"c{index}", "attempt_id": TURN})
+            events.emit(SESSION, 'item.completed', {"kind": 'tool.completed', 'attempt_id': TURN, 'item': {'type': 'tool_result', 'tool_call_id': f'c{index}'}, 'live_id': "tool:" + str(f'c{index}')})
             time.sleep(0.001)
         thread.append("turn_end", TURN, status="completed")
         events.emit(SESSION, "attempt.completed", {"attempt_id": TURN})
@@ -364,8 +368,8 @@ def test_no_cursor_on_an_active_turn_gets_its_items_from_disk(tmp_path: Path) ->
     thread.append("user", TURN, content="go", llm_content="go")
     _assistant_call(thread, TURN, "c1", {"symbol": "AAPL"})
     events.sync(SESSION)
-    events.emit(SESSION, "tool_call", {"tool": "get_market_data", "call_id": "c1", "attempt_id": TURN})
-    events.emit(SESSION, "tool_progress", {"call_id": "c1", "stage": "fetch", "attempt_id": TURN})
+    events.emit(SESSION, 'item.started', {"kind": 'tool.started', 'attempt_id': TURN, 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'c1'}, 'live_id': "tool:" + str('c1')})
+    events.emit(SESSION, 'item.delta', {"kind": 'tool.progress', 'attempt_id': TURN, 'progress': {'call_id': 'c1', 'stage': 'fetch', 'attempt_id': TURN}, 'heartbeat': False, 'live_id': "tool:" + str('c1')})
     buffered = bus.replay(SESSION, replay_all=True)
 
     received = _collect(events, replay_all=True, active_turn_id=TURN)
@@ -382,10 +386,12 @@ def test_cursor_resume_replays_only_the_live_events_of_unfinished_items(tmp_path
     thread = store.thread_log(SESSION)
     thread.append("turn_start", TURN, prompt="go")
     events.sync(SESSION)
-    events.emit(SESSION, "text_delta", {"delta": "done one", "iter": 1, "attempt_id": TURN})
+    stream1 = _stream(events, 1)
+    stream1.on_text('done one')
     _assistant_call(thread, TURN, "c1", {"symbol": "AAPL"})
-    events.emit(SESSION, "tool_call", {"tool": "get_market_data", "call_id": "c1", "attempt_id": TURN})
-    events.emit(SESSION, "text_delta", {"delta": "still going", "iter": 2, "attempt_id": TURN})
+    events.emit(SESSION, 'item.started', {"kind": 'tool.started', 'attempt_id': TURN, 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'c1'}, 'live_id': "tool:" + str('c1')})
+    stream2 = _stream(events, 2)
+    stream2.on_text('still going')
 
     received = _collect(events, cursor=1)
 
@@ -426,19 +432,20 @@ class _ScriptedLoop:
 
     def run(self, *, user_message: str, history, session_id: str):
         del history, session_id
+        self._emit("goal.updated", {"goal": {"goal_id": "goal-test"}})
+        self._emit("swarm.started", {"run_id": "swarm-test"})
         self._thread.start(prompt=user_message, message={"role": "user", "content": user_message},
                            model=None, provider=None)
-        self._emit("text_delta", {"delta": "Checking.", "iter": 1})
+        self._emit('item.delta', {"kind": 'text.delta', 'delta': 'Checking.', 'iter': 1})
         self._thread.assistant({"role": "assistant", "content": "Checking.", "tool_calls": [
             {"id": "c1", "type": "function",
              "function": {"name": "get_market_data", "arguments": '{"symbol": "AAPL"}'}},
         ]}, phase="commentary")
-        self._emit("tool_call", {"tool": "get_market_data", "arguments": {"symbol": "AAPL"},
-                                 "iter": 1, "call_id": "c1"})
+        self._emit('item.started', {"kind": 'tool.started', 'iter': 1, 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'c1', 'arguments': {'symbol': 'AAPL'}}, 'live_id': "tool:" + str('c1')})
         self._thread.tool_result({"role": "tool", "tool_call_id": "c1", "name": "get_market_data",
                                   "content": "AAPL 195"}, status="ok", elapsed_ms=3)
-        self._emit("tool_result", {"tool": "get_market_data", "status": "ok", "call_id": "c1"})
-        self._emit("text_delta", {"delta": "AAPL is 195.", "iter": 2, "phase": "final"})
+        self._emit('item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'c1', 'status': 'ok'}, 'live_id': "tool:" + str('c1')})
+        self._emit('item.delta', {"kind": 'text.delta', 'delta': 'AAPL is 195.', 'iter': 2, 'phase': 'final'})
         self._thread.assistant({"role": "assistant", "content": "AAPL is 195."}, phase="final")
         return {"status": "success", "content": "AAPL is 195."}
 
@@ -487,6 +494,7 @@ def test_a_service_turn_emits_only_item_and_run_events(
     }
     order = [e.event_type for e in events]
     assert "run.completed" in order
+    assert "goal.updated" in order and "swarm.started" in order
     completed = [e.data["item"] for e in events if e.event_type == "item.completed" and e.seq]
     assert [item["type"] for item in completed] == [
         "turn_start", "user", "assistant", "tool_result", "assistant", "turn_end",

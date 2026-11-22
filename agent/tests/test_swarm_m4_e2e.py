@@ -471,21 +471,21 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
             event_callback=events.append,
         )
 
-    tool_calls = [e for e in events if e.type == "tool_call" and e.data.get("tool") == "mcp_kb_search"]
-    tool_results = [e for e in events if e.type == "tool_result" and e.data.get("tool") == "mcp_kb_search"]
+    tool_calls = [e for e in events if e.type == "item.started" and e.data.get("item", {}).get("name") == "mcp_kb_search"]
+    tool_results = [e for e in events if e.type == "item.completed" and e.data.get("item", {}).get("name") == "mcp_kb_search"]
     assert tool_calls, f"expected an mcp_kb_search tool_call event; got {[e.type for e in events]}"
     assert tool_results, "expected an mcp_kb_search tool_result event"
 
-    call_data = tool_calls[0].data
-    result_data = tool_results[0].data
+    call_data = tool_calls[0].data["item"]
+    result_data = tool_results[0].data["item"]
 
     # R-04: server + remote_tool must appear on both events.
     assert call_data["server"] == "kb"
     assert call_data["remote_tool"] == "search"
     assert result_data["server"] == "kb"
     assert result_data["remote_tool"] == "search"
-    assert call_data["call_id"] == "tc-1"
-    assert result_data["call_id"] == "tc-1"
+    assert call_data["tool_call_id"] == "tc-1"
+    assert result_data["tool_call_id"] == "tc-1"
     assert result_data["status"] == "ok"
 
     # R-10: redaction is applied to known sensitive keys.
@@ -494,8 +494,8 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
     assert call_data["arguments"]["query"] == "AAPL"
     assert "nested-secret" not in call_data["arguments"]["request"]
     assert "nested-password" not in call_data["arguments"]["request"]
-    assert "result-token-should-not-appear" not in result_data["result_preview"]
-    assert "result-secret" not in result_data["result_preview"]
+    assert "result-token-should-not-appear" not in result_data["content"]
+    assert "result-secret" not in result_data["content"]
     # Defense-in-depth: the secret values must never appear anywhere in
     # the event payload (including via str-coerced views).
     serialized = json.dumps([e.data for e in events], ensure_ascii=False)
@@ -572,8 +572,8 @@ def test_remote_tool_transport_failure_does_not_crash_worker(tmp_path: Path) -> 
     # decide what to do next. ``stream_chat`` was called twice: once to
     # produce the tool call and once to produce the final text.
     assert len(llm_factory.stub.tool_defs_seen) >= 2  # type: ignore[attr-defined]
-    tool_results = [event for event in events if event.type == "tool_result"]
-    assert tool_results and tool_results[0].data["status"] == "error"
+    tool_results = [event for event in events if event.type == "item.completed"]
+    assert tool_results and tool_results[0].data["item"]["status"] == "error"
 
 
 # --------------------------------------------------------------------------- #

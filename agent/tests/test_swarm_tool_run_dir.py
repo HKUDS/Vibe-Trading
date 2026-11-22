@@ -193,6 +193,6 @@ def test_worker_refuses_an_escaping_run_dir_without_calling_the_tool(
     )
 
     assert _DeclaredTool.received == [], "the tool must not run on an unusable run_dir"
-    results = [e for e in events if e.type == "tool_result"]
-    assert results and results[0].data["status"] == "error"
-    assert "workspace" in json.dumps(results[0].data["result_preview"])
+    results = [e for e in events if e.type == "item.completed"]
+    assert results and results[0].data["item"]["status"] == "error"
+    assert "workspace" in json.dumps(results[0].data["item"]["content"])

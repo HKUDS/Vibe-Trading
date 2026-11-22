@@ -72,7 +72,14 @@ class SessionStore:
         Returns:
             The session's ThreadLog; the file is created on first append.
         """
+        self.ensure_migrated(session_id)
         return ThreadLog(self.thread_path(session_id))
+
+    def ensure_migrated(self, session_id: str):
+        """Migrate a pre-thread session before any thread read or write."""
+        from src.session.migration import migrate_session
+
+        return migrate_session(self._session_dir(session_id), session_id=session_id)
 
     def _attempt_dir(self, session_id: str, attempt_id: str) -> Path:
         return self._session_dir(session_id) / "attempts" / attempt_id
@@ -103,6 +110,7 @@ class SessionStore:
         session_dir.mkdir(parents=True)
         (session_dir / "attempts").mkdir()
         self._write_json(self._session_file(session.session_id), session.to_dict())
+        self.ensure_migrated(session.session_id)
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -118,6 +126,7 @@ class SessionStore:
         data = self._read_json(path)
         if data is None:
             return None
+        self.ensure_migrated(session_id)
         return Session.from_dict(data)
 
     def update_session(self, session: Session) -> None:
@@ -204,6 +213,7 @@ class SessionStore:
         Returns:
             List of Message objects in chronological order.
         """
+        self.ensure_migrated(session_id)
         if limit is not None and limit <= 0:
             return []
         path = self._messages_file(session_id)

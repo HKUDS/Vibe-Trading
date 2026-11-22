@@ -47,7 +47,7 @@ def test_final_answer_is_delivered_verbatim(tmp_path, monkeypatch, answer, strea
     assert not result.get("degraded")
     assert result["content"] == answer
     assert llm.calls == 1
-    assert "".join(data["delta"] for event, data in events if event == "text_delta") == answer
+    assert "".join(data["delta"] for event, data in events if event == "item.delta" and data.get("kind") == "text.delta") == answer
     assert not any(event == "grounding_status" for event, _ in events)
 
 
@@ -57,7 +57,7 @@ def test_stream_does_not_pause_at_a_number_or_fence():
                         heartbeat_interval=lambda: 1, reasoning_interval=lambda: 1)
     for chunk in ["Oct ", "13", ": $", "96.22", "B\n```python\n", "x = 3\n```"]:
         stream.on_text(chunk)
-        assert events[-1] == ("text_delta", {"delta": chunk, "iter": 1})
+        assert events[-1] == ("item.delta", {"kind": "text.delta", "live_id": stream.live_id, "delta": chunk, "iter": 1})
 
 
 @pytest.mark.parametrize("answer", [

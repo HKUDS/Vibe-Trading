@@ -193,10 +193,6 @@ class SessionService:
                 continue
             runtime = self.runtime(attempt.session_id)
             partial = runtime.partial_response(attempt.attempt_id)
-            if partial is None:
-                partial = self.store.get_partial_response(
-                    attempt.session_id, attempt.attempt_id
-                )
             has_partial = bool(partial)
             existing_reply = self.store.get_message_for_attempt(
                 attempt.session_id, attempt.attempt_id
@@ -590,11 +586,7 @@ class SessionService:
         snapshot = getattr(llm, "runtime_snapshot", None)
         provider = getattr(snapshot, "provider", None)
         model = getattr(snapshot, "configured_model", None)
-        history, history_seqs, user_history = runtime.replay_history(
-            self.store.get_messages(session_id, limit=None),
-            provider=provider,
-            model=model,
-        )
+        history, history_seqs, user_history = runtime.replay_history(provider=provider, model=model)
         if not history:
             await llm.aclose()
             raise ValueError("Session has no conversation history to compact")
@@ -814,16 +806,7 @@ class SessionService:
         session.last_attempt_id = attempt.attempt_id
         session.updated_at = datetime.now(timezone.utc).isoformat()
         self.store.update_session(session)
-        # Through thread_events: the session's thread is read from here on,
-        # before this turn records anything.
-        self.thread_events.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
-        if queued is not None:
-            self.thread_events.emit(
-                session_id, "input.delivered",
-                {"attempt_id": attempt.attempt_id, "input_id": queued.input_id,
-                 "message_id": message.message_id},
-            )
-
+        self.thread_events.sync(session_id)
         task = asyncio.create_task(
             self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
         )
@@ -920,9 +903,20 @@ class SessionService:
             len(waiting),
         )
         self.thread_events.emit(
-            session_id, "input.queued",
-            {"attempt_id": running_turn, "input_id": pending.input_id,
-             "content": content, "position": position},
+            session_id,
+            "item.started",
+            {
+                "attempt_id": running_turn,
+                "kind": "item.started",
+                "live_id": f"input:{pending.input_id}",
+                "item": {
+                    "type": "user",
+                    "input_id": pending.input_id,
+                    "content": content,
+                    "status": "queued",
+                    "position": position,
+                },
+            },
         )
         return {
             "status": "queued",
@@ -959,13 +953,9 @@ class SessionService:
             pending: The input.
             item: Its recorded ``user`` thread item.
         """
-        # Publishes the recorded user item (completing the queued live item)
-        # before the legacy event.
-        self.thread_events.emit(
-            session_id, "input.delivered",
-            {"attempt_id": turn_id, "input_id": pending.input_id,
-             "seq": item.seq},
-        )
+        # The durable user item is published by the thread cursor and is
+        # correlated with the queued live item by its input id.
+        self.thread_events.sync(session_id)
 
     def list_pending_inputs(self, session_id: str) -> list[Dict[str, Any]]:
         """Return the messages waiting to join a session, oldest first.
@@ -992,10 +982,17 @@ class SessionService:
         removed = self.pending_inputs.discard(session_id, input_id)
         if removed is None:
             return None
-        self.thread_events.emit(
-            session_id, "input.discarded",
-            {"attempt_id": removed.queued_during, "input_id": removed.input_id},
-        )
+        if removed.queued_during:
+            self.thread_events.emit(
+                session_id,
+                "item.completed",
+                {
+                    "attempt_id": removed.queued_during,
+                    "kind": "item.discarded",
+                    "live_id": f"input:{removed.input_id}",
+                    "item": {"type": "user", "input_id": removed.input_id, "status": "discarded"},
+                },
+            )
         return removed.public()
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
@@ -1331,7 +1328,6 @@ class SessionService:
             runtime_snapshot = getattr(llm, "runtime_snapshot", None)
             recorder = runtime.begin_turn(
                 attempt_id,
-                messages or [],
                 provider=getattr(runtime_snapshot, "provider", None),
                 model=getattr(runtime_snapshot, "configured_model", None),
             )

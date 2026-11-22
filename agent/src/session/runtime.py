@@ -23,9 +23,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import re
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -46,91 +44,6 @@ logger = logging.getLogger(__name__)
 #: Directory, inside a run directory, that ``deliver_tool_result`` and
 #: ``persist_calculation_result`` offload complete tool results into.
 TOOL_RESULTS_DIRNAME = "tool-results"
-
-_RUN_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,80}")
-_RUN_DIRECTORY_RE = re.compile(r"Run directory:\s*\S+")
-
-
-# ---- History ----
-
-
-def legacy_history(rows: Sequence[Any]) -> List[Dict[str, Any]]:
-    """Text-only history for messages a session recorded before its thread log.
-
-    Sessions created before ``thread.jsonl`` existed have only
-    ``messages.jsonl``: one user row and one assistant reply per turn. Their
-    text is all there is to replay. A trailing user row is the turn being
-    answered now, so it is left out. Size is not capped here; the loop's
-    context budget compacts replayed history like any other.
-
-    The run id of a reply lives only in its metadata, so it is written into
-    the reply as ``[prev_run: <id>]`` for a later turn to find that run.
-
-    Args:
-        rows: ``Message`` objects or dicts in chronological order.
-
-    Returns:
-        OpenAI-format user/assistant messages.
-    """
-    rows = list(rows)
-    if rows and _field(rows[-1], "role") == "user":
-        rows = rows[:-1]
-
-    def _shorten_run_dir(match: re.Match) -> str:
-        path_str = match.group(0).replace("Run directory:", "").strip()
-        run_id = Path(path_str).name if path_str else ""
-        return f"[prev_run: {run_id}]" if run_id else ""
-
-    history: List[Dict[str, Any]] = []
-    for row in rows:
-        role = _field(row, "role") or "user"
-        content = _field(row, "content") or ""
-        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
-            continue
-        content = _RUN_DIRECTORY_RE.sub(_shorten_run_dir, content).strip()
-        metadata = _field(row, "metadata")
-        run_id = metadata.get("run_id") if isinstance(metadata, Mapping) else None
-        marker = f"[prev_run: {run_id}]"
-        if (
-            role == "assistant"
-            and content
-            and isinstance(run_id, str)
-            and _RUN_ID_RE.fullmatch(run_id)
-            and marker not in content
-        ):
-            content = f"{marker}\n{content}"
-        if content:
-            history.append({"role": role, "content": content})
-    return history
-
-
-def _field(row: Any, name: str) -> Any:
-    if isinstance(row, Mapping):
-        return row.get(name)
-    return getattr(row, name, None)
-
-
-def _created_ts(row: Any) -> Optional[float]:
-    value = _field(row, "created_at")
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value).timestamp()
-    except ValueError:
-        return None
-
-
-def _rows_before_thread(rows: Sequence[Any], items: Sequence[ThreadItem]) -> List[Any]:
-    """Return the ``messages.jsonl`` rows the thread log does not cover.
-
-    With no thread yet, every row is legacy. Otherwise a row is legacy when it
-    was written before the thread's first item.
-    """
-    if not items:
-        return list(rows)
-    first_ts = items[0].ts
-    return [row for row in rows if (_created_ts(row) or float("inf")) < first_ts]
-
 
 def _message_key(message: Mapping[str, Any]) -> str:
     return json.dumps(message, sort_keys=True, ensure_ascii=False, default=str)
@@ -593,7 +506,6 @@ class SessionRuntime:
 
     def replay_history(
         self,
-        rows: Sequence[Any],
         *,
         provider: Optional[str] = None,
         model: Optional[str] = None,
@@ -604,15 +516,13 @@ class SessionRuntime:
         assistant item came from the same provider and model as the request.
         """
         items = self.thread.read()
-        prefix_rows = [] if last_compaction(items) is not None else _rows_before_thread(rows, items)
-        prefix = legacy_history(prefix_rows)
         replayed, seqs = replay_with_seqs(items, provider=provider, model=model)
-        user_history = [m for m in prefix if m["role"] == "user"] + [
+        user_history = [
             {"role": "user", "content": item.get("content")}
             for item in items
             if item.type == "user" and isinstance(item.get("content"), str)
         ]
-        return prefix + replayed, [None] * len(prefix) + seqs, user_history
+        return replayed, seqs, user_history
 
     def pending_question_id(self) -> Optional[str]:
         """Return the latest unanswered structured question."""
@@ -626,7 +536,6 @@ class SessionRuntime:
     def begin_turn(
         self,
         turn_id: str,
-        rows: Sequence[Any],
         *,
         provider: Optional[str] = None,
         model: Optional[str] = None,
@@ -640,9 +549,6 @@ class SessionRuntime:
 
         Args:
             turn_id: The new turn (attempt) id.
-            rows: The session's ``messages.jsonl`` rows, for a session whose
-                history began before its thread log.
-
         Returns:
             The turn's recorder, carrying its replayed history.
         """
@@ -651,9 +557,7 @@ class SessionRuntime:
             if stale != turn_id:
                 self._append_safely("turn_end", stale, status="interrupted")
         items = self.thread.read()
-        history, history_seqs, user_history = self.replay_history(
-            rows, provider=provider, model=model
-        )
+        history, history_seqs, user_history = self.replay_history(provider=provider, model=model)
         recorder = TurnRecorder(
             self,
             turn_id,

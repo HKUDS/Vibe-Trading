@@ -131,7 +131,7 @@ class IterationDriver:
             else:
                 state.stream_failure_streak += 1
                 delay = min(exc.retry_after_s, _stream_retry_max_delay_s()) if exc.retry_after_s is not None else _stream_retry_backoff_s(state.stream_failure_streak)
-            owner._emit("stream_reset", {"iter": state.current_iter, "reason": "context_overflow" if context_overflow else "provider_stream_retry", "provider": exc.provider, "model": exc.model, "retry_delay_s": delay})
+            state.stream.emit("item.delta", {"kind": "text.reset", "iter": state.current_iter, "reason": "context_overflow" if context_overflow else "provider_stream_retry", "provider": exc.provider, "model": exc.model, "retry_delay_s": delay})
             state.stream.reset_for_retry()
             owner._cancel_event.wait(delay)
             if owner._cancel_event.is_set() or owner._budget_stop_reason is not None:
@@ -171,7 +171,6 @@ class IterationDriver:
         if not state.thinking_text:
             return
         state.trace.write_text_entry({"type": "thinking", "iter": state.current_iter}, field="content", value=state.thinking_text, offload_kind=f"thinking-{state.current_iter}")
-        self.owner._emit("thinking_done", {"iter": state.current_iter, "content": state.thinking_text[:500], "phase": "commentary" if state.response.has_tool_calls else "final"})
 
     def _skip_content_filter(self, state: TurnState) -> bool:
         """Skip filtered responses and trip the existing circuit breaker."""
@@ -230,7 +229,7 @@ class IterationDriver:
             state.trace.write({"type": "no_progress", "iter": state.current_iter, "iterations_without_progress": owner._tool_progress.stalled_iterations})
             state.trace.write_text_entry({"type": "answer", "iter": state.current_iter}, field="content", value=state.final_content, offload_kind=f"answer-{state.current_iter}")
             state.react_trace.append({"type": "answer", "content": state.final_content})
-            owner._emit("text_delta", {"delta": state.final_content, "iter": state.current_iter, "phase": "final"})
+            state.stream.emit("item.delta", {"kind": "text.delta", "delta": state.final_content, "iter": state.current_iter, "phase": "final"})
             owner._record_final_answer(state.final_content)
             state.finished = True
             state.compact_requested = False
