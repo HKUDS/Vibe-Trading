@@ -20,6 +20,32 @@ def _configure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sources: list[di
     monkeypatch.setattr(local_loader, "_CONFIG_PATH", config_path)
 
 
+@pytest.mark.parametrize("date_format", [None, "ISO8601"])
+def test_local_csv_keeps_mixed_fractional_second_precision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, date_format: str | None,
+) -> None:
+    path = tmp_path / "bars.csv"
+    path.write_text(
+        "date,open,high,low,close\n"
+        "2026-01-02T09:30:00.000Z,10,12,9,11\n"
+        "2026-01-02T09:35:00Z,20,22,19,21\n",
+        encoding="utf-8",
+    )
+    source = {"symbol": "TEST", "type": "csv", "path": str(path)}
+    if date_format:
+        source["date_format"] = date_format
+    _configure(monkeypatch, tmp_path, [source])
+
+    bars = local_loader.DataLoader().fetch(
+        ["TEST"], "2026-01-02", "2026-01-02", interval="5m",
+    )["TEST"]
+
+    assert bars.index.tolist() == [
+        pd.Timestamp("2026-01-02 09:30"), pd.Timestamp("2026-01-02 09:35"),
+    ]
+    assert bars["close"].tolist() == [11, 21]
+
+
 @pytest.mark.parametrize("file_type", ["csv", "parquet"])
 def test_session_date_selects_the_exchange_day_and_uses_a_separate_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, file_type: str,
