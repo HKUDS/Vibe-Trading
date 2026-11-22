@@ -59,14 +59,14 @@ class _BlockingSender:
         return None
 
 
-def _executor(store, sender, dispatch=None, briefing_reader=None):
+def _executor(store, sender, dispatch=None, briefing_reader=None, now_fn=lambda: NOW):
     async def _no_dispatch(job):  # pragma: no cover - only used when a job is due
         raise AssertionError(f"unexpected dispatch of {job.id}")
 
     executor = ScheduledResearchExecutor(
         store,
         dispatch=dispatch or _no_dispatch,
-        now_fn=lambda: NOW,
+        now_fn=now_fn,
         enabled=False,
         max_consecutive_failures=3,
         retry_base_delay_ms=1000,
@@ -164,6 +164,35 @@ def test_sweep_keeps_an_edit_made_to_the_job_while_its_briefing_was_sent(
         a.prompt == "edited prompt"
     ), "the sweep reverted an edit made during the send"
     assert a.next_run_at == NOW + 2 * HOUR_MS
+
+
+def test_late_send_result_does_not_replace_a_new_claim_for_the_same_delivery(tmp_path):
+    store = ScheduledResearchJobStore(tmp_path / "jobs.json")
+    store.save({
+        "a": _job(
+            "a", delivery_channel="telegram", delivery_target="chat",
+            delivery=_pending_delivery("a", "SA"),
+        )
+    })
+
+    async def scenario() -> None:
+        first_sender = _BlockingSender()
+        first = _executor(store, first_sender)
+        first_sweep = asyncio.create_task(first.sweep_deliveries())
+        await first_sender.started.wait()
+
+        second_sender = _BlockingSender()
+        second = _executor(store, second_sender, now_fn=lambda: NOW + HOUR_MS)
+        second_sweep = asyncio.create_task(second.sweep_deliveries())
+        await second_sender.started.wait()
+        first_sender.release.set()
+        assert await first_sweep == 0
+        assert store.get("a").delivery.status is DeliveryStatus.SENDING
+        second_sender.release.set()
+        assert await second_sweep == 1
+
+    asyncio.run(scenario())
+    assert store.get("a").delivery.status is DeliveryStatus.SENT
 
 
 def test_sweep_does_not_resurrect_a_job_deleted_while_its_briefing_was_sent(

@@ -700,11 +700,15 @@ class ScheduledResearchExecutor:
         """Re-read a job whose delivery was claimed before an awaited send.
 
         Returns:
-            The current record, or ``None`` when the job was deleted or its
-            outbox row now belongs to a different firing.
+            The current record if this send still owns the delivery lease.
         """
         current = self._store.get(claimed.id)
-        if current is None or current.delivery.key != claimed.delivery.key:
+        if (
+            current is None
+            or current.delivery.key != claimed.delivery.key
+            or current.delivery.status is not DeliveryStatus.SENDING
+            or current.delivery.updated_at != claimed.delivery.updated_at
+        ):
             return None
         return current
 
