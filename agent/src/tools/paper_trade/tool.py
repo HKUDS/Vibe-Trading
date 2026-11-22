@@ -159,18 +159,23 @@ def _portfolio_dependencies(
     loader: Any,
     ch_client: Any,
     calendar_client: Any,
-) -> tuple[dict[str, Any], dict[str, Any], Any]:
-    """Resolve the internal step's per-market loaders and cn_a calendar.
+    limits_client: Any,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], Any]:
+    """Resolve the internal step's per-market loaders, limits and cn_a calendar.
 
-    ``loader``/``ch_client`` accept either one shared injection (legacy test
-    seam) or a per-market mapping.  ``_AUTO`` resolves the existing raw network
-    loaders and ClickHouse helpers only; a missing source stays ``None`` so the
-    fetch reports data-not-ready instead of becoming an input error.
+    ``loader``/``ch_client``/``limits_client`` accept either one shared injection
+    (legacy test seam) or a per-market mapping.  ``_AUTO`` resolves the existing
+    raw network loaders and ClickHouse helpers only; a missing source stays
+    ``None`` so the fetch reports data-not-ready instead of becoming an input
+    error.  Limits mirror the single-market ``_resolve_clients`` semantics:
+    cn_a gets ``ClickHouseLimitsClient`` over the SAME shared connector probe,
+    hk/us stay None (AM-6 zero-calendar design), and an unreachable connector
+    degrades to None (the frozen board heuristic).
     """
     markets = _portfolio_markets(raw_payload)
     connector = None
     if "cn_a" in markets and (
-        loader is _AUTO or ch_client is _AUTO or calendar_client is _AUTO
+        loader is _AUTO or ch_client is _AUTO or calendar_client is _AUTO or limits_client is _AUTO
     ):
         connector = _default_cn_a_connector()
 
@@ -209,7 +214,31 @@ def _portfolio_dependencies(
             for market in markets
         }
 
-    return loaders, ch_clients, connector if calendar_client is _AUTO else calendar_client
+    if isinstance(limits_client, Mapping):
+        limits_clients = {market: limits_client.get(market) for market in markets}
+    elif limits_client is _AUTO:
+        limits_clients = {
+            market: (
+                ClickHouseLimitsClient(connector)
+                if market == CN_A_MARKET and connector is not None
+                else None
+            )
+            for market in markets
+        }
+    elif limits_client is None:
+        limits_clients = {market: None for market in markets}
+    else:
+        limits_clients = {
+            market: limits_client if market == CN_A_MARKET else None
+            for market in markets
+        }
+
+    return (
+        loaders,
+        ch_clients,
+        limits_clients,
+        connector if calendar_client is _AUTO else calendar_client,
+    )
 
 
 def _execute_portfolio_step(
@@ -218,22 +247,25 @@ def _execute_portfolio_step(
     loader: Any,
     ch_client: Any,
     calendar_client: Any,
+    limits_client: Any,
     hk_lot_sizes: Any,
 ) -> str:
     """Run the internal seam and return only its public document bytes."""
     raw_payload = payload if isinstance(payload, dict) else {}
     try:
-        loaders, ch_clients, cal = _portfolio_dependencies(
+        loaders, ch_clients, limits_clients, cal = _portfolio_dependencies(
             raw_payload,
             loader=loader,
             ch_client=ch_client,
             calendar_client=calendar_client,
+            limits_client=limits_client,
         )
         result = run_portfolio_step(
             payload,
             loaders=loaders,
             calendar_client=cal,
             ch_clients=ch_clients,
+            limits_clients=limits_clients,
             hk_lot_sizes=None if hk_lot_sizes is _AUTO else hk_lot_sizes,
         )
     except PortfolioRequestError as exc:
@@ -380,6 +412,7 @@ def run_paper_trade_step(
                 loader=loader,
                 ch_client=ch_client,
                 calendar_client=calendar_client,
+                limits_client=limits_client,
                 hk_lot_sizes=hk_lot_sizes,
             ),
             None,
