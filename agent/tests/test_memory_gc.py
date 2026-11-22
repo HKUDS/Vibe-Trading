@@ -305,6 +305,82 @@ class TestRunGC:
         assert after != before, "the healthy twin was skipped because it shares the archived id"
         assert "compression_level: daily" in after
 
+    def test_gc_archives_two_entries_that_share_a_filename_without_overwriting(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Archive is "never deleted": a basename clash must not drop an original.
+
+        With VT_MEMORY_HIERARCHY, ``user/sizing.md`` and ``project/sizing.md``
+        are distinct entries with the same filename. Archiving both into the
+        flat ``archive/`` directory used to rename the second over the first.
+        """
+        monkeypatch.setenv("VT_MEMORY_GC", "1")
+        monkeypatch.setenv("VT_MEMORY_DECAY", "1")
+        monkeypatch.setenv("VT_MEMORY_HIERARCHY", "1")
+        for memory_type, body, entry_id in (
+            ("user", "USER pref: never risk more than 2%", "aa11aa"),
+            ("project", "PROJECT rule: Kelly/4 for the crypto book", "bb22bb"),
+        ):
+            flat = _create_memory_file(
+                tmp_path,
+                "sizing",
+                content=body,
+                memory_type=memory_type,
+                quality_score=0.01,
+                created_at="2024-01-01T00:00:00",
+                last_accessed="2024-01-01T00:00:00",
+                entry_id=entry_id,
+            )
+            (tmp_path / memory_type).mkdir()
+            flat.rename(tmp_path / memory_type / "sizing.md")
+
+        actions = MemoryLifecycle(PersistentMemory(memory_dir=tmp_path)).run_gc(
+            dry_run=False
+        )
+
+        assert [a["action"] for a in actions] == ["archive", "archive"]
+        archived = sorted((tmp_path / "archive").glob("*.md"))
+        bodies = sorted(
+            p.read_text(encoding="utf-8").rsplit("\n", 1)[-1] for p in archived
+        )
+        assert bodies == [
+            "PROJECT rule: Kelly/4 for the crypto book",
+            "USER pref: never risk more than 2%",
+        ], f"an archived original was overwritten: {[p.name for p in archived]}"
+
+    def test_gc_does_not_overwrite_a_compression_backup_with_the_same_filename(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A later archive of an entry must not replace an earlier backup of it."""
+        monkeypatch.setenv("VT_MEMORY_GC", "1")
+        monkeypatch.setenv("VT_MEMORY_DECAY", "1")
+        _create_memory_file(
+            tmp_path,
+            "garbage",
+            content="compressed digest",
+            quality_score=0.01,
+            created_at="2024-01-01T00:00:00",
+            last_accessed="2024-01-01T00:00:00",
+        )
+        (tmp_path / "archive").mkdir()
+        backup = tmp_path / "archive" / "project_garbage.md"
+        backup.write_text("RAW ORIGINAL kept by the compression pass", encoding="utf-8")
+
+        actions = MemoryLifecycle(PersistentMemory(memory_dir=tmp_path)).run_gc(
+            dry_run=False
+        )
+
+        assert [a["action"] for a in actions] == ["archive"]
+        assert (
+            backup.read_text(encoding="utf-8")
+            == "RAW ORIGINAL kept by the compression pass"
+        )
+        assert not (tmp_path / "project_garbage.md").exists()
+        archived = [
+            p.read_text(encoding="utf-8") for p in (tmp_path / "archive").glob("*.md")
+        ]
+        assert any(text.endswith("compressed digest") for text in archived)
+
 
 # ---------------------------------------------------------------------------
 # 2. find_relevant importance weighting

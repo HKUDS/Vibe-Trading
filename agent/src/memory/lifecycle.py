@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from types import MappingProxyType
 
+from src.memory.compression import free_archive_path
 from src.memory.persistent import (
     MemoryEntry,
     PersistentMemory,
@@ -289,10 +290,10 @@ class MemoryLifecycle:
                 return
             try:
                 if action == "archive":
-                    dest = archive_dir / entry.path.name
+                    dest = free_archive_path(archive_dir, entry.path.name)
                     entry.path.rename(dest)
                 elif action == "delete":
-                    dest = archive_dir / entry.path.name
+                    dest = free_archive_path(archive_dir, entry.path.name)
                     dest.write_text(
                         entry.path.read_text(encoding="utf-8"), encoding="utf-8"
                     )
