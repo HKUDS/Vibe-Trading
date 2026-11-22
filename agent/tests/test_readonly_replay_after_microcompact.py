@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 
 from src.agent import loop as loop_mod
+from src.agent.context_budget import estimate_tokens
 from src.agent.context import ContextBuilder
 from src.agent.memory import WorkspaceMemory
 from src.agent.loop import AgentLoop
@@ -302,7 +303,7 @@ class _VisibilityLLM:
         self.monkeypatch.setattr(
             __import__("src.agent.tuning", fromlist=["TOKEN_THRESHOLD"]),
             "TOKEN_THRESHOLD",
-            max(2, int(loop_mod.estimate_tokens(future) * 1.6)),
+            max(2, int(estimate_tokens(future) * 1.6)),
             raising=False,
         )
         return LLMResponse(tool_calls=calls)

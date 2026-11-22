@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 from src.agent.context_compact import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
-from src.agent.loop import  estimate_tokens
+from src.agent.context_budget import estimate_tokens
 from src.agent.tool_results import _is_tool_success, _normalize_tool_run_dir, _archive_backtest_result
 from src.agent.tuning import _token_threshold, _llm_timeout_seconds, _stall_timeout_seconds
 

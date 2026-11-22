@@ -18,7 +18,7 @@ from src.config.accessor import get_env_config
 
 from src.agent.context_budget import (
     MIN_CONVERSATION_TOKENS, CompactionBudget, ContextMeter,
-    parse_context_limit, resolve_window,
+    estimate_tokens, parse_context_limit, resolve_window,
 )
 from src.agent.context_compact import (
     _context_collapse, _fix_tool_pairs, _microcompact, _summary_chunks,
@@ -28,10 +28,6 @@ from src.agent.context_compact import (
 from src.agent.tuning import _llm_timeout_seconds
 
 logger = logging.getLogger(__name__)
-
-def estimate_tokens(messages: list) -> int:
-    """Estimate request tokens using the loop's stable JSON heuristic."""
-    return len(json.dumps(messages, default=str, ensure_ascii=False)) // 4
 
 
 class ContextCompactor:

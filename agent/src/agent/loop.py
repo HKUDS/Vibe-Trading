@@ -13,7 +13,6 @@ Tool execution:
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time as _time
@@ -32,6 +31,7 @@ from src.agent.instrument_identity import IdentityLedger
 from src.agent.memory import WorkspaceMemory
 from src.agent.context_budget import (
     CompactionBudget,
+    estimate_tokens,
     ContextMeter,
 )
 from src.agent.tool_progress import ToolProgress
@@ -59,57 +59,8 @@ from src.agent.loop_directives import WriteTargetState
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
 
-# An LLM may return a transient empty completion (no text, no tool calls);
-# retry once with a nudge before failing the run on a second consecutive one.
-MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS = 1
-
-# A successful result from one of these tools is enough to let the pacing
-# nudge ask for an answer without treating every readonly lookup as evidence.
-_DATA_RESULT_TOOLS = frozenset({
-    "get_market_data",
-    "technical_indicators",
-    "get_stock_profile",
-    "get_fundamentals",
-    "get_financial_statements",
-    "get_options_chain",
-    "news_search",
-    "web_search",
-    "backtest",
-})
-
-
-def _has_successful_data_result(messages: list[dict[str, Any]]) -> bool:
-    """Return whether the model already has a successful data observation."""
-    for message in messages:
-        if message.get("role") != "tool" or message.get("name") not in _DATA_RESULT_TOOLS:
-            continue
-        content = message.get("content")
-        try:
-            payload = json.loads(content) if isinstance(content, str) else content
-        except (TypeError, ValueError):
-            payload = None
-        if isinstance(payload, dict) and (payload.get("ok") is False or payload.get("success") is False):
-            continue
-        return True
-    return False
-
-
 logger = logging.getLogger(__name__)
 
-
-def estimate_tokens(messages: list) -> int:
-    """Rough token count estimate (~4 chars/token).
-
-    Args:
-        messages: Message list.
-
-    Returns:
-        Estimated token count.
-    """
-    return len(json.dumps(messages, default=str, ensure_ascii=False)) // 4
-
-
-# --- Tool-result helpers, moved to src.agent.tool_results (issue #1624) ---
 
 from src.agent.run_outcome import (  # noqa: E402
     OutcomeInputs,

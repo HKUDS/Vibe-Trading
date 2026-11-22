@@ -8,8 +8,7 @@ import time
 from typing import Any
 
 from src.agent.context_compact import _attach_tool_call_thought_signatures, _context_collapse
-from src.agent.context_budget import is_context_overflow
-from src.agent.loop_compaction import estimate_tokens
+from src.agent.context_budget import estimate_tokens, is_context_overflow
 from src.agent.tool_loading import request_definitions
 from src.agent.loop_final import FinalAnswerHandler
 from src.agent.loop_streaming import TurnStream
