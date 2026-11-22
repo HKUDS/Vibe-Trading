@@ -21,10 +21,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.agent.tools import BaseTool, ToolRegistry
-from src.product.resources.hooks import HookManager, load_hooks
 from src.tools.sandbox import SandboxSettings
 
 if TYPE_CHECKING:
+    from src.product.resources.hooks import HookManager
     from src.config.schema import AgentConfig
     from src.memory.persistent import PersistentMemory
 
@@ -192,6 +192,8 @@ def build_registry(
     from src.tools.remember_tool import RememberTool
     from src.tools.spawn_agent_tool import SpawnAgentTool
     from src.tools.swarm_tool import SwarmTool
+
+    from src.product.resources.hooks import load_hooks
 
     session_injected_classes = session_bound_tool_classes()
     classes = _discover_subclasses()
@@ -504,7 +506,7 @@ def _filter_registry(
     skill_allowlist: list[str] | None = None,
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
-    filtered = ToolRegistry()
+    filtered = ToolRegistry(policy=full.check_policy)
     filtered.background = getattr(full, "background", None)
     for name in tool_names:
         tool = full.get(name)

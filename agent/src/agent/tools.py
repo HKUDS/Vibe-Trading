@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Collection
 from typing import Any, Dict, List, Optional
 
 from src.product.tool_policy import check_tool_call
@@ -67,11 +68,33 @@ class BaseTool(ABC):
         }
 
 
+def host_tool_name(tool: BaseTool, registered: Collection[str]) -> str:
+    """Validate a trusted host registration before adding it to either catalog."""
+    if not isinstance(tool, BaseTool):
+        raise TypeError("host tools must be BaseTool instances")
+    name = str(getattr(tool, "name", "")).strip()
+    if not name:
+        raise ValueError("host tools require a non-empty name")
+    if name in registered:
+        raise ValueError(f"host tool name collides with registered tool: {name}")
+    if bool(getattr(tool, "is_trading_tool", False)):
+        raise ValueError("host tools cannot be marked as trading tools")
+    if not bool(getattr(tool, "is_readonly", False)):
+        raise ValueError("host tools must be read-only")
+    if name.startswith(("trading_", "broker_", "mcp_live_")):
+        raise ValueError("host tools cannot use a reserved trading tool name")
+    if any(token in name.casefold() for token in ("place_order", "cancel_order")):
+        raise ValueError("host tools cannot use an order-entry name")
+    return name
+
+
 class ToolRegistry:
     """Tool registry."""
 
-    def __init__(self) -> None:
-        self._policy = check_tool_call
+    def __init__(
+        self, *, policy: Callable[[str, dict], tuple[bool, str, dict]] = check_tool_call,
+    ) -> None:
+        self._policy = policy
         self._tools: Dict[str, BaseTool] = {}
         self._import_failures: Dict[str, str] = {}
         self._registration_failures: Dict[str, str] = {}
@@ -87,21 +110,7 @@ class ToolRegistry:
         intentionally separate from :meth:`register`, which keeps the
         registry's existing local/MCP assembly semantics.
         """
-        if not isinstance(tool, BaseTool):
-            raise TypeError("host tools must be BaseTool instances")
-        name = str(getattr(tool, "name", "")).strip()
-        if not name:
-            raise ValueError("host tools require a non-empty name")
-        if name in self._tools:
-            raise ValueError(f"host tool name collides with registered tool: {name}")
-        if bool(getattr(tool, "is_trading_tool", False)):
-            raise ValueError("host tools cannot be marked as trading tools")
-        if not bool(getattr(tool, "is_readonly", False)):
-            raise ValueError("host tools must be read-only")
-        if name.startswith(("trading_", "broker_", "mcp_live_")):
-            raise ValueError("host tools cannot use a reserved trading tool name")
-        if any(token in name.casefold() for token in ("place_order", "cancel_order")):
-            raise ValueError("host tools cannot use an order-entry name")
+        name = host_tool_name(tool, self._tools)
         self._tools[name] = tool
 
     def check_policy(self, name: str, params: Dict[str, Any]) -> tuple[bool, str, Dict[str, Any]]:

@@ -173,3 +173,23 @@ def test_post_tool_hook_receives_redacted_worker_exception(monkeypatch):
     event, payload = events[-1]
     assert event == "PostToolUse" and payload["status"] == "error"
     assert json.loads(payload["result"])["error"] == "worker failed: api_key=[redacted]"
+
+
+def test_deferred_exposure_keeps_host_denials_and_resource_bindings(tmp_path):
+    from src.product.tool_loading import DeferredToolRegistry
+    from src.tools.background_tools import BackgroundManager
+
+    parent = ToolRegistry()
+    parent.sandbox = SandboxSettings(enabled=False, runtime_root=tmp_path)
+    parent.background = BackgroundManager()
+    _write_hooks(tmp_path, "PreToolUse", "printf '{\"decision\":\"deny\",\"reason\":\"operator rule\"}'")
+    parent.hooks = HookManager(tmp_path)
+    probe = _ProbeTool()
+    probe.calls = []
+    parent.register(probe)
+    runtime = AgentRuntime(DeferredToolRegistry(parent), SimpleNamespace())
+    result, _ = runtime.invocation._invoke_tool(probe.name, {}, call_id="fixture")
+    assert probe.calls == []
+    assert json.loads(result)["error_code"] == "hook_denied"
+    assert runtime.registry.sandbox is parent.sandbox
+    assert runtime._background_manager is parent.background

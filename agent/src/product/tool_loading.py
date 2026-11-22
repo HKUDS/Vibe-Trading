@@ -25,7 +25,10 @@ class DeferredToolRegistry(ToolRegistry):
     """
 
     def __init__(self, source: ToolRegistry) -> None:
-        super().__init__()
+        super().__init__(policy=source.check_policy)
+        self.hooks = getattr(source, "hooks", None)
+        self.sandbox = getattr(source, "sandbox", None)
+        self.background = getattr(source, "background", None)
         self._tools = dict(source._tools)
         self._import_failures = dict(source.import_failures)
         self._registration_failures = dict(source.registration_failures)

@@ -267,7 +267,7 @@ def child_registry(parent: ToolRegistry, workspace: Path) -> ToolRegistry:
         the parent's apart from that confinement.
     """
     root = Path(workspace).resolve()
-    child = ToolRegistry()
+    child = ToolRegistry(policy=parent.check_policy)
     child.hooks = getattr(parent, "hooks", None)
     child.sandbox = getattr(parent, "sandbox", None)
     for name in parent.tool_names:

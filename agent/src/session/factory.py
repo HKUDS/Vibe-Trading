@@ -41,20 +41,11 @@ class SessionAgentFactory:
 
     def register_tool(self, tool: Any) -> str:
         """Register one explicit host tool for subsequent attempts."""
-        from src.agent.tools import BaseTool
-        if not isinstance(tool, BaseTool):
-            raise TypeError("host tools must be BaseTool instances")
-        name = str(getattr(tool, "name", "")).strip()
-        if not name:
-            raise ValueError("host tools require a non-empty name")
-        if bool(getattr(tool, "is_trading_tool", False)):
-            raise ValueError("host tools cannot be marked as trading tools")
-        if not bool(getattr(tool, "is_readonly", False)):
-            raise ValueError("host tools must be read-only")
+        from src.agent.tools import host_tool_name
         from src.tools import _discover_subclasses
-        builtins = {cls.name for cls in _discover_subclasses()}
-        if name in builtins or name in self.host_tools:
-            raise ValueError(f"host tool name collides with registered tool: {name}")
+
+        names = {cls.name for cls in _discover_subclasses()} | self.host_tools.keys()
+        name = host_tool_name(tool, names)
         self.host_tools[name] = tool
         return name
 

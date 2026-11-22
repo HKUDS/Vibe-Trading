@@ -667,3 +667,17 @@ def test_shell_tools_also_need_the_operators_switch(kernel, monkeypatch, env_val
     finally:
         reset_env_config()
     assert kernel.registry_args[0]["include_shell_tools"] is expected
+
+
+def test_reserved_host_registration_fails_without_poisoning_the_next_run(kernel):
+    kernel.scripts.append([lambda **_: _reply("ready")])
+
+    async def scenario():
+        async with Client() as client:
+            tool = _ProbeTool([])
+            tool.name = "broker_fixture"
+            with pytest.raises(ValueError, match="reserved"):
+                client.register_tool(tool)
+            return await client.run("Check status")
+
+    assert _run(scenario()).text == "ready"
