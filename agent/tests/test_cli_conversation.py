@@ -30,7 +30,7 @@ from src.agent.tools import BaseTool, ToolRegistry
 from src.session.models import Message, Session
 from src.session.attempts import STOPPED_MARKER
 from src.session.store import SessionStore
-from src.session.thread import project_turn, STOPPED_TURN_NOTES
+from src.session.replay import project_turn, STOPPED_TURN_NOTES
 
 cli_main = importlib.import_module("cli.main")
 

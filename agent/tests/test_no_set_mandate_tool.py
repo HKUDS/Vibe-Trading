@@ -102,7 +102,7 @@ def test_agent_reachable_modules_never_open_mandate_for_write() -> None:
     assert not offenders, f"agent-reachable write opens found: {offenders}"
 
 
-def test_registry_has_no_mandate_write_tool() -> None:
+def test_registry_has_no_mandate_write_tool(registry_goal_db) -> None:
     """The assembled tool registry exposes no tool that can write a mandate."""
     from src.tools import build_registry
 

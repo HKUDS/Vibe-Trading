@@ -9,12 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from src.session.events import ThreadEvents
+from src.session.event_projection import ThreadEvents
 from src.session.models import Attempt, AttemptStatus, Message, Session
 from src.session.runtime import SessionRuntime
 from src.session.search import SessionSearchIndex
 from src.session.store import SessionStore
-from src.session.thread import project_turn
+from src.session.replay import project_turn
 
 
 #: Shown after whatever a stopped turn had streamed, or alone if it streamed

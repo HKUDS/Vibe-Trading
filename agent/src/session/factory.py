@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from src.session.checkpoint import ResponseCheckpoint
-from src.session.events import EventBus, ThreadEvents
+from src.session.event_projection import ThreadEvents
+from src.session.events import EventBus
 from src.session.models import Attempt
 from src.session.pending_inputs import PendingInputQueue, QueuedInputDelivery
 from src.session.runtime import SessionRuntime

@@ -11,7 +11,8 @@ import stat
 import pytest
 
 import src.session.thread as thread_module
-from src.session.thread import ThreadLog, diagnostic_records
+from src.session.replay import diagnostic_records
+from src.session.thread import ThreadLog
 from tests.module_os_helpers import patch_module_os
 from tests.recording_helpers import recorder_at, records_at
 

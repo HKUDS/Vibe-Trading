@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.session.thread import ThreadItem, diagnostic_records
+from src.session.replay import diagnostic_records
+from src.session.thread_schema import ThreadItem
 
 JSON_LIMIT_BYTES = 16 * 1024 * 1024
 

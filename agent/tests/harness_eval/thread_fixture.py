@@ -2,7 +2,8 @@
 import json
 from pathlib import Path
 
-from src.session.thread import ThreadItem, diagnostic_records
+from src.session.replay import diagnostic_records
+from src.session.thread_schema import ThreadItem
 
 
 def write_records(path: Path, records: list[dict]) -> None:

@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.product.resources.frontmatter import parse_frontmatter
+
 
 @dataclass
 class Skill:
@@ -59,8 +61,6 @@ class Skill:
             return None
 
 
-from src.product.resources.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
-
 
 def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
     """Load a skill from a directory.
@@ -79,7 +79,7 @@ def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
     except Exception:
         return None
 
-    meta, body = _parse_frontmatter(text)
+    meta, body = parse_frontmatter(text)
     name = meta.get("name", dir_path.name)
     if not name:
         return None

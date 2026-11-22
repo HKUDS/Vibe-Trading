@@ -20,13 +20,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
-from src.session.events import (
-    EventBus,
-    SSEEvent,
-    ThreadEvents,
-    cursor_from_event_id,
-    display_item,
-)
+from src.session.event_projection import ThreadEvents, display_item
+from src.session.events import EventBus, SSEEvent, cursor_from_event_id
 from src.session.models import Session
 from src.agent.loop_streaming import TurnStream
 from src.session.service import SessionService

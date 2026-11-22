@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.kernel import events as vocabulary
 from src.session.attempts import AttemptRunner
-from src.session.events import EventBus, ThreadEvents
+from src.session.event_projection import ThreadEvents
+from src.session.events import EventBus
 from src.session.factory import SessionAgentFactory
 from src.session.maintenance import compact_history, fork_completed_turn
 from src.session.models import (

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator, List, Optional
 
-from src.product.resources.frontmatter import parse_frontmatter as _parse_frontmatter
+from src.product.resources.frontmatter import parse_frontmatter
 from src.config.paths import get_runtime_root
 
 logger = logging.getLogger(__name__)
@@ -247,7 +247,7 @@ class PersistentMemory:
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue
-            meta, body = _parse_frontmatter(text)
+            meta, body = parse_frontmatter(text)
             mtime = path.stat().st_mtime
             raw_kw = meta.get("keywords", [])
             keywords = tuple(

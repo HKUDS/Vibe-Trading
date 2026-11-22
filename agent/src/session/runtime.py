@@ -27,16 +27,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from src.session.thread import (
-    ThreadItem,
-    ThreadItemError,
-    ThreadLog,
-    TurnProjection,
-    durable_tool_calls,
-    open_turns,
-    project_turn,
-    replay_with_seqs,
-)
+from src.session.replay import TurnProjection, durable_tool_calls, project_turn, replay_with_seqs
+from src.session.thread import ThreadLog, open_turns
+from src.session.thread_schema import ThreadItem, ThreadItemError
 
 logger = logging.getLogger(__name__)
 

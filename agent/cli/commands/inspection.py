@@ -294,6 +294,6 @@ def _thread_entries_for_run(run_id: str) -> list[dict[str, common.Any]]:
     path = next((candidate for candidate in candidates if candidate.is_file()), None)
     if path is None:
         return []
-    from src.session.thread import diagnostic_records
+    from src.session.replay import diagnostic_records
 
     return diagnostic_records(ThreadLog(path).read())

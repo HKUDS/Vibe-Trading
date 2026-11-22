@@ -11,7 +11,7 @@ from src.session.pending_inputs import PENDING_INPUTS_FILENAME, PendingInputQueu
 from src.session.runtime import SessionRuntime
 from src.session.search import SessionSearchIndex
 from src.session.store import SessionStore
-from src.session.thread import TurnProjection
+from src.session.replay import TurnProjection
 
 
 logger = logging.getLogger(__name__)

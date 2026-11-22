@@ -1,5 +1,5 @@
 """Classify tool outcomes and textual call syntax, identify requested write targets,
-normalize run paths, and archive completed backtests."""
+and archive completed backtests."""
 
 from __future__ import annotations
 
@@ -8,10 +8,12 @@ import logging
 import re
 import shutil
 from pathlib import Path
-from typing import Any
 
 from src.tools.path_utils import safe_run_dir
 
+# ``ARCHIVE_MANIFEST`` names the backtest an archived run currently describes,
+# and the files that archive placed there, so the next one can replace exactly
+# its own output. Offline diagnostics can distinguish the original producer.
 ARCHIVE_MANIFEST = ".archived_backtest.json"
 
 logger = logging.getLogger(__name__)
@@ -114,34 +116,7 @@ def _named_target_paths(text: str) -> list[Path]:
         seen.add(key)
         paths.append(p)
     return paths
-def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) -> dict[str, Any]:
-    """Normalize ``run_dir`` in tool args to an absolute path when possible.
 
-    If the model supplies a relative ``run_dir`` (for example ``"."`` or
-    ``"risk_parity_run"``), resolve it against the active run directory.
-    """
-    normalized = dict(args)
-    if not memory_run_dir:
-        return normalized
-
-    if "run_dir" not in normalized:
-        normalized["run_dir"] = memory_run_dir
-        return normalized
-
-    run_dir_value = str(normalized["run_dir"]).strip()
-    if not run_dir_value:
-        normalized["run_dir"] = memory_run_dir
-        return normalized
-
-    candidate = Path(run_dir_value)
-    if not candidate.is_absolute():
-        normalized["run_dir"] = str((Path(memory_run_dir) / candidate).resolve())
-    return normalized
-
-
-# ``ARCHIVE_MANIFEST`` names the backtest an archived run currently describes,
-# and the files that archive placed there, so the next one can replace exactly
-# its own output. Offline diagnostics can distinguish the original producer.
 
 
 def _previously_archived(target: Path) -> set[str]:

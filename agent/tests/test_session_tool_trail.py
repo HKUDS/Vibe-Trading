@@ -16,7 +16,8 @@ from src.session.events import EventBus
 from src.session.models import Attempt, Message, Session
 from src.session.service import SessionService
 from src.session.store import SessionStore
-from src.session.thread import ThreadLog, project_turn
+from src.session.replay import project_turn
+from src.session.thread import ThreadLog
 
 
 class _DummyIndex:

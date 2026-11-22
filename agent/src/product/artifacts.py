@@ -11,7 +11,8 @@ from src.kernel import events as vocabulary
 from src.product.context import ContextBuilder
 from src.product.result_artifacts import deliver_tool_result
 from src.product.tool_progress import ToolProgress
-from src.product.tool_results import _archive_backtest_result, _is_tool_success, _normalize_tool_run_dir
+from src.product.tool_results import _archive_backtest_result, _is_tool_success
+from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
 
 logger = logging.getLogger(__name__)
@@ -197,7 +198,7 @@ class ToolDelivery:
         if self.env.identity is not None and update_identity:
             self.env.identity.ingest_tool_result(
                 tool_name=tc.name,
-                arguments=_normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir),
+                arguments=normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir),
                 result=result,
                 call_id=tc.id,
                 success=success,

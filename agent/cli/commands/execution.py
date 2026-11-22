@@ -266,8 +266,8 @@ def _run_agent(
             call (SPEC.md Consent §2).
     """
     from src.tools import build_registry
+    from src.providers.selection import ModelSelectionError
     from src.session.model_selection import (
-        ModelSelectionError,
         chat_llm_for_stored_session,
         unavailable_selection_result,
     )

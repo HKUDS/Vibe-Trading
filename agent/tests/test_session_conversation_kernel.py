@@ -28,7 +28,7 @@ from src.session.events import EventBus
 from src.session.attempts import STOPPED_MARKER
 from src.session.service import SessionService
 from src.session.store import SessionStore
-from src.session.thread import project_turn, STOPPED_TURN_NOTES
+from src.session.replay import project_turn, STOPPED_TURN_NOTES
 from src.tools.read_file_tool import ReadFileTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 

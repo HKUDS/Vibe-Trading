@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from src.session.compaction_ops import _result_data_gone
 from src.product.result_artifacts import deliver_tool_result
-from src.product.tool_results import _normalize_tool_run_dir
+from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import redact_tool_result
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ class ToolReplay:
             dict key, or None when the args cannot be serialized.
         """
         try:
-            normalized = _normalize_tool_run_dir(dict(arguments or {}), self.env.memory.run_dir)
+            normalized = normalize_tool_run_dir(dict(arguments or {}), self.env.memory.run_dir)
             canonical = json.dumps(normalized, sort_keys=True, ensure_ascii=False, default=str)
         except Exception:  # noqa: BLE001 - un-serializable args are never cached
             return None

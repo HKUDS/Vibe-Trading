@@ -9,7 +9,8 @@ from src.agent.tuning import _override
 from src.kernel.contracts import BoundCall
 from src.kernel.tool_runner import execute_batch
 from src.product.context import ContextBuilder
-from src.product.tool_results import _failure_code, _normalize_tool_run_dir
+from src.product.tool_results import _failure_code
+from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import redact_payload
 
 logger = logging.getLogger(__name__)
@@ -359,7 +360,7 @@ class ToolExecution:
             iteration: Current iteration.
         """
         self.delivery.progress.note("blocked", tc.name, _failure_code(result))
-        args = _normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
+        args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
         self.delivery._emit_tool_started(tc, args, iteration, blocked=blocked)
         trace.write(
             {
@@ -412,7 +413,7 @@ class ToolExecution:
 
     def _bind(self, tc, context, messages, trace, iteration, *, parallel) -> BoundCall:
         def start(in_parallel: bool):
-            args = _normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
+            args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
             self.delivery._emit_tool_started(tc, args, iteration)
             trace.write({"type": "tool_execution", "iter": iteration, "tool": tc.name, "call_id": tc.id})
             if not in_parallel:

@@ -2,7 +2,8 @@
 from pathlib import Path
 from src.kernel.tool_runner import execute_batch
 from src.session.runtime import SessionRuntime, TurnRecorder
-from src.session.thread import ThreadLog, diagnostic_records
+from src.session.replay import diagnostic_records
+from src.session.thread import ThreadLog
 
 
 def recorder_at(directory: Path) -> TurnRecorder:

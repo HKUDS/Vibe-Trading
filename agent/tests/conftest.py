@@ -215,3 +215,9 @@ def _isolated_data_gateway(tmp_path, monkeypatch):
     if instance is not None and instance is not prior:
         instance.close()
         atexit.unregister(instance.close)
+
+
+@pytest.fixture
+def registry_goal_db(tmp_path, monkeypatch):
+    """Give registry-assembly tests a private database for their real goal tools."""
+    monkeypatch.setenv("VIBE_TRADING_GOAL_DB_PATH", str(tmp_path / "goals.db"))

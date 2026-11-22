@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.product.resources.skills import SkillsLoader, _parse_frontmatter
+from src.product.resources.frontmatter import parse_frontmatter
+from src.product.resources.skills import SkillsLoader
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1] / "src" / "skills" / "dividend-analysis"
@@ -14,7 +15,7 @@ SKILL_MD = SKILL_DIR / "SKILL.md"
 def test_dividend_analysis_skill_metadata() -> None:
     """Dividend analysis skill ships with valid frontmatter."""
     text = SKILL_MD.read_text(encoding="utf-8")
-    meta, body = _parse_frontmatter(text)
+    meta, body = parse_frontmatter(text)
 
     assert meta["name"] == "dividend-analysis"
     assert meta["category"] == "analysis"

@@ -11,7 +11,8 @@ import pytest
 from src.session.events import EventBus
 from src.session.models import Attempt, AttemptStatus
 from src.session.migration import migrate_session
-from src.session.thread import ThreadLog, replay
+from src.session.replay import replay
+from src.session.thread import ThreadLog
 import tempfile
 import json
 from src.session.attempts import STOPPED_MARKER, format_result_message

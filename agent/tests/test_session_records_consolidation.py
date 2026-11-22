@@ -8,7 +8,8 @@ from src.session.checkpoint import ResponseCheckpoint
 from src.session.models import Attempt, Session
 from src.session.runtime import SessionRuntime
 from src.session.store import SessionStore
-from src.session.thread import ThreadLog, replay
+from src.session.replay import replay
+from src.session.thread import ThreadLog
 
 
 def _call(call_id: str) -> dict:

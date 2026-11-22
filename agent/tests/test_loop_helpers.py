@@ -10,7 +10,8 @@ from pathlib import Path
 
 from src.session.compaction_ops import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
 from src.session.context_budget import estimate_tokens
-from src.product.tool_results import _is_tool_success, _normalize_tool_run_dir, _archive_backtest_result
+from src.product.tool_results import _is_tool_success, _archive_backtest_result
+from src.tools._arguments import normalize_tool_run_dir
 from src.agent.tuning import _token_threshold, _llm_timeout_seconds, _stall_timeout_seconds
 
 
@@ -387,24 +388,24 @@ class TestIsToolSuccess:
 
 
 # ---------------------------------------------------------------------------
-# _normalize_tool_run_dir
+# normalize_tool_run_dir
 # ---------------------------------------------------------------------------
 
 
 class TestNormalizeToolRunDir:
     def test_injects_memory_run_dir_when_missing(self) -> None:
         args = {"path": "config.json"}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == "/tmp/run_123"
 
     def test_resolves_relative_dot_to_memory_run_dir(self) -> None:
         args = {"run_dir": "."}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == str(Path("/tmp/run_123").resolve())
 
     def test_resolves_relative_child_to_memory_run_dir(self) -> None:
         args = {"run_dir": "risk_parity_run"}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == str((Path("/tmp/run_123") / "risk_parity_run").resolve())
 
     def test_preserves_absolute_run_dir(self) -> None:
@@ -416,7 +417,7 @@ class TestNormalizeToolRunDir:
         # ``memory_run_dir`` — defeating the point of the test.
         absolute_run_dir = os.path.abspath("/var/tmp/custom_run")
         args = {"run_dir": absolute_run_dir}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == absolute_run_dir
 
 
