@@ -6,8 +6,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import pytest
-
 from src.memory.compression import (
     DAILY_THRESHOLD_DAYS,
     DIGEST_THRESHOLD_DAYS,
@@ -16,7 +14,6 @@ from src.memory.compression import (
     LEVEL_RAW,
     CompressionPipeline,
     compute_tfidf,
-    _tokenize_for_tfidf,
 )
 
 
