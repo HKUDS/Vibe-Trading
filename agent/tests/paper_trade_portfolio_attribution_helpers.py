@@ -53,7 +53,8 @@ _LEGACY_EXPLICIT_GOLDEN = (
     / "golden"
     / "portfolio_explicit_cn_hk_us.json"
 )
-_TASK23_EXPLICIT_HASH = (
+# Frozen document hash of an archived pre-attribution golden.
+_ARCHIVED_PRE_ATTRIBUTION_HASH = (
     "da38f7f6ea84cf7b9eeba0dfa4d3a4cf90f8f746422052eacfcfceb6fc996206"
 )
 

@@ -1,8 +1,9 @@
 """Shared constants, marks and exact-arithmetic helpers for portfolio analytics.
 
-Every analytics cluster imports these helpers; they stay byte-identical to the
-pre-split monolith, including the local ``_reject``/``_exact_product`` shapes
-that a later consolidation wave will single-source.
+Every analytics cluster imports these helpers. The precision constant, the
+rejection raiser and the exact product are re-exported from the canonical
+``numeric`` module; the analytics-specific transforms stay here byte-identical
+to the pre-split monolith.
 """
 
 from __future__ import annotations
@@ -29,14 +30,15 @@ from .numeric import (
     PRICE_SPEC,
     WEIGHT_SPEC,
     DecimalSpec,
+    _EXACT_PRECISION,
+    _exact_product as _exact_product,
+    _reject as _reject,
     canonical_decimal,
     parse_price,
 )
 from .orchestrator import OrchestrationError
-from .schema import PortfolioRequestError
 
 
-_EXACT_PRECISION: Final = 60
 _UNCLASSIFIED: Final = "unclassified"
 _ZERO_WEIGHT: Final = Decimal(0)
 _RETURN_SPEC: Final = DecimalSpec(scale=12)
@@ -79,16 +81,6 @@ class _PositionBuild:
     exact_base: Decimal
 
 
-def _reject(
-    reason: str,
-    path: str,
-    *,
-    bucket_id: str | None = None,
-    detail: str = "",
-) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id, detail=detail)
-
-
 def _invariant(reason: str, path: str, detail: str = "") -> NoReturn:
     raise OrchestrationError(
         stage="valuate_reconcile",
@@ -97,12 +89,6 @@ def _invariant(reason: str, path: str, detail: str = "") -> NoReturn:
         path=path,
         detail=detail,
     )
-
-
-def _exact_product(left: Decimal, right: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return left * right
 
 
 def _exact_sum(values: Iterable[Decimal]) -> Decimal:

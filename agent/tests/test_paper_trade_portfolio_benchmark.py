@@ -471,7 +471,7 @@ def test_absent_benchmark_serializes_an_explicit_null() -> None:
 
 
 def test_legacy_analytics_without_benchmark_keeps_its_document_hash() -> None:
-    # Given a task-22-era document whose analytics never carried a benchmark key.
+    # Given an archived pre-benchmark document whose analytics never carried a benchmark key.
     step = _run(_three_market_payload(benchmark=_usd_benchmark()))
     payload = step.document.model_dump(mode="json", by_alias=True, exclude_none=True)
     payload["analytics"].pop("benchmark")
@@ -498,7 +498,7 @@ def test_legacy_analytics_without_benchmark_keeps_its_document_hash() -> None:
 
 
 def test_old_analytics_document_without_benchmark_key_remains_valid() -> None:
-    # Given a task-22-style analytics document that predates the benchmark key.
+    # Given an archived pre-benchmark analytics document that predates the benchmark key.
     step = _run(_three_market_payload(benchmark=None))
     payload = step.document.model_dump(mode="json", by_alias=True, exclude_none=True)
     payload["analytics"].pop("benchmark")

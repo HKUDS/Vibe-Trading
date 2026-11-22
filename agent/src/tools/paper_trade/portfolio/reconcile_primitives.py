@@ -1,8 +1,9 @@
 """Shared Decimal primitives and issue rows for the portfolio replay.
 
-Every reconcile cluster renders money/weights through these local helpers and
-reports disagreements as ``{code, path, expected, actual}`` issue rows; the
-helpers stay byte-identical to the pre-split monolith.
+Every reconcile cluster renders money/weights through these helpers and reports
+disagreements as ``{code, path, expected, actual}`` issue rows. The precision
+constant and exact product come from the canonical ``numeric`` module; the
+reconcile-specific ratio and rendering helpers stay local.
 """
 
 from __future__ import annotations
@@ -11,18 +12,14 @@ import re
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from typing import Any
 
+from .numeric import _EXACT_PRECISION, _exact_product
 
+
+_exact = _exact_product
 _CENT = Decimal("0.01")
 _WEIGHT_QUANTUM = Decimal("0.000000000001")
 _ZERO = Decimal(0)
-_EXACT_PRECISION = 60
 _GENERATED_ORDER_ID = re.compile(r"^pt2-(\d{8})-(.+)-(buy|sell)-(.+)$")
-
-
-def _exact(value: Decimal, other: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return value * other
 
 
 def _ratio(numerator: Decimal, denominator: Decimal) -> Decimal:

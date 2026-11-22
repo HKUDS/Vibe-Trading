@@ -1,9 +1,9 @@
 """Attribution schema/golden tests: optional field, mirror identity, hashes.
 
 The packaged contract and its public mirror stay one byte-identical contract
-with attribution optional; an archived task-23 document keeps its frozen hash
-without attribution, and a new document retains its real attribution across
-re-validation. Shared fixtures live in
+with attribution optional; an archived pre-attribution document keeps its
+frozen hash without attribution, and a new document retains its real
+attribution across re-validation. Shared fixtures live in
 ``paper_trade_portfolio_attribution_helpers``.
 """
 
@@ -17,10 +17,10 @@ from src.tools.paper_trade.portfolio.hash import PortfolioDataHashes, document_h
 from src.tools.paper_trade.portfolio.models import PortfolioResult
 from src.tools.paper_trade.portfolio.wire import build_success_payload
 from tests.paper_trade_portfolio_attribution_helpers import (
+    _ARCHIVED_PRE_ATTRIBUTION_HASH,
     _LEGACY_EXPLICIT_GOLDEN,
     _MIRROR_SCHEMA,
     _PACKAGED_SCHEMA,
-    _TASK23_EXPLICIT_HASH,
     _base_payload,
     _noop_payload,
     _run,
@@ -46,11 +46,11 @@ def test_schema_mirrors_are_byte_identical_and_keep_attribution_optional() -> No
     assert PortfolioResult.model_validate(legacy).analytics.attribution is None
 
 
-def test_task23_benchmark_document_without_attribution_keeps_its_hash() -> None:
-    # Given a task-23-era document with a benchmark but no attribution key.
+def test_archived_benchmark_document_without_attribution_keeps_its_hash() -> None:
+    # Given an archived pre-attribution document with a benchmark but no attribution key.
     payload = json.loads(_LEGACY_EXPLICIT_GOLDEN.read_text(encoding="utf-8"))
     payload["analytics"].pop("attribution")
-    payload["hashes"]["document_hash"] = _TASK23_EXPLICIT_HASH
+    payload["hashes"]["document_hash"] = _ARCHIVED_PRE_ATTRIBUTION_HASH
     layers = PortfolioDataHashes(
         plan_hash=payload["hashes"]["plan_hash"],
         planning_data_hash=payload["hashes"]["planning_data_hash"],
@@ -64,7 +64,7 @@ def test_task23_benchmark_document_without_attribution_keeps_its_hash() -> None:
 
     # Then attribution is not resurrected as null and the archived hash holds.
     assert "attribution" not in analytics.model_fields_set
-    assert document_hash(document, layers) == _TASK23_EXPLICIT_HASH
+    assert document_hash(document, layers) == _ARCHIVED_PRE_ATTRIBUTION_HASH
     public = build_success_payload(document)
     assert "attribution" not in public["analytics"]
     assert public["analytics"]["benchmark"] is not None
