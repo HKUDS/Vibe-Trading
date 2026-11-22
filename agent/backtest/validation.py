@@ -433,6 +433,9 @@ def _load_equity(run_dir: Path) -> pd.Series:
     """Load equity curve from artifacts/equity.csv."""
     path = run_dir / "artifacts" / "equity.csv"
     df = pd.read_csv(path, index_col=0, parse_dates=True)
+    if len(df) and not isinstance(df.index, pd.DatetimeIndex):
+        # A timestamp column spanning a DST change can have mixed UTC offsets.
+        df.index = pd.to_datetime(df.index, format="mixed", utc=True)
     for col in ("equity", "nav", "value"):
         if col in df.columns:
             return df[col]
