@@ -24,6 +24,7 @@ from src.product.result_artifacts import deliver_tool_result
 from src.config.schema import AgentConfig
 from src.kernel.contracts import LLMResponse
 from src.providers.chat import ChatLLM, ProviderStreamError
+from src.providers.messages import repair_provider_messages
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
@@ -890,7 +891,7 @@ def _run_worker_impl(
                 ):
                     try:
                         return llm.stream_chat(
-                            messages,
+                            repair_provider_messages(messages),
                             tools=tool_defs,
                             timeout=remaining_timeout,
                             on_text_chunk=_on_text_chunk,

@@ -1,15 +1,12 @@
-"""Message transforms for compaction, tool pairing and thought signatures."""
+"""Message transforms and prompt templates for context compaction."""
 
 from __future__ import annotations
 
-import copy
 import json
 from typing import Any, Callable, Optional
 
 KEEP_RECENT = 3
 
-# Tests patch these here, not in loop.py: the collapse path reads this
-# module's globals after the extraction.
 COLLAPSE_PRESERVE_RECENT = 6
 COLLAPSE_TEXT_MIN = 2400
 COLLAPSE_HEAD = 900
@@ -24,7 +21,6 @@ _HANDOFF_SUMMARY_PREFIX = "[Conversation compressed — handoff summary."
 
 TAIL_TOKEN_BUDGET = 20_000
 SUMMARY_CHUNK_CHARS = 80_000
-
 
 
 def _summary_chunks(msgs: list, limit: int = SUMMARY_CHUNK_CHARS) -> list[str]:
@@ -124,35 +120,6 @@ def _cleared_text(original_len: int) -> str:
 def _is_cleared(content: Any) -> bool:
     """True when ``content`` is a layer-1 cleared-result marker."""
     return isinstance(content, str) and content.startswith(_CLEARED_PREFIX)
-
-
-def _replay_context_result(result: str) -> str:
-    """Annotate a restored readonly result with planner guidance.
-
-    Replay exists to recover evidence that context compaction removed, not to
-    trigger another fetch under slightly different freshness arguments. Keep
-    the original payload intact and add a reserved metadata field when the
-    result is a JSON object; non-JSON results get a short textual suffix.
-    """
-    notice = (
-        "Exact prior successful result restored after context compaction. "
-        "Treat this payload as available evidence and continue the analysis. "
-        "Do not change cache/freshness arguments merely to bypass replay; "
-        "request a fresh fetch only when the evidence itself is stale/cached "
-        "or the task genuinely requires newer data."
-    )
-    try:
-        payload = json.loads(result)
-    except (TypeError, ValueError):
-        return f"{result}\n\n[Replay notice: {notice}]"
-    if not isinstance(payload, dict):
-        return f"{result}\n\n[Replay notice: {notice}]"
-    replay_payload = dict(payload)
-    replay_payload["_vibe_replay"] = {
-        "restored": True,
-        "notice": notice,
-    }
-    return json.dumps(replay_payload, ensure_ascii=False)
 
 
 def _microcompact(
@@ -331,74 +298,6 @@ def _fix_tool_pairs(messages: list) -> None:
         pairing.add(message)
     pairing.close_block()
     messages[:] = pairing.messages
-
-
-def _attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:
-    """Attach Gemini thought signatures to assistant replay tool calls.
-
-    The replay message is later converted back into LangChain messages from a
-    plain dict history. Keep signatures in both the provider-neutral
-    ``extra_content.thought_signature`` slot and Gemini's OpenAI-compatible
-    ``extra_content.google.thought_signature`` slot so both local replay tests
-    and the Gemini request injector can recover the value.
-    """
-    outbound_tool_calls = message.get("tool_calls")
-    if not isinstance(outbound_tool_calls, list):
-        return message
-
-    signatures_by_id: dict[str, str] = {}
-    signatures_by_index: dict[int, str] = {}
-    for index, tc in enumerate(tool_calls):
-        extra_content = getattr(tc, "extra_content", None)
-        signature = None
-        if isinstance(extra_content, dict):
-            signature = extra_content.get("thought_signature")
-            google_extra = extra_content.get("google")
-            if not signature and isinstance(google_extra, dict):
-                signature = google_extra.get("thought_signature") or google_extra.get(
-                    "thoughtSignature"
-                )
-        signature = signature or getattr(tc, "thought_signature", None)
-        if not signature:
-            continue
-        tc_id = getattr(tc, "id", None)
-        if tc_id:
-            signatures_by_id[str(tc_id)] = signature
-        signatures_by_index[index] = signature
-
-    if not signatures_by_id and not signatures_by_index:
-        return message
-
-    def attach(raw_tool_call: Any, index: int) -> None:
-        if not isinstance(raw_tool_call, dict):
-            return
-        signature = signatures_by_id.get(str(raw_tool_call.get("id"))) or signatures_by_index.get(index)
-        if not signature:
-            return
-        extra_content = raw_tool_call.setdefault("extra_content", {})
-        if not isinstance(extra_content, dict):
-            extra_content = {}
-            raw_tool_call["extra_content"] = extra_content
-        extra_content["thought_signature"] = signature
-        google = extra_content.setdefault("google", {})
-        if not isinstance(google, dict):
-            google = {}
-            extra_content["google"] = google
-        google["thought_signature"] = signature
-
-    for index, raw_tool_call in enumerate(outbound_tool_calls):
-        attach(raw_tool_call, index)
-
-    additional_kwargs = message.setdefault("additional_kwargs", {})
-    raw_tool_calls = additional_kwargs.setdefault(
-        "tool_calls",
-        copy.deepcopy(outbound_tool_calls),
-    )
-    if isinstance(raw_tool_calls, list):
-        for index, raw_tool_call in enumerate(raw_tool_calls):
-            attach(raw_tool_call, index)
-
-    return message
 
 
 # -- Structured summary templates ------------------------------------------

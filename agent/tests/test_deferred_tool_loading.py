@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from src.product.context import ContextBuilder, _SYSTEM_PROMPT
-from src.agent.context_budget import ContextMeter
+from src.session.context_budget import ContextMeter
 from src.agent.runtime import AgentRuntime
 from src.product.resources.memory import WorkspaceMemory
 from src.product.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions

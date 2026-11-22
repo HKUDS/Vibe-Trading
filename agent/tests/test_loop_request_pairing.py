@@ -136,3 +136,36 @@ def test_agent_repairs_before_next_provider_request_only(tmp_path: Path, monkeyp
     original_messages = loop._conversation.turn_messages
     assert original_messages is not None
     assert not any(message.get("role") == "tool" for message in original_messages)
+
+
+def test_retry_repairs_again_from_canonical_messages(tmp_path: Path, monkeypatch) -> None:
+    """A failed provider attempt can mutate its copy without poisoning the retry."""
+    from src.kernel.contracts import LLMResponse
+    from src.providers.chat import ProviderStreamError
+
+    history = [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "missing", "function": {"name": "read_file", "arguments": "{}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "orphan", "content": "outside the block"},
+    ]
+    seen = []
+
+    def stream_chat(messages, **kwargs):
+        results = [message for message in messages if message["role"] == "tool"]
+        seen.append([(message["tool_call_id"], message["content"]) for message in results])
+        if len(seen) == 1:
+            results[0]["content"] = "failed attempt's private copy"
+            raise ProviderStreamError(provider="offline", model="test", original=ConnectionResetError())
+        return LLMResponse(content="Done.")
+
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
+    runtime = AgentRuntime(
+        registry=ToolRegistry(), llm=SimpleNamespace(stream_chat=stream_chat),
+        memory=WorkspaceMemory(run_dir=str(tmp_path)), max_iterations=1,
+    )
+    result = runtime.run("Continue", history=history)
+
+    assert result["status"] == "success"
+    assert seen == [[("missing", INTERRUPTED_RESULT_CONTENT)]] * 2
+    assert history[1] == {"role": "tool", "tool_call_id": "orphan", "content": "outside the block"}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,14 +35,11 @@ class TurnState:
     last_response_model: str | None = None
     no_commentary_rounds: int = 0
     mid_turn_nudge_rounds: int = 0
-    stream_failure_streak: int = 0
     final_answer_retry_pending: bool = False
     final_answer_retry: bool = False
     compact_requested: bool = False
     focus_topic: str = ""
-    request_messages: list[ModelMessage] = field(default_factory=list)
     stream: Any = None
-    tool_defs: Any = None
     thinking_text: str = ""
     current_response_model: str | None = None
 

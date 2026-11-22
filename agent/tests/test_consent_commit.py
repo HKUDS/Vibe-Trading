@@ -673,6 +673,7 @@ def test_no_registered_tool_references_commit_mandate() -> None:
         AGENT_DIR / "src" / "agent" / "runtime.py",
         *(AGENT_DIR / "src" / "kernel").glob("*.py"),
         *(AGENT_DIR / "src" / "product").rglob("*.py"),
+        *(AGENT_DIR / "src" / "session").glob("*.py"),
         AGENT_DIR / "src" / "swarm" / "worker.py",
     ]
     offenders: list[str] = []

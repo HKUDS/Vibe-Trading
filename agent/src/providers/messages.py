@@ -154,3 +154,71 @@ def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]
             replayer.add(copy.deepcopy(message))
     replayer.close_block()
     return replayer.messages
+
+
+def attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:
+    """Attach Gemini thought signatures to assistant replay tool calls.
+
+    The replay message is later converted back into LangChain messages from a
+    plain dict history. Keep signatures in both the provider-neutral
+    ``extra_content.thought_signature`` slot and Gemini's OpenAI-compatible
+    ``extra_content.google.thought_signature`` slot so both local replay tests
+    and the Gemini request injector can recover the value.
+    """
+    outbound_tool_calls = message.get("tool_calls")
+    if not isinstance(outbound_tool_calls, list):
+        return message
+
+    signatures_by_id: dict[str, str] = {}
+    signatures_by_index: dict[int, str] = {}
+    for index, tc in enumerate(tool_calls):
+        extra_content = getattr(tc, "extra_content", None)
+        signature = None
+        if isinstance(extra_content, dict):
+            signature = extra_content.get("thought_signature")
+            google_extra = extra_content.get("google")
+            if not signature and isinstance(google_extra, dict):
+                signature = google_extra.get("thought_signature") or google_extra.get(
+                    "thoughtSignature"
+                )
+        signature = signature or getattr(tc, "thought_signature", None)
+        if not signature:
+            continue
+        tc_id = getattr(tc, "id", None)
+        if tc_id:
+            signatures_by_id[str(tc_id)] = signature
+        signatures_by_index[index] = signature
+
+    if not signatures_by_id and not signatures_by_index:
+        return message
+
+    def attach(raw_tool_call: Any, index: int) -> None:
+        if not isinstance(raw_tool_call, dict):
+            return
+        signature = signatures_by_id.get(str(raw_tool_call.get("id"))) or signatures_by_index.get(index)
+        if not signature:
+            return
+        extra_content = raw_tool_call.setdefault("extra_content", {})
+        if not isinstance(extra_content, dict):
+            extra_content = {}
+            raw_tool_call["extra_content"] = extra_content
+        extra_content["thought_signature"] = signature
+        google = extra_content.setdefault("google", {})
+        if not isinstance(google, dict):
+            google = {}
+            extra_content["google"] = google
+        google["thought_signature"] = signature
+
+    for index, raw_tool_call in enumerate(outbound_tool_calls):
+        attach(raw_tool_call, index)
+
+    additional_kwargs = message.setdefault("additional_kwargs", {})
+    raw_tool_calls = additional_kwargs.setdefault(
+        "tool_calls",
+        copy.deepcopy(outbound_tool_calls),
+    )
+    if isinstance(raw_tool_calls, list):
+        for index, raw_tool_call in enumerate(raw_tool_calls):
+            attach(raw_tool_call, index)
+
+    return message

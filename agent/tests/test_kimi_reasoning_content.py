@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from src.product.context import ContextBuilder
-from src.agent.context_compact import _attach_tool_call_thought_signatures
+from src.providers.messages import attach_tool_call_thought_signatures
 from src.kernel.contracts import ToolCallRequest
 from src.providers.chat import ChatLLM, _dedupe_finish_reason
 from src.providers.llm import ChatOpenAIWithReasoning
@@ -175,7 +175,7 @@ class TestAgentLoopToolCallReplay:
         ]
         message = ContextBuilder.format_assistant_tool_calls(tool_calls, content="")
 
-        _attach_tool_call_thought_signatures(message, tool_calls)
+        attach_tool_call_thought_signatures(message, tool_calls)
 
         assert message["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
         assert message["tool_calls"][1]["extra_content"]["google"]["thought_signature"] == "sig-b"
@@ -192,7 +192,7 @@ class TestAgentLoopToolCallReplay:
         ]
         message = ContextBuilder.format_assistant_tool_calls(tool_calls, content="")
 
-        _attach_tool_call_thought_signatures(message, tool_calls)
+        attach_tool_call_thought_signatures(message, tool_calls)
 
         assert message["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
         assert "extra_content" not in message["tool_calls"][1]
@@ -600,7 +600,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         ``_convert_input`` must lift the signature back onto the converted message.
         """
         from src.product.context import ContextBuilder
-        from src.agent.context_compact import _attach_tool_call_thought_signatures
+        from src.providers.messages import attach_tool_call_thought_signatures
         from src.kernel.contracts import ToolCallRequest
 
         instance = self._instance(model="gemini-3-pro-preview")
@@ -609,7 +609,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
                             arguments={"name": "momentum"}, thought_signature="sig-a"),
         ]
         assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
-        _attach_tool_call_thought_signatures(assistant, tool_calls)
+        attach_tool_call_thought_signatures(assistant, tool_calls)
         history = [
             {"role": "user", "content": "load momentum"},
             assistant,
@@ -628,7 +628,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         so we must neither drop the first nor fabricate the others.
         """
         from src.product.context import ContextBuilder
-        from src.agent.context_compact import _attach_tool_call_thought_signatures
+        from src.providers.messages import attach_tool_call_thought_signatures
         from src.kernel.contracts import ToolCallRequest
 
         instance = self._instance(model="gemini-3-pro-preview")
@@ -638,7 +638,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
             ToolCallRequest(id="c3", name="load_skill", arguments={"name": "c"}, thought_signature=None),
         ]
         assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
-        _attach_tool_call_thought_signatures(assistant, tool_calls)
+        attach_tool_call_thought_signatures(assistant, tool_calls)
         history = [
             {"role": "user", "content": "load a, b, c"},
             assistant,

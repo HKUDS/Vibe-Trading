@@ -10,7 +10,7 @@ import pytest
 
 from src.product.context import ContextBuilder
 from src.agent.runtime import AgentRuntime
-from src.agent.context_compact import COLLAPSE_TEXT_MIN, KEEP_RECENT, _STUB_RESULT_CONTENT, _context_collapse, _fix_tool_pairs, _is_cleared
+from src.session.compaction_ops import COLLAPSE_TEXT_MIN, KEEP_RECENT, _STUB_RESULT_CONTENT, _context_collapse, _fix_tool_pairs, _is_cleared
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 
@@ -294,7 +294,7 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
             raise RuntimeError("offline summary failure")
 
         monkeypatch.setattr(h.agent.llm, "chat", fail_summary)
-    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 1)
+    monkeypatch.setattr("src.agent.tuning.LLM_TIMEOUT_SECONDS", 1, raising=False)
 
     h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
 
@@ -331,7 +331,7 @@ def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypat
         return SimpleNamespace(content="summary")
 
     monkeypatch.setattr(h.agent.llm, "chat", chat)
-    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 1)
+    monkeypatch.setattr("src.agent.tuning.LLM_TIMEOUT_SECONDS", 1, raising=False)
     token = bind_llm_session_id("vibe-session-42")
     try:
         h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)

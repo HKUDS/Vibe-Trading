@@ -7,11 +7,11 @@ from types import SimpleNamespace
 
 
 from src.agent import runtime as loop_mod
-from src.agent.context_budget import estimate_tokens
+from src.session.context_budget import estimate_tokens
 from src.product.context import ContextBuilder
 from src.product.resources.memory import WorkspaceMemory
 from src.agent.runtime import AgentRuntime
-from src.agent.context_compact import KEEP_RECENT
+from src.session.compaction_ops import KEEP_RECENT
 from src.product.tool_replay import MAX_READONLY_REPLAY_RECOVERIES
 from src.product.tool_progress import NO_PROGRESS_LIMIT, ToolProgress
 from src.kernel.contracts import LLMResponse, ToolCallRequest

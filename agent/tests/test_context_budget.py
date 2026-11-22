@@ -19,8 +19,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import src.agent.context_budget as cb
-from src.agent.context_budget import (
+import src.session.context_budget as cb
+from src.session.context_budget import (
     CompactionBudget,
     ContextMeter,
     estimate_tokens,
@@ -347,7 +347,7 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
 
 
 def test_layer_one_clears_oldest_results_only_until_the_prompt_fits() -> None:
-    from src.agent.context_compact import KEEP_RECENT, _is_cleared, _microcompact
+    from src.session.compaction_ops import KEEP_RECENT, _is_cleared, _microcompact
 
     messages = [{"role": "system", "content": "s"}]
     for i in range(10):

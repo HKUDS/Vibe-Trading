@@ -9,16 +9,18 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-from src.agent.context_budget import estimate_tokens
-from src.agent.loop_compaction import ContextCompactor
 from src.agent.loop_conversation import ConversationState
 from src.agent.loop_driver import IterationSteps
 from src.agent.loop_state import TurnSetup, TurnState
 from src.agent.loop_watchdog import StallWatchdog
 from src.agent.tools import ToolRegistry
 from src.agent.tuning import (
+    _llm_timeout_seconds,
     _mid_turn_nudge_rounds,
+    _override,
     _stall_timeout_seconds,
+    _stream_retry_backoff_s,
+    _stream_retry_max_delay_s,
 )
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
@@ -42,9 +44,12 @@ from src.product.tool_invocation import ToolInvocation
 from src.product.tool_loading import prepare_registry, request_definitions
 from src.product.tool_replay import ToolReplay
 from src.product.usage import UsageLedger, _new_llm_usage_summary
+from src.product.verification import _verification_ledger
 from src.product.write_directives import WriteTargetState
 from src.providers.chat import ChatLLM, ProviderStreamError, reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
+from src.session.compaction import ContextCompactor
+from src.session.request import SessionRequest
 from src.tools.background_tools import get_background_manager
 from src.tools.redaction import redact_text
 
@@ -153,8 +158,10 @@ class AgentRuntime:
         self.replay = ToolReplay(self.tool_env)
         self._context_compactor = ContextCompactor(
             llm=self.llm, provider=runtime_snapshot.provider, conversation=self._conversation,
-            replay=self.replay, memory=self.memory, activity=self.activity, goals=self.goals,
-            usage=self.usage, hook=self._run_hook, emit=self._emit,
+            replay=self.replay, state_summary=lambda: self.memory.to_summary(), should_stop=self._should_stop,
+            threshold_override=lambda: _override("TOKEN_THRESHOLD"),
+            record_usage=self.usage.record, verification_ledger=_verification_ledger,
+            timeout_seconds=_llm_timeout_seconds, hook=self._run_hook, emit=self._emit,
         )
         self.delivery = ToolDelivery(self.tool_env, self.replay, self._conversation, self._emit,
                                      self.activity.touch, self._write_targets.record)
@@ -167,6 +174,9 @@ class AgentRuntime:
         set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
         if callable(set_usage_callback):
             set_usage_callback(self.usage.record_subagent)
+
+    def _should_stop(self) -> bool:
+        return self.activity.cancel.is_set() or self.goals.stop_reason is not None
 
     def cancel(self) -> None:
         """Cancel the current loop.
@@ -263,10 +273,16 @@ class AgentRuntime:
         try:
             pacing = TurnPacing(self._conversation, self._llm_runtime.provider, self.llm, self.max_iterations, self.goals)
             steps = IterationSteps(
-                llm=self.llm, runtime=self._llm_runtime, max_iterations=self.max_iterations,
+                requests=SessionRequest(
+                    llm=self.llm, cancel=self.activity.cancel, should_stop=self._should_stop,
+                    record_usage=self.usage.record, recover_overflow=self._context_compactor.recover_context_overflow,
+                    timeout_seconds=_llm_timeout_seconds, backoff=_stream_retry_backoff_s,
+                    max_delay=_stream_retry_max_delay_s,
+                ),
+                runtime=self._llm_runtime, max_iterations=self.max_iterations,
                 activity=self.activity, goals=self.goals, tools=self.tools, compactor=self._context_compactor,
                 conversation=self._conversation, writes=self._write_targets, usage=self.usage,
-                background=self._background_manager, emit=self._emit, hook=self._run_hook,
+                background=self._background_manager, emit=self._emit,
                 pacing=pacing,
             )
             ports = LoopPorts(prepare_iteration=steps.prepare_iteration, request=steps.request,
@@ -296,7 +312,7 @@ class AgentRuntime:
             restore_exposure = getattr(self.registry, "restore_exposure", None)
             if callable(restore_exposure):
                 restore_exposure(self._conversation.thread.loaded_tools)
-        self._context_compactor.tool_schema_tokens = estimate_tokens(request_definitions(self.registry))
+        self._context_compactor.update_tool_schemas(request_definitions(self.registry))
         run_started_wall = _time.time()
         state_store = RunStateStore()
         RUNS_DIR.mkdir(parents=True, exist_ok=True)

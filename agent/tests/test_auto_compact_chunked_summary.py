@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import src.agent.context_compact as _owner_context_compact
+import src.session.compaction_ops as _owner_context_compact
 
 import json
 from pathlib import Path
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from src.agent.runtime import AgentRuntime
-from src.agent.context_compact import _summary_chunks
+from src.session.compaction_ops import _summary_chunks
 from src.agent.tools import ToolRegistry
 from tests.recording_helpers import recorder_at, records_at
 
@@ -153,3 +153,30 @@ def test_auto_compact_folds_all_head_chunks_and_preserves_empty_update(
     ]
     assert len(compact_entries) == 1
     assert compact_entries[0]["summary_chunks"] == len(llm.prompts)
+
+
+def test_compaction_reattaches_verified_result_from_folded_head(tmp_path):
+    """The handoff retains an exact calculation omitted by the model's summary."""
+    agent = _build_agent(_CompactionLLM(["Earlier work."]))
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "calc", "function": {"name": "financial_rigor", "arguments": "{}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "calc", "name": "financial_rigor",
+         "content": json.dumps({"status": "ok", "command": "calc", "expr": "1/8", "result_exact": "0.125"})},
+        {"role": "assistant", "content": "The calculation is complete."},
+        {"role": "user", "content": "Continue the analysis."},
+    ]
+    trace = recorder_at(tmp_path)
+    try:
+        agent._context_compactor.auto_compact(messages, tmp_path, trace)
+    finally:
+        trace.close()
+
+    assert "Earlier work." in messages[1]["content"]
+    assert "calc 1/8 = 0.125" in messages[1]["content"]
+    assert not any(message.get("role") == "tool" for message in messages)
+    assert [message["content"] for message in messages[2:]] == [
+        "The calculation is complete.", "Continue the analysis.",
+    ]

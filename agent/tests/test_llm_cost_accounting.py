@@ -111,7 +111,7 @@ def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypa
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     llm.chat.side_effect = RuntimeError("Provider disconnected")
-    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 0)
+    monkeypatch.setattr("src.agent.tuning.LLM_TIMEOUT_SECONDS", 0, raising=False)
     trace = recorder_at(tmp_path)
     try:
         with pytest.raises(RuntimeError, match="Provider disconnected"):
@@ -274,7 +274,7 @@ def test_compatible_output_limit_uses_the_provider_wire_field(provider_name, mod
 def test_failed_stream_usage_is_counted_before_retry(tmp_path, monkeypatch, recover):
     from src.providers.chat import ProviderStreamError
     agent, llm = _agent(tmp_path)
-    monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     def error():
         return ProviderStreamError(
             provider="deepseek", model="deepseek-v4-pro",
@@ -299,7 +299,7 @@ def test_failed_stream_without_usage_is_counted_not_announced(tmp_path, monkeypa
 
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
-    monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     llm.stream_chat.side_effect = [
         ProviderStreamError(provider="deepseek", model="m", original=ConnectionError("reset")),
         LLMResponse(content="Hello", usage_metadata=USAGE),
@@ -321,7 +321,7 @@ def test_live_decision_budget_survives_a_retried_connection_reset(tmp_path, monk
 
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
-    monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     llm.stream_chat.side_effect = [
         ProviderStreamError(provider="deepseek", model="m", original=ConnectionError("reset")),
         LLMResponse(content="Hold.", usage_metadata=USAGE),

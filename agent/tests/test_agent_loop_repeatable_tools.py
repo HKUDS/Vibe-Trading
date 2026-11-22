@@ -120,7 +120,7 @@ def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path:
     back without another external fetch and without weakening write-tool
     deduplication.
     """
-    from src.agent.context_compact import KEEP_RECENT
+    from src.session.compaction_ops import KEEP_RECENT
 
     calls: list[dict[str, object]] = []
     tool = FundFlowTool()

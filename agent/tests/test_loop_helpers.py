@@ -8,8 +8,8 @@ import json
 import os
 from pathlib import Path
 
-from src.agent.context_compact import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
-from src.agent.context_budget import estimate_tokens
+from src.session.compaction_ops import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
+from src.session.context_budget import estimate_tokens
 from src.product.tool_results import _is_tool_success, _normalize_tool_run_dir, _archive_backtest_result
 from src.agent.tuning import _token_threshold, _llm_timeout_seconds, _stall_timeout_seconds
 
@@ -695,7 +695,7 @@ def test_stall_timeout_seconds_default_and_override(monkeypatch) -> None:
 def test_tail_cut_index_counts_tool_call_arguments() -> None:
     """#tail-budget: a fat tool_call (empty content, huge arguments) must be
     pushed into the folded head, not counted as ~10 tokens in the tail."""
-    from src.agent.context_compact import _tail_cut_index  # new helper: absent on pre-fix code
+    from src.session.compaction_ops import _tail_cut_index  # new helper: absent on pre-fix code
 
     fat = "X" * 90_000  # ~22.5K tokens once arguments are counted
     body = [
@@ -718,7 +718,7 @@ def test_tail_cut_index_counts_tool_call_arguments() -> None:
 def test_tail_cut_index_counts_reasoning_content() -> None:
     """#tail-budget: a thinking-model turn's huge reasoning_content must be
     pushed into the folded head too, not counted as ~10 tokens in the tail."""
-    from src.agent.context_compact import _tail_cut_index
+    from src.session.compaction_ops import _tail_cut_index
 
     fat = "X" * 90_000  # ~22.5K tokens once reasoning_content is counted
     body = [
@@ -795,7 +795,7 @@ def test_context_collapse_stubs_args_for_fix_tool_pairs_stub_result() -> None:
     """#adversarial: layer-3's ``_fix_tool_pairs`` stub result marker must also
     count as 'result data gone' — a call that survived a layer-3 fold gets its
     huge arguments stubbed too, not only microcompact's ``[cleared]``."""
-    from src.agent.context_compact import _STUB_RESULT_CONTENT
+    from src.session.compaction_ops import _STUB_RESULT_CONTENT
 
     fat = "Y" * (COLLAPSE_TEXT_MIN * 3)
     call_msg = {
@@ -822,7 +822,7 @@ def test_context_collapse_stubs_args_for_fix_tool_pairs_stub_result() -> None:
 def test_msg_estimate_chars_counts_dict_arguments() -> None:
     """#adversarial: dict (non-string) arguments must count toward sizing,
     consistent with ``estimate_tokens``' full serialization gate."""
-    from src.agent.context_compact import _msg_estimate_chars
+    from src.session.compaction_ops import _msg_estimate_chars
 
     big_dict = {"q": "X" * 4000}
     msg = {
@@ -837,7 +837,7 @@ def test_msg_estimate_chars_counts_dict_arguments() -> None:
 def test_msg_estimate_chars_counts_reasoning_content() -> None:
     """#adversarial: reasoning_content must count toward sizing too, consistent
     with ``estimate_tokens``' full serialization gate."""
-    from src.agent.context_compact import _msg_estimate_chars
+    from src.session.compaction_ops import _msg_estimate_chars
 
     msg = {
         "role": "assistant",

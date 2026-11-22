@@ -7,7 +7,7 @@ import json
 from langchain_core.messages import AIMessage, convert_to_messages
 
 from src.product.context import ContextBuilder
-from src.agent.context_compact import _attach_tool_call_thought_signatures
+from src.providers.messages import attach_tool_call_thought_signatures
 from src.kernel.contracts import ToolCallRequest
 from src.providers.chat import ChatLLM
 
@@ -127,7 +127,7 @@ def test_loop_helper_attaches_thought_signature_to_dict_history() -> None:
         ToolCallRequest(id="tc_2", name="get_news", arguments={"symbol": "MSFT"}),
     ]
 
-    attached = _attach_tool_call_thought_signatures(message, tool_calls)
+    attached = attach_tool_call_thought_signatures(message, tool_calls)
     raw_tool_calls = attached["additional_kwargs"]["tool_calls"]
 
     assert raw_tool_calls[0]["extra_content"]["thought_signature"] == "sig-only-first"

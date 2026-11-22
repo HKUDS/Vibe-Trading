@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Mapping
 
-from src.agent.context_compact import _replay_context_result, _result_data_gone
+from src.session.compaction_ops import _result_data_gone
 from src.product.result_artifacts import deliver_tool_result
 from src.product.tool_results import _normalize_tool_run_dir
 from src.tools.redaction import redact_tool_result
@@ -19,6 +19,35 @@ logger = logging.getLogger(__name__)
 # model is never told to use a result it can no longer see, and a loop of
 # identical re-runs still ends at the no-progress limit.
 MAX_READONLY_REPLAY_RECOVERIES = 6
+
+
+def _replay_context_result(result: str) -> str:
+    """Annotate a restored readonly result with planner guidance.
+
+    Replay exists to recover evidence that context compaction removed, not to
+    trigger another fetch under slightly different freshness arguments. Keep
+    the original payload intact and add a reserved metadata field when the
+    result is a JSON object; non-JSON results get a short textual suffix.
+    """
+    notice = (
+        "Exact prior successful result restored after context compaction. "
+        "Treat this payload as available evidence and continue the analysis. "
+        "Do not change cache/freshness arguments merely to bypass replay; "
+        "request a fresh fetch only when the evidence itself is stale/cached "
+        "or the task genuinely requires newer data."
+    )
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError):
+        return f"{result}\n\n[Replay notice: {notice}]"
+    if not isinstance(payload, dict):
+        return f"{result}\n\n[Replay notice: {notice}]"
+    replay_payload = dict(payload)
+    replay_payload["_vibe_replay"] = {
+        "restored": True,
+        "notice": notice,
+    }
+    return json.dumps(replay_payload, ensure_ascii=False)
 
 
 class ToolReplay:

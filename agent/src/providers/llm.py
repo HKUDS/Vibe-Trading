@@ -536,7 +536,7 @@ if ChatOpenAI is not None:
 
             The AgentRuntime replays history as OpenAI-format dicts, stamping the
             signature into ``tool_calls[i].extra_content.google.thought_signature``
-            (loop.py ``_attach_tool_call_thought_signatures``). LangChain's
+            (providers.messages ``attach_tool_call_thought_signatures``). LangChain's
             ``_convert_dict_to_message`` discards ``extra_content`` entirely, so by
             the time ``_get_request_payload`` runs the signature is gone and Gemini
             rejects the next turn with a ``missing thought_signature`` 400.
