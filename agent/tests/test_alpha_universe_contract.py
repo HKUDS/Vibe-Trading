@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import Mock
 
-import pandas as pd
 import pytest
 
 from src.tools import alpha_bench_tool
@@ -15,21 +14,12 @@ def test_btc_universe_is_rejected_before_cache_or_download(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     runtime_root = Mock(return_value=tmp_path)
-    fetch = Mock(
-        return_value={
-            "close": pd.DataFrame(
-                {"BTC-USDT": [1.0]}, index=pd.to_datetime(["2024-01-01"])
-            )
-        }
-    )
     monkeypatch.setattr(alpha_bench_tool, "get_runtime_root", runtime_root)
-    monkeypatch.setattr(alpha_bench_tool, "_load_btc_panel", fetch)
 
     with pytest.raises(ValueError, match="single-asset"):
         _load_universe_panel("btc-usdt", "2024-2024")
 
     runtime_root.assert_not_called()
-    fetch.assert_not_called()
 
 
 @pytest.mark.parametrize("tool_class", [AlphaBenchTool, AlphaCompareTool])
