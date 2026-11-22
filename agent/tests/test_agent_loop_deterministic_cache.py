@@ -111,9 +111,13 @@ def test_identical_deterministic_call_is_served_from_cache(agent_factory) -> Non
         json.loads(messages[1]["content"])["result_exact"]
     )
     assert [r["type"] for r in records].count("tool_result_cached") == 1
-    cached_events = [d for name, d in captured if d.get("cached")]
+    cached_events = [
+        d["item"] for name, d in captured
+        if name == "item.completed" and d.get("kind") == "tool.completed"
+        and d.get("item", {}).get("cached")
+    ]
     assert len(cached_events) == 1
-    assert cached_events[0]["tool"] == tool.name
+    assert cached_events[0]["name"] == tool.name
 
 
 def test_different_arguments_re_execute(agent_factory) -> None:

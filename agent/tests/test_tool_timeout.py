@@ -72,9 +72,10 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     assert elapsed_ms >= 40
     assert len(events) == event_count_at_return
     timeout_event = next(
-        data
+        data["progress"]
         for event_type, data in events
-        if event_type == "tool_progress" and data.get("stage") == "timeout"
+        if event_type == "item.delta" and data.get("kind") == "tool.progress"
+        and data.get("progress", {}).get("stage") == "timeout"
     )
     assert timeout_event["call_id"] == "slow-call"
 
@@ -106,9 +107,9 @@ def test_write_tool_timeout_reports_unknown_outcome(monkeypatch) -> None:
     assert registry.completed is False
     assert elapsed_ms < 70
     assert any(
-        event_type == "tool_progress"
-        and data.get("stage") == "timeout_warning"
-        and data.get("call_id") == "write-call"
+        event_type == "item.delta" and data.get("kind") == "tool.progress"
+        and data.get("progress", {}).get("stage") == "timeout_warning"
+        and data.get("progress", {}).get("call_id") == "write-call"
         for event_type, data in events
     ) is False
 

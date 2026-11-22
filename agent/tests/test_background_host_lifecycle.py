@@ -305,8 +305,11 @@ def test_agent_terminal_status_only_cancels_background_on_failure(monkeypatch, s
     from src.agent.loop import AgentLoop
     from unittest.mock import Mock
 
-    loop = AgentLoop.__new__(AgentLoop)
-    loop._background_manager = Mock()
+    loop = AgentLoop(
+        registry=SimpleNamespace(get=lambda name: None),
+        llm=SimpleNamespace(),
+        background_manager=Mock(),
+    )
     monkeypatch.setattr(loop, "_run_bound", lambda *a: {"status": status})
     assert loop.run("test")["status"] == status
     assert loop._background_manager.cancel_all.call_count == (status == "failed")

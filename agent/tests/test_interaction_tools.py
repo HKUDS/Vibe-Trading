@@ -10,7 +10,11 @@ def test_plan_contract_emits_update():
         steps=[{"step": "Inspect", "status": "in_progress"}]
     ))
     assert result["status"] == "ok"
-    assert events[0][0] == "plan.updated"
+    assert events == [("item.started", {
+        "kind": "item.started",
+        "item": {"type": "plan", "plan_id": result["plan_id"], "steps": result["steps"]},
+        "session_id": None,
+    })]
 
 
 def test_question_contract_is_waiting_and_cannot_grant_permission():
@@ -20,7 +24,12 @@ def test_question_contract_is_waiting_and_cannot_grant_permission():
     ))
     assert result["status"] == "waiting_user"
     assert "permission" in AskUserTool.description
-    assert events[0][0] == "question.asked"
+    assert events == [("item.started", {
+        "kind": "item.started",
+        "item": {"type": "question", "question_id": result["question_id"],
+                 "prompt": "Choose a format", "options": ["CSV", "JSON"], "allow_free_text": True},
+        "session_id": None,
+    })]
 
 
 def test_contracts_reject_invalid_shapes():

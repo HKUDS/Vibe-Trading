@@ -594,7 +594,6 @@ class ToolCallLifecycle:
         """
         self._tool_progress.note("blocked", tc.name, _failure_code(result))
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
-        redacted_args = redact_payload(args)
         self._emit_tool_started(tc, args, iteration, blocked=blocked)
         trace.write(
             {
@@ -720,7 +719,6 @@ class ToolCallLifecycle:
         runnable: list[tuple] = []
         for tc in tool_calls:
             args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
-            redacted_args = redact_payload(args)
             self._emit_tool_started(tc, args, iteration)
             trace.write({"type": "tool_execution", "iter": iteration, "tool": tc.name, "call_id": tc.id})
             runnable.append((tc, args))
@@ -764,7 +762,6 @@ class ToolCallLifecycle:
         """
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
 
-        redacted_args = redact_payload(args)
         self._emit_tool_started(tc, args, iteration)
         trace.write({"type": "tool_execution", "iter": iteration, "tool": tc.name, "call_id": tc.id})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
