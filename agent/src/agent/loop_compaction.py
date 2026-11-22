@@ -366,6 +366,7 @@ class ContextCompactor:
             focus_topic: Optional topic to prioritize in the summary.
             iteration: Current trace iteration.
         """
+        self.timeout_provider = _llm_timeout_seconds
         if self.owner._cancel_event.is_set() or self.owner._budget_stop_reason is not None:
             return
         readable_before = self.owner._readable_success_keys(messages)

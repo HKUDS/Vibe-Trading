@@ -978,7 +978,6 @@ class AgentLoop(ToolCallLifecycle):
 
     def _auto_compact(self, messages: list, run_dir: Path, trace: TraceWriter, focus_topic: str = "", iteration: int = 0) -> None:
         """Run structured or degraded compaction through the context component."""
-        self._context_compactor.timeout_provider = _llm_timeout_seconds
         self._context_compactor.auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=iteration)
 
     @property
