@@ -306,6 +306,8 @@ class Attempt:
         data = dict(data)
         if "status" in data:
             data["status"] = AttemptStatus(data["status"])
+        if data.get("error"):
+            data["error"] = redact_text(data["error"])
         return cls(**data)
 
     def mark_running(self) -> None:

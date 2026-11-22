@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover - Windows has no fcntl
 
 from src.providers.messages import MessagePairing, assistant_message
 from src.providers import messages as provider_messages
+from src.tools.redaction import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -263,8 +264,15 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
         result[name] = copy.deepcopy(value)
     if item_type == "assistant" and result.get("llm_content") is None:
         result.pop("llm_content", None)
-    if item_type == "turn_end" and result.get("display") is None:
-        result.pop("display", None)
+    if item_type == "turn_end":
+        if result.get("display") is None:
+            result.pop("display", None)
+        if result.get("error"):
+            result["error"] = redact_text(result["error"])
+        if result["status"] == "failed" and result.get("summary"):
+            result["summary"] = redact_text(result["summary"])
+    if item_type == "event" and result["name"] == "end" and result["data"].get("reason"):
+        result["data"]["reason"] = redact_text(result["data"]["reason"])
     if item_type == "compaction":
         # Keep the legacy on-disk shape byte-for-byte for summary-only
         # records. New layer events carry these fields explicitly.
@@ -657,7 +665,7 @@ def open_turns(items: Iterable[ThreadItem]) -> List[str]:
 
 def durable_tool_calls(message: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Copy tool calls and redact their serialized argument objects."""
-    from src.tools.redaction import redact_payload, redact_text
+    from src.tools.redaction import redact_payload
 
     calls = copy.deepcopy(list(message.get("tool_calls") or []))
     for call in calls:

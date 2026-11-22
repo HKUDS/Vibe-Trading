@@ -27,6 +27,7 @@ from src.api.run_artifacts import (
     equity_curve_from_rows,
     load_backtest_metrics,
 )
+from src.tools.redaction import redact_text
 from src.ui_services import load_csv_records, load_json_file
 
 
@@ -710,7 +711,8 @@ def _build_response_from_run_dir(
             response.status = "success"
         elif state_status in {"failed", "cancelled"}:
             response.status = state_status
-            response.reason = state_data.get("reason", "")
+            reason = state_data.get("reason", "")
+            response.reason = redact_text(reason) if reason else reason
         else:
             response.status = state_status or "unknown"
     else:

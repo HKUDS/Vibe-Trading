@@ -76,3 +76,14 @@ def test_chart_payload_variant_is_rendered_in_threadpool(
     payload = response.json()
     assert payload["chart_symbols"] == ["AAPL"]
     assert payload["price_series"] == {}
+
+
+def test_historical_failure_reason_is_redacted_in_run_detail(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run_dir = _make_run(tmp_path)
+    (run_dir / "state.json").write_text(json.dumps({
+        "status": "failed", "reason": "provider rejected api_key=private-old-detail",
+    }))
+    response = client.get(f"/runs/{RUN_ID}")
+    assert response.status_code == 200
+    assert response.json()["reason"] == "provider rejected api_key=[redacted]"

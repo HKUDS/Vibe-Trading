@@ -627,3 +627,34 @@ def test_event_stream_cursor_still_requires_stream_auth(tmp_path: Path, monkeypa
         f"/sessions/{session.session_id}/events?cursor=0"
     )
     assert response.status_code == 401
+
+
+def test_historical_failure_stays_redacted_on_session_reads(tmp_path, monkeypatch):
+    from src.session.models import Attempt
+
+    service, session, thread = _seed_session(tmp_path, monkeypatch)
+    tid = "12aabbccdd34"
+    reason = "provider rejected api_key=private-old-detail"
+    thread.append("turn_start", tid, prompt="Analyze", provider="p", model="m")
+    seq = thread.read()[-1].seq
+    # Write the earlier format directly, bypassing current write-time redaction.
+    with thread.path.open("a", encoding="utf-8") as out:
+        for i, payload in enumerate([
+            {"type": "event", "name": "end", "data": {"reason": reason, "status": "error"}},
+            {"type": "turn_end", "status": "failed", "error": reason,
+             "summary": "Execution failed: " + reason},
+        ], 1):
+            out.write(json.dumps({"seq": seq + i, "turn_id": tid, "ts": 1, **payload}) + "\n")
+    original = thread.path.read_bytes()
+    client = TestClient(api_server.app, client=("127.0.0.1", 50000))
+    for endpoint in ("thread", "messages"):
+        response = client.get(f"/sessions/{session.session_id}/{endpoint}")
+        assert response.status_code == 200
+        assert "[redacted]" in response.text and "private-old-detail" not in response.text
+    assert thread.read()[-2].get("data")["reason"] == "provider rejected api_key=[redacted]"
+    attempt = Attempt(session_id=session.session_id, attempt_id=tid)
+    service.store.create_attempt(attempt)
+    path = service.store._attempt_file(session.session_id, tid)
+    path.write_text(json.dumps({**attempt.to_dict(), "status": "failed", "error": reason}))
+    assert service.store.get_attempt(session.session_id, tid).error == "provider rejected api_key=[redacted]"
+    assert thread.path.read_bytes() == original
