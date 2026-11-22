@@ -24,12 +24,13 @@ from typing import Any, Callable
 
 import pytest
 
+from src.providers.messages import INTERRUPTED_RESULT_CONTENT
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.models import Message, Session
 from src.session.service import STOPPED_MARKER
 from src.session.store import SessionStore
-from src.session.thread import project_turn, INTERRUPTED_RESULT_CONTENT, STOPPED_TURN_NOTES
+from src.session.thread import project_turn, STOPPED_TURN_NOTES
 
 cli_main = importlib.import_module("cli.main")
 

@@ -27,12 +27,12 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from src.providers.messages import assistant_message
 from src.session.thread import (
     ThreadItem,
     ThreadItemError,
     ThreadLog,
     TurnProjection,
-    _assistant_message,
     last_compaction,
     open_turns,
     project_turn,
@@ -59,7 +59,7 @@ def _item_message(
     if item.type == "user":
         return {"role": "user", "content": item.get("llm_content")}
     if item.type == "assistant":
-        return _assistant_message(item, target_provider=provider, target_model=model)
+        return assistant_message(item, target_provider=provider, target_model=model)
     if item.type == "tool_result":
         return {
             "role": "tool",

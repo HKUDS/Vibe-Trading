@@ -5,52 +5,9 @@ survives the one provider retry exactly as the former closure state did.
 """
 from __future__ import annotations
 
-import copy
 import time as _time
 import uuid
 from typing import Any, Callable
-
-from src.session.thread import _Replayer
-
-
-class _MessageItem(dict):
-    """Minimal thread-item adapter used by the shared pairing replayer."""
-
-    def __init__(self, item_type: str, message: dict[str, Any]) -> None:
-        super().__init__(copy.deepcopy(message))
-        self.type = item_type
-        self.seq = 0
-
-
-def repair_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Repair tool blocks for one provider request without changing history.
-
-    The session thread's positional replayer is the single pairing
-    implementation. A fresh replayer output supplies one interrupted result
-    for an unanswered call and drops orphan results. The caller's message list
-    is never mutated, so the repair remains request-local.
-
-    Args:
-        messages: Messages about to be sent to a provider.
-
-    Returns:
-        A repaired, independent message list.
-    """
-    replayer = _Replayer()
-    for message in messages:
-        role = message.get("role")
-        if role == "assistant" and message.get("tool_calls"):
-            replayer.assistant(_MessageItem("assistant", message))
-        elif role == "tool":
-            replayer.tool_result(_MessageItem("tool_result", message))
-        elif role == "assistant":
-            replayer.close_block()
-            replayer.messages.append(copy.deepcopy(message))
-        else:
-            replayer.other(copy.deepcopy(message))
-    replayer.close_block()
-    return replayer.messages
-
 
 class TurnStream:
     """Stream model text unchanged and throttle progress events."""

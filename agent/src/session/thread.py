@@ -33,6 +33,9 @@ try:
 except ImportError:  # pragma: no cover - Windows has no fcntl
     fcntl = None  # type: ignore[assignment]
 
+from src.providers.messages import MessagePairing, assistant_message
+from src.providers import messages as provider_messages
+
 logger = logging.getLogger(__name__)
 
 THREAD_FILENAME = "thread.jsonl"
@@ -49,16 +52,6 @@ TRAIL_PREVIEW_CHARS = 200
 
 # Content of the result replay supplies, in the request only, for a call the
 # thread has no result for. JSON like every other tool error envelope.
-INTERRUPTED_RESULT_CONTENT = json.dumps(
-    {
-        "status": "error",
-        "error": (
-            "interrupted: this tool call did not finish and no result was "
-            "recorded. It may have partly run."
-        ),
-    },
-    ensure_ascii=False,
-)
 
 # One note per stopped turn, after that turn's last item. Wrapped in
 # ``<system>`` like the loop's other user-role injections.
@@ -661,111 +654,6 @@ def open_turns(items: Iterable[ThreadItem]) -> List[str]:
 # ---- Replay ----
 
 
-def _assistant_message(
-    item: ThreadItem,
-    *,
-    target_provider: Optional[str] = None,
-    target_model: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Rebuild the assistant message the loop sent, in the loop's key order.
-
-    Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
-    response and the loop's plain ``{"role", "content"}`` for a final answer.
-    """
-    message: Dict[str, Any] = {"role": "assistant", "content": copy.deepcopy(item.get("llm_content") if item.get("llm_content") is not None else item.get("content"))}
-    tool_calls = item.get("tool_calls") or []
-    if tool_calls:
-        message["tool_calls"] = copy.deepcopy(tool_calls)
-        if any(call.get("extra_content") for call in tool_calls):
-            message["additional_kwargs"] = {"tool_calls": copy.deepcopy(tool_calls)}
-    source_provider = item.get("provider")
-    source_model = item.get("model")
-    same_runtime = (
-        target_provider is None and target_model is None
-    ) or (
-        isinstance(source_provider, str)
-        and isinstance(source_model, str)
-        and source_provider == target_provider
-        and source_model == target_model
-    )
-    if same_runtime and item.get("reasoning_content") is not None:
-        message["reasoning_content"] = item.get("reasoning_content")
-    if same_runtime and item.get("provider_items"):
-        message["provider_items"] = copy.deepcopy(item.get("provider_items"))
-    return message
-
-
-class _Replayer:
-    """Single pass over thread items that keeps every tool block well-formed.
-
-    A tool block is an assistant message with tool calls plus the results that
-    must follow it directly. While a block is open, results for its calls are
-    appended and anything else is held back; the block closes at the next
-    assistant message, turn boundary or end of input, where calls without a
-    result get :data:`INTERRUPTED_RESULT_CONTENT` and the held messages follow.
-    A result for a call outside the open block is dropped.
-
-    Pairing is positional, not by a session-wide id set: providers that derive
-    call ids from a per-response counter reuse them across turns.
-    """
-
-    def __init__(self) -> None:
-        self.messages: List[Dict[str, Any]] = []
-        self._pending: Dict[str, str] = {}
-        self._answered: set = set()
-        self._held: List[Dict[str, Any]] = []
-
-    def assistant(self, item: ThreadItem) -> None:
-        self.close_block()
-        message = _assistant_message(item)
-        self.assistant_message(message)
-
-    def assistant_message(self, message: Dict[str, Any]) -> None:
-        """Append an already reconstructed assistant message."""
-        self.close_block()
-        self.messages.append(message)
-        for call in message.get("tool_calls", []):
-            self._pending[call["id"]] = call["function"]["name"]
-
-    def tool_result(self, item: ThreadItem) -> None:
-        self.tool_result_message({
-            "role": "tool",
-            "tool_call_id": item.get("tool_call_id"),
-            "name": item.get("name"),
-            "content": item.get("content"),
-        })
-
-    def tool_result_message(self, message: Dict[str, Any]) -> None:
-        """Append an already reconstructed tool result."""
-        call_id = message.get("tool_call_id")
-        if call_id not in self._pending or call_id in self._answered:
-            logger.debug("Replay dropped a tool result without an open call: %s", call_id)
-            return
-        self._answered.add(call_id)
-        self.messages.append(copy.deepcopy(message))
-
-    def other(self, message: Dict[str, Any]) -> None:
-        if self._pending:
-            self._held.append(message)
-        else:
-            self.messages.append(message)
-
-    def close_block(self) -> None:
-        for call_id, name in self._pending.items():
-            if call_id not in self._answered:
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "name": name,
-                        "content": INTERRUPTED_RESULT_CONTENT,
-                    }
-                )
-        self._pending = {}
-        self._answered = set()
-        self.messages.extend(self._held)
-        self._held = []
-
 
 def _item_message(
     item: ThreadItem,
@@ -777,7 +665,7 @@ def _item_message(
     if item.type == "user":
         return {"role": "user", "content": copy.deepcopy(item.get("llm_content"))}
     if item.type == "assistant":
-        return _assistant_message(
+        return assistant_message(
             item, target_provider=target_provider, target_model=target_model
         )
     if item.type == "tool_result":
@@ -814,7 +702,7 @@ def replay(
        ``tool_result`` and ``inject`` are rebuilt verbatim; ``state``,
        ``turn_start`` and ``turn_end`` are not model input.
     3. Tool-call pairing is repaired in the returned list only (see
-       :class:`_Replayer`); the items are not modified.
+       :class:`MessagePairing`); the items are not modified.
     4. A turn that ended ``cancelled`` / ``interrupted`` / ``failed``, or has
        no ``turn_end`` when another turn starts, gets one note after its last
        item, unless the compaction summary already covers all of it.
@@ -830,7 +718,7 @@ def replay(
     """
     items = list(items)
     compaction = last_compaction(items)
-    replayer = _Replayer()
+    replayer = MessagePairing()
     start_after = compaction.get("replaces_through_seq") if compaction is not None else 0
 
     # Apply the recorded view changes in write order. Raw user, assistant and
@@ -902,7 +790,7 @@ def replay(
             replayer.other({"role": "user", "content": copy.deepcopy(item.get("llm_content"))})
         elif item.type == "assistant":
             replayer.assistant_message(
-                _assistant_message(
+                assistant_message(
                     item, target_provider=provider, target_model=model
                 )
             )
@@ -1044,7 +932,7 @@ def project_turn(
         for entry in trail:
             if entry["status"] == "running":
                 entry["status"] = "error"
-                entry["preview"] = INTERRUPTED_RESULT_CONTENT[:TRAIL_PREVIEW_CHARS]
+                entry["preview"] = provider_messages.INTERRUPTED_RESULT_CONTENT[:TRAIL_PREVIEW_CHARS]
 
     return TurnProjection(
         turn_id=turn_id,

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.agent.loop_streaming import repair_provider_messages
+from src.providers.messages import INTERRUPTED_RESULT_CONTENT
+from src.providers.messages import repair_provider_messages
 from src.agent.loop import AgentLoop
 from src.agent.memory import WorkspaceMemory
 from src.agent.tools import BaseTool, ToolRegistry
-from src.session.thread import INTERRUPTED_RESULT_CONTENT
 
 
 def test_request_repair_inserts_one_interrupted_result_and_drops_orphan() -> None:
