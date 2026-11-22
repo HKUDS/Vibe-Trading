@@ -33,7 +33,7 @@ from vibe_trading.events import (
     ToolStarted,
 )
 
-#: Run artifact holding provider-reported usage (``src.agent.llm_usage``).
+#: Run artifact holding provider-reported usage (``src.product.usage``).
 _USAGE_ARTIFACT = "llm_usage.json"
 
 Builder = Callable[[str, str, Mapping[str, Any]], Optional[Event]]

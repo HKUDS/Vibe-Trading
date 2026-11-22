@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.skills import Skill, SkillsLoader, _parse_frontmatter
+from src.product.resources.skills import Skill, SkillsLoader, _parse_frontmatter
 
 
 # ---------------------------------------------------------------------------

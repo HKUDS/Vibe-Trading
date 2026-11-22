@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.agent.skills import SkillsLoader, _parse_frontmatter
+from src.product.resources.skills import SkillsLoader, _parse_frontmatter
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1] / "src" / "skills" / "dividend-analysis"

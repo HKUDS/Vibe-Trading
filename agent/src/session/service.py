@@ -45,7 +45,7 @@ from src.session.store import SessionStore
 from src.session.thread import TurnProjection, project_turn
 
 if TYPE_CHECKING:
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
@@ -81,7 +81,7 @@ def _cancel_session_swarm_runs(session_id: str) -> int:
 class SessionBusyError(RuntimeError):
     """Raised when a session already has an in-flight run.
 
-    One AgentLoop per session: two loops writing the same session would
+    One AgentRuntime per session: two loops writing the same session would
     interleave their messages and attempts. A second concurrent send is
     therefore rejected unless its caller opted in to queueing
     (``send_message(queue_if_busy=True)``). Callers surface this as HTTP 409
@@ -121,7 +121,7 @@ class SessionService:
         # the registry is built, which is far too late to serve as the
         # concurrency gate, so in-flight sessions are tracked separately and
         # reserved synchronously in send_message.
-        self._active_loops: Dict[str, "AgentLoop"] = {}
+        self._active_loops: Dict[str, "AgentRuntime"] = {}
         # Task handles are kept from the moment the run is scheduled, so a run
         # still building its registry can be cancelled. _active_loops only
         # exists once construction finished, which is far too late to be the
@@ -176,7 +176,7 @@ class SessionService:
     def _recover_interrupted_attempts(self) -> None:
         """Finalize attempts that could not outlive the previous process.
 
-        A newly constructed service has no live AgentLoop instances. Any
+        A newly constructed service has no live AgentRuntime instances. Any
         attempt still marked pending or running therefore belongs to the
         previous process. This is only valid because the service is built once
         per process: two servers sharing one sessions directory would mark each
@@ -361,7 +361,7 @@ class SessionService:
     def _publish_background_completion(self, owner_id: str, payload: dict) -> None:
         """Route a background task's terminal state to its owning session.
 
-        The AgentLoop that started the task may already have exited by the time
+        The AgentRuntime that started the task may already have exited by the time
         the command finishes, so this cannot depend on a later iteration draining
         the queue. The payload keeps the attempt that started the task, which is
         the attempt the completion belongs to, not whichever one is current.
@@ -523,8 +523,8 @@ class SessionService:
             raise SessionBusyError(
                 "Cannot compact while a turn is running or queued input is waiting"
             )
-        from src.agent.loop import AgentLoop
-        from src.agent.memory import WorkspaceMemory
+        from src.agent.runtime import AgentRuntime
+        from src.product.resources.memory import WorkspaceMemory
         from src.agent.tools import ToolRegistry
         from src.session.model_selection import chat_llm_for_session
         from src.session.runtime import TurnRecorder
@@ -552,17 +552,17 @@ class SessionService:
         run_dir.mkdir(parents=True, exist_ok=True)
         trace = recorder
         messages = [{"role": "system", "content": ""}, *history]
-        agent = AgentLoop(
+        agent = AgentRuntime(
             registry=ToolRegistry(),
             llm=llm,
             memory=WorkspaceMemory(session_workspace=str(runtime.workspace_path)),
             thread_recorder=recorder,
         )
         agent.memory.run_dir = str(run_dir)
-        agent._turn_messages = messages
+        agent._conversation.turn_messages = messages
         try:
             await asyncio.to_thread(
-                agent._auto_compact,
+                agent._context_compactor.auto_compact,
                 messages,
                 run_dir,
                 trace,
@@ -958,7 +958,7 @@ class SessionService:
         return self.store.get_messages(session_id, limit)
 
     def cancel_current(self, session_id: str) -> bool:
-        """Cancel the currently running AgentLoop for a session.
+        """Cancel the currently running AgentRuntime for a session.
 
         Args:
             session_id: Session ID.
@@ -1103,7 +1103,7 @@ class SessionService:
         except asyncio.CancelledError:
             if session.session_id in self._user_cancel_requests:
                 # cancel_current() cancels this task when the run has not
-                # reached its AgentLoop yet. Keep that explicit user action
+                # reached its AgentRuntime yet. Keep that explicit user action
                 # distinct from event-loop cancellation during server shutdown.
                 attempt.mark_cancelled(reason="cancelled by user")
                 self._finish_thread_turn_quietly(session.session_id, attempt)
@@ -1162,7 +1162,7 @@ class SessionService:
         include_shell_tools: bool = False,
         session_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Execute an attempt with the V5 AgentLoop.
+        """Execute an attempt with the V5 AgentRuntime.
 
         The registry and LLM client are built per attempt: the registry binds
         this attempt's event callback, cancel flag and background handle, and
@@ -1185,8 +1185,8 @@ class SessionService:
         from src.tools import build_registry
         from src.tools.background_tools import BackgroundScope, get_background_manager
         from src.session.model_selection import chat_llm_for_session
-        from src.agent.loop import AgentLoop
-        from src.agent.memory import WorkspaceMemory
+        from src.agent.runtime import AgentRuntime
+        from src.product.resources.memory import WorkspaceMemory
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
@@ -1204,7 +1204,7 @@ class SessionService:
             agent_config = load_runtime_agent_config(overrides=safe_overrides)
 
             def event_callback(event_type: str, data: Dict[str, Any]) -> None:
-                """Forward AgentLoop events to the SSE event bus."""
+                """Forward AgentRuntime events to the SSE event bus."""
                 try:
                     checkpoint.handle_event(event_type, data)
                 except OSError as exc:
@@ -1222,7 +1222,7 @@ class SessionService:
                 """Forward MCP server-name collision warnings to the operator event channel."""
                 self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
 
-            # One flag per turn, shared by the AgentLoop and the swarm tool. The
+            # One flag per turn, shared by the AgentRuntime and the swarm tool. The
             # loop's own cancel() sets it, so a user stop reaches long-running tools
             # without a second cancellation channel that can drift out of sync.
             turn_cancel = threading.Event()
@@ -1278,7 +1278,7 @@ class SessionService:
                     session_id, attempt_id, pending, item
                 ),
             )
-            agent = AgentLoop(
+            agent = AgentRuntime(
                 registry=registry,
                 llm=llm,
                 event_callback=event_callback,

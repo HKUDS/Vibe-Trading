@@ -17,9 +17,9 @@ from typing import Any, Callable
 import pytest
 from pydantic import ValidationError
 
-from src.agent.instrument_identity import IdentityLedger, agent_authored_request
-from src.agent.loop import AgentLoop
-from src.agent.progress import _set_emitter
+from src.product.identity.ledger import IdentityLedger, agent_authored_request
+from src.agent.runtime import AgentRuntime
+from src.kernel.progress import _set_emitter
 from src.agent.tools import BaseTool, ToolRegistry
 from src.config.accessor import get_env_config, reset_env_config
 from src.kernel.contracts import LLMResponse, ToolCallRequest
@@ -123,7 +123,7 @@ def parent_registry(child_llm: ScriptedLLM, *tools: BaseTool, cancel_event=None,
 def run_parent(registry: ToolRegistry, script: list[Any], run_dir: Path, **kwargs: Any):
     llm = ScriptedLLM(script)
     events: list[tuple[str, dict]] = []
-    loop = AgentLoop(
+    loop = AgentRuntime(
         registry=registry,
         llm=llm,
         event_callback=lambda name, data: events.append((name, copy.deepcopy(data))),

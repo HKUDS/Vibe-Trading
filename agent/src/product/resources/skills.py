@@ -59,7 +59,7 @@ class Skill:
             return None
 
 
-from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
+from src.product.resources.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
 
 
 def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
@@ -112,7 +112,7 @@ class SkillsLoader:
             skills_dir: Bundled skills directory path; defaults to agent/skills/.
             user_skills_dir: User-created skills directory; defaults to ~/.vibe-trading/skills/user/.
         """
-        self.skills_dir = skills_dir or Path(__file__).resolve().parents[1] / "skills"
+        self.skills_dir = skills_dir or Path(__file__).resolve().parents[2] / "skills"
         self._user_skills_dir = user_skills_dir or USER_SKILLS_DIR
         self.skills: List[Skill] = []
         self._load()

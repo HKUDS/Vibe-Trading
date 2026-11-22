@@ -125,7 +125,7 @@ include = ["src*", "backtest*", "cli*", "evals*", "vibe_trading*"]
     "skills/**/*.json",
     "skills/**/*.py",
     "providers/*.json",
-    "agent/*.json",
+    "product/*.json",
     "tools/paper_trade/*.json",
     "data_gateway/*.json",
     "tools/paper_trade/*.md",

@@ -1,4 +1,4 @@
-"""AgentLoop content-filter skip-and-continue behavior.
+"""AgentRuntime content-filter skip-and-continue behavior.
 
 When the LLM returns a content-filtered response (content_filter_triggered=True),
 the agent loop should skip that iteration and continue instead of breaking.
@@ -85,12 +85,12 @@ def _run(
     llm: Any,
     max_iterations: int = 5,
 ) -> dict[str, Any]:
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     pm = PersistentMemory()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=max_iterations,
@@ -261,7 +261,7 @@ def test_auto_compact_summary_hard_deadline(
     import time
 
     import src.agent.tuning as tuning_module
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.agent.tools import ToolRegistry
     from tests.recording_helpers import recorder_at
 
@@ -278,7 +278,7 @@ def test_auto_compact_summary_hard_deadline(
             return LLMResponse(content="late summary")
 
     llm = _HangingSummaryLLM()
-    agent = AgentLoop(registry=ToolRegistry(), llm=llm)
+    agent = AgentRuntime(registry=ToolRegistry(), llm=llm)
     monkeypatch.setattr(tuning_module, "LLM_TIMEOUT_SECONDS", 0.3, raising=False)
 
     messages: list[dict[str, Any]] = [
@@ -292,7 +292,7 @@ def test_auto_compact_summary_hard_deadline(
     trace = recorder_at(trace_dir)
 
     start = time.monotonic()
-    agent._auto_compact(messages, trace_dir, trace, focus_topic="", iteration=1)
+    agent._context_compactor.auto_compact(messages, trace_dir, trace, focus_topic="", iteration=1)
     elapsed = time.monotonic() - start
 
     assert llm.chat_calls == 1, "summary thread must have started"

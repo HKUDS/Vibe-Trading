@@ -1,15 +1,7 @@
-"""LLM usage accounting extracted from ``src/agent/loop.py``.
+"""Account provider and child calls against one usage summary and goal budget.
 
-Extracted verbatim from ``src/agent/loop.py`` (issue #1624, roadmap item 3:
-split ``loop.py`` along its existing seams). This module owns the provider
-usage helpers: coercion of reported token counts, normalization of the
-provider payload shapes, the run-scoped accumulator, and the atomic write of
-``llm_usage.json`` beside a run. ``loop.py`` re-exports every moved name, so
-existing imports keep working.
-
-Auxiliary calls share the accumulator, with their purpose recorded separately.
-Reported reasoning tokens are retained as a subset of output tokens.
-"""
+Auxiliary calls retain their purpose. Reported reasoning tokens are a subset
+of output tokens. The run-scoped summary is written atomically to llm_usage.json."""
 
 from __future__ import annotations
 
@@ -18,6 +10,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from src.kernel import events as vocabulary
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +143,56 @@ def _write_llm_usage(run_dir: Path, summary: dict[str, Any]) -> None:
         tmp_path.replace(path)
     except OSError as exc:
         logger.debug("LLM usage artifact write skipped: %s", exc)
+
+
+class UsageLedger:
+    """Own one run's usage summary and its event/accounting callbacks."""
+
+    def __init__(self, llm, emit, activity, goals, memory):
+        self.summary = _new_llm_usage_summary(llm)
+        self.emit = emit
+        self.activity = activity
+        self.goals = goals
+        self.memory = memory
+
+    def record(
+        self,
+        run_dir: Path,
+        usage: Any,
+        iteration: int,
+        *,
+        purpose: str | None = None,
+        include_call_index: bool = True,
+    ) -> None:
+        """Persist usage and emit usage through the item/run vocabulary."""
+        delta = _record_llm_usage(run_dir, self.summary, usage, iteration, purpose=purpose)
+        self.goals.account(delta)
+        metadata: dict[str, Any] = {"iter": iteration}
+        if purpose is not None:
+            metadata["purpose"] = purpose
+        if delta:
+            event = {**delta, **metadata}
+            if include_call_index:
+                event["call_index"] = self.summary["totals"]["calls"]
+            self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE, **event})
+        elif purpose is None and not self.activity.cancel.is_set():
+            self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
+        elif purpose == "subagent":
+            self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
+            _record_unreported_llm_call(run_dir, self.summary)
+        else:
+            _record_unreported_llm_call(run_dir, self.summary)
+
+    def record_subagent(self, event_type: str, data: dict[str, Any]) -> bool:
+        """Account one child event in the parent's run."""
+        run_dir = self.memory.run_dir
+        if not run_dir:
+            return False
+        self.record(
+            Path(run_dir),
+            data if event_type == vocabulary.ITEM_DELTA and data.get("kind") == vocabulary.RUN_USAGE else None,
+            self.activity.iteration,
+            purpose="subagent",
+            include_call_index=False,
+        )
+        return self.goals.stop_reason is not None

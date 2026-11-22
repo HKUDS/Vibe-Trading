@@ -1,8 +1,8 @@
 """OpenBB Workspace bridge for Vibe-Trading.
 
-This package exposes Vibe-Trading's :class:`AgentLoop` as an OpenBB Workspace
+This package exposes Vibe-Trading's :class:`AgentRuntime` as an OpenBB Workspace
 custom agent. It is a non-invasive adapter layer: it does not modify any of
-Vibe-Trading's core components (AgentLoop, ToolRegistry, SessionService) and can
+Vibe-Trading's core components (AgentRuntime, ToolRegistry, SessionService) and can
 be enabled or removed independently of the rest of the API server.
 
 The ``openbb-ai`` SDK ships in the optional ``openbb`` extra::

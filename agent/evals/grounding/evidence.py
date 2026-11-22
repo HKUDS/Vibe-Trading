@@ -6,7 +6,7 @@ keyed on tool field names, never on natural language.
 
 from __future__ import annotations
 
-from src.agent.tool_results import ARCHIVE_MANIFEST
+from src.product.tool_results import ARCHIVE_MANIFEST
 
 import contextlib
 import csv
@@ -26,13 +26,13 @@ from evals.grounding.figures import (
     parse_figures_block,
     scan_figures,
 )
-from src.agent.instrument_identity import (
+from src.product.identity.normalize import (
     _CANONICAL_SYMBOL_RE,
     _infer_currency,
     _infer_venue,
     _normalize_symbol,
-    _utc_now,
 )
+from src.product.identity.ledger import _utc_now
 
 _PRICE_FIELDS = {"open", "high", "low", "close", "adj_close", "price"}
 

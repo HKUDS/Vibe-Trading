@@ -534,7 +534,7 @@ if ChatOpenAI is not None:
         def _convert_input(self, input: Any) -> Any:  # type: ignore[override]
             """Re-attach Gemini thought signatures dropped by dict->message conversion.
 
-            The AgentLoop replays history as OpenAI-format dicts, stamping the
+            The AgentRuntime replays history as OpenAI-format dicts, stamping the
             signature into ``tool_calls[i].extra_content.google.thought_signature``
             (loop.py ``_attach_tool_call_thought_signatures``). LangChain's
             ``_convert_dict_to_message`` discards ``extra_content`` entirely, so by
@@ -1751,7 +1751,7 @@ def provider_diagnostics() -> dict[str, Any]:
         adapter_mode = _deepseek_adapter_mode(options.vibe_trading_deepseek_adapter)
         if adapter_mode != "openai-compatible" and native_package_version not in {None, "not_installed"}:
             adapter_type = "native"
-    from src.providers.tool_policy import policy_status
+    from src.product.tool_policy import policy_status
 
     return {
         "provider": caps.name if provider in {"kimi", "openai_codex"} else provider,

@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.context import _SYSTEM_PROMPT, ContextBuilder
+from src.product.context import _SYSTEM_PROMPT, ContextBuilder
 from evals.grounding import GroundingLedger
-from src.agent.memory import WorkspaceMemory
-from src.agent.skills import (
+from src.product.resources.memory import WorkspaceMemory
+from src.product.resources.skills import (
     SkillsLoader,
     ancestor_titles,
     find_section,

@@ -250,7 +250,7 @@ def _run_agent(
     session_id: str = "",
     proposal_sink: common.Optional[common.Any] = None,
 ) -> dict:
-    """Build AgentLoop and execute, return result dict.
+    """Build AgentRuntime and execute, return result dict.
 
     A turn with a ``session_id`` is recorded like a web turn
     (:mod:`cli.conversation`): the history the model sees is replayed from the
@@ -271,7 +271,7 @@ def _run_agent(
         chat_llm_for_stored_session,
         unavailable_selection_result,
     )
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
     # Closure-level state for the no-rich path so dots and progress lines
     # don't shoulder-bump each other (M3) and progress prints are throttled
@@ -471,7 +471,7 @@ def _run_agent(
         )
 
     try:
-        agent = AgentLoop(
+        agent = AgentRuntime(
             registry=registry,
             llm=llm,
             event_callback=on_event,
@@ -507,7 +507,7 @@ def _run_agent(
 
 
 def _run_with_graceful_cancel(
-    agent: "common.AgentLoop",
+    agent: "common.AgentRuntime",
     prompt: str,
     history: common.Optional[common.List[common.Dict]],
     *,
@@ -524,13 +524,13 @@ def _run_with_graceful_cancel(
     ``finally``.
 
     Args:
-        agent: AgentLoop instance ready to ``run()``.
+        agent: AgentRuntime instance ready to ``run()``.
         prompt: User prompt.
         history: Recent message history.
         no_rich: Whether the parent caller is rendering with Rich Live.
 
     Returns:
-        AgentLoop result dict.
+        AgentRuntime result dict.
     """
     import signal as _signal
 

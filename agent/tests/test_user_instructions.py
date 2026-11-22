@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-import src.agent.context as ctx
-import src.agent.instructions as instructions
-from src.agent.context import ContextBuilder
-from src.agent.memory import WorkspaceMemory
+import src.product.context as ctx
+import src.product.resources.instructions as instructions
+from src.product.context import ContextBuilder
+from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.config.accessor import reset_env_config
 from src.swarm.models import SwarmAgentSpec

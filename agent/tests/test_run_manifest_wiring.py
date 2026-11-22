@@ -14,19 +14,11 @@ import tempfile
 
 import pytest
 
-from src.agent.loop import AgentLoop
+from src.product.artifacts import write_run_manifest
 
 
 class _Registry:
     tool_names = ["get_market_data", "backtest", "quantlib_call"]
-
-
-def _loop() -> AgentLoop:
-    """An AgentLoop shell built without running __init__ (we only need the helper)."""
-    loop = AgentLoop.__new__(AgentLoop)
-    loop.registry = _Registry()
-    loop._run_iteration = 0
-    return loop
 
 
 @pytest.fixture
@@ -41,7 +33,7 @@ _MESSAGES = [
 
 
 def test_a_run_writes_a_manifest_next_to_its_trace(trace_dir):
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)
 
     path = trace_dir / "run_manifest.json"
     assert path.exists()
@@ -51,7 +43,7 @@ def test_a_run_writes_a_manifest_next_to_its_trace(trace_dir):
 
 
 def test_the_manifest_records_the_tool_registry(trace_dir):
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)
     data = json.loads((trace_dir / "run_manifest.json").read_text())
 
     assert set(data["tools"]["tool_names"]) == set(_Registry.tool_names)
@@ -61,7 +53,7 @@ def test_the_manifest_records_the_tool_registry(trace_dir):
 def test_the_prompt_text_itself_is_never_stored(trace_dir):
     # The prompt can carry user memory and workspace content. This file is a
     # provenance record, not a second copy of the conversation.
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)
     raw = (trace_dir / "run_manifest.json").read_text()
 
     assert "You are a finance agent" not in raw
@@ -70,11 +62,11 @@ def test_the_prompt_text_itself_is_never_stored(trace_dir):
 
 
 def test_a_changed_system_prompt_changes_the_hash(trace_dir):
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)
     first = json.loads((trace_dir / "run_manifest.json").read_text())
 
     changed = [dict(_MESSAGES[0], content="You are a finance agent. <skill>EDITED</skill>"), _MESSAGES[1]]
-    _loop()._write_run_manifest(trace_dir, changed)
+    write_run_manifest(trace_dir, changed, _Registry(), 0)
     second = json.loads((trace_dir / "run_manifest.json").read_text())
 
     assert first["system_prompt_hash"] != second["system_prompt_hash"]
@@ -86,8 +78,8 @@ def test_an_identical_run_reproduces_the_same_manifest_hash(trace_dir):
     # methodology on a different day hashes identically.
     a = pathlib.Path(tempfile.mkdtemp()) / "a"
     b = pathlib.Path(tempfile.mkdtemp()) / "b"
-    _loop()._write_run_manifest(a, _MESSAGES)
-    _loop()._write_run_manifest(b, _MESSAGES)
+    write_run_manifest(a, _MESSAGES, _Registry(), 0)
+    write_run_manifest(b, _MESSAGES, _Registry(), 0)
 
     assert (
         json.loads((a / "run_manifest.json").read_text())["manifest_hash"]
@@ -96,12 +88,11 @@ def test_an_identical_run_reproduces_the_same_manifest_hash(trace_dir):
 
 
 def test_a_changed_tool_registry_changes_the_hash(trace_dir):
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)
     before = json.loads((trace_dir / "run_manifest.json").read_text())["manifest_hash"]
 
-    loop = _loop()
-    loop.registry = type("R", (), {"tool_names": ["get_market_data"]})()
-    loop._write_run_manifest(trace_dir, _MESSAGES)
+    smaller = type("R", (), {"tool_names": ["get_market_data"]})()
+    write_run_manifest(trace_dir, _MESSAGES, smaller, 0)
     after = json.loads((trace_dir / "run_manifest.json").read_text())["manifest_hash"]
 
     assert before != after
@@ -110,7 +101,7 @@ def test_a_changed_tool_registry_changes_the_hash(trace_dir):
 def test_the_skill_coverage_limit_is_stated_not_implied(trace_dir):
     # Mid-run load_skill content is NOT in the hashed prompt. Saying so beats
     # implying a coverage the record does not have.
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)
     data = json.loads((trace_dir / "run_manifest.json").read_text())
     assert "load_skill" in data["extra"]["skill_coverage"]
 
@@ -123,10 +114,10 @@ def test_a_manifest_failure_never_breaks_the_run(trace_dir, monkeypatch):
         raise RuntimeError("disk on fire")
 
     monkeypatch.setattr(manifest_mod, "build_run_manifest", boom)
-    _loop()._write_run_manifest(trace_dir, _MESSAGES)  # must not raise
+    write_run_manifest(trace_dir, _MESSAGES, _Registry(), 0)  # must not raise
     assert not (trace_dir / "run_manifest.json").exists()
 
 
 def test_a_run_with_no_system_message_still_writes_a_manifest(trace_dir):
-    _loop()._write_run_manifest(trace_dir, [{"role": "user", "content": "hi"}])
+    write_run_manifest(trace_dir, [{"role": "user", "content": "hi"}], _Registry(), 0)
     assert (trace_dir / "run_manifest.json").exists()

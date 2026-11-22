@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from evals.grounding.figures import FiguresBlock, _lines_with_offsets
-from src.agent.instrument_identity import _scan_symbols
+from src.product.identity.normalize import _scan_symbols
 from evals.grounding.registry import grounding_check
 
 

@@ -75,7 +75,7 @@ def test_run_with_agent_keeps_event_loop_responsive_during_registry_build(
     llm = SimpleNamespace(aclose=AsyncMock())
     monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
-    monkeypatch.setattr("src.agent.loop.AgentLoop", _agent_factory)
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _agent_factory)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
     monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
 

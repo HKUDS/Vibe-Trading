@@ -1,9 +1,4 @@
-"""Context budgeting and compaction state for the agent turn loop.
-
-The component keeps model-window measurements, learned provider limits,
-compaction progress, and the prior summary together. The owner supplies
-identity, thread, usage, and event callbacks used by the existing logic.
-"""
+"""Context budgets, overflow recovery and five-layer compaction for a turn."""
 
 from __future__ import annotations
 
@@ -23,9 +18,10 @@ from src.agent.context_budget import (
 )
 from src.agent.context_compact import (
     _context_collapse, _fix_tool_pairs, _microcompact, _summary_chunks,
-    _tail_cut_index, _verification_ledger, _FOCUS_SECTION,
+    _tail_cut_index, _FOCUS_SECTION,
     _ITERATIVE_UPDATE_PROMPT, _STRUCTURED_SUMMARY_PROMPT,
 )
+from src.product.verification import _verification_ledger
 from src.agent.tuning import _llm_timeout_seconds
 
 logger = logging.getLogger(__name__)
@@ -34,8 +30,17 @@ logger = logging.getLogger(__name__)
 class ContextCompactor:
     """Own context measurement and all five compaction layers."""
 
-    def __init__(self, owner: Any) -> None:
-        self.owner = owner
+    def __init__(self, *, llm, provider, conversation, replay, memory, activity, goals, usage, hook, emit) -> None:
+        self.llm = llm
+        self.provider = provider
+        self.conversation = conversation
+        self.replay = replay
+        self.memory = memory
+        self.activity = activity
+        self.goals = goals
+        self.usage = usage
+        self.hook = hook
+        self.emit = emit
         self.previous_summary = ""
         self.context_meter = ContextMeter()
         self.learned_context_window: int | None = None
@@ -55,8 +60,8 @@ class ContextCompactor:
     def _context_budget(self, messages: list) -> CompactionBudget:
         """Compaction thresholds for the active model's real context window."""
         cfg = get_env_config()
-        provider = (self.owner._llm_runtime.provider or "").strip().lower().replace("_", "-")
-        model = getattr(self.owner.llm, "model_name", "") or cfg.llm.langchain_model_name
+        provider = (self.provider or "").strip().lower().replace("_", "-")
+        model = getattr(self.llm, "model_name", "") or cfg.llm.langchain_model_name
         window, source = resolve_window(
             provider,
             str(model or ""),
@@ -97,7 +102,7 @@ class ContextCompactor:
         budget = self._context_budget(messages)
         tokens = self._prompt_tokens(messages)
         if tokens > budget.micro_at or force:
-            decision = self.owner._run_hook(
+            decision = self.hook(
                 "PreCompact",
                 {"session_id": getattr(self, "_session_id", ""), "iteration": current_iter, "prompt_tokens": tokens},
             )
@@ -114,12 +119,12 @@ class ContextCompactor:
                 iteration,
                 target_tokens=budget.micro_at,
                 measure=self._prompt_tokens,
-                preserve_tool_call_ids=self.owner._readonly_replay_visibility_pending,
+                preserve_tool_call_ids=self.replay._readonly_replay_visibility_pending,
             )
             tokens = self._prompt_tokens(messages)
         if tokens > budget.collapse_at:
             before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
-            _context_collapse(messages, preserve_tool_call_ids=self.owner._readonly_replay_visibility_pending)
+            _context_collapse(messages, preserve_tool_call_ids=self.replay._readonly_replay_visibility_pending)
             self._record_compaction_layer(messages, 2, before)
             tokens = self._prompt_tokens(messages)
         # A summary keeps the static prompt plus a ~20K-token tail, so on a
@@ -172,7 +177,7 @@ class ContextCompactor:
             "stated_limit": stated,
             "learned_window": self.learned_context_window,
         })
-        self.owner._compact_to_budget(messages, run_dir, trace, iteration, current_iter, force=True)
+        self._compact_to_budget(messages, run_dir, trace, iteration, current_iter, force=True)
 
     def _microcompact_and_unblock(
         self,
@@ -204,7 +209,7 @@ class ContextCompactor:
         Returns:
             The tool names re-opened, for callers and tests to assert on.
         """
-        readable_before = self.owner._readable_success_keys(messages)
+        readable_before = self.replay._readable_success_keys(messages)
         before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
         _microcompact(
             messages,
@@ -213,7 +218,7 @@ class ContextCompactor:
             preserve_tool_call_ids=preserve_tool_call_ids,
         )
         self._record_compaction_layer(messages, 1, before)
-        unreadable_tools = self.owner._unblock_lost_readonly_results(messages, readable_before)
+        unreadable_tools = self.replay._unblock_lost_readonly_results(messages, readable_before)
         if unreadable_tools:
             trace.write({
                 "type": "microcompact_cleared",
@@ -226,14 +231,14 @@ class ContextCompactor:
         self, messages: list, layer: int, before: list[dict[str, Any]]
     ) -> None:
         """Persist the exact post-layer message view for thread replay."""
-        if self.owner._thread is None:
+        if self.conversation.thread is None:
             return
         changed = []
         for previous, current in zip(before, messages):
             # The list order is stable for both in-place compaction layers.
             if previous != current:
                 changed.append(current)
-        self.owner._thread.compaction_layer(layer, changed)
+        self.conversation.thread.compaction_layer(layer, changed)
 
     def _summarize_chunks(
         self, head: list[dict[str, Any]], focus_section: str, run_dir: Path, iteration: int
@@ -252,7 +257,7 @@ class ContextCompactor:
         degraded_compact = False
         _compact_timeout = self.timeout_provider()
         for conv_text in chunks:
-            if self.owner._cancel_event.is_set() or self.owner._budget_stop_reason is not None:
+            if self.activity.cancel.is_set() or self.goals.stop_reason is not None:
                 return
             # Structured template while there is still nothing to update — that
             # covers a fresh session's first chunk and the corner case where
@@ -278,7 +283,7 @@ class ContextCompactor:
 
             def _run_compact_summary() -> None:
                 try:
-                    resp = self.owner.llm.chat(
+                    resp = self.llm.chat(
                         [{"role": "user", "content": prompt}],
                         timeout=_compact_timeout if _compact_timeout > 0 else None,
                     )
@@ -304,7 +309,7 @@ class ContextCompactor:
                         _compact_timeout,
                     )
                     degraded_compact = True
-                    self.owner._account_llm_usage(run_dir, None, iteration, purpose="compaction")
+                    self.usage.record(run_dir, None, iteration, purpose="compaction")
                     break
                 if _compact_error:
                     logger.warning(
@@ -312,20 +317,20 @@ class ContextCompactor:
                         _compact_error[0],
                     )
                     degraded_compact = True
-                    self.owner._account_llm_usage(run_dir, None, iteration, purpose="compaction")
+                    self.usage.record(run_dir, None, iteration, purpose="compaction")
                     break
                 summary_resp = _compact_result[0]
             else:
                 try:
-                    summary_resp = self.owner.llm.chat([{"role": "user", "content": prompt}])
+                    summary_resp = self.llm.chat([{"role": "user", "content": prompt}])
                 except Exception:
-                    self.owner._account_llm_usage(run_dir, None, iteration, purpose="compaction")
+                    self.usage.record(run_dir, None, iteration, purpose="compaction")
                     raise
-            self.owner._account_llm_usage(
+            self.usage.record(
                 run_dir, getattr(summary_resp, "usage_metadata", None), iteration,
                 purpose="compaction",
             )
-            if self.owner._cancel_event.is_set() or self.owner._budget_stop_reason is not None:
+            if self.activity.cancel.is_set() or self.goals.stop_reason is not None:
                 return
             if summary_resp.content:
                 summary = summary_resp.content
@@ -363,9 +368,9 @@ class ContextCompactor:
             iteration: Current trace iteration.
         """
         self.timeout_provider = _llm_timeout_seconds
-        if self.owner._cancel_event.is_set() or self.owner._budget_stop_reason is not None:
+        if self.activity.cancel.is_set() or self.goals.stop_reason is not None:
             return
-        readable_before = self.owner._readable_success_keys(messages)
+        readable_before = self.replay._readable_success_keys(messages)
         system_msg = messages[0]
         body = messages[1:]
 
@@ -388,7 +393,7 @@ class ContextCompactor:
 
         # Replayed results are owed one successful writing request. Keep the
         # entire assistant-call/result pair out of summaries until then.
-        pending = self.owner._readonly_replay_visibility_pending
+        pending = self.replay._readonly_replay_visibility_pending
         leased = [msg for msg in head if (
             msg.get("role") == "tool" and msg.get("tool_call_id") in pending
         ) or any(call.get("id") in pending for call in msg.get("tool_calls") or [])]
@@ -427,10 +432,10 @@ class ContextCompactor:
                 "summary": summary,
             },
         )
-        self.owner._emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.CONTEXT_COMPACTED, "tokens_before": tokens_before, "summary": summary[:200]})
+        self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.CONTEXT_COMPACTED, "tokens_before": tokens_before, "summary": summary[:200]})
 
         # Reconstruct: system + summary + acknowledge + preserved tail
-        state_summary = self.owner.memory.to_summary()
+        state_summary = self.memory.to_summary()
         compressed = f"[Conversation compressed — handoff summary]\n\n{summary}"
         if verification_ledger:
             compressed += (
@@ -449,8 +454,8 @@ class ContextCompactor:
 
         # Fix orphaned tool pairs in the reconstructed message list
         _fix_tool_pairs(messages)
-        self.owner._unblock_lost_readonly_results(messages, readable_before)
+        self.replay._unblock_lost_readonly_results(messages, readable_before)
         # The next turn replays from this summary instead of from the items it
         # folded; those items stay in the thread file.
-        if self.owner._records_into(messages):
-            self.owner._thread.compaction(summary_message, tail)
+        if self.conversation.records_into(messages):
+            self.conversation.thread.compaction(summary_message, tail)

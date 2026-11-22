@@ -1,16 +1,5 @@
-"""Tool-result classification, target-path detection, and backtest archiving.
-
-Extracted verbatim from ``src/agent/loop.py`` (issue #1624, roadmap item 3:
-split ``loop.py`` along its existing seams). This module owns the module-level
-helpers that judge a finished tool call: success/failure classification of a
-JSON result envelope, detection of provider tool-call DSL left in final text,
-the user-message target-file scan, ``run_dir`` normalization, and the
-replace-not-merge archive of a successful detached backtest into the active
-run. Callers import these helpers from this owning module.
-
-Behavior is unchanged: every function body, docstring, and comment moved
-byte-for-byte; only the leading indentation of the module changed.
-"""
+"""Classify tool outcomes and textual call syntax, identify requested write targets,
+normalize run paths, and archive completed backtests."""
 
 from __future__ import annotations
 

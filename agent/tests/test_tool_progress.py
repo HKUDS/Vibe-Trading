@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.agent.tool_progress import (
+from src.product.tool_progress import (
     FAILURE_BLOCK_THRESHOLD,
     NO_PROGRESS_LIMIT,
     ToolProgress,
@@ -125,7 +125,7 @@ def test_no_progress_limit_remains_bounded() -> None:
 def test_stop_message_names_what_kept_happening() -> None:
     """The fixed text described one scenario (an answer lost to compaction)
     for every stop; the stop now says which tool did what, how often."""
-    from src.agent.tool_progress import NO_PROGRESS_LIMIT, RECOVERY_MESSAGE, ToolProgress
+    from src.product.tool_progress import NO_PROGRESS_LIMIT, RECOVERY_MESSAGE, ToolProgress
 
     progress = ToolProgress()
     key = ("get_financial_statements", '{"code": "002555.SZ"}')
@@ -146,7 +146,7 @@ def test_stop_message_names_what_kept_happening() -> None:
 
 
 def test_progress_forgets_the_notes_of_an_earlier_stall() -> None:
-    from src.agent.tool_progress import ToolProgress
+    from src.product.tool_progress import ToolProgress
 
     progress = ToolProgress()
     progress.record("a", ("a", "{}"), '{"status": "error", "error_code": "timeout"}', success=False)

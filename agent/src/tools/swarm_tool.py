@@ -519,7 +519,7 @@ class SwarmTool(BaseTool):
             event_callback: Optional session event bridge used by the web chat.
             session_id: Session that owns this call. Used to index the run so a
                 later user stop from the same session can still reach it.
-            cancel_event: Cancellation flag shared with the hosting AgentLoop.
+            cancel_event: Cancellation flag shared with the hosting AgentRuntime.
                 Polled while waiting on the run so a user stop ends the wait
                 instead of leaving the tool blocked for the whole budget.
         """

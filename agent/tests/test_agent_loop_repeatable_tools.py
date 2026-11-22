@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import ToolRegistry
 from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 from src.tools.fund_flow_tool import FundFlowTool
@@ -80,7 +80,7 @@ def test_repeatable_query_executes_again_with_different_arguments(
     monkeypatch.setattr(tool, "execute", _execute)
     registry = ToolRegistry()
     registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=2)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=2)
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -134,7 +134,7 @@ def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path:
     monkeypatch.setattr(tool, "execute", _execute)
     registry = ToolRegistry()
     registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=5)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=5)
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -159,7 +159,7 @@ def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path:
             "name": "padding_tool",
             "content": "y" * 200,
         })
-    reopened = agent._microcompact_and_unblock(messages, trace, 3)
+    reopened = agent._context_compactor._microcompact_and_unblock(messages, trace, 3)
     assert tool.name in reopened, f"{tool.name} should have been re-opened, got {reopened}"
 
     _call("call_3", 4)

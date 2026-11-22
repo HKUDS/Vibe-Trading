@@ -2,7 +2,7 @@
 
 The bug had three layers, and this file pins the two backend ones:
 
-1. ``SessionService.cancel_current`` only cancelled the ``AgentLoop``; the swarm
+1. ``SessionService.cancel_current`` only cancelled the ``AgentRuntime``; the swarm
    the loop had started kept running.
 2. ``SwarmTool.execute`` polled in a ``time.sleep`` loop, so even a cancelled
    session left the tool (and its worker threads) burning tokens until the wait
@@ -269,11 +269,11 @@ def test_cancel_current_reports_false_when_nothing_is_running(monkeypatch):
 
 
 def test_agent_loop_accepts_a_shared_cancel_event():
-    """AgentLoop must reuse the caller's flag, otherwise cancel() cannot reach
+    """AgentRuntime must reuse the caller's flag, otherwise cancel() cannot reach
     the tools that were built before the loop existed."""
     import inspect
 
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
-    signature = inspect.signature(AgentLoop.__init__)
+    signature = inspect.signature(AgentRuntime.__init__)
     assert "cancel_event" in signature.parameters

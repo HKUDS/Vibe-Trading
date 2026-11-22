@@ -4,7 +4,7 @@ import copy
 import json
 from types import SimpleNamespace
 
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
@@ -35,11 +35,11 @@ def test_main_model_context_and_deterministic_replay_are_scrubbed(tmp_path):
     tool = _CredentialResult(secret)
     registry = ToolRegistry()
     registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=3)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
     agent.memory.run_dir = str(tmp_path)
     messages, records = _drive(agent, tool.name, tmp_path, [{}, {}])
     assert tool.calls == 1
-    assert secret not in json.dumps([messages, records, list(agent._called_identical.values())])
+    assert secret not in json.dumps([messages, records, list(agent.replay._called_identical.values())])
     for message in messages:
         payload = json.loads(message['content'])
         assert payload['data'] == {'close': 112.4, 'currency': 'USD'}

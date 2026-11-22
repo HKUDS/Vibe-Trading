@@ -76,7 +76,7 @@ def test_replay_rebuilds_each_item_verbatim_and_skips_bookkeeping(tmp_path: Path
 
 
 def test_assistant_key_order_matches_the_loop_formatter(tmp_path: Path) -> None:
-    from src.agent.context import ContextBuilder
+    from src.product.context import ContextBuilder
     from types import SimpleNamespace
 
     tc = SimpleNamespace(id="c1", name="get_market_data", arguments={"codes": ["AAPL.US"]},

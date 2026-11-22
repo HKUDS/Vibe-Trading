@@ -8,7 +8,7 @@ import pytest
 
 from tests.test_readonly_replay_after_microcompact import _Context, _Registry, _Trace, _loop
 from evals.grounding import GroundingLedger
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.tools.technical_indicator_tool import TechnicalIndicatorTool
 
 
@@ -22,13 +22,13 @@ def test_technical_indicators_opt_into_readonly_compaction_replay() -> None:
     market-data fetch.
     """
     tool = TechnicalIndicatorTool()
-    loop = object.__new__(AgentLoop)
+    loop = _loop()
 
     assert tool.is_readonly is True
     assert tool.repeatable is True
     assert tool.replay_after_compaction is True
     assert (
-        loop._readonly_replay_allowed(
+        loop.replay._readonly_replay_allowed(
             tool,
             {"symbol": "AAPL", "interval": "1d", "lookback": 200},
         )
@@ -58,15 +58,15 @@ def test_indicator_replay_preserves_dated_evidence_and_refreshes(monkeypatch, tm
 
     def run(arguments, number):
         call = SimpleNamespace(name="technical_indicators", arguments=arguments, id=f"call-{number}")
-        loop._process_tool_calls([call], _Context(), messages, trace, number)
+        loop.tools.process([call], _Context(), messages, trace, number)
         return json.loads(messages[-1]["content"])
 
     original = run(args, 1)
     assert original["ok"] is True
     assert len(calls) == 1
-    key = loop._identical_call_key("technical_indicators", args)
+    key = loop.replay._identical_call_key("technical_indicators", args)
     messages.clear()  # Compaction discarded the tool result.
-    assert loop._unblock_lost_readonly_results(messages, {key}) == ["technical_indicators"]
+    assert loop.replay._unblock_lost_readonly_results(messages, {key}) == ["technical_indicators"]
     restored = run(args, 2)
     assert len(calls) == 1
     assert restored["_vibe_replay"]["restored"] is True

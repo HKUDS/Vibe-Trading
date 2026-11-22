@@ -2,8 +2,8 @@
 
 import pytest
 
-import src.agent.loop as loop
-import src.agent.tool_results as tool_results
+import src.agent.runtime as loop
+import src.product.tool_results as tool_results
 
 MOVED_CONSTANTS = [
     "_FORCED_TEXT_TOOL_CALL_RE",

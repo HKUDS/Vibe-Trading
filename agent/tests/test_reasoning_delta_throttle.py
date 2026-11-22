@@ -53,7 +53,7 @@ class _ReasoningBurstLLM:
 
 
 def _build_agent(llm: Any, events: list, tmp_run_dir: Path):
-    """Build an AgentLoop with a real (but shell-free) registry and a stub LLM.
+    """Build an AgentRuntime with a real (but shell-free) registry and a stub LLM.
 
     Args:
         llm: Stub LLM object exposing stream_chat/chat.
@@ -61,14 +61,14 @@ def _build_agent(llm: Any, events: list, tmp_run_dir: Path):
         tmp_run_dir: Run directory for the agent's workspace memory.
 
     Returns:
-        Configured AgentLoop instance.
+        Configured AgentRuntime instance.
     """
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     pm = PersistentMemory()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=lambda event_type, data: events.append((data.get("kind", event_type), data)),

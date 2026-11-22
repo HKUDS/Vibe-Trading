@@ -1,32 +1,4 @@
-"""Final outcome of an agent run: status resolution, end event, result dict.
-
-Extracted from the tail of ``AgentLoop._run_bound`` (issue #1624, roadmap
-item 3: split ``loop.py`` along its existing seams). This module owns the
-decision ladder that maps how a run ended — stall, cancellation, token budget,
-no-progress, content-filter circuit breaker, success, empty model
-response, max iterations — onto ``(status, reason)`` plus the ``end``
-trace event and the caller-facing result dict.
-
-Everything here is pure: no state-store writes, no trace writes. The
-side-effectful calls (``state_store.mark_*``, ``trace.write/close``) stay
-in ``loop.py`` right after ``resolve_final_status`` returns, in the same
-order they executed before the extraction.
-
-The extraction preserved the existing branch conditions and messages. Token
-budget exhaustion now precedes success so partial artifacts cannot hide it.
-
-One deliberate semantic delta, flagged in review: pre-extraction the
-``degraded`` flag on the end event and result dict keyed off
-``self._released_fallback`` read *after* the status ladder, so a run that
-released the fallback and then died to a cancel or stall in the narrow
-window before the ladder still stamped ``degraded=True`` on a
-non-success terminal. Post-extraction ``degraded`` only comes from the
-success branches. Both release sites set ``final_content`` first, so
-``has_output`` wins the ladder in every normal flow; the delta needs a
-cancel or watchdog stall in exactly that gap, and nothing outside
-``loop.py`` consumes the flag on failed runs. Documented here rather
-than re-plumbed, per review.
-"""
+"""Resolve terminal run status and project the persisted and public outcomes."""
 
 from __future__ import annotations
 
@@ -235,3 +207,62 @@ def build_result_dict(
     if cf_warnings:
         result["content_filter_warnings"] = cf_warnings
     return result
+
+
+def finish_outcome(setup, *, activity, runtime, max_iterations, budget_reason, waiting_user, pending_write):
+    """Commit the terminal status and event before the recorder flushes the turn."""
+    state = setup.state
+    assert state is not None
+    run_dir = setup.run_dir
+    trace = setup.trace
+    state_store = setup.state_store
+    assert run_dir is not None and trace is not None and state_store is not None
+    # Determine final status. The reason is also propagated into the
+    # returned dict so SessionService can surface a meaningful UI
+    # message instead of "Execution failed: unknown" (issue #114).
+    outcome = resolve_final_status(
+        OutcomeInputs(
+            stall_reason=activity.stall_reason,
+            cancelled=activity.cancel.is_set(),
+            no_progress_reason=state.no_progress_reason,
+            content_filter_circuit_breaker=state.content_filter_circuit_breaker,
+            has_output=(run_dir / "artifacts" / "metrics.csv").exists() or bool(state.final_content),
+            released_fallback=state.released_fallback,
+            released_fallback_reason=state.released_fallback_reason,
+            pending_write_directive=lambda: pending_write(
+                state.user_message, state.run_started_wall
+            ),
+            empty_model_response_iter=state.empty_model_response_iter,
+            empty_response_provider=runtime.provider,
+            empty_response_model=runtime.configured_model or "(unset)",
+            max_iterations=max_iterations,
+            budget_reason=budget_reason,
+            answer_released=bool(state.final_content),
+            truncation_reason=state.truncation_reason,
+            waiting_user=waiting_user,
+        )
+    )
+    final_reason = outcome.reason
+    if outcome.mark == "cancelled":
+        state_store.mark_cancelled(run_dir, final_reason or "cancelled by user")
+    elif outcome.mark == "failure":
+        state_store.mark_failure(run_dir, final_reason or "")
+    elif outcome.mark == "success":
+        state_store.mark_success(run_dir)
+    if outcome.mark == "success" and outcome.degraded and final_reason and not state.released_fallback:
+        # A success that ended without writing the target file(s): the
+        # pre-extraction code flagged it degraded only for this case.
+        state.released_fallback = True
+
+    trace.write(build_end_event(outcome, activity.iteration, state.iteration))
+
+    return build_result_dict(
+        outcome,
+        run_dir,
+        state.iteration,
+        max_iterations,
+        state.final_content,
+        runtime,
+        state.last_response_model,
+        state.content_filter_count,
+    )

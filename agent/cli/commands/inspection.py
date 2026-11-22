@@ -216,7 +216,7 @@ def cmd_pine(run_id: str) -> None:
 
 def cmd_skills() -> None:
     """List available skills."""
-    from src.agent.skills import SkillsLoader
+    from src.product.resources.skills import SkillsLoader
     loader = SkillsLoader()
 
     table = common.Table(title="Skills", show_lines=False)

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.data_gateway.bar_summary import summarize_bars
-from src.agent.result_artifacts import persist_calculation_result
+from src.product.result_artifacts import persist_calculation_result
 from src.config.limits import TOOL_RESULT_LIMIT
 
 

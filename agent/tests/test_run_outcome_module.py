@@ -1,8 +1,8 @@
 """Pin the extraction contract of the run-outcome module (issue #1624).
 
-``AgentLoop._run_bound`` used to resolve its terminal status, end event,
+``AgentRuntime._run_bound`` used to resolve its terminal status, end event,
 and result dict inline in a 100-line tail; that ladder now lives in
-``src.agent.run_outcome`` and is called from ``loop.py``. These tests pin
+``src.product.outcome`` and is called from ``loop.py``. These tests pin
 each branch of the ladder directly and the owning module's surface.
 """
 
@@ -14,8 +14,8 @@ from typing import Optional
 
 import pytest
 
-import src.agent.run_outcome as run_outcome
-from src.agent.run_outcome import (
+import src.product.outcome as run_outcome
+from src.product.outcome import (
     OutcomeInputs,
     RunOutcome,
     build_end_event,
@@ -35,7 +35,7 @@ OWNED_SYMBOLS = [
 @pytest.mark.parametrize("name", OWNED_SYMBOLS)
 def test_outcome_symbols_belong_to_the_owner(name: str) -> None:
     """The extracted implementation is defined by its owning module."""
-    assert getattr(run_outcome, name).__module__ == "src.agent.run_outcome"
+    assert getattr(run_outcome, name).__module__ == "src.product.outcome"
 
 
 def _inputs(**over: object) -> OutcomeInputs:

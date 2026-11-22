@@ -860,7 +860,7 @@ class TurnProjection:
 
 
 def _trail_arguments(raw: Any, run_dir: Optional[str]) -> Dict[str, Any]:
-    from src.agent.tool_results import _normalize_tool_run_dir
+    from src.product.tool_results import _normalize_tool_run_dir
     from src.tools.redaction import redact_payload
 
     try:

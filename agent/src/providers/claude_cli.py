@@ -29,7 +29,7 @@ from typing import Any, Iterable, Optional
 from langchain_core.messages import AIMessage, AIMessageChunk
 
 from src.config.accessor import get_env_config
-from src.providers.tool_policy import (
+from src.product.tool_policy import (
     bash_policy,
     offered_tools,
     screen_calls,

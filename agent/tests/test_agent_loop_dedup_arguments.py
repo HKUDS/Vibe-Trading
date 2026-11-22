@@ -28,8 +28,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 
@@ -52,7 +52,7 @@ class _PagedTool(BaseTool):
 
 
 def _drive(
-    agent: AgentLoop,
+    agent: AgentRuntime,
     tool_name: str,
     run_dir: Path,
     arg_sets: list[dict],
@@ -68,12 +68,12 @@ def _drive(
 
 @pytest.fixture()
 def agent_factory(tmp_path: Path):
-    """Return a builder for an AgentLoop wired to a run dir and one tool."""
+    """Return a builder for an AgentRuntime wired to a run dir and one tool."""
 
-    def _build(tool: BaseTool) -> tuple[AgentLoop, Path]:
+    def _build(tool: BaseTool) -> tuple[AgentRuntime, Path]:
         registry = ToolRegistry()
         registry.register(tool)
-        agent = AgentLoop(
+        agent = AgentRuntime(
             registry=registry,
             llm=SimpleNamespace(),
             max_iterations=4,

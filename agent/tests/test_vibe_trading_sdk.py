@@ -1,6 +1,6 @@
 """The embeddable ``vibe_trading`` facade over SessionService.
 
-Runs go through the real SessionService and the real AgentLoop; only the
+Runs go through the real SessionService and the real AgentRuntime; only the
 provider (a scripted LLM), the tool registry (one offline tool) and the search
 index are replaced, the way the session-service tests already do it.
 """
@@ -124,7 +124,7 @@ class _DummyIndex:
 @pytest.fixture
 def kernel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """Point the kernel at a temp root and script its provider and tools."""
-    from src.agent import loop as agent_loop
+    from src.agent import runtime as agent_loop
 
     root = tmp_path / "vt-home"
     monkeypatch.setattr(agent_loop, "RUNS_DIR", root / "runs")
@@ -471,7 +471,7 @@ def test_public_surface_is_exactly_the_documented_names() -> None:
     assert len(vibe_trading.__all__) == len(DOCUMENTED_NAMES)
     for name in vibe_trading.__all__:
         assert getattr(vibe_trading, name) is not None
-    for internal in ("AgentLoop", "SessionService", "ToolRegistry", "build_registry"):
+    for internal in ("AgentRuntime", "SessionService", "ToolRegistry", "build_registry"):
         assert not hasattr(vibe_trading, internal)
 
 

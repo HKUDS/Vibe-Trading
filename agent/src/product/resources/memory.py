@@ -1,6 +1,6 @@
 """Workspace memory: shared state across tool calls within a single run.
 
-Lightweight runtime state — survives within one AgentLoop.run() invocation only.
+Lightweight runtime state — survives within one AgentRuntime.run() invocation only.
 Cross-session persistence is handled by src.memory.persistent.PersistentMemory.
 """
 

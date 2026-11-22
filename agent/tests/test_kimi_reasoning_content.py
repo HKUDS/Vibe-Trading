@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from src.agent.context import ContextBuilder
+from src.product.context import ContextBuilder
 from src.agent.context_compact import _attach_tool_call_thought_signatures
 from src.kernel.contracts import ToolCallRequest
 from src.providers.chat import ChatLLM, _dedupe_finish_reason
@@ -593,13 +593,13 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         return instance._get_request_payload(converted)
 
     def test_reattaches_thought_signature_from_raw_dict_input(self) -> None:
-        """Regression: the AgentLoop replays history as OpenAI-format dicts (not
+        """Regression: the AgentRuntime replays history as OpenAI-format dicts (not
         AIMessage objects). LangChain's ``_convert_dict_to_message`` discards the
         ``extra_content`` Gemini signature, so the #176 in-memory machinery alone
         leaves the outbound payload unsigned and Gemini 400s on the next turn.
         ``_convert_input`` must lift the signature back onto the converted message.
         """
-        from src.agent.context import ContextBuilder
+        from src.product.context import ContextBuilder
         from src.agent.context_compact import _attach_tool_call_thought_signatures
         from src.kernel.contracts import ToolCallRequest
 
@@ -627,7 +627,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         the dict path — Gemini accepts the single signature for the whole block,
         so we must neither drop the first nor fabricate the others.
         """
-        from src.agent.context import ContextBuilder
+        from src.product.context import ContextBuilder
         from src.agent.context_compact import _attach_tool_call_thought_signatures
         from src.kernel.contracts import ToolCallRequest
 

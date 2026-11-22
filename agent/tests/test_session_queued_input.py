@@ -1,6 +1,6 @@
 """Messages sent while a turn runs wait and join the conversation in order.
 
-These drive the real ``SessionService`` -> ``AgentLoop`` -> ``thread.jsonl``
+These drive the real ``SessionService`` -> ``AgentRuntime`` -> ``thread.jsonl``
 path with a scripted offline model, as ``test_session_conversation_kernel``
 does. A message is sent mid-turn from inside a tool (or the model call) by
 scheduling ``send_message`` on the service's event loop, which is exactly what

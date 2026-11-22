@@ -4,11 +4,11 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from src.agent.context import ContextBuilder, _SYSTEM_PROMPT
+from src.product.context import ContextBuilder, _SYSTEM_PROMPT
 from src.agent.context_budget import ContextMeter
-from src.agent.loop import AgentLoop
-from src.agent.memory import WorkspaceMemory
-from src.agent.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
+from src.agent.runtime import AgentRuntime
+from src.product.resources.memory import WorkspaceMemory
+from src.product.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 
@@ -128,7 +128,7 @@ def test_real_loop_loads_then_calls_the_original_tool(tmp_path, monkeypatch):
         LLMResponse(content="The observation is verified."),
     ]
     llm = SimpleNamespace(model_name="offline", stream_chat=Mock(side_effect=responses))
-    agent = AgentLoop(source, llm, max_iterations=5)
+    agent = AgentRuntime(source, llm, max_iterations=5)
     agent.memory.run_dir = str(tmp_path)
     result = agent.run("Read the observation and summarize it.")
     assert result["status"] == "success"
@@ -140,8 +140,8 @@ def test_real_loop_loads_then_calls_the_original_tool(tmp_path, monkeypatch):
 
 def test_loops_do_not_share_schema_state_when_given_the_same_wrapper():
     shared = DeferredToolRegistry(registry())
-    first = AgentLoop(shared, SimpleNamespace())
-    second = AgentLoop(shared, SimpleNamespace())
+    first = AgentRuntime(shared, SimpleNamespace())
+    second = AgentRuntime(shared, SimpleNamespace())
     first.registry.expose(["read_observation_2"])
     assert len(request_definitions(first.registry)) == 2
     assert len(request_definitions(second.registry)) == 1

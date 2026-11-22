@@ -9,7 +9,7 @@ what ``run_worker`` does with it once it arrives:
   dispatched, status ``cancelled`` (a control run shows the same response
   *does* dispatch its tool when nothing is cancelled);
 * the event is handed to ``ChatLLM.stream_chat`` as ``should_cancel`` — the
-  same predicate ``AgentLoop`` passes — so the provider stream itself stops
+  same predicate ``AgentRuntime`` passes — so the provider stream itself stops
   early instead of running to its natural end.
 """
 
@@ -223,7 +223,7 @@ def test_cancel_event_is_forwarded_to_stream_chat_as_should_cancel(tmp_path):
     predicate = llm.should_cancel_seen[0]
     assert predicate == cancel_event.is_set, (
         "the worker must hand cancel_event.is_set to stream_chat as should_cancel, "
-        "the same cooperative predicate AgentLoop uses"
+        "the same cooperative predicate AgentRuntime uses"
     )
     assert predicate() is False
     cancel_event.set()

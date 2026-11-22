@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from src.agent.progress import emit_progress
+from src.kernel.progress import emit_progress
 from src.data_gateway.reads import managed_reader, public_data_read
 from src.agent.tools import BaseTool
 from src.tools._arguments import boolean_argument
@@ -158,7 +158,7 @@ class WebReaderTool(BaseTool):
     }
     repeatable = True
     # Normal repeated reads remain allowed while the prior payload is visible.
-    # If compaction removes an exact successful read, AgentLoop may restore the
+    # If compaction removes an exact successful read, AgentRuntime may restore the
     # run-scoped result instead of hitting Jina/the origin again. ``no_cache``
     # remains the explicit freshness escape hatch and bypasses that replay.
     replay_after_compaction = True

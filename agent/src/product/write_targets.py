@@ -1,18 +1,4 @@
-"""Write-target tracking: written-file ledger + pending-write directive.
-
-Extracted from ``AgentLoop`` (issue #1624, roadmap item: split ``loop.py``
-along its existing seams). The regex/path helpers this builds on —
-``_TARGET_ACTION_RE`` and ``_named_target_paths`` — already moved to
-``src.agent.tool_results`` in the first extraction (#1636); this completes
-that relocation by moving the two class methods that consumed them, so all
-of write-target tracking lives together and ``loop.py`` stays the
-orchestrator.
-
-State stays on the loop: ``written_files`` is passed in and mutated in
-place by ``record_written_target``; the provenance identity fields are
-read at delegation time in ``loop.py``. The extraction preserved behavior. Prepared adaptation runs now also receive
-writer provenance when their code is written from another active run.
-"""
+"""Track requested file writes and record the model that produced each file."""
 
 from __future__ import annotations
 
@@ -21,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
-from src.agent.tool_results import _TARGET_ACTION_RE, _named_target_paths
+from src.product.tool_results import _TARGET_ACTION_RE, _named_target_paths
 
 logger = logging.getLogger(__name__)
 

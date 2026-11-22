@@ -129,13 +129,13 @@ def _run(
     llm: Any,
     max_iterations: int = 5,
 ) -> dict[str, Any]:
-    """Build an AgentLoop, wire up a scratch run_dir, and execute."""
-    from src.agent.loop import AgentLoop
+    """Build an AgentRuntime, wire up a scratch run_dir, and execute."""
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     pm = PersistentMemory()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=max_iterations,

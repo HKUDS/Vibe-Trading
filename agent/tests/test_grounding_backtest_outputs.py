@@ -33,7 +33,7 @@ import pytest
 from evals.grounding import GroundingLedger
 from evals.grounding.evidence import ARCHIVE_MANIFEST
 from evals.grounding.figures import parse_figures_block, scan_figures
-from src.agent.tool_results import _archive_backtest_result
+from src.product.tool_results import _archive_backtest_result
 
 RP = {
     "final_value": 1129817.32,

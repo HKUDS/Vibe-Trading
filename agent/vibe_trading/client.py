@@ -103,8 +103,8 @@ class MessageInfo:
 
 
 def _kernel_root() -> tuple[Path, Path]:
-    """Return the runs and sessions directories the kernel's AgentLoop writes."""
-    from src.agent import loop as agent_loop
+    """Return the runs and sessions directories the kernel's AgentRuntime writes."""
+    from src.agent import runtime as agent_loop
 
     return Path(agent_loop.RUNS_DIR), Path(agent_loop.SESSIONS_DIR)
 

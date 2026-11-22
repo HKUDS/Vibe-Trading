@@ -1,8 +1,8 @@
-"""Tests for AgentLoop pure helper functions (zero LLM dependency)."""
+"""Tests for AgentRuntime pure helper functions (zero LLM dependency)."""
 
 from __future__ import annotations
 
-import src.agent.tool_results as _owner_tool_results
+import src.product.tool_results as _owner_tool_results
 
 import json
 import os
@@ -10,14 +10,14 @@ from pathlib import Path
 
 from src.agent.context_compact import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
 from src.agent.context_budget import estimate_tokens
-from src.agent.tool_results import _is_tool_success, _normalize_tool_run_dir, _archive_backtest_result
+from src.product.tool_results import _is_tool_success, _normalize_tool_run_dir, _archive_backtest_result
 from src.agent.tuning import _token_threshold, _llm_timeout_seconds, _stall_timeout_seconds
 
 
 MICROCOMPACT_THRESHOLD = int(_token_threshold() * 0.5)
 
 def _apply_microcompact_gate(messages: list, called_ok: set | None = None) -> None:
-    """Mirror AgentLoop layer-1 gate (``loop.py`` ~572-573)."""
+    """Mirror AgentRuntime layer-1 gate (``loop.py`` ~572-573)."""
     if estimate_tokens(messages) > MICROCOMPACT_THRESHOLD:
         unreadable = _microcompact(messages)
         if called_ok is not None:
@@ -589,10 +589,10 @@ def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
     import os
     import time
 
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.agent.tools import ToolRegistry
 
-    agent = AgentLoop(registry=ToolRegistry(), llm=None)
+    agent = AgentRuntime(registry=ToolRegistry(), llm=None)
     now = time.time()
     target = str(tmp_path / "plan.md")
     msg = f"please update {target}"
@@ -600,25 +600,25 @@ def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
     assert _owner_tool_results._TARGET_ACTION_RE.search(msg)
     assert not _owner_tool_results._TARGET_ACTION_RE.search("what is the weather?")
 
-    unwritten = agent._pending_write_directive(msg, now)
+    unwritten = agent._write_targets.pending(msg, now)
     assert "NOT been written" in unwritten and "plan.md" in unwritten
 
-    agent._record_written_target({"path": target})
-    assert agent._pending_write_directive(msg, now) == ""
+    agent._write_targets.record({"path": target})
+    assert agent._write_targets.pending(msg, now) == ""
 
     # A bash-style write (mtime newer than run start) also counts.
-    agent2 = AgentLoop(registry=ToolRegistry(), llm=None)
+    agent2 = AgentRuntime(registry=ToolRegistry(), llm=None)
     p = tmp_path / "bash_plan.md"
     p.write_text("x", encoding="utf-8")
     os.utime(p, (now, now))
-    assert agent2._pending_write_directive(
+    assert agent2._write_targets.pending(
         f"please update {p}", now - 10,
     ) == ""
     # An old file not written this run still fires.
     old = tmp_path / "old_plan.md"
     old.write_text("x", encoding="utf-8")
     os.utime(old, (now - 100, now - 100))
-    assert "old_plan.md" in agent2._pending_write_directive(
+    assert "old_plan.md" in agent2._write_targets.pending(
         f"please update {old}", now - 10,
     )
 
@@ -640,7 +640,7 @@ def test_verification_ledger_extracts_calc_results() -> None:
             "expr": "85.4/108.8-1", "result": -0.2151, "result_exact": "-0.21507353",
         })},
     ]
-    from src.agent.context_compact import _verification_ledger
+    from src.product.verification import _verification_ledger
     ledger = _verification_ledger(messages)
     assert "calc 92.13/101.65-1 = -0.09365912" in ledger
     assert "calc 85.4/108.8-1 = -0.21507353" in ledger
@@ -656,7 +656,7 @@ def test_verification_ledger_skips_errors_and_other_tools() -> None:
         {"role": "tool", "name": "financial_rigor", "content": "not json at all"},
         {"role": "user", "content": "hello"},
     ]
-    from src.agent.context_compact import _verification_ledger
+    from src.product.verification import _verification_ledger
     assert _verification_ledger(messages) == ""
 
 
@@ -672,7 +672,7 @@ def test_verification_ledger_deduplicates_and_caps() -> None:
             "expr": "a/b", "result": 1.0, "result_exact": "1.0",
         })},
     ]
-    from src.agent.context_compact import _verification_ledger
+    from src.product.verification import _verification_ledger
     ledger = _verification_ledger(messages)
     assert ledger.count("calc a/b") == 1
 

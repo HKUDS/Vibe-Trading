@@ -482,7 +482,7 @@ class QuantlibCallTool(BaseTool):
                 f"result exceeded {_MAX_RESULT_LEAVES} values and was truncated; "
                 "narrow the inputs or request a summary statistic instead"
             )
-        from src.agent.result_artifacts import persist_calculation_result
+        from src.product.result_artifacts import persist_calculation_result
         return persist_calculation_result(json.dumps(payload, ensure_ascii=False), run_dir)
 
     @staticmethod

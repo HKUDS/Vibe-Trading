@@ -1,4 +1,4 @@
-"""Regression coverage for Gemini thought_signature replay in AgentLoop history."""
+"""Regression coverage for Gemini thought_signature replay in AgentRuntime history."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 from langchain_core.messages import AIMessage, convert_to_messages
 
-from src.agent.context import ContextBuilder
+from src.product.context import ContextBuilder
 from src.agent.context_compact import _attach_tool_call_thought_signatures
 from src.kernel.contracts import ToolCallRequest
 from src.providers.chat import ChatLLM

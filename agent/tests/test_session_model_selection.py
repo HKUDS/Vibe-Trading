@@ -181,7 +181,7 @@ def _sse(model: str) -> bytes:
 
 
 class _OneCallLoop:
-    """Stands in for AgentLoop: one real streamed request, then the real result dict."""
+    """Stands in for AgentRuntime: one real streamed request, then the real result dict."""
 
     def __init__(self, *, llm, **kwargs) -> None:
         del kwargs
@@ -189,7 +189,7 @@ class _OneCallLoop:
 
     def run(self, *, user_message: str, history, session_id: str) -> dict:
         del history, session_id
-        from src.agent.run_outcome import RunOutcome, build_result_dict
+        from src.product.outcome import RunOutcome, build_result_dict
 
         response = self.llm.stream_chat(
             [{"role": "user", "content": user_message}], on_text_chunk=lambda _chunk: None
@@ -232,7 +232,7 @@ def test_concurrent_sessions_each_reach_their_own_model(server_settings, monkeyp
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: object())
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
-    monkeypatch.setattr("src.agent.loop.AgentLoop", _OneCallLoop)
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _OneCallLoop)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
     monkeypatch.setattr(
         "src.tools.background_tools.get_background_manager",
@@ -305,7 +305,7 @@ def test_a_failed_session_selection_fails_the_attempt_instead_of_falling_back(
 
 
 # ---------------------------------------------------------------------------
-# Reply metadata and strategy provenance through the real AgentLoop
+# Reply metadata and strategy provenance through the real AgentRuntime
 # ---------------------------------------------------------------------------
 
 
@@ -326,15 +326,15 @@ class _EmptyRegistry:
 def test_agent_loop_reports_a_session_selected_model_as_such(
     server_settings, monkeypatch, tmp_path, response_model, expected_model, expected_source
 ):
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
     llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
     llm.stream_chat = MethodType(
         lambda self, *a, **k: LLMResponse(content="done", response_model=response_model), llm
     )
-    agent = AgentLoop(registry=_EmptyRegistry(), llm=llm, max_iterations=1)  # type: ignore[arg-type]
-    assert agent._active_model_source == "session"
+    agent = AgentRuntime(registry=_EmptyRegistry(), llm=llm, max_iterations=1)  # type: ignore[arg-type]
+    assert agent._write_targets.active_model_source == "session"
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
@@ -348,7 +348,7 @@ def test_agent_loop_reports_a_session_selected_model_as_such(
 
 
 def test_llm_usage_names_the_provider_the_client_called(server_settings, monkeypatch):
-    from src.agent.llm_usage import _new_llm_usage_summary
+    from src.product.usage import _new_llm_usage_summary
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
     llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
@@ -575,7 +575,7 @@ def test_effective_selection_reports_an_unreadable_stored_one():
 
 
 def test_context_window_follows_the_session_clients_provider(server_settings, monkeypatch):
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.kernel.contracts import LLMRuntimeSnapshot
 
     # The server is configured for another provider; the catalog scopes this
@@ -587,22 +587,22 @@ def test_context_window_follows_the_session_clients_provider(server_settings, mo
         model_name="gpt-5.5",
         runtime_snapshot=LLMRuntimeSnapshot("openai-codex", "gpt-5.5", "", "session"),
     )
-    agent = AgentLoop(registry=_EmptyRegistry(), llm=llm, max_iterations=1)  # type: ignore[arg-type]
+    agent = AgentRuntime(registry=_EmptyRegistry(), llm=llm, max_iterations=1)  # type: ignore[arg-type]
 
-    budget = agent._context_budget([])
+    budget = agent._context_compactor._context_budget([])
 
     assert budget.window == 272_000
     assert budget.source.startswith("catalog:")
 
 
 def test_empty_response_trace_names_the_session_clients_provider(server_settings, monkeypatch, tmp_path):
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from tests.recording_helpers import records_at
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
     llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
     llm.stream_chat = MethodType(lambda self, *a, **k: LLMResponse(content=""), llm)
-    agent = AgentLoop(registry=_EmptyRegistry(), llm=llm, max_iterations=3)  # type: ignore[arg-type]
+    agent = AgentRuntime(registry=_EmptyRegistry(), llm=llm, max_iterations=3)  # type: ignore[arg-type]
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
@@ -616,8 +616,8 @@ def test_empty_response_trace_names_the_session_clients_provider(server_settings
 
 def test_strategy_provenance_records_a_session_selected_model(server_settings, monkeypatch, tmp_path):
     """Two real WriteFileTool turns on a session client, as in the provenance suite."""
-    from src.agent.memory import WorkspaceMemory
-    from src.agent.loop import AgentLoop
+    from src.product.resources.memory import WorkspaceMemory
+    from src.agent.runtime import AgentRuntime
     from src.agent.tools import ToolRegistry
     from src.tools.write_file_tool import WriteFileTool
 
@@ -637,7 +637,7 @@ def test_strategy_provenance_records_a_session_selected_model(server_settings, m
     llm.stream_chat = MethodType(lambda self, *a, **k: next(turns), llm)
     registry = ToolRegistry()
     registry.register(WriteFileTool())
-    agent = AgentLoop(registry=registry, llm=llm, memory=WorkspaceMemory(run_dir=str(tmp_path)),
+    agent = AgentRuntime(registry=registry, llm=llm, memory=WorkspaceMemory(run_dir=str(tmp_path)),
                       max_iterations=3)
 
     result = agent.run(user_message="Write the strategy files.")

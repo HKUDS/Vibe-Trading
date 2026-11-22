@@ -559,7 +559,7 @@ def test_usage_omits_details_when_no_cache() -> None:
 
 @pytest.mark.parametrize("streaming", [False, True])
 def test_retry_details_reach_persisted_usage(fake_cli, monkeypatch, tmp_path, streaming):
-    from src.agent.llm_usage import _new_llm_usage_summary, _record_llm_usage
+    from src.product.usage import _new_llm_usage_summary, _record_llm_usage
     set_replies, _ = fake_cli
     replies = []
     for content, tokens in [("", 10), ("done", 20)]:

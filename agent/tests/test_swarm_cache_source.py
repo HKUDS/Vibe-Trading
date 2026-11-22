@@ -6,7 +6,7 @@ extended contract:
 
 * ``worker._measure_usage`` captures prompt-cache counts from provider
   ``usage_metadata`` using exactly the main loop's normalization contract
-  (``src.agent.llm_usage._normalize_llm_usage``) and labels the counts'
+  (``src.product.usage._normalize_llm_usage``) and labels the counts'
   provenance (``"provider"`` vs ``"estimated"``);
 * ``_estimate_tokens`` remains a thin 2-tuple wrapper over ``_measure_usage``;
 * ``WorkerResult`` / ``SwarmRun`` carry cache fields + ``token_source`` with
@@ -27,7 +27,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.llm_usage import _normalize_llm_usage
+from src.product.usage import _normalize_llm_usage
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmRun, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime

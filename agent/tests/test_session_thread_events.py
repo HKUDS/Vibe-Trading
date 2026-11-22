@@ -421,7 +421,7 @@ def test_resume_uses_the_thread_cursor_instead_of_legacy_buffer_replay(tmp_path:
 
 
 class _ScriptedLoop:
-    """AgentLoop stand-in that streams and records like the real loop."""
+    """AgentRuntime stand-in that streams and records like the real loop."""
 
     def __init__(self, *, registry, llm, event_callback, max_iterations, persistent_memory,
                  cancel_event=None, background_manager=None, thread_recorder=None,
@@ -467,7 +467,7 @@ def _patch_agent(monkeypatch) -> None:
     llm = SimpleNamespace(aclose=AsyncMock())
     monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
-    monkeypatch.setattr("src.agent.loop.AgentLoop", _ScriptedLoop)
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _ScriptedLoop)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
     monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
 

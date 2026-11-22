@@ -177,7 +177,7 @@ class SignalEngine:
 
 def test_generated_child_code_records_current_model_without_touching_active_run(context, tmp_path):
     from types import SimpleNamespace
-    from src.agent.write_targets import record_written_target
+    from src.product.write_targets import record_written_target
 
     result = prepare(context)
     path = Path(result["run_dir"]) / "code/signal_engine.py"

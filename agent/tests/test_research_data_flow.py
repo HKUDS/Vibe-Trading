@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from backtest.options_payoff import OptionLeg, expiry_payoff, scenario_grid
-from src.agent.result_artifacts import persist_calculation_result
+from src.product.result_artifacts import persist_calculation_result
 from src.quantlib.risk import fit_gpd_tail
 from src.swarm.evidence_handoff import prepare_handoff
 from src.swarm.models import SwarmTask
@@ -157,7 +157,7 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
 
 
 def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path):
-    from src.agent.result_artifacts import deliver_tool_result
+    from src.product.result_artifacts import deliver_tool_result
     from src.agent.tools import ToolRegistry
     from src.tools.read_file_tool import ReadFileTool
     registry = ToolRegistry()

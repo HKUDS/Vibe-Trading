@@ -69,16 +69,16 @@ def test_stream_checkpoint_is_thread_backed_for_new_sessions(tmp_path: Path) -> 
 def test_loop_compaction_projection_calls_thread_sink() -> None:
     from types import SimpleNamespace
 
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
     calls: list[tuple[int, list[dict]]] = []
-    loop = AgentLoop(registry=SimpleNamespace(get=lambda name: None), llm=SimpleNamespace())
-    loop._thread = SimpleNamespace(
+    loop = AgentRuntime(registry=SimpleNamespace(get=lambda name: None), llm=SimpleNamespace())
+    loop._conversation.thread = SimpleNamespace(
         compaction_layer=lambda layer, messages: calls.append((layer, messages)),
         seq_of=lambda message: 1,
     )
     current = {"role": "tool", "tool_call_id": "c1", "content": "after"}
-    loop._record_compaction_layer([current], 1, [{"role": "tool", "tool_call_id": "c1", "content": "before"}])
+    loop._context_compactor._record_compaction_layer([current], 1, [{"role": "tool", "tool_call_id": "c1", "content": "before"}])
 
     assert calls == [(1, [current])]
 

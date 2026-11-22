@@ -152,3 +152,15 @@ def screen_calls(
             args["command"] = rewritten
         accepted.append({"name": name, "arguments": args})
     return accepted, notes
+
+
+def check_tool_call(name: str, params: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
+    """Preflight a call from the tool registry or a trusted invocation."""
+    if name.startswith(_deny_prefixes()):
+        return False, f"{name} is disabled by the active tool policy", params
+    if name in {"bash", "background_run", "cancel_background"}:
+        accepted, notes = screen_calls([{"name": name, "arguments": params}], {name})
+        if notes:
+            return False, notes[0], params
+        return True, "", accepted[0]["arguments"]
+    return True, "", params

@@ -1,7 +1,7 @@
 """Inject OpenBB Workspace context into a user message.
 
 Every ``/v1/query`` request carries the workspace state alongside the question.
-Vibe-Trading's :class:`AgentLoop` has no concept of OpenBB widgets, so this
+Vibe-Trading's :class:`AgentRuntime` has no concept of OpenBB widgets, so this
 module distils the request into a compact natural-language prefix prepended to
 the user's message.
 

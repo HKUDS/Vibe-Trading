@@ -246,7 +246,7 @@ class SwarmRun(BaseModel):
         cache_read_tokens: Cumulative prompt-cache read tokens across all
             workers, normalized exactly like ``llm_usage.json``'s
             ``cache_read_tokens`` (see
-            :func:`src.agent.llm_usage._normalize_llm_usage`). ``0`` for runs
+            :func:`src.product.usage._normalize_llm_usage`). ``0`` for runs
             persisted before cache tracking existed.
         cache_creation_tokens: Cumulative prompt-cache creation tokens across
             all workers (``cache_creation`` + ``ephemeral_5m_input_tokens`` +
@@ -308,7 +308,7 @@ class WorkerResult(BaseModel):
         output_tokens: Cumulative output tokens (exact or estimated).
         cache_read_tokens: Cumulative prompt-cache read tokens, normalized
             exactly like ``llm_usage.json``'s ``cache_read_tokens`` (see
-            :func:`src.agent.llm_usage._normalize_llm_usage`). Defaults to
+            :func:`src.product.usage._normalize_llm_usage`). Defaults to
             ``0`` so results constructed without cache data (runtime
             timeout/error paths, pre-cache ``run.json``) stay valid.
         cache_creation_tokens: Cumulative prompt-cache creation tokens

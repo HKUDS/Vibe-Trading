@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from src.config.accessor import get_env_value
 from src.config.paths import get_runtime_root
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class HookDecision:
 
 
 def _hook_file(runtime_root: Path) -> Path:
-    configured = os.environ.get("VIBE_TRADING_HOOKS_FILE", "").strip()
+    configured = get_env_value("VIBE_TRADING_HOOKS_FILE", "").strip()
     return Path(configured).expanduser() if configured else runtime_root / "hooks.json"
 
 
@@ -111,8 +112,8 @@ class HookManager:
         self.config_path = configured_path
         configured_timeout = timeout_seconds
         if configured_timeout is None:
-            configured_timeout = os.environ.get(
-                "VIBE_TRADING_HOOK_TIMEOUT_SECONDS", DEFAULT_HOOK_TIMEOUT_SECONDS
+            configured_timeout = get_env_value(
+                "VIBE_TRADING_HOOK_TIMEOUT_SECONDS", str(DEFAULT_HOOK_TIMEOUT_SECONDS)
             )
         try:
             self.timeout_seconds = max(0.01, float(configured_timeout))

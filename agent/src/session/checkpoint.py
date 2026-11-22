@@ -50,7 +50,7 @@ class ResponseCheckpoint:
         self._lock = threading.Lock()
 
     def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Apply an AgentLoop stream event to the durable snapshot.
+        """Apply an AgentRuntime stream event to the durable snapshot.
 
         Args:
             event_type: Agent event name.

@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.loop import AgentLoop
-from src.agent.result_artifacts import deliver_tool_result
+from src.agent.runtime import AgentRuntime
+from src.product.result_artifacts import deliver_tool_result
 from src.agent.tools import BaseTool, ToolRegistry
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.kernel.contracts import LLMResponse, ToolCallRequest
@@ -71,7 +71,7 @@ def test_unavailable_artifact_is_not_claimed(tmp_path, monkeypatch, failure):
     elif failure == 'write_failure':
         def fail(*args, **kwargs):
             raise OSError('disk full')
-        monkeypatch.setattr('src.agent.result_artifacts._write_original', fail)
+        monkeypatch.setattr('src.product.result_artifacts._write_original', fail)
     elif failure == 'symlink':
         outside = tmp_path.parent / f'{tmp_path.name}-outside'
         outside.mkdir()
@@ -119,7 +119,7 @@ def test_main_fresh_and_cached_results_use_same_complete_file(tmp_path):
     registry = registry_with_reader()
     tool = _LargeResult(large_result())
     registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=3)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
     agent.memory.run_dir = str(tmp_path)
     messages, _ = _drive(agent, tool.name, tmp_path, [{}, {}])
     assert tool.calls == 1

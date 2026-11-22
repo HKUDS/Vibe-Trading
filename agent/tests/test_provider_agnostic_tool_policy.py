@@ -11,14 +11,14 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 from src.config.accessor import get_env_config, reset_env_config
 from src.providers.llm import provider_diagnostics
-from src.providers.tool_policy import bash_policy, policy_status
-from src.providers import tool_policy
+from src.product.tool_policy import bash_policy, policy_status
+from src.product import tool_policy
 from tests.module_os_helpers import patch_module_os
 
 _POLICY_ENV = (
@@ -119,10 +119,10 @@ class _FakeBashTool(BaseTool):
         return json.dumps({"status": "ok", "arguments": kwargs})
 
 
-def _agent(tool: BaseTool, tmp_path) -> AgentLoop:
+def _agent(tool: BaseTool, tmp_path) -> AgentRuntime:
     registry = ToolRegistry()
     registry.register(tool)
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=SimpleNamespace(),
         max_iterations=2,
@@ -132,7 +132,7 @@ def _agent(tool: BaseTool, tmp_path) -> AgentLoop:
     return agent
 
 
-def _call(agent: AgentLoop, name: str, arguments: dict, tmp_path) -> list[dict]:
+def _call(agent: AgentRuntime, name: str, arguments: dict, tmp_path) -> list[dict]:
     messages: list[dict] = []
     trace = recorder_at(tmp_path)
     run_recorded_tools(agent, [SimpleNamespace(id="call-1", name=name, arguments=arguments)], ContextBuilder, messages, trace, 1)

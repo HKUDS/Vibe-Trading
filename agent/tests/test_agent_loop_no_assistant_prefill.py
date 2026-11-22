@@ -3,7 +3,7 @@
 Claude Opus 4.8+ (and other new Anthropic models) reject API requests
 when the conversation ends with an assistant-role message, because the
 API treats it as an "assistant prefill" which these models no longer
-support.  Two code paths in AgentLoop used to emit such messages:
+support.  Two code paths in AgentRuntime used to emit such messages:
 background notification acknowledgments and auto-compact handoff notes.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from tests.recording_helpers import recorder_at
 
 
@@ -70,12 +70,12 @@ def _build_agent(
     max_iter: int = 3,
     tmp_run_dir: Path | None = None,
     background_manager: Any = None,
-) -> AgentLoop:
+) -> AgentRuntime:
     from src.tools import build_registry
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=None,
@@ -147,7 +147,7 @@ def test_auto_compact_handoff_summary_is_reintroduced_as_user_message(
     ]
 
     try:
-        agent._auto_compact(messages, tmp_path / "run", trace, iteration=1)
+        agent._context_compactor.auto_compact(messages, tmp_path / "run", trace, iteration=1)
     finally:
         trace.close()
 

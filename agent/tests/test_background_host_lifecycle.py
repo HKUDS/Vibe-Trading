@@ -250,11 +250,11 @@ def test_session_attempt_registers_completion_with_its_owner():
 
 
 def test_agent_stop_reaps_tasks_it_started_or_carried():
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
     registry = bg.BackgroundManager(bg.BackgroundScope("session:s1"))
     task_id = json.loads(registry.run(command("import time; time.sleep(60)")))["task_id"]
-    loop = AgentLoop(
+    loop = AgentRuntime(
         registry=SimpleNamespace(get=lambda name: None, background=registry),
         llm=SimpleNamespace(),
         max_iterations=1,
@@ -302,10 +302,10 @@ def test_shutdown_off_event_loop_cancels_real_async_attempt():
 
 @pytest.mark.parametrize("status", ["success", "failed"])
 def test_agent_terminal_status_only_cancels_background_on_failure(monkeypatch, status):
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from unittest.mock import Mock
 
-    loop = AgentLoop(
+    loop = AgentRuntime(
         registry=SimpleNamespace(get=lambda name: None),
         llm=SimpleNamespace(),
         background_manager=Mock(),

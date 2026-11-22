@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from src.agent.skills import SkillsLoader
+from src.product.resources.skills import SkillsLoader
 from src.swarm import worker as worker_mod
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.swarm.worker import run_worker

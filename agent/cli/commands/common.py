@@ -50,7 +50,7 @@ RICH_TAG_PATTERN = re.compile('\\[/?[^\\]]+\\]')
 SWARM_RUN_USAGE = '--swarm-run PRESET \'{"k":"v"}\''
 SWARM_RUN_VARS_PREVIEW_CHARS = 80
 if TYPE_CHECKING:
-    from src.agent.loop import AgentLoop as AgentLoop
+    from src.agent.runtime import AgentRuntime as AgentRuntime
 _AGENT_STYLES = ['cyan', 'magenta', 'green', 'yellow', 'blue', 'bright_red', 'bright_cyan', 'bright_magenta']
 _agent_color_map: dict[str, str] = {}
 _INIT_ENV_PATH = Path.home() / '.vibe-trading' / '.env'

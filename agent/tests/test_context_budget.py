@@ -28,7 +28,7 @@ from src.agent.context_budget import (
     parse_context_limit,
     resolve_window,
 )
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 import src.agent.tuning as tuning_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import records_at
@@ -244,7 +244,7 @@ def _run(tmp_path: Path, monkeypatch, *, provider: str, model: str, payload_char
     registry = ToolRegistry()
     registry.register(tool)
     llm = ComparisonLLM(model, CODES, overflow_above=overflow_above)
-    loop = AgentLoop(registry=registry, llm=llm, max_iterations=30)
+    loop = AgentRuntime(registry=registry, llm=llm, max_iterations=30)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     loop.memory.run_dir = str(run_dir)
@@ -332,7 +332,7 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
     registry = ToolRegistry()
     registry.register(tool)
     events: list[tuple[str, dict]] = []
-    loop = AgentLoop(registry=registry, llm=CompactingLLM("openai-codex/gpt-6-sol", CODES[:4]),
+    loop = AgentRuntime(registry=registry, llm=CompactingLLM("openai-codex/gpt-6-sol", CODES[:4]),
                      max_iterations=30, event_callback=lambda n, d: events.append((n, d)))
     run_dir = tmp_path / "run"
     run_dir.mkdir()

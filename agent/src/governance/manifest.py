@@ -40,7 +40,7 @@ Mount points for a future integration (NOT implemented here)::
 
     2. Skills actually injected: the same context-building step (and/or
        ``src/tools/load_skill_tool.py`` for skills pulled in mid-run via the
-       ``load_skill`` tool) knows which :class:`src.agent.skills.Skill`
+       ``load_skill`` tool) knows which :class:`src.product.resources.skills.Skill`
        objects were injected this turn. Pass
        ``{skill.name: skill.body for skill in injected}`` as ``skills=``.
 
@@ -134,7 +134,7 @@ class SkillRecord:
     meant to be small and safe to persist/share.
 
     Attributes:
-        name: Skill name (``Skill.name`` in ``src.agent.skills``).
+        name: Skill name (``Skill.name`` in ``src.product.resources.skills``).
         content_hash: ``sha256:<hex>`` of the exact body text that was
             injected for this run.
     """

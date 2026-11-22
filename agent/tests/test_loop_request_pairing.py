@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 from src.providers.messages import INTERRUPTED_RESULT_CONTENT
 from src.providers.messages import repair_provider_messages
-from src.agent.loop import AgentLoop
-from src.agent.memory import WorkspaceMemory
+from src.agent.runtime import AgentRuntime
+from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import BaseTool, ToolRegistry
 
 
@@ -111,22 +111,18 @@ class _ScriptedLLM:
         )
 
 
-class _NoopDispatchLoop(AgentLoop):
-    def _process_tool_calls(self, *args: object, **kwargs: object) -> tuple[bool, str]:
-        return False, ""
-
-
-def test_agent_repairs_before_next_provider_request_only(tmp_path: Path) -> None:
+def test_agent_repairs_before_next_provider_request_only(tmp_path: Path, monkeypatch) -> None:
     registry = ToolRegistry()
     registry.register(_NoopTool())
     llm = _ScriptedLLM()
-    loop = _NoopDispatchLoop(
+    loop = AgentRuntime(
         registry=registry,
         llm=llm,
         memory=WorkspaceMemory(run_dir=str(tmp_path / "run")),
         max_iterations=3,
     )
 
+    monkeypatch.setattr(loop.tools, "process", lambda *_args: (False, ""))
     result = loop.run("inspect")
 
     assert result["status"] == "success"
@@ -137,6 +133,6 @@ def test_agent_repairs_before_next_provider_request_only(tmp_path: Path) -> None
     assert len(second_request_tools) == 1
     assert second_request_tools[0]["tool_call_id"] == "call-1"
     assert second_request_tools[0]["content"] == INTERRUPTED_RESULT_CONTENT
-    original_messages = loop._turn_messages
+    original_messages = loop._conversation.turn_messages
     assert original_messages is not None
     assert not any(message.get("role") == "tool" for message in original_messages)

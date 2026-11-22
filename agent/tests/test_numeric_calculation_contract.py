@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Client
 from scipy.stats import genpareto
 
-from src.agent.result_artifacts import deliver_tool_result
+from src.product.result_artifacts import deliver_tool_result
 from src.agent.tools import ToolRegistry
 from src.quantlib.risk import fit_gpd_tail
 from src.quantlib.units import compare_rates

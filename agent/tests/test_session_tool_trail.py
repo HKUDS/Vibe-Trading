@@ -215,7 +215,7 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
     llm = SimpleNamespace(aclose=AsyncMock())
     monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
-    monkeypatch.setattr("src.agent.loop.AgentLoop", _DummyAgentLoop)
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _DummyAgentLoop)
     monkeypatch.setattr(
         "src.config.loader.load_runtime_agent_config",
         lambda overrides=None: object(),

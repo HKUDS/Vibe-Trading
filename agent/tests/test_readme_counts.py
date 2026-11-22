@@ -116,7 +116,7 @@ def _bundled_skill_count() -> int:
     """
     if str(AGENT_DIR) not in sys.path:
         sys.path.insert(0, str(AGENT_DIR))
-    from src.agent.skills import SkillsLoader
+    from src.product.resources.skills import SkillsLoader
 
     loader = SkillsLoader(user_skills_dir=AGENT_DIR / "__no_user_skills__")
     return len(loader.skills)

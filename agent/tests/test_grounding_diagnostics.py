@@ -16,7 +16,7 @@ from evals.grounding.evidence import (
     _is_registered_price_indicator,
 )
 from evals.grounding.figures import _lines_with_offsets
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 
 pytestmark = pytest.mark.unit
@@ -459,12 +459,12 @@ def _tool_call(call_id: str, tool_name: str, **arguments: Any) -> SimpleNamespac
 
 def _run(
     tmp_path: Path, llm: _ScriptedLLM, *, max_iterations: int, session_id: str = ""
-) -> tuple[dict[str, Any], list[tuple[str, dict[str, Any]]], AgentLoop]:
+) -> tuple[dict[str, Any], list[tuple[str, dict[str, Any]]], AgentRuntime]:
     registry = ToolRegistry()
     registry.register(_ResolverTool(_resolver_payload()))
     registry.register(_MarketTool(_market_payload()))
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=llm,
         max_iterations=max_iterations,
@@ -1152,9 +1152,9 @@ class _ChunkedLLM:
         return _Response()
 
 
-def _stream(tmp_path: Path, content: str) -> tuple[dict[str, Any], str, AgentLoop]:
+def _stream(tmp_path: Path, content: str) -> tuple[dict[str, Any], str, AgentRuntime]:
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=ToolRegistry(),
         llm=_ChunkedLLM(content),
         max_iterations=3,
@@ -1224,7 +1224,7 @@ def test_a_held_back_line_in_a_tool_call_turn_is_shown(tmp_path: Path) -> None:
         ]
     )
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=llm,
         max_iterations=4,

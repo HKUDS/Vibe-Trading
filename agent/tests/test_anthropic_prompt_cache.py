@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.llm_usage import _normalize_llm_usage, _record_llm_usage
+from src.product.usage import _normalize_llm_usage, _record_llm_usage
 from src.config.accessor import get_env_config, reset_env_config
 from src.providers.chat import ChatLLM, prompt_cache_messages
 

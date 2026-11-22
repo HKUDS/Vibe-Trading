@@ -1,6 +1,6 @@
 """The conversation, not the run, is the kernel's unit.
 
-Every test here drives the real ``SessionService`` -> ``AgentLoop`` ->
+Every test here drives the real ``SessionService`` -> ``AgentRuntime`` ->
 ``thread.jsonl`` path with a scripted offline model; only the registry
 builder, the LLM factory and persistent memory are replaced. The model is
 scripted as a *policy*: it looks at the request it receives and only calls a
@@ -21,8 +21,8 @@ from typing import Any, Callable
 import pytest
 
 from src.providers.messages import INTERRUPTED_RESULT_CONTENT
-from src.agent.instrument_identity import IdentityLedger
-from src.agent.tool_loading import DeferredToolRegistry
+from src.product.identity.ledger import IdentityLedger
+from src.product.tool_loading import DeferredToolRegistry
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus
 from src.session.service import STOPPED_MARKER, SessionService

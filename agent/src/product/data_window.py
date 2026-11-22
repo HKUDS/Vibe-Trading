@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 import re
 
-from src.agent.instrument_identity import _normalize_symbol, _scan_symbols
+from src.product.identity.normalize import _normalize_symbol, _scan_symbols
 
 _DATE = r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)"
 _RANGE = re.compile(rf"({_DATE})\s*(?:至|到|to\b|through\b|[~～–—]|\.{{2,3}})\s*({_DATE})", re.I)

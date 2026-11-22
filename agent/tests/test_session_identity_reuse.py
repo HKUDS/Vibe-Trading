@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.instrument_identity import IdentityLedger
-from src.agent.loop import AgentLoop
+from src.product.identity.ledger import IdentityLedger
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import ToolRegistry
 from src.tools.symbol_search_tool import SymbolSearchTool
 from tests.test_agent_loop_deterministic_cache import _drive
@@ -60,18 +60,18 @@ def test_actual_loop_reuses_without_bypassing_policy_or_identity(tmp_path, monke
     monkeypatch.setattr(tool, "execute", execute)
     registry = ToolRegistry()
     registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=3)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
     agent.memory.run_dir = str(tmp_path)
-    agent._identity = IdentityLedger(run_dir=tmp_path, user_message="Read 00700.HK")
-    before = agent._identity.identity_summary()
+    agent.tool_env.identity = IdentityLedger(run_dir=tmp_path, user_message="Read 00700.HK")
+    before = agent.tool_env.identity.identity_summary()
     if mode == "denied":
-        monkeypatch.setattr("src.providers.tool_policy._deny_prefixes", lambda **kwargs: ("search_symbol",))
+        monkeypatch.setattr("src.product.tool_policy._deny_prefixes", lambda **kwargs: ("search_symbol",))
     args = {"query": "00700.HK", **({"refresh": True} if mode == "refresh" else {})}
     messages, trace = _drive(agent, "search_symbol", tmp_path, [args])
     result = json.loads(messages[-1]["content"])
     if mode == "reuse":
         assert not calls and result["reused"]
-        assert agent._identity.identity_summary() == before
+        assert agent.tool_env.identity.identity_summary() == before
         assert any(row["type"] == "identity_reused" for row in trace)
     elif mode == "refresh":
         assert len(calls) == 1 and not result.get("reused")

@@ -12,7 +12,7 @@ Two mechanisms:
 Thread model: tools run synchronously inside ``ToolRegistry.execute`` from
 worker threads (read batches) or the main loop thread (writes). A
 ``threading.local`` slot holds the per-thread emitter so structured
-progress flows back to the correct AgentLoop instance even when multiple
+progress flows back to the correct AgentRuntime instance even when multiple
 read-only tools run in parallel.
 """
 

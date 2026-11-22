@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator, List, Optional
 
-from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter
+from src.product.resources.frontmatter import parse_frontmatter as _parse_frontmatter
 from src.config.paths import get_runtime_root
 
 logger = logging.getLogger(__name__)

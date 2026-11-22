@@ -1012,7 +1012,7 @@ class SwarmRuntime:
         # in a heartbeat so events.jsonl gets fresh entries during the fetch
         # — without this, the stale-run reaper would false-positive-mark a
         # healthy fresh run that's just waiting on OHLCV API calls.
-        from src.agent.progress import HeartbeatTimer
+        from src.kernel.progress import HeartbeatTimer
 
         def _on_grounding_heartbeat(payload: dict) -> None:
             self._emit_event(

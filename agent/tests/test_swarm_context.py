@@ -96,7 +96,7 @@ def test_unrecoverable_results_are_never_discarded(tmp_path, monkeypatch, cause)
     if cause == 'write-failure':
         def refuse(*args, **kwargs):
             raise OSError('unwritable')
-        monkeypatch.setattr('src.agent.result_artifacts._write_original', refuse)
+        monkeypatch.setattr('src.product.result_artifacts._write_original', refuse)
     assert context.compact(messages, []) == []
     assert messages == before
     assert context.tokens(messages, []) > context.budget(messages, []).total

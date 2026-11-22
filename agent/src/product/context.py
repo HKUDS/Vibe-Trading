@@ -1,4 +1,4 @@
-"""ContextBuilder: builds LLM message context for the ReAct AgentLoop."""
+"""ContextBuilder: builds LLM message context for the ReAct AgentRuntime."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from src.kernel.contracts import ModelMessage
-from src.agent.instructions import build_instruction_block
-from src.agent.memory import WorkspaceMemory
-from src.agent.skills import SkillsLoader
+from src.product.resources.instructions import build_instruction_block
+from src.product.resources.memory import WorkspaceMemory
+from src.product.resources.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
 from src.data_gateway.guidance import DATA_ACCESS_POLICY
 
@@ -152,7 +152,7 @@ _MEMORY_SECTION = """
 
 
 class ContextBuilder:
-    """Builds message context for AgentLoop.
+    """Builds message context for AgentRuntime.
 
     Attributes:
         registry: Tool registry.
@@ -212,7 +212,7 @@ class ContextBuilder:
         except Exception:  # noqa: BLE001
             routing = ""
 
-        from src.agent.tool_loading import DeferredToolRegistry
+        from src.product.tool_loading import DeferredToolRegistry
 
         tool_discovery = "Available tools and their full argument contracts are supplied with this request's tool definitions."
         if isinstance(self.registry, DeferredToolRegistry):

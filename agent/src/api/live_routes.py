@@ -640,7 +640,7 @@ async def _run_live_session_attempt(
             terminal = await asyncio.shield(completed)
         except asyncio.CancelledError:
             svc.cancel_current(session_id)
-            # Session execution is a separate task (and may own an AgentLoop
+            # Session execution is a separate task (and may own an AgentRuntime
             # thread). Cancelling only this waiter cannot stop that execution.
             await asyncio.shield(completed)
             raise

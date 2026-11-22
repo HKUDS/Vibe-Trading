@@ -1,6 +1,6 @@
-"""Regression tests for AgentLoop terminal-state result dict (issue #114).
+"""Regression tests for AgentRuntime terminal-state result dict (issue #114).
 
-Before the fix, AgentLoop.run() returned a dict missing the `reason` field
+Before the fix, AgentRuntime.run() returned a dict missing the `reason` field
 on the cancelled and max-iter-failed branches even though state.json on
 disk recorded a useful reason. SessionService then surfaced
 'Execution failed: unknown' to the chat UI.
@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 import pytest
 
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.providers.chat import ProviderStreamError
 
 
@@ -112,7 +112,7 @@ class _StubLLMCancelMidStream:
     provider; the loop must surface 'cancelled by user' to the UI.
     """
 
-    def __init__(self, agent_ref: "list[AgentLoop]") -> None:
+    def __init__(self, agent_ref: "list[AgentRuntime]") -> None:
         self._agent_ref = agent_ref
 
     def stream_chat(
@@ -129,20 +129,20 @@ class _StubLLMCancelMidStream:
         # Set _cancelled on the bound agent so the next loop iteration check
         # picks it up.  We still need a valid response so the current
         # iteration completes cleanly.
-        self._agent_ref[0]._cancel_event.set()
+        self._agent_ref[0].activity.cancel.set()
         return _StubLLMResponse()
 
     def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
         return _StubLLMResponse()
 
 
-def _build_agent(llm: Any, max_iter: int = 3, tmp_run_dir: Path | None = None) -> AgentLoop:
-    """Build an AgentLoop with a real (but empty) registry and a stub LLM."""
+def _build_agent(llm: Any, max_iter: int = 3, tmp_run_dir: Path | None = None) -> AgentRuntime:
+    """Build an AgentRuntime with a real (but empty) registry and a stub LLM."""
     from src.tools import build_registry
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=None,
@@ -176,7 +176,7 @@ def test_empty_model_response_returns_specific_reason(
 
 def test_cancelled_terminal_returns_reason(tmp_path: Path) -> None:
     """Cancelled-by-user runs must also surface a meaningful reason."""
-    agent_ref: list[AgentLoop] = []
+    agent_ref: list[AgentRuntime] = []
     agent = _build_agent(
         _StubLLMCancelMidStream(agent_ref),
         max_iter=3,
@@ -216,7 +216,7 @@ class _StubLLMCancelWithToolCalls:
     the run as cancelled WITHOUT executing the turn's tool calls (#229).
     """
 
-    def __init__(self, agent_ref: "list[AgentLoop]") -> None:
+    def __init__(self, agent_ref: "list[AgentRuntime]") -> None:
         self._agent_ref = agent_ref
 
     def stream_chat(
@@ -230,7 +230,7 @@ class _StubLLMCancelWithToolCalls:
         should_cancel: Callable[[], bool] | None = None,
         on_waiting_chunk=None,
     ) -> _StubLLMResponse:
-        self._agent_ref[0]._cancel_event.set()
+        self._agent_ref[0].activity.cancel.set()
         resp = _StubLLMResponse()
         resp.has_tool_calls = True
         resp.tool_calls = [SimpleNamespace(id="c1", name="get_market_data", arguments={})]
@@ -242,7 +242,7 @@ class _StubLLMCancelWithToolCalls:
 
 def test_cancel_mid_stream_skips_tool_execution(tmp_path: Path) -> None:
     """Cancelling during the stream ends the run before any tool runs (#229)."""
-    agent_ref: list[AgentLoop] = []
+    agent_ref: list[AgentRuntime] = []
     agent = _build_agent(
         _StubLLMCancelWithToolCalls(agent_ref),
         max_iter=3,
@@ -251,13 +251,13 @@ def test_cancel_mid_stream_skips_tool_execution(tmp_path: Path) -> None:
     agent_ref.append(agent)
 
     processed = {"tools": False}
-    original = agent._process_tool_calls
+    original = agent.tools.process
 
     def _spy(*args: Any, **kwargs: Any):
         processed["tools"] = True
         return original(*args, **kwargs)
 
-    agent._process_tool_calls = _spy  # type: ignore[method-assign]
+    agent.tools.process = _spy  # type: ignore[method-assign]
 
     result = agent.run(user_message="anything")
 

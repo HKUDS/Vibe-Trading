@@ -1,4 +1,4 @@
-"""Per-response text delivery and progress callbacks for AgentLoop.
+"""Per-response text delivery and progress callbacks for AgentRuntime.
 
 A fresh instance is created for each model iteration. Its state deliberately
 survives the one provider retry exactly as the former closure state did.

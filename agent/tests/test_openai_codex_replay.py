@@ -17,7 +17,7 @@ import json
 import pytest
 
 import src.providers.openai_codex as codex_mod
-from src.agent.context import ContextBuilder
+from src.product.context import ContextBuilder
 from src.providers.chat import ChatLLM
 from src.providers.openai_codex import (
     CodexToolCall,

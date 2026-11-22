@@ -10,7 +10,7 @@ used to be thrown away at the end of every attempt:
 * the tool-result files earlier turns offloaded, so a later turn's
   ``read_file`` reaches them by the relative path their receipt names.
 
-Each turn gets a :class:`TurnRecorder`, the sink ``AgentLoop`` writes thread
+Each turn gets a :class:`TurnRecorder`, the sink ``AgentRuntime`` writes thread
 items through. The loop stays usable without one (CLI, tests).
 
 Replayed history is conversation text only. Identity authorization is restored
@@ -46,7 +46,7 @@ TOOL_RESULTS_DIRNAME = "tool-results"
 class TurnRecorder:
     """Thread sink for one turn.
 
-    ``AgentLoop`` writes every item of the turn through this object: the user
+    ``AgentRuntime`` writes every item of the turn through this object: the user
     message as sent, each model response, each delivered tool result, loop
     injections, compactions and state snapshots. A write failure is logged and
     the turn continues, as a failed trace or checkpoint write does; the

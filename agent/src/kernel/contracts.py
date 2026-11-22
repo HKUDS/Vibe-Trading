@@ -116,3 +116,16 @@ class LoopPorts(Generic[ContextT]):
     record_partial: Callable[[ContextT, LLMResponse, str], None]
     after_text: Callable[[ContextT, LLMResponse], LoopDecision]
     run_tools: Callable[[ContextT, LLMResponse], LoopDecision]
+
+
+@dataclass(frozen=True)
+class BoundCall:
+    """Publish a call's start, invoke the bound tool, then publish its result.
+
+    The start callback receives whether this call will run in parallel.
+    """
+
+    start: Callable[[bool], Callable[[], tuple[str, int]]]
+    finish: Callable[[str, int], None]
+    skip: Callable[[], None]
+    parallel: bool

@@ -10,8 +10,8 @@ import json
 import pytest
 from langchain_core.messages import AIMessageChunk
 
-from src.agent.llm_usage import _normalize_llm_usage
-from src.agent.loop import AgentLoop
+from src.product.usage import _normalize_llm_usage
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import ToolRegistry
 from tests.recording_helpers import recorder_at
 from src.config.accessor import reset_env_config
@@ -35,7 +35,7 @@ def _agent(tmp_path, callback=None):
         chat=Mock(return_value=LLMResponse(content="Summary retained.", usage_metadata=USAGE)),
         stream_chat=Mock(return_value=LLMResponse(content="Done.", usage_metadata=USAGE)),
     )
-    agent = AgentLoop(registry=ToolRegistry(), llm=llm, event_callback=callback)
+    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, event_callback=callback)
     agent.memory.run_dir = str(tmp_path)
     return agent, llm
 
@@ -45,7 +45,7 @@ def test_every_summary_chunk_is_persisted_and_reported(tmp_path):
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     trace = recorder_at(tmp_path)
     try:
-        agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
+        agent._context_compactor.auto_compact(_messages(), tmp_path, trace, iteration=7)
     finally:
         trace.close()
     assert llm.chat.call_count == 3
@@ -65,9 +65,9 @@ def test_summary_budget_cancellation_prevents_more_summaries_and_agent_call(tmp_
 
     def compact(messages, run_dir, trace, iteration, current_iter):
         messages[:] = _messages()
-        agent._auto_compact(messages, run_dir, trace, iteration=current_iter)
+        agent._context_compactor.auto_compact(messages, run_dir, trace, iteration=current_iter)
 
-    monkeypatch.setattr(agent, "_compact_to_budget", compact)
+    monkeypatch.setattr(agent._context_compactor, "_compact_to_budget", compact)
     result = agent.run("Summarize the earlier work.")
     assert result["status"] == "cancelled"
     assert llm.chat.call_count == 1
@@ -95,9 +95,9 @@ def test_summary_usage_obeys_goal_budget_without_stopping_funded_work(
 
     def compact(messages, run_dir, trace, iteration, current_iter):
         messages[:] = _messages()
-        agent._auto_compact(messages, run_dir, trace, iteration=current_iter)
+        agent._context_compactor.auto_compact(messages, run_dir, trace, iteration=current_iter)
 
-    monkeypatch.setattr(agent, "_compact_to_budget", compact)
+    monkeypatch.setattr(agent._context_compactor, "_compact_to_budget", compact)
     result = agent.run("Summarize the earlier work.", session_id="summary-cost")
     assert result["status"] == status
     assert llm.chat.call_count == summary_calls
@@ -115,7 +115,7 @@ def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypa
     trace = recorder_at(tmp_path)
     try:
         with pytest.raises(RuntimeError, match="Provider disconnected"):
-            agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
+            agent._context_compactor.auto_compact(_messages(), tmp_path, trace, iteration=7)
     finally:
         trace.close()
     # Counted as unreported rather than announced: the live decision budget

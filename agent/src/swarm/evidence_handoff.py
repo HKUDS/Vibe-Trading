@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from src.agent.result_artifacts import _write_original, save_result_parts
+from src.product.result_artifacts import _write_original, save_result_parts
 from src.tools.path_utils import safe_path
 from src.tools.redaction import redact_tool_result
 
