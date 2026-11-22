@@ -201,11 +201,10 @@ def test_second_run_is_a_noop(tmp_path: Path) -> None:
 
 def test_default_legacy_root_matches_pre_904_agent_dir() -> None:
     """The default legacy root must equal the old AGENT_DIR expression."""
-    import cli._legacy as legacy
 
     from src.config.migrate import default_legacy_root
 
-    assert default_legacy_root() == Path(legacy.__file__).resolve().parents[1]
+    assert default_legacy_root() == Path(__file__).resolve().parents[1]
 
 
 def test_skips_when_legacy_root_equals_runtime_root(tmp_path: Path) -> None:

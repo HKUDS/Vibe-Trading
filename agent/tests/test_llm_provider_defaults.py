@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+
 import json
 
 import pytest
 from pathlib import Path
 
-import cli
 from cli.onboard import PROVIDERS as ONBOARD_PROVIDERS
 from src.providers.settings import get_llm_credentials
 from src.providers.registry import get_provider_capabilities
@@ -57,7 +58,7 @@ def test_catalog_defaults_and_connections_reach_every_surface():
         if name == "ollama":
             endpoint += "/v1"
         assert get_llm_credentials(name, row["default_model"], environment={})["base_url"] == endpoint
-    legacy = {p["provider"]: p for p in cli._PROVIDER_CHOICES}
+    legacy = {p["provider"]: p for p in _cmd_common._PROVIDER_CHOICES}
     onboard = {p.key: p for p in ONBOARD_PROVIDERS}
     assert set(onboard) == {
         "openrouter", "openai", "anthropic", "openai-codex", "deepseek", "opencode",

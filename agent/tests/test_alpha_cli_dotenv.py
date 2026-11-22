@@ -1,9 +1,4 @@
-"""Regression: ``alpha bench`` / ``alpha compare`` must load .env before config reads.
-
-The ``alpha`` dispatch path skips ``cli._legacy._ensure_cli_env``, so the
-pip-installed CLI never loaded ``~/.vibe-trading/.env`` on this path and the
-csi300 universe failed with "TUSHARE_TOKEN not in agent/.env or environment".
-"""
+'Regression: ``alpha bench`` / ``alpha compare`` must load .env before config reads.\n\nThe ``alpha`` dispatch path skips ``cli.commands.execution._ensure_cli_env``, so the\npip-installed CLI never loaded ``~/.vibe-trading/.env`` on this path and the\ncsi300 universe failed with "TUSHARE_TOKEN not in agent/.env or environment".\n'
 
 from __future__ import annotations
 

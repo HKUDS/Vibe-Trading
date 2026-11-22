@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import cli.commands.swarm_runtime as _cmd_swarm_runtime
+
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
@@ -10,9 +12,10 @@ import pytest
 
 
 def test_swarm_retry_dispatches_full_retry_by_default() -> None:
-    from cli._legacy import EXIT_SUCCESS, main
+    from cli.commands.common import EXIT_SUCCESS
+    from cli.commands.dispatch import main
 
-    with patch("cli._legacy.cmd_swarm_retry_live", return_value=0) as retry:
+    with patch('cli.commands.swarm_runtime.cmd_swarm_retry_live', return_value=0) as retry:
         rc = main(["--swarm-retry", "run-123"])
 
     assert rc == EXIT_SUCCESS
@@ -20,9 +23,10 @@ def test_swarm_retry_dispatches_full_retry_by_default() -> None:
 
 
 def test_swarm_retry_dispatches_resume_opt_in() -> None:
-    from cli._legacy import EXIT_SUCCESS, main
+    from cli.commands.common import EXIT_SUCCESS
+    from cli.commands.dispatch import main
 
-    with patch("cli._legacy.cmd_swarm_retry_live", return_value=0) as retry:
+    with patch('cli.commands.swarm_runtime.cmd_swarm_retry_live', return_value=0) as retry:
         rc = main(["--swarm-retry", "run-123", "--swarm-resume"])
 
     assert rc == EXIT_SUCCESS
@@ -30,7 +34,8 @@ def test_swarm_retry_dispatches_resume_opt_in() -> None:
 
 
 def test_swarm_resume_requires_retry_id(capsys: pytest.CaptureFixture[str]) -> None:
-    from cli._legacy import EXIT_USAGE_ERROR, main
+    from cli.commands.common import EXIT_USAGE_ERROR
+    from cli.commands.dispatch import main
 
     rc = main(["--swarm-resume"])
 
@@ -41,7 +46,7 @@ def test_swarm_resume_requires_retry_id(capsys: pytest.CaptureFixture[str]) -> N
 def test_swarm_retry_slash_command_accepts_resume_opt_in() -> None:
     from cli.commands.swarm import dispatch
 
-    with patch("cli._legacy.cmd_swarm_retry_live") as retry:
+    with patch('cli.commands.swarm_runtime.cmd_swarm_retry_live') as retry:
         dispatch("retry run-123 --resume")
 
     retry.assert_called_once_with("run-123", resume=True)
@@ -50,7 +55,7 @@ def test_swarm_retry_slash_command_accepts_resume_opt_in() -> None:
 def test_swarm_retry_passes_prior_run_only_for_resume(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from cli import _legacy
+    pass
 
     captured: dict[str, object] = {}
     status = SimpleNamespace(running="running", failed="failed", cancelled="cancelled")
@@ -99,16 +104,16 @@ def test_swarm_retry_passes_prior_run_only_for_resume(
     monkeypatch.setitem(sys.modules, "src.swarm.runtime", runtime_module)
     monkeypatch.setitem(sys.modules, "src.swarm.store", store_module)
     monkeypatch.setattr("src.config.load_swarm_agent_config", lambda: {"agents": []})
-    monkeypatch.setattr(_legacy, "_watch_swarm_run", lambda *args: 0)
+    monkeypatch.setattr(_cmd_swarm_runtime, "_watch_swarm_run", lambda *args: 0)
 
-    assert _legacy.cmd_swarm_retry_live("run-failed", resume=True) == 0
+    assert _cmd_swarm_runtime.cmd_swarm_retry_live("run-failed", resume=True) == 0
     assert captured["preset_name"] == "demo"
     assert captured["resume_from"] is not None
     assert captured["resume_from"].id == "run-failed"
 
 
 def test_swarm_dashboard_marks_resumed_task_as_kept() -> None:
-    from cli._legacy import _SwarmDashboard
+    from cli.commands.swarm_runtime import _SwarmDashboard
 
     dashboard = _SwarmDashboard("demo", "run-retry")
     dashboard.handle_event(

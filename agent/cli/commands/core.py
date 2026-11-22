@@ -57,13 +57,13 @@ def register_inspection_subcommands(subparsers: argparse._SubParsersAction) -> N
     chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=50, help="Maximum agent iterations")
     subparsers.add_parser("update", help="Check for and install the latest vibe-trading-ai release from PyPI")
     subparsers.add_parser("init", help="Interactive setup: create ~/.vibe-trading/.env")
-    from cli.commands import runtime as rt
+    from cli.commands import common
     setup_parser = subparsers.add_parser("setup", help="Install frontend dependencies and build the production bundle")
-    setup_parser.add_argument("--frontend-dir", default=str(rt.AGENT_DIR.parent / "frontend"), help="Path to the frontend directory (default: <repo>/frontend)")
+    setup_parser.add_argument("--frontend-dir", default=str(common.AGENT_DIR.parent / "frontend"), help="Path to the frontend directory (default: <repo>/frontend)")
     dev_parser = subparsers.add_parser("dev", help="Start backend + frontend dev servers in one process")
     dev_parser.add_argument("--port", type=int, default=8899, help="Backend port (default: 8899)")
     dev_parser.add_argument("--frontend-port", type=int, default=5899, help="Vite dev server port, must match vite.config.ts (default: 5899)")
-    dev_parser.add_argument("--frontend-dir", default=str(rt.AGENT_DIR.parent / "frontend"), help="Path to the frontend directory (default: <repo>/frontend)")
+    dev_parser.add_argument("--frontend-dir", default=str(common.AGENT_DIR.parent / "frontend"), help="Path to the frontend directory (default: <repo>/frontend)")
 
 
 def _version() -> str:

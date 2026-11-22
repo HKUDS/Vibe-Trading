@@ -10,6 +10,11 @@ the CLI replays, not of a fixed script.
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.execution as _cmd_execution
+import cli.commands.sessions as _cmd_sessions
+import cli.ui.rail as _cmd_rail
+
 import copy
 import importlib
 import json
@@ -19,7 +24,6 @@ from typing import Any, Callable
 
 import pytest
 
-from cli import _legacy
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.models import Message, Session
@@ -134,8 +138,8 @@ class _Harness:
             return built
 
         monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
-        monkeypatch.setattr(_legacy, "SESSIONS_DIR", self.sessions)
-        monkeypatch.setattr(_legacy, "RUNS_DIR", tmp_path / "runs")
+        monkeypatch.setattr(_cmd_common, "SESSIONS_DIR", self.sessions)
+        monkeypatch.setattr(_cmd_common, "RUNS_DIR", tmp_path / "runs")
         monkeypatch.setattr(cli_main, "_SESSION_STORE_CACHE", SessionStore(self.sessions))
         monkeypatch.setattr("src.session.search.get_shared_index", lambda: _DummyIndex())
         monkeypatch.setattr("src.agent.loop.AgentLoop", _CapturingLoop)
@@ -151,7 +155,7 @@ class _Harness:
         return session.session_id
 
     def run(self, prompt: str, session_id: str, **kwargs: Any) -> dict:
-        return _legacy._run_agent(
+        return _cmd_execution._run_agent(
             prompt, max_iter=8, no_rich=True, stream_output=False, session_id=session_id, **kwargs
         )
 
@@ -219,7 +223,7 @@ def test_cli_turn_without_a_session_id_runs_unrecorded(cli):
 
 
 def test_repl_turn_records_one_user_row_and_one_reply_row(cli, monkeypatch):
-    monkeypatch.setattr(_legacy, "_RunDashboard", lambda prompt, max_iter: _QuietDashboard())
+    monkeypatch.setattr(_cmd_rail, 'RailRunDashboard', lambda prompt, max_iter: _QuietDashboard())
     ctx = cli_main.InteractiveContext(max_iter=8)
 
     cli_main._run_one_turn("Quote Apple", ctx)
@@ -283,7 +287,7 @@ def test_resumed_cli_session_replays_the_earlier_tool_call_and_result(cli):
 
 
 def test_repl_resume_in_a_new_process_state_replays_the_earlier_results(cli, monkeypatch):
-    monkeypatch.setattr(_legacy, "_RunDashboard", lambda prompt, max_iter: _QuietDashboard())
+    monkeypatch.setattr(_cmd_rail, 'RailRunDashboard', lambda prompt, max_iter: _QuietDashboard())
     sid = cli.new_session()
     cli.run("Quote Apple", sid)
     first_requests = len(cli.llm.requests)
@@ -324,7 +328,7 @@ def test_cmd_session_chat_replays_the_session_thread(cli, monkeypatch):
     monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
     monkeypatch.setattr(cli_input, "make_session", lambda: None)
 
-    _legacy.cmd_session_chat(sid, 8)
+    _cmd_sessions.cmd_session_chat(sid, 8)
 
     request = cli.llm.requests[first_requests]["messages"]
     assert [m["content"] for m in _tool_messages(request, "lookup")] == [LOOKUP_PAYLOAD]
@@ -339,7 +343,7 @@ def test_cmd_interactive_keeps_one_session_and_replays_it(cli, monkeypatch):
 
     monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
     monkeypatch.setattr(cli_input, "make_session", lambda: None)
-    monkeypatch.setattr(_legacy, "_RunDashboard", lambda prompt, max_iter: _QuietDashboard())
+    monkeypatch.setattr(_cmd_rail, 'RailRunDashboard', lambda prompt, max_iter: _QuietDashboard())
 
     cli_main._interactive_loop(8)
 
@@ -401,12 +405,12 @@ def test_migrated_session_resume_replays_old_turns_then_continues_on_the_thread(
 
 
 def test_continue_command_on_a_session_replays_its_thread(cli, capsys):
-    assert _legacy.cmd_run("Quote Apple", 8, json_mode=True) == _legacy.EXIT_SUCCESS
+    assert _cmd_execution.cmd_run("Quote Apple", 8, json_mode=True) == _cmd_common.EXIT_SUCCESS
     (session,) = cli.store.list_sessions()
     sid = session.session_id
     first_requests = len(cli.llm.requests)
 
-    assert _legacy.cmd_continue(sid, "What was its value?", 8, json_mode=True) == _legacy.EXIT_SUCCESS
+    assert _cmd_execution.cmd_continue(sid, "What was its value?", 8, json_mode=True) == _cmd_common.EXIT_SUCCESS
 
     request = cli.llm.requests[first_requests]["messages"]
     assert [m["content"] for m in _tool_messages(request, "lookup")] == [LOOKUP_PAYLOAD]
@@ -419,9 +423,9 @@ def test_repeated_continue_of_a_run_id_accumulates_one_session(cli, tmp_path, ca
     run_dir = tmp_path / "runs" / "run-xyz"
     run_dir.mkdir(parents=True)
 
-    assert _legacy.cmd_continue("run-xyz", "Quote Apple", 8, json_mode=True) == _legacy.EXIT_SUCCESS
+    assert _cmd_execution.cmd_continue("run-xyz", "Quote Apple", 8, json_mode=True) == _cmd_common.EXIT_SUCCESS
     first_requests = len(cli.llm.requests)
-    assert _legacy.cmd_continue("run-xyz", "What was its value?", 8, json_mode=True) == _legacy.EXIT_SUCCESS
+    assert _cmd_execution.cmd_continue("run-xyz", "What was its value?", 8, json_mode=True) == _cmd_common.EXIT_SUCCESS
 
     request = cli.llm.requests[first_requests]["messages"]
     assert [m["content"] for m in _tool_messages(request, "lookup")] == [LOOKUP_PAYLOAD]
@@ -524,7 +528,7 @@ def test_an_exception_out_of_the_run_closes_the_turn_as_failed(cli, monkeypatch)
     def broken(*args: Any, **kwargs: Any) -> dict:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(_legacy, "_run_with_graceful_cancel", broken)
+    monkeypatch.setattr(_cmd_execution, "_run_with_graceful_cancel", broken)
 
     with pytest.raises(RuntimeError, match="boom"):
         cli.run("Quote Apple", sid)
@@ -569,9 +573,9 @@ def test_sessions_list_counts_user_visible_messages_not_thread_items(cli, monkey
     cli.run("Quote Apple", sid)
     assert len(cli.thread(sid)) > 4
     recorded = Console(record=True, width=160, force_terminal=False)
-    monkeypatch.setattr(_legacy, "console", recorded)
+    monkeypatch.setattr(_cmd_common, "console", recorded)
 
-    _legacy.cmd_sessions()
+    _cmd_sessions.cmd_sessions()
 
     row = next(line for line in recorded.export_text().splitlines() if sid in line)
     assert row.split("│")[4].strip() == "2"
@@ -580,7 +584,7 @@ def test_sessions_list_counts_user_visible_messages_not_thread_items(cli, monkey
 def test_clear_leaves_the_session_so_the_model_forgets_the_conversation(cli, monkeypatch):
     from cli.commands.chat import cmd_clear
 
-    monkeypatch.setattr(_legacy, "_RunDashboard", lambda prompt, max_iter: _QuietDashboard())
+    monkeypatch.setattr(_cmd_rail, 'RailRunDashboard', lambda prompt, max_iter: _QuietDashboard())
     ctx = cli_main.InteractiveContext(max_iter=8)
     cli_main._run_one_turn("Quote Apple", ctx)
     old_session = ctx.session_id

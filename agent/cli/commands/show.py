@@ -1,9 +1,7 @@
 """``/show``, ``/skill``, ``/pine`` — read-only inspect commands.
 
-All three already exist as fully-featured ``cmd_*`` callables in
-``cli._legacy``; this module is a thin shim so the slash router can
-dispatch by command name without importing the legacy module top-level
-(which is heavy — it pulls in providers, swarm, etc.).
+Slash commands validate their arguments and render errors before calling
+the inspection command handlers.
 """
 
 from __future__ import annotations
@@ -22,15 +20,15 @@ def _resolve_console() -> Console:
 
 
 def cmd_show(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """``/show <run_id>`` — replay a prior run via the legacy handler."""
+    """``/show <run_id>`` — replay a prior run via the inspection handler."""
     console = _resolve_console()
     if not args:
         console.print(Text("Usage: /show <run_id>", style="bold red"))
         return 1
     try:
-        from cli._legacy import cmd_show as legacy_show
+        from cli.commands.inspection import cmd_show as show_run
 
-        legacy_show(args[0])
+        show_run(args[0])
         return 0
     except Exception as exc:  # noqa: BLE001
         console.print(Text(f"/show failed: {exc}", style="bold red"))
@@ -38,10 +36,10 @@ def cmd_show(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_skill(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """``/skill`` — list bundled + user skills (legacy ``cmd_skills``)."""
+    """``/skill`` — list bundled + user skills (``cmd_skills``)."""
     console = _resolve_console()
     try:
-        from cli._legacy import cmd_skills
+        from cli.commands.inspection import cmd_skills
 
         cmd_skills()
         return 0
@@ -57,9 +55,9 @@ def cmd_pine(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
         console.print(Text("Usage: /pine <run_id>", style="bold red"))
         return 1
     try:
-        from cli._legacy import cmd_pine as legacy_pine
+        from cli.commands.inspection import cmd_pine as show_pine
 
-        legacy_pine(args[0])
+        show_pine(args[0])
         return 0
     except Exception as exc:  # noqa: BLE001
         console.print(Text(f"/pine failed: {exc}", style="bold red"))

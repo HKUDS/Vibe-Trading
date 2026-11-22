@@ -106,7 +106,7 @@ def cmd_model(ctx: Any = None, *args: str) -> int:
         return _change_session_model(ctx, args)
     console = _resolve_console()
     try:
-        from cli._legacy import _show_settings
+        from cli.commands.providers import _show_settings
 
         _show_settings()
     except Exception as exc:  # noqa: BLE001 — legacy may be absent on partial install

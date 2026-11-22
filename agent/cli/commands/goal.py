@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from rich import box
@@ -50,7 +49,7 @@ def _criterion_is_covered(criterion: dict, evidence: list[dict]) -> bool:
 def _create_cli_session(ctx: Any, title: str) -> str | None:
     """Create a normal CLI session when /goal is used before the first turn."""
     try:
-        from cli._legacy import SESSIONS_DIR
+        from cli.commands.common import SESSIONS_DIR
         from src.session.models import Session, SessionStatus
         from src.session.search import get_shared_index
         from src.session.store import SessionStore

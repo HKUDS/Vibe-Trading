@@ -1,5 +1,8 @@
 """Read-path regressions for cash disclosures and sanitized connector errors."""
 
+import cli.commands.connectors as _cmd_connectors
+import cli.commands.portfolio as _cmd_portfolio
+
 from decimal import Decimal
 import json
 
@@ -121,10 +124,9 @@ def test_longbridge_cash_survives_store_api_context_and_cli(tmp_path, capsys, mo
     result = json.loads(portfolio_tool.PortfolioSummaryTool().execute())
     assert result["context"]["account_allocation"][0]["balance_details"] == details
 
-    from cli import _legacy
 
-    _legacy._print_connector_balances(account)
-    _legacy.cmd_portfolio_show(service=service)
+    _cmd_connectors._print_connector_balances(account)
+    _cmd_portfolio.cmd_portfolio_show(service=service)
     output = capsys.readouterr().out
     assert "-500" in output and "Remaining financing" in output and "USD" in output
 

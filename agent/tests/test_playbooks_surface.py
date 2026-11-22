@@ -1,26 +1,8 @@
-"""Entry-point contracts for the scheduled-research playbook catalogue.
-
-The templates themselves are covered by ``tests/test_research_playbooks.py``.
-This module covers the three surfaces a user actually reaches them through, and
-the properties that are easy to break from any of them:
-
-* REST — ``GET /scheduled-runs/playbooks``, ``GET /scheduled-runs/playbooks/{slug}``
-  and ``POST /scheduled-runs/playbooks/{slug}``, including the structural claim
-  that EVERY route under ``/scheduled-runs`` carries ``require_auth``.
-* CLI — ``vibe-trading playbook list | show | create``, driven through
-  ``cli._legacy.main`` so the argparse wiring is exercised, not just the handler.
-* Slash — ``/playbook`` registration plus its list / show / run / schedule paths.
-
-The decoupling assertion runs on all three: a queued or persisted prompt must be
-``ResearchPlaybook.render()`` byte for byte. An entry point that "helpfully"
-appended tool names would fail here.
-
-No network is involved. The job store is redirected to ``tmp_path`` by pointing
-``VIBE_TRADING_HOME`` at it (CLI/slash, which construct their own store) and by
-patching the route module's singleton (REST).
-"""
+'Entry-point contracts for the scheduled-research playbook catalogue.\n\nThe templates themselves are covered by ``tests/test_research_playbooks.py``.\nThis module covers the three surfaces a user actually reaches them through, and\nthe properties that are easy to break from any of them:\n\n* REST — ``GET /scheduled-runs/playbooks``, ``GET /scheduled-runs/playbooks/{slug}``\n  and ``POST /scheduled-runs/playbooks/{slug}``, including the structural claim\n  that EVERY route under ``/scheduled-runs`` carries ``require_auth``.\n* CLI — ``vibe-trading playbook list | show | create``, driven through\n  ``cli.commands.dispatch.main`` so the argparse wiring is exercised, not just the handler.\n* Slash — ``/playbook`` registration plus its list / show / run / schedule paths.\n\nThe decoupling assertion runs on all three: a queued or persisted prompt must be\n``ResearchPlaybook.render()`` byte for byte. An entry point that "helpfully"\nappended tool names would fail here.\n\nNo network is involved. The job store is redirected to ``tmp_path`` by pointing\n``VIBE_TRADING_HOME`` at it (CLI/slash, which construct their own store) and by\npatching the route module\'s singleton (REST).\n'
 
 from __future__ import annotations
+
+import cli.commands.dispatch as _cmd_dispatch
 
 from pathlib import Path
 from typing import Any, List
@@ -103,9 +85,8 @@ def client(rest_store: ScheduledResearchJobStore, monkeypatch: pytest.MonkeyPatc
 
 def _run_cli(argv: List[str]) -> int:
     """Drive the real argparse dispatcher, returning its exit code."""
-    from cli import _legacy
 
-    return int(_legacy.main(argv))
+    return int(_cmd_dispatch.main(argv))
 
 
 # ---------------------------------------------------------------------------

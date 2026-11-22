@@ -1,19 +1,8 @@
-"""CLI contract for ``vibe-trading strategy-evidence refresh`` (#969 Phase 2).
-
-Driven through ``cli._legacy.main`` so the argparse wiring is exercised, not
-just the handler (same invocation style as ``test_playbooks_surface.py``).
-The refresh runs the SAME core as the agent tool
-(``refresh_strategy_evidence_core`` over the default ``EvidenceStore()``
-resolution) — no second spec-parsing code path.
-
-Fixture run dirs use the REAL engine artifact schema, reused from
-``test_strategy_discovery_harness``. The runtime root and the evidence DB are
-redirected into ``tmp_path`` via ``VIBE_TRADING_HOME`` and the
-``VIBE_TRADING_STRATEGY_DISCOVERY_DB_PATH`` override (the conftest resets the
-cached EnvConfig around every test).
-"""
+'CLI contract for ``vibe-trading strategy-evidence refresh`` (#969 Phase 2).\n\nDriven through ``cli.commands.dispatch.main`` so the argparse wiring is exercised, not\njust the handler (same invocation style as ``test_playbooks_surface.py``).\nThe refresh runs the SAME core as the agent tool\n(``refresh_strategy_evidence_core`` over the default ``EvidenceStore()``\nresolution) — no second spec-parsing code path.\n\nFixture run dirs use the REAL engine artifact schema, reused from\n``test_strategy_discovery_harness``. The runtime root and the evidence DB are\nredirected into ``tmp_path`` via ``VIBE_TRADING_HOME`` and the\n``VIBE_TRADING_STRATEGY_DISCOVERY_DB_PATH`` override (the conftest resets the\ncached EnvConfig around every test).\n'
 
 from __future__ import annotations
+
+import cli.commands.dispatch as _cmd_dispatch
 
 import json
 from pathlib import Path
@@ -42,9 +31,8 @@ requires_cli = pytest.mark.skipif(
 
 def _run_cli(argv: List[str]) -> int:
     """Drive the real argparse dispatcher, returning its exit code."""
-    from cli import _legacy
 
-    return int(_legacy.main(argv))
+    return int(_cmd_dispatch.main(argv))
 
 
 def _flat(text: str) -> str:

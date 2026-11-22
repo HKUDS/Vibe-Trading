@@ -1,5 +1,7 @@
 """A prepared child earns evidence from its own sealed backtest only."""
 
+import cli.commands.dispatch as _cmd_dispatch
+
 import json
 import shutil
 from dataclasses import replace
@@ -199,7 +201,6 @@ def test_generated_child_code_records_current_model_without_touching_active_run(
 def test_api_auth_and_cli_prepare_share_child_contract(context, tmp_path, capsys):
     from fastapi import FastAPI, HTTPException
     from fastapi.testclient import TestClient
-    from cli import _legacy
     from src.api.strategy_adaptation_routes import register_strategy_adaptation_routes
 
     # API and CLI use the actual clock. Keep their parent's evidence non-stale.
@@ -226,7 +227,7 @@ def test_api_auth_and_cli_prepare_share_child_contract(context, tmp_path, capsys
     assert context[0].get_adaptation_binding(child["strategy_id"].removeprefix("sdm:"))["codes"] == config["codes"]
     config_path = tmp_path / "input.json"
     config_path.write_text(json.dumps(config))
-    code = _legacy.main(["strategy-evidence", "adapt", "--strategy-id", "sdm:parent", "--name", "cli child",
+    code = _cmd_dispatch.main(["strategy-evidence", "adapt", "--strategy-id", "sdm:parent", "--name", "cli child",
                          "--universe", "new", "--config", str(config_path)])
     assert code == 0
     output = json.loads(capsys.readouterr().out)

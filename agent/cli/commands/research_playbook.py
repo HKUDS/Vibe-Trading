@@ -7,7 +7,7 @@ invisible. This module is the single place both non-interactive and interactive
 users enter through:
 
 * ``vibe-trading playbook list | show <slug> | create <slug>`` — the argparse
-  subcommand, wired in :mod:`cli._legacy` next to ``alpha`` / ``hypothesis``.
+  subcommand, wired in :mod:`cli.commands.dispatch` next to ``alpha`` / ``hypothesis``.
 * ``/playbook`` — the REPL slash command, registered in
   :mod:`cli.commands.slash_router`, dispatched through ``run(ctx, *args)``.
 

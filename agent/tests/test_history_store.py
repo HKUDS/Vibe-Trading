@@ -375,7 +375,7 @@ def test_agent_job_listing_is_bounded_and_paged(store, monkeypatch):
 
 
 def test_application_cli_supports_global_flags_and_sequential_invocations(tmp_path, monkeypatch, capsys):
-    from cli._legacy import main
+    from cli.commands.dispatch import main
     import src.data_gateway.history_store as module
 
     monkeypatch.setattr(module, "history_directory", lambda: tmp_path)

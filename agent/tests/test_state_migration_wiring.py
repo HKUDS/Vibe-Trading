@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import cli.commands.dispatch as _cmd_dispatch
+
 import pytest
 
 from src.config import migrate
@@ -21,12 +23,11 @@ def test_cli_main_runs_migration(
 ) -> None:
     import importlib
 
-    import cli._legacy as legacy
 
     cli_main = importlib.import_module("cli.main")
 
     monkeypatch.setattr(cli_main, "_is_interactive_invocation", lambda argv: False)
-    monkeypatch.setattr(legacy, "main", lambda argv: 0)
+    monkeypatch.setattr(_cmd_dispatch, "main", lambda argv: 0)
 
     assert cli_main.main(["list"]) == 0
     assert record_migration

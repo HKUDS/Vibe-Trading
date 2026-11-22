@@ -204,10 +204,11 @@ def test_service_uses_persisted_ibkr_local_config(
 
 
 def test_cli_connector_routes_to_handler() -> None:
-    from cli._legacy import _build_parser, _dispatch_connector
+    from cli.commands.parser import build_parser as _build_parser
+    from cli.commands.connectors import _dispatch_connector
 
     args = _build_parser().parse_args(["connector", "check", "ibkr-paper-local", "--account", "DU12345"])
-    with patch("cli._legacy.cmd_connector_check", return_value=0) as handler:
+    with patch('cli.commands.connectors.cmd_connector_check', return_value=0) as handler:
         assert _dispatch_connector(args) == 0
     handler.assert_called_once_with(
         "ibkr-paper-local",
@@ -219,7 +220,7 @@ def test_cli_connector_routes_to_handler() -> None:
 
 
 def test_cli_connector_check_passes_account_to_backend() -> None:
-    from cli._legacy import cmd_connector_check
+    from cli.commands.connectors import cmd_connector_check
 
     report = {"status": "ok", "ports": [], "target": {}, "sdk": {"installed": True}}
     with patch("src.trading.service.check_connection", return_value=report) as check:
@@ -236,7 +237,6 @@ def test_cli_connector_check_passes_account_to_backend() -> None:
 
 def test_quote_waits_for_delayed_tick_arrival(monkeypatch: pytest.MonkeyPatch) -> None:
     """get_quote polls with ib.sleep() until the ticker receives real data."""
-    import math
     from types import SimpleNamespace
 
     pump_count = [0]
@@ -281,7 +281,6 @@ def test_quote_waits_for_delayed_tick_arrival(monkeypatch: pytest.MonkeyPatch) -
 
 def test_quote_keeps_polling_when_ticker_is_nan(monkeypatch: pytest.MonkeyPatch) -> None:
     """get_quote rejects NaN fields and continues polling for real data."""
-    import math
     from types import SimpleNamespace
 
     pump_count = [0]

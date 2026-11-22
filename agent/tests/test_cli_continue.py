@@ -7,9 +7,11 @@ tests pin which directory and session a continuation lands in.
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.execution as _cmd_execution
+
 from pathlib import Path
 
-from cli import _legacy
 from src.session.thread import ThreadLog
 
 
@@ -36,18 +38,18 @@ def test_repeated_continue_reads_and_appends_one_canonical_trace(
         continuation.append("assistant", prompt, content=f"answer to {prompt}", phase="final")
         return {"status": "success", "run_id": "session-1", "run_dir": run_dir_override}
 
-    monkeypatch.setattr(_legacy, "RUNS_DIR", runs_dir)
-    monkeypatch.setattr(_legacy, "SESSIONS_DIR", sessions_dir)
-    monkeypatch.setattr(_legacy, "_run_agent", fake_run_agent)
-    monkeypatch.setattr(_legacy, "_print_json_result", lambda result: None)
+    monkeypatch.setattr(_cmd_common, "RUNS_DIR", runs_dir)
+    monkeypatch.setattr(_cmd_common, "SESSIONS_DIR", sessions_dir)
+    monkeypatch.setattr(_cmd_execution, "_run_agent", fake_run_agent)
+    monkeypatch.setattr(_cmd_execution, "_print_json_result", lambda result: None)
 
     assert (
-        _legacy.cmd_continue("session-1", "first follow-up", 5, json_mode=True)
-        == _legacy.EXIT_SUCCESS
+        _cmd_execution.cmd_continue("session-1", "first follow-up", 5, json_mode=True)
+        == _cmd_common.EXIT_SUCCESS
     )
     assert (
-        _legacy.cmd_continue("session-1", "second follow-up", 5, json_mode=True)
-        == _legacy.EXIT_SUCCESS
+        _cmd_execution.cmd_continue("session-1", "second follow-up", 5, json_mode=True)
+        == _cmd_common.EXIT_SUCCESS
     )
 
     assert seen == [

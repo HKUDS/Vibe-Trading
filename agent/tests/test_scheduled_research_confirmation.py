@@ -298,7 +298,7 @@ def test_cli_confirmation_displays_format_and_legacy_relay_preserves_it(monkeypa
     from io import StringIO
     from rich.console import Console
     from cli.main import _render_scheduled_proposal
-    from cli._legacy import _scheduled_proposal_from_tool_result
+    from cli.commands.execution import _scheduled_proposal_from_tool_result
     from src.scheduled_research import proposals
 
     for fmt, label in [("html", "HTML"), ("pdf", "PDF"), (None, "纯文本")]:

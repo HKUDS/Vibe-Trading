@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction, positive_int) -> None:
-    from cli.commands import runtime as rt
+    from src.memory.persistent import MEMORY_TYPES
     memory_parser = subparsers.add_parser("memory", help="Inspect persistent memory")
     memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
     memory_list_parser = memory_subparsers.add_parser("list", help="List memory entries")
-    memory_list_parser.add_argument("--type", dest="memory_type", choices=rt.MEMORY_TYPES, help="Filter by memory type")
+    memory_list_parser.add_argument("--type", dest="memory_type", choices=MEMORY_TYPES, help="Filter by memory type")
     memory_show_parser = memory_subparsers.add_parser("show", help="Show a memory entry")
     memory_show_parser.add_argument("name", help="Memory title or filename stem")
     memory_search_parser = memory_subparsers.add_parser("search", help="Recall memories for a query")

@@ -20,6 +20,8 @@ The API client is stubbed (``httpx``) and the liveness module is injected into
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+
 import importlib
 import sys
 import types
@@ -131,34 +133,35 @@ def spending_preview(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 class TestRunnerDispatch:
     def _dispatch(self, argv: List[str]) -> int:
-        from cli._legacy import _build_parser, _dispatch_connector
+        from cli.commands.parser import build_parser as _build_parser
+        from cli.commands.connectors import _dispatch_connector
 
         args = _build_parser().parse_args(argv)
         return _dispatch_connector(args)
 
     def test_run_routes_to_handler(self) -> None:
-        with patch("cli._legacy.cmd_connector_start", return_value=0) as m:
+        with patch('cli.commands.connectors.cmd_connector_start', return_value=0) as m:
             assert self._dispatch(["connector", "start", "robinhood-live-mcp"]) == 0
         m.assert_called_once_with("robinhood-live-mcp")
 
     def test_start_default_profile_none(self) -> None:
-        with patch("cli._legacy.cmd_connector_start", return_value=0) as m:
+        with patch('cli.commands.connectors.cmd_connector_start', return_value=0) as m:
             self._dispatch(["connector", "start"])
         m.assert_called_once_with(None)
 
     def test_start_routes_to_handler(self) -> None:
-        with patch("cli._legacy.cmd_connector_start", return_value=0) as m:
+        with patch('cli.commands.connectors.cmd_connector_start', return_value=0) as m:
             self._dispatch(["connector", "start", "robinhood-live-mcp"])
         m.assert_called_once_with("robinhood-live-mcp")
 
     def test_stop_routes_to_handler(self) -> None:
-        with patch("cli._legacy.cmd_connector_stop", return_value=0) as m:
+        with patch('cli.commands.connectors.cmd_connector_stop', return_value=0) as m:
             self._dispatch(["connector", "stop"])
         m.assert_called_once_with(None)
 
     def test_subparsers_registered(self) -> None:
         """start/stop parse without error (the parser knows them)."""
-        from cli._legacy import _build_parser
+        from cli.commands.parser import build_parser as _build_parser
 
         parser = _build_parser()
         for verb in ("start", "stop"):
@@ -175,7 +178,7 @@ class TestRunnerControlEndpoints:
     def test_live_status_request_sends_configured_bearer_token(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cli._legacy import _live_api_call
+        from cli.commands.live import _live_api_call
 
         captured: Dict[str, Any] = {}
 
@@ -192,7 +195,8 @@ class TestRunnerControlEndpoints:
         assert captured["headers"] == {"Authorization": "Bearer live-secret"}
 
     def test_start_posts_to_runner_start(self, spending_preview: list[str]) -> None:
-        from cli._legacy import EXIT_SUCCESS, cmd_live_start
+        from cli.commands.common import EXIT_SUCCESS
+        from cli.commands.live import cmd_live_start
 
         captured: Dict[str, Any] = {}
 
@@ -216,7 +220,8 @@ class TestRunnerControlEndpoints:
     def test_connector_start_message_uses_connector_status(
         self, capsys: pytest.CaptureFixture[str], spending_preview: list[str]
     ) -> None:
-        from cli._legacy import EXIT_SUCCESS, cmd_connector_start
+        from cli.commands.common import EXIT_SUCCESS
+        from cli.commands.connectors import cmd_connector_start
 
         def _post(
             url: str,
@@ -237,7 +242,8 @@ class TestRunnerControlEndpoints:
     def test_connector_start_rejects_readonly_ibkr_mcp(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from cli._legacy import EXIT_USAGE_ERROR, cmd_connector_start
+        from cli.commands.common import EXIT_USAGE_ERROR
+        from cli.commands.connectors import cmd_connector_start
 
         assert cmd_connector_start("ibkr-live-official-mcp-readonly") == EXIT_USAGE_ERROR
 
@@ -245,7 +251,8 @@ class TestRunnerControlEndpoints:
         assert "does not support live runner management" in out
 
     def test_stop_posts_to_runner_stop(self) -> None:
-        from cli._legacy import EXIT_SUCCESS, cmd_live_stop
+        from cli.commands.common import EXIT_SUCCESS
+        from cli.commands.live import cmd_live_stop
 
         captured: Dict[str, Any] = {}
 
@@ -265,7 +272,8 @@ class TestRunnerControlEndpoints:
         assert captured["body"]["broker"] == "robinhood"
 
     def test_start_server_unreachable_is_run_failed(self, spending_preview: list[str]) -> None:
-        from cli._legacy import EXIT_RUN_FAILED, cmd_live_start
+        from cli.commands.common import EXIT_RUN_FAILED
+        from cli.commands.live import cmd_live_start
 
         def _boom(
             url: str,
@@ -284,7 +292,8 @@ class TestRunnerControlEndpoints:
         self, fake_liveness: Dict[str, Any], spending_preview: list[str]
     ) -> None:
         """`live run` relays a foreground start, tails liveness, then stops."""
-        from cli._legacy import EXIT_SUCCESS, cmd_live_run
+        from cli.commands.common import EXIT_SUCCESS
+        from cli.commands.live import cmd_live_run
 
         calls: List[str] = []
 
@@ -302,11 +311,10 @@ class TestRunnerControlEndpoints:
                 fake_liveness["alive"] = False
             return _FakeResp({"runner_id": "live-robinhood", "status": "ok"})
 
-        import cli._legacy as legacy
 
         # _legacy uses its own ``time`` import; patch that one so the tail loop
         # does not actually sleep.
-        with patch("httpx.post", _post), patch.object(legacy.time, "sleep", lambda *_: None):
+        with patch("httpx.post", _post), patch.object(_cmd_common.time, "sleep", lambda *_: None):
             assert cmd_live_run("robinhood") == EXIT_SUCCESS
 
         assert any(u.endswith("/live/runner/start") for u in calls)
@@ -322,7 +330,7 @@ class TestStatusLiveness:
     def test_status_shows_running(
         self, live_root: Path, fake_liveness: Dict[str, Any], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from cli._legacy import cmd_live_status
+        from cli.commands.live import cmd_live_status
 
         fake_liveness["alive"] = True
         fake_liveness["tick"] = datetime.now(timezone.utc) - timedelta(seconds=5)
@@ -335,7 +343,7 @@ class TestStatusLiveness:
     def test_status_shows_stopped(
         self, live_root: Path, fake_liveness: Dict[str, Any], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from cli._legacy import cmd_live_status
+        from cli.commands.live import cmd_live_status
 
         fake_liveness["alive"] = False
         cmd_live_status("robinhood")
@@ -346,7 +354,7 @@ class TestStatusLiveness:
         self, live_root: Path, no_liveness: None, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Status must not crash if the runtime parcel hasn't landed yet."""
-        from cli._legacy import cmd_live_status
+        from cli.commands.live import cmd_live_status
 
         assert cmd_live_status("robinhood") == 0
         out = capsys.readouterr().out
@@ -358,7 +366,8 @@ class TestConnectorStatusReadiness:
     def test_remote_live_status_fails_when_not_configured(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from cli._legacy import EXIT_RUN_FAILED, cmd_connector_status
+        from cli.commands.common import EXIT_RUN_FAILED
+        from cli.commands.connectors import cmd_connector_status
 
         with patch(
             "src.config.loader.load_agent_config",
@@ -373,7 +382,8 @@ class TestConnectorStatusReadiness:
     def test_remote_live_status_fails_when_not_authorized(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from cli._legacy import EXIT_RUN_FAILED, cmd_connector_status
+        from cli.commands.common import EXIT_RUN_FAILED
+        from cli.commands.connectors import cmd_connector_status
 
         server = types.SimpleNamespace(
             url="https://example.invalid/mcp",
@@ -487,7 +497,7 @@ class TestReplResumeIntercept:
 class TestReplConnectorBridge:
     def test_connector_bridges_to_dispatch_connector(self) -> None:
         console = main.get_console()
-        with patch("cli._legacy._dispatch_connector", return_value=0) as disp:
+        with patch('cli.commands.connectors._dispatch_connector', return_value=0) as disp:
             main._run_connector_command_from_repl(console, ["status", "robinhood-live-mcp"])
         disp.assert_called_once()
         parsed = disp.call_args.args[0]
@@ -496,14 +506,14 @@ class TestReplConnectorBridge:
 
     def test_bare_connector_defaults_to_status(self) -> None:
         console = main.get_console()
-        with patch("cli._legacy._dispatch_connector", return_value=0) as disp:
+        with patch('cli.commands.connectors._dispatch_connector', return_value=0) as disp:
             main._run_connector_command_from_repl(console, [])
         parsed = disp.call_args.args[0]
         assert parsed.connector_command == "status"
 
     def test_connector_start_bridges_to_start_handler(self) -> None:
         console = main.get_console()
-        with patch("cli._legacy.cmd_connector_start", return_value=0) as start:
+        with patch('cli.commands.connectors.cmd_connector_start', return_value=0) as start:
             main._run_connector_command_from_repl(console, ["start"])
         start.assert_called_once_with(None)
 
@@ -538,11 +548,11 @@ class TestResumeByIdDispatch:
 
     def test_resume_needs_exactly_two_args(self) -> None:
         """Too few or too many args should fall through to the legacy dispatcher."""
-        with patch("cli._legacy.main", return_value=1) as legacy:
+        with patch('cli.commands.dispatch.main', return_value=1) as legacy:
             main.main(["resume"])
         legacy.assert_called_once()
         legacy.reset_mock()
 
-        with patch("cli._legacy.main", return_value=1) as legacy:
+        with patch('cli.commands.dispatch.main', return_value=1) as legacy:
             main.main(["resume", "sess_x", "extra"])
         legacy.assert_called_once()

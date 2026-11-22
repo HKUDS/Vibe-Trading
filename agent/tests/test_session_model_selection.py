@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.execution as _cmd_execution
+import cli.commands.providers as _cmd_providers
+
 import asyncio
 import json
 import os
@@ -503,7 +507,6 @@ def test_model_routes_require_auth_when_a_key_is_configured(client, monkeypatch)
 def cli(server_settings, tmp_path, monkeypatch):
     import importlib
 
-    legacy = importlib.import_module("cli._legacy")
     cli_main = importlib.import_module("cli.main")
 
     from io import StringIO
@@ -513,7 +516,7 @@ def cli(server_settings, tmp_path, monkeypatch):
     store = SessionStore(tmp_path / "sessions")
     out = StringIO()
     monkeypatch.setattr(cli_main, "_SESSION_STORE_CACHE", store)
-    monkeypatch.setattr(legacy, "_show_settings", lambda: None)
+    monkeypatch.setattr(_cmd_providers, "_show_settings", lambda: None)
     monkeypatch.setattr("src.session.search.get_shared_index", lambda: _DummyIndex())
     monkeypatch.setattr("cli.commands.chat.get_console", lambda: Console(file=out, width=200))
     return SimpleNamespace(store=store, out=out)
@@ -704,13 +707,11 @@ def test_settings_form_cannot_edit_a_custom_providers_connection(client, monkeyp
 
 
 def test_cli_turn_with_an_unusable_session_model_fails_without_raising(server_settings, monkeypatch, tmp_path):
-    import importlib
 
-    legacy = importlib.import_module("cli._legacy")
     store = SessionStore(tmp_path / "sessions")
     session = Session(title="cli", config={SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
     store.create_session(session)
-    monkeypatch.setattr(legacy, "SESSIONS_DIR", tmp_path / "sessions")
+    monkeypatch.setattr(_cmd_common, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
 
     def _no_registry(**kwargs):
@@ -719,7 +720,7 @@ def test_cli_turn_with_an_unusable_session_model_fails_without_raising(server_se
     monkeypatch.setattr("src.tools.build_registry", _no_registry)
     monkeypatch.delenv("GROQ_API_KEY")
 
-    result = legacy._run_agent("hi", no_rich=True, session_id=session.session_id)
+    result = _cmd_execution._run_agent("hi", no_rich=True, session_id=session.session_id)
 
     assert result["status"] == "failed"
     assert "groq has no credentials" in result["reason"]

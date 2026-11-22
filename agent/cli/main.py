@@ -1,23 +1,8 @@
-"""Interactive CLI front door for Vibe-Trading.
-
-Responsibilities:
-
-1. Detect whether any provider `.env` candidate exists; if all are missing, run
-   the onboarding wizard (:mod:`cli.onboard`) before doing anything else.
-2. Render the startup banner (:mod:`cli.intro`) on interactive entry.
-3. For interactive entry (no subcommand, or ``chat``) drive the REPL
-   built on :mod:`cli.input`, :mod:`cli.completer`,
-   :mod:`cli.commands.slash_router`, :mod:`cli.components.working_indicator`,
-   :mod:`cli.components.tool_event`, and :mod:`cli.components.hint_bar`.
-4. For every other subcommand delegate to ``cli._legacy.main`` so the
-   long tail of ``serve``, ``run``, ``mcp``, ``sessions``, ``swarm`` etc.
-   keeps working without regression.
-
-The console script entry in ``pyproject.toml`` (``vibe-trading = "cli:main"``)
-hits :func:`main`.
-"""
+'Interactive CLI front door for Vibe-Trading.\n\nResponsibilities:\n\n1. Detect whether any provider `.env` candidate exists; if all are missing, run\n   the onboarding wizard (:mod:`cli.onboard`) before doing anything else.\n2. Render the startup banner (:mod:`cli.intro`) on interactive entry.\n3. For interactive entry (no subcommand, or ``chat``) drive the REPL\n   built on :mod:`cli.input`, :mod:`cli.completer`,\n   :mod:`cli.commands.slash_router`, :mod:`cli.components.working_indicator`,\n   :mod:`cli.components.tool_event`, and :mod:`cli.components.hint_bar`.\n4. For every other subcommand delegate to ``cli.commands.dispatch.main`` so the\n   long tail of ``serve``, ``run``, ``mcp``, ``sessions``, ``swarm`` etc.\n   keeps working without regression.\n\nThe console script entry in ``pyproject.toml`` (``vibe-trading = "cli:main"``)\nhits :func:`main`.\n'
 
 from __future__ import annotations
+
+import cli.commands.dispatch as _cmd_dispatch
 
 import importlib
 import logging
@@ -377,7 +362,7 @@ def _session_store() -> Any:
     """
     global _SESSION_STORE_CACHE
     if _SESSION_STORE_CACHE is None:
-        from cli._legacy import SESSIONS_DIR  # filesystem path constant
+        from cli.commands.common import SESSIONS_DIR  # filesystem path constant
         from src.session.store import SessionStore
 
         _SESSION_STORE_CACHE = SessionStore(base_dir=SESSIONS_DIR)
@@ -631,7 +616,8 @@ def _summarise_tool_result(tool: str, status: str, preview: str) -> str:
     # Delegate to the legacy preview helper which already knows about
     # backtest sharpe / shadow id / etc.
     try:
-        from cli._legacy import _format_tool_result_preview, _strip_rich_tags
+        from cli.commands.execution import _format_tool_result_preview
+        from cli.commands.execution import _strip_rich_tags
 
         return _strip_rich_tags(_format_tool_result_preview(tool, status, preview))[:48]
     except Exception:  # noqa: BLE001
@@ -654,15 +640,9 @@ def _print_debug_summary(
 
 
 def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
-    """Execute a single agent turn with the Rich dashboard.
-
-    Routes through :func:`cli._legacy._run_agent` so all tool callbacks,
-    persistent memory, and the ReAct engine remain untouched — we only
-    swap in the Rich dashboard. ``_run_agent`` records the turn in the
-    session (user message, thread items, reply row) and replays the
-    session's history into the model.
-    """
-    from cli._legacy import _RunDashboard, _run_agent
+    "Execute a single agent turn with the Rich dashboard.\n\n    Routes through :func:`cli.commands.execution._run_agent` so all tool callbacks,\n    persistent memory, and the ReAct engine remain untouched — we only\n    swap in the Rich dashboard. ``_run_agent`` records the turn in the\n    session (user message, thread items, reply row) and replays the\n    session's history into the model.\n    "
+    from cli.ui.rail import RailRunDashboard as _RunDashboard
+    from cli.commands.execution import _run_agent
     from rich.live import Live
 
     console = get_console()
@@ -739,7 +719,7 @@ def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: flo
     """Print the assistant answer after the rail without boxed run panels."""
 
     from cli.ui.transcript import render_answer, render_elapsed_status
-    from cli._legacy import _read_metric_values
+    from cli.commands.inspection import _read_metric_values
 
     content = (result.get("content") or "").strip()
     if content:
@@ -906,7 +886,8 @@ def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
         console: Rich console for error messages.
         args: Tokens following ``/connector`` (e.g. ``["status", "robinhood-live-mcp"]``).
     """
-    from cli._legacy import _build_parser, _dispatch_connector
+    from cli.commands.parser import build_parser as _build_parser
+    from cli.commands.connectors import _dispatch_connector
 
     argv = ["connector", *(args or ["status"])]
     parser = _build_parser()
@@ -924,7 +905,8 @@ def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
 
 def _run_data_command_from_repl(console: Any, args: list[str]) -> None:
     """Run a ``/data ...`` subcommand from the REPL via the CLI dispatcher."""
-    from cli._legacy import _build_parser, _dispatch_data
+    from cli.commands.parser import build_parser as _build_parser
+    from cli.commands.data import _dispatch_data
 
     argv = ["data", *(args or ["status"])]
     try:
@@ -1425,24 +1407,7 @@ def _interactive_loop(
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """CLI entrypoint returning a process exit code.
-
-    Behaviour:
-
-    * Interactive entry (no subcommand, or ``chat`` + TTY): show banner,
-      run onboarding wizard if needed, then drop into the interactive
-      loop driven by ``cli/input.py``, ``cli/completer.py``,
-      and ``cli/commands/*``.
-    * Non-interactive entry (``serve``, ``run -p ...``, ``mcp``,
-      ``swarm``, piped stdin, etc.): pass through to ``cli._legacy.main``
-      so every existing subcommand keeps working unchanged.
-
-    Args:
-        argv: Optional argument list (defaults to ``sys.argv[1:]``).
-
-    Returns:
-        Process exit code.
-    """
+    'CLI entrypoint returning a process exit code.\n\n    Behaviour:\n\n    * Interactive entry (no subcommand, or ``chat`` + TTY): show banner,\n      run onboarding wizard if needed, then drop into the interactive\n      loop driven by ``cli/input.py``, ``cli/completer.py``,\n      and ``cli/commands/*``.\n    * Non-interactive entry (``serve``, ``run -p ...``, ``mcp``,\n      ``swarm``, piped stdin, etc.): pass through to ``cli.commands.dispatch.main``\n      so every existing subcommand keeps working unchanged.\n\n    Args:\n        argv: Optional argument list (defaults to ``sys.argv[1:]``).\n\n    Returns:\n        Process exit code.\n    '
     raw_argv = list(sys.argv[1:] if argv is None else argv)
 
     # One-time move of pre-#904 code-relative state into the runtime root.
@@ -1475,15 +1440,15 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Delegate every other path to the legacy dispatcher.
     try:
-        from cli import _legacy
+        pass
     except ImportError as exc:  # pragma: no cover — packaging error
         get_console().print(
-            f"  Internal error: cannot import cli._legacy ({exc}).",
+            f"  Internal error: cannot import cli.commands.dispatch ({exc}).",
             style=Theme.danger,
         )
         return 2
 
-    return int(_legacy.main(raw_argv))
+    return int(_cmd_dispatch.main(raw_argv))
 
 
 def _extract_max_iter(argv: Sequence[str], *, default: int) -> int:

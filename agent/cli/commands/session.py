@@ -26,7 +26,7 @@ def cmd_history(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
     """List recent sessions via legacy ``cmd_sessions``."""
     console = _resolve_console()
     try:
-        from cli._legacy import cmd_sessions
+        from cli.commands.sessions import cmd_sessions
 
         cmd_sessions()
         return 0

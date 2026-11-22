@@ -1,6 +1,9 @@
 """The thread replaces trace blobs while retaining durability and path safety."""
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.inspection as _cmd_inspection
+
 import json
 import os
 import stat
@@ -51,14 +54,14 @@ def test_long_answer_is_one_canonical_item_without_blob(tmp_path):
 
 
 def test_cli_record_lookup_prefers_session_then_run(tmp_path, monkeypatch):
-    from cli import _legacy
+    pass
     sessions, runs = tmp_path / "sessions", tmp_path / "runs"
-    monkeypatch.setattr(_legacy, "SESSIONS_DIR", sessions)
-    monkeypatch.setattr(_legacy, "RUNS_DIR", runs)
+    monkeypatch.setattr(_cmd_common, "SESSIONS_DIR", sessions)
+    monkeypatch.setattr(_cmd_common, "RUNS_DIR", runs)
     recorder_at(sessions / "abc").assistant({"content": "session"}, phase="final")
     recorder_at(runs / "abc").assistant({"content": "run"}, phase="final")
-    assert _legacy._thread_entries_for_run("abc")[0]["content"] == "session"
-    assert _legacy._thread_entries_for_run("missing") == []
+    assert _cmd_inspection._thread_entries_for_run("abc")[0]["content"] == "session"
+    assert _cmd_inspection._thread_entries_for_run("missing") == []
 
 
 def test_append_fsyncs_each_record(tmp_path, monkeypatch):

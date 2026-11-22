@@ -33,7 +33,7 @@ def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
     if not args:
         try:
-            from cli._legacy import cmd_memory_list
+            from cli.commands.setup_memory import cmd_memory_list
 
             return cmd_memory_list()
         except Exception as exc:  # noqa: BLE001
@@ -44,14 +44,14 @@ def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
     rest = args[1:]
     try:
         if sub == "search" and rest:
-            from cli._legacy import cmd_memory_search
+            from cli.commands.setup_memory import cmd_memory_search
 
             return cmd_memory_search(" ".join(rest))
         if sub == "forget" and rest:
-            from cli._legacy import cmd_memory_forget
+            from cli.commands.setup_memory import cmd_memory_forget
 
             return cmd_memory_forget(rest[0], yes=False)
-        from cli._legacy import cmd_memory_show
+        from cli.commands.setup_memory import cmd_memory_show
 
         return cmd_memory_show(sub)
     except Exception as exc:  # noqa: BLE001

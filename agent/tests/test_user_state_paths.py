@@ -6,6 +6,8 @@ Session/run/upload history must live under the runtime root
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+
 from pathlib import Path
 
 import pytest
@@ -99,13 +101,13 @@ def test_shadow_account_dirs_live_under_runtime_root(
 
 
 def test_legacy_cli_constants_derive_from_runtime_root() -> None:
-    from cli import _legacy
+    pass
     from src.config import paths
 
-    assert _legacy.SESSIONS_DIR == paths.get_sessions_dir()
-    assert _legacy.RUNS_DIR == paths.get_runs_dir()
-    assert _legacy.SWARM_DIR == paths.get_swarm_runs_dir()
-    assert _legacy.UPLOADS_DIR == paths.get_uploads_dir()
+    assert _cmd_common.SESSIONS_DIR == paths.get_sessions_dir()
+    assert _cmd_common.RUNS_DIR == paths.get_runs_dir()
+    assert _cmd_common.SWARM_DIR == paths.get_swarm_runs_dir()
+    assert _cmd_common.UPLOADS_DIR == paths.get_uploads_dir()
 
 
 def test_agent_loop_constants_derive_from_runtime_root() -> None:
