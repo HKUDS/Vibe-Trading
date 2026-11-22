@@ -12,7 +12,8 @@ from src.agent.context_budget import is_context_overflow
 from src.agent.loop_compaction import estimate_tokens
 from src.agent.tool_loading import request_definitions
 from src.agent.loop_final import FinalAnswerHandler
-from src.agent.loop_streaming import TurnStream, repair_provider_messages
+from src.agent.loop_streaming import TurnStream
+from src.providers.messages import repair_provider_messages
 from src.agent.loop_state import TurnState
 from src.agent.tuning import (
     _heartbeat_interval_s,

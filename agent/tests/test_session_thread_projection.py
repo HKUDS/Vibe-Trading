@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.session.thread import INTERRUPTED_RESULT_CONTENT, ThreadLog, project_turn
+from src.providers.messages import INTERRUPTED_RESULT_CONTENT
+from src.session.thread import ThreadLog, project_turn
 
 
 def _call(call_id: str, name: str, arguments: dict) -> dict:

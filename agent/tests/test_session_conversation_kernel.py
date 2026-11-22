@@ -20,13 +20,14 @@ from typing import Any, Callable
 
 import pytest
 
+from src.providers.messages import INTERRUPTED_RESULT_CONTENT
 from src.agent.instrument_identity import IdentityLedger
 from src.agent.tool_loading import DeferredToolRegistry
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus
 from src.session.service import STOPPED_MARKER, SessionService
 from src.session.store import SessionStore
-from src.session.thread import project_turn, INTERRUPTED_RESULT_CONTENT, STOPPED_TURN_NOTES
+from src.session.thread import project_turn, STOPPED_TURN_NOTES
 from src.tools.read_file_tool import ReadFileTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 

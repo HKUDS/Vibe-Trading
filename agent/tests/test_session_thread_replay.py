@@ -7,8 +7,8 @@ from pathlib import Path
 
 from langchain_core.messages.utils import convert_to_messages
 
+from src.providers.messages import INTERRUPTED_RESULT_CONTENT
 from src.session.thread import (
-    INTERRUPTED_RESULT_CONTENT,
     STOPPED_TURN_NOTES,
     ThreadLog,
     replay,
