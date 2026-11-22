@@ -1,8 +1,8 @@
-"""Local numeric guards and bucket/spec primitives for the pt-v2.0 order-plan layers.
+"""Numeric guards and bucket/spec primitives for the pt-v2.0 order-plan layers.
 
-The precision, quantum and market/currency tables below are deliberate local
-duplicates of the numeric canonical helpers; the order-plan boundary keeps its
-own frozen copies so rejection bytes never drift with upstream numeric edits.
+Precision, rejection and exact-product helpers plus the canonical market/currency
+map come from the numeric single-source home. Only the order-plan market ordering
+table stays local because numeric does not own execution ordering.
 """
 
 from __future__ import annotations
@@ -10,26 +10,28 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
-from typing import Final, NoReturn
+from typing import Final
 
 from ..rules import MarketRules
 from .ledger import PortfolioLedger
-from .models import Currency, Market
+from .models import Currency
 from .numeric import (
     MONEY_SPEC,
     PRICE_SPEC,
     WEIGHT_SPEC,
     DecimalSpec,
     EffectiveFeeModel,
+    _EXACT_PRECISION,
+    _MARKET_BY_CURRENCY,
+    _exact_product as _exact_product,
+    _reject,
     canonical_decimal,
     parse_lot_size,
     parse_price,
 )
 from .order_plan_models import PlannedOrder, Side, _BucketSpec
 from .planner import PlannerBucketNav, TargetWeightAllocation
-from .schema import PortfolioRequestError
 
-_EXACT_PRECISION: Final = 60
 _WEIGHT_QUANTUM: Final = Decimal(1).scaleb(-WEIGHT_SPEC.scale)
 _GAP_SPEC: Final = DecimalSpec(
     scale=WEIGHT_SPEC.scale,
@@ -42,28 +44,7 @@ _BASE_PRICE_SPEC: Final = DecimalSpec(
     minimum_inclusive=False,
 )
 _MARKET_ORDER: Final[dict[str, int]] = {"cn_a": 0, "hk": 1, "us": 2}
-_MARKET_BY_CURRENCY: Final[dict[str, Market]] = {
-    "CNY": "cn_a",
-    "HKD": "hk",
-    "USD": "us",
-}
 _CANONICAL_CURRENCIES: Final = frozenset(_MARKET_BY_CURRENCY)
-
-
-def _reject(
-    reason: str,
-    path: str,
-    *,
-    bucket_id: str | None = None,
-    detail: str = "",
-) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id, detail=detail)
-
-
-def _exact_product(left: Decimal, right: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return left * right
 
 
 def _money(value: Decimal, path: str) -> Decimal:

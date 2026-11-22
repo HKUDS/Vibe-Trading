@@ -209,7 +209,7 @@ class ValuationAdapter(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class OrchestrationAdapters:
-    """The six narrow seams task 12/13 compose without touching stage order."""
+    """The six narrow seams the orchestration composes without touching stage order."""
 
     opening_ledger: OpeningLedgerAdapter
     conversions: ConversionAdapter

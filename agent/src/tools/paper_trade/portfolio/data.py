@@ -574,7 +574,7 @@ def preflight_portfolio_data(
 ) -> PreparedPortfolioData:
     """Load each bucket's raw lookback/target bars and preflight it in order.
 
-    Every gate (calendar, raw caliber, task-5 descriptor, readiness, day plan,
+    Every gate (calendar, raw caliber, descriptor, readiness, day plan,
     corporate actions) completes for one bucket before the next bucket issues a
     provider call, so no later market can run ahead of an earlier failure.
     """

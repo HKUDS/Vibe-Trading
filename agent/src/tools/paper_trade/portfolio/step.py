@@ -4,7 +4,7 @@
 internal portfolio path. It parses one caller-shaped payload, resolves the
 caller-declared sessions, loads each bucket's raw lookback/target bars through
 the injected preflight loaders, derives prior planning marks from that data,
-and runs the fixed task-11 orchestration over the pure planner, caller
+and runs the fixed orchestration over the pure planner, caller
 conversions, all-bucket preflight journal, the Decimal execution adapter and
 Decimal valuation.
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, NoReturn
+from typing import Any
 
 from ..rules import RULES_VERSION
 from .data import (
@@ -59,6 +59,7 @@ from .numeric import (
     MONEY_SPEC,
     PRICE_SPEC,
     EffectiveFeeModel,
+    _reject,
     canonical_decimal,
     parse_effective_fee_model,
 )
@@ -80,7 +81,7 @@ from .orchestrator import (
 )
 from .order_plan import OrderPlan
 from .planner import PLANNER_VERSION, PlanningMark
-from .schema import PortfolioRequestError, parse_portfolio_request
+from .schema import parse_portfolio_request
 from .sessions import PortfolioSessions, resolve_portfolio_sessions
 
 __all__ = ["PortfolioStepResult", "run_portfolio_step"]
@@ -124,10 +125,6 @@ class _PreparedPreflight:
         return self.prepared
 
 
-def _reject(reason: str, path: str, bucket_id: str | None = None) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id)
-
-
 def _require_loaders(
     request: PortfolioRequest,
     loaders: Mapping[Market, Any],
@@ -137,7 +134,7 @@ def _require_loaders(
         _reject("invalid_loaders", "loaders")
     for bucket in request.portfolio_state.buckets:
         if bucket.market not in loaders:
-            _reject("missing_loader", f"loaders.{bucket.market}", bucket.bucket_id)
+            _reject("missing_loader", f"loaders.{bucket.market}", bucket_id=bucket.bucket_id)
 
 
 def _symbols_by_bucket(request: PortfolioRequest) -> dict[str, tuple[str, ...]]:

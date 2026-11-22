@@ -29,7 +29,7 @@ from .order_plan import OrderPlan, PlannedOrder
 
 @dataclass(frozen=True, slots=True)
 class DecimalExecutionAdapter:
-    """Task-11 ``MatchAdapter`` replaying only cash/position ledger events."""
+    """``MatchAdapter`` replaying only cash/position ledger events."""
 
     fee_models: tuple[EffectiveFeeModel, ...] = ()
     hk_lot_sizes: Mapping[str, int] | None = None

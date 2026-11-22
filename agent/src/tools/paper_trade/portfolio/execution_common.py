@@ -1,10 +1,10 @@
 """Shared execution-stage error, abort and Decimal/fee primitives.
 
 Holds the stable :class:`ExecutionAdapterError` rejection, the local
-``_abort``/``_exact_product`` helpers (kept verbatim; consolidation is a
-later step), the legacy-value readers, the fee primitive, the synthetic
-day calendar and the fee-model/market-rules builders shared by the
-validation, legacy-match, rows, outcome and adapter modules.
+``_abort`` helper, the numeric canonical ``_exact_product`` re-export,
+the legacy-value readers, the fee primitive, the synthetic day calendar
+and the fee-model/market-rules builders shared by the validation,
+legacy-match, rows, outcome and adapter modules.
 """
 
 from __future__ import annotations
@@ -12,19 +12,21 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, localcontext
-from typing import Final, NoReturn
+from decimal import Decimal, InvalidOperation
+from typing import NoReturn
 
 import pandas as pd
 
 from ..rules import MarketRules
 from .ledger import BucketLedger, PortfolioLedger
 from .models import PortfolioRequest
-from .numeric import EffectiveFeeModel, parse_effective_fee_model
+from .numeric import (
+    EffectiveFeeModel,
+    _EXACT_PRECISION as _EXACT_PRECISION,
+    _exact_product as _exact_product,
+    parse_effective_fee_model,
+)
 from .schema import PortfolioRequestError
-
-
-_EXACT_PRECISION: Final = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,12 +55,6 @@ def _abort(
         bucket_id=bucket_id,
         detail=detail,
     )
-
-
-def _exact_product(left: Decimal, right: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return left * right
 
 
 def _finite_decimal(value: object, path: str, bucket_id: str | None = None) -> Decimal:

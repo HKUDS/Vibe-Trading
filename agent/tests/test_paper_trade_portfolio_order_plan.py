@@ -140,7 +140,7 @@ def _weight(plan: OrderPlan, symbol: str):
 
 
 def test_three_currency_target_plan_has_stable_ids_sell_first_and_exact_cash() -> None:
-    # Given the confirmed task-8 three-currency target-weight allocation.
+    # Given the confirmed three-currency target-weight allocation.
     # When the order-plan layer floors quantities to market lots.
     plan = _fixture_plan()
 

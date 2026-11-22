@@ -11,7 +11,7 @@ terminal outcome, nonpositive sale proceeds, negative fee or negative cash
 aborts before an :class:`~.orchestrator.ExecutionOutcome` can be returned.
 
 Only cash and position movements leave this module. FX conversions settle
-before matching (task 11), volume-share/5m and strategy execution are out of
+before matching, volume-share/5m and strategy execution are out of
 scope, and each planned order gets exactly one terminal outcome.
 
 The implementation lives in focused sibling modules (``execution_common``,

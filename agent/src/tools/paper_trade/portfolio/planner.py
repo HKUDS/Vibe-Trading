@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_FLOOR, ROUND_HALF_EVEN, Decimal, localcontext
-from typing import Final, NoReturn, Sequence
+from typing import Final, Sequence
 
 from .fx import FxRateBook
 from .ledger import PortfolioLedger, value_ledger
@@ -23,6 +23,10 @@ from .numeric import (
     MONEY_SPEC,
     PRICE_SPEC,
     WEIGHT_SPEC,
+    _EXACT_PRECISION,
+    _MARKET_BY_CURRENCY,
+    _exact_product,
+    _reject,
     canonical_decimal,
     parse_price,
     parse_quantity,
@@ -41,25 +45,8 @@ __all__ = [
 ]
 
 PLANNER_VERSION: Final = "pt-planner-v1"
-_EXACT_PRECISION: Final = 60
 _WEIGHT_QUANTUM: Final = Decimal(1).scaleb(-WEIGHT_SPEC.scale)
-_CANONICAL_CURRENCIES: Final = frozenset({"CNY", "HKD", "USD"})
-
-
-def _reject(
-    reason: str,
-    path: str,
-    *,
-    bucket_id: str | None = None,
-    detail: str = "",
-) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id, detail=detail)
-
-
-def _exact_product(left: Decimal, right: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return left * right
+_CANONICAL_CURRENCIES: Final = frozenset(_MARKET_BY_CURRENCY)
 
 
 def _price(value: Decimal | str, path: str) -> Decimal:
