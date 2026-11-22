@@ -6,14 +6,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.kernel.contracts import ModelMessage
+from src.kernel.contracts import LoopContext
 
 
 @dataclass
 class TurnState:
     """All per-turn values that formerly lived as local loop variables."""
 
-    messages: list[ModelMessage]
+    view: LoopContext
     run_dir: Path
     trace: Any
     context: Any
@@ -35,7 +35,6 @@ class TurnState:
     last_response_model: str | None = None
     no_commentary_rounds: int = 0
     mid_turn_nudge_rounds: int = 0
-    final_answer_retry_pending: bool = False
     final_answer_retry: bool = False
     compact_requested: bool = False
     focus_topic: str = ""

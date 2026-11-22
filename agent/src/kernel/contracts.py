@@ -4,7 +4,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict, Generic, List, Optional, Protocol, TypeAlias, TypeVar
+from typing import Any, Dict, List, Optional, Protocol, TypeAlias
+
+from .events import EventSink
 
 
 # OpenAI-format role/content dictionaries may carry opaque provider metadata.
@@ -89,33 +91,65 @@ class LLMResponse:
         return len(self.tool_calls) > 0
 
 
-class LoopDecision(Enum):
-    """Disposition of a request or response handled by a bound port."""
+class Continue(Enum):
+    """The host can request one final prose retry at the ordinary limit."""
 
-    CONTINUE = auto()
-    STOP = auto()
-
-
-class LoopContext(Protocol):
-    """Scheduling state shared with the caller for one run."""
-
-    iteration: int
-    final_answer_retry: bool
-    final_answer_retry_pending: bool
-
-
-ContextT = TypeVar("ContextT", bound=LoopContext)
+    NEXT = auto()
+    FINAL_ANSWER = auto()
 
 
 @dataclass(frozen=True)
-class LoopPorts(Generic[ContextT]):
-    """Host operations invoked by the scheduler at the existing turn boundaries."""
+class Stop:
+    reason: str
 
-    prepare_iteration: Callable[[ContextT], LoopDecision]
-    request: Callable[[ContextT], LLMResponse | LoopDecision]
-    record_partial: Callable[[ContextT, LLMResponse, str], None]
-    after_text: Callable[[ContextT, LLMResponse], LoopDecision]
-    run_tools: Callable[[ContextT, LLMResponse], LoopDecision]
+
+class CancellationToken(Protocol):
+    def is_set(self) -> bool: ...
+
+
+@dataclass
+class LoopContext:
+    """Prepared model input and tool definitions for the current request."""
+
+    messages: list[ModelMessage]
+    model: LLMRuntimeSnapshot
+    tools: list[dict[str, Any]] | None
+
+
+@dataclass(frozen=True)
+class RunLimits:
+    max_iterations: int
+
+
+@dataclass(frozen=True)
+class Iteration:
+    number: int
+    text_only: bool
+    final_answer_retry: bool
+
+
+@dataclass(frozen=True)
+class LoopResult:
+    messages: list[ModelMessage]
+    reason: str
+    iterations: int
+    usage: dict[str, int]
+
+
+@dataclass(frozen=True)
+class LoopPorts:
+    """Bound host operations. The scheduler owns the loop counters."""
+
+    before_iteration: Callable[[LoopContext], Stop | None]
+    prepare_request: Callable[[LoopContext, Iteration], Stop | None]
+    request: Callable[[LoopContext, EventSink], LLMResponse | Continue | Stop]
+    record_partial: Callable[[LLMResponse, str], None]
+    after_text: Callable[[LLMResponse], Continue | Stop]
+    run_tools: Callable[[LLMResponse], Continue | Stop]
+    poll_inputs: Callable[[], None]
+    on_cancel: Callable[[], None]
+    read_delta: Callable[[], list[ModelMessage]]
+    read_usage: Callable[[], dict[str, int]]
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ class ConversationState:
         self.thread = thread
         self.queued_inputs = queued_inputs
         self.turn_messages = None
+        self.delta: list[dict[str, Any]] = []
         self.dependency_lists = ()
 
     def records_into(self, messages: list) -> bool:
@@ -20,10 +21,16 @@ class ConversationState:
             return False
         return messages is self.turn_messages or any(messages is batch for batch in self.dependency_lists)
 
+    def append(self, messages: list, message: dict[str, Any]) -> None:
+        """Collect model-visible additions independently of in-place compaction."""
+        messages.append(message)
+        if messages is self.turn_messages:
+            self.delta.append(dict(message))
+
     def inject(self, messages: list, content: str) -> None:
         """Append a loop-authored message and record it."""
         message = {"role": "user", "content": content}
-        messages.append(message)
+        self.append(messages, message)
         if self.records_into(messages):
             self.thread.inject(message)
 
@@ -31,14 +38,17 @@ class ConversationState:
         self, messages: list, message: dict[str, Any], *, phase: str
     ) -> None:
         """Append a model response and record it."""
-        messages.append(message)
+        self.append(messages, message)
         if self.records_into(messages):
             self.thread.assistant(message, phase=phase)
 
     def record_final_answer(self, content: str) -> None:
         """Record the released answer as a final assistant item."""
-        if self.thread is not None and content:
-            self.thread.assistant({"role": "assistant", "content": content}, phase="final")
+        if content:
+            message = {"role": "assistant", "content": content}
+            self.delta.append(message)
+            if self.thread is not None:
+                self.thread.assistant(message, phase="final")
 
     def sync_state(self, env) -> None:
         """Persist workspace, identity, and loaded-tool state."""
@@ -59,7 +69,7 @@ class ConversationState:
         """Flush usage and the final state snapshot."""
         if self.thread is None:
             return
-        self.thread.usage = dict(usage.get("totals") or {})
+        self.thread.usage = dict(usage)
         self.sync_state(env)
 
     def take_queued_inputs(self, messages: list, *, cancelled: bool, budget_spent: bool) -> None:
@@ -70,4 +80,5 @@ class ConversationState:
             or budget_spent
         ):
             return
-        messages.extend(self.queued_inputs.deliver())
+        for message in self.queued_inputs.deliver():
+            self.append(messages, message)

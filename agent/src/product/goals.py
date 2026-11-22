@@ -111,8 +111,8 @@ class GoalBudget:
             state.trace.write({"type": "goal_continuation_suppressed", "iter": state.current_iter, "goal_id": self.goal_id, "progress": progress, "continuations": self.continuations})
             return False
         state.trace.write({"type": "goal_intermediate_answer", "iter": state.current_iter, "goal_id": self.goal_id, "progress": progress, "content": state.final_content})
-        conversation.append_assistant(state.messages, {"role": "assistant", "content": state.final_content}, phase="commentary")
-        conversation.inject(state.messages, format_goal_continuation_prompt(snapshot, previous_answer=state.final_content))
+        conversation.append_assistant(state.view.messages, {"role": "assistant", "content": state.final_content}, phase="commentary")
+        conversation.inject(state.view.messages, format_goal_continuation_prompt(snapshot, previous_answer=state.final_content))
         self.last_progress = progress
         self.continuations += 1
         return True

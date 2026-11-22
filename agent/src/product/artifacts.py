@@ -113,7 +113,7 @@ class ToolDelivery:
             artifact: Display-only report link.
         """
         message = context.format_tool_result(call_id, tool_name, content)
-        messages.append(message)
+        self.conversation.append(messages, message)
         if self.conversation.records_into(messages):
             self.conversation.thread.tool_result(
                 message,
@@ -155,18 +155,21 @@ class ToolDelivery:
         # Image bytes belong in artifacts, never in the canonical result or
         # its metadata. Keep one reference-only payload for all later sinks.
         try:
-            payload = json.loads(result)
-            if isinstance(payload, dict) and isinstance(payload.get("images"), list):
-                payload["images"] = [
-                    {key: image[key] for key in ("path", "mime_type", "alt", "download_url")
-                     if isinstance(image.get(key), str) and not image[key].startswith("data:")}
-                    for image in payload["images"]
-                    if isinstance(image, dict) and isinstance(image.get("path"), str)
-                    and not image["path"].startswith("data:")
-                ]
-                result = json.dumps(payload, ensure_ascii=False)
+            parsed = json.loads(result)
         except (TypeError, ValueError):
-            pass
+            parsed = None
+        payload = parsed if isinstance(parsed, dict) else None
+        image_refs = []
+        if payload is not None and isinstance(payload.get("images"), list):
+            payload["images"] = [
+                {key: image[key] for key in ("path", "mime_type", "alt", "download_url")
+                 if isinstance(image.get(key), str) and not image[key].startswith("data:")}
+                for image in payload["images"]
+                if isinstance(image, dict) and isinstance(image.get("path"), str)
+                and not image["path"].startswith("data:")
+            ]
+            result = json.dumps(payload, ensure_ascii=False)
+            image_refs = payload["images"]
         if update_memory:
             self.env.memory.increment(tc.name)
 
@@ -217,18 +220,6 @@ class ToolDelivery:
             self.replay.remember(tc, result, update_memory)
 
         status = "ok" if success else "error"
-        # One redaction feeds every subscriber below: the persisted trace
-        # record, the react trace, and the SSE preview.
-        trace_result = redact_tool_result(result)
-        image_refs: list[dict] = []
-        payload: dict | None = None
-        try:
-            parsed = json.loads(trace_result)
-            payload = parsed if isinstance(parsed, dict) else None
-            if isinstance(payload, dict) and isinstance(payload.get("images"), list):
-                image_refs = [dict(image) for image in payload["images"] if isinstance(image, dict) and isinstance(image.get("path"), str)]
-        except (TypeError, ValueError):
-            pass
         if payload is not None and payload.get("status") == "waiting_user":
             self.waiting_user = payload
             if self.conversation.thread is not None:
@@ -236,9 +227,8 @@ class ToolDelivery:
         if payload is not None and payload.get("status") == "ok" and tc.name == "plan" and self.conversation.thread is not None:
             self.conversation.thread.plan(payload.get("plan_id", ""), payload.get("steps", []))
         artifact = None
-        if status == "ok" and tc.name in {"write_file", "render_shadow_report"}:
+        if status == "ok" and payload is not None and tc.name in {"write_file", "render_shadow_report"}:
             try:
-                payload = json.loads(trace_result)
                 from src.tools.report_artifacts import report_path
                 report_id = payload.get("report_id", "")
                 path = report_path(report_id) if isinstance(report_id, str) else None
@@ -253,7 +243,7 @@ class ToolDelivery:
             status=status, elapsed_ms=elapsed_ms, artifact=artifact,
             images=image_refs,
         )
-        preview = trace_result[:200]
+        preview = result[:200]
         self._emit_tool_completed(tc, status, elapsed_ms, preview, artifact=artifact)
 
 

@@ -2,7 +2,7 @@
 import ast
 import subprocess
 import sys
-from dataclasses import dataclass
+from threading import Event
 from importlib.util import resolve_name
 from pathlib import Path
 
@@ -91,48 +91,78 @@ def _standalone_turn():
 
     sys.meta_path.insert(0, KernelOnly())
     sys.path.insert(0, str(KERNEL.parents[1]))
-    from src.kernel.contracts import BoundCall, LLMResponse, LoopDecision, LoopPorts, ToolCallRequest
+    from src.kernel.contracts import (
+        BoundCall, Continue, LLMResponse, LLMRuntimeSnapshot, LoopContext, LoopPorts,
+        RunLimits, Stop, ToolCallRequest,
+    )
     from src.kernel.loop import run_loop
     from src.kernel.tool_runner import execute_batch
 
-    @dataclass
-    class Context:
-        iteration: int = 0
-        final_answer_retry: bool = False
-        final_answer_retry_pending: bool = False
-
     observed = []
+    messages = []
 
-    def prepare(context):
-        context.iteration += 1
-        return LoopDecision.CONTINUE
+    def prepare(context, iteration):
+        observed.append(("request", iteration.number))
 
-    def request(context):
-        observed.append(("request", context.iteration))
-        if context.iteration == 1:
+    def request(context, emit):
+        if not messages:
             return LLMResponse(tool_calls=[ToolCallRequest("one", "echo", {"value": "hello"})])
+        emit("item.delta", {"kind": "text.delta", "delta": "done"})
         return LLMResponse(content="done")
 
-    def run_tools(context, response):
+    def run_tools(response):
         (call,) = response.tool_calls
         execute_batch([BoundCall(
             start=lambda parallel: lambda: (call.arguments["value"], 0),
             finish=lambda text, elapsed: observed.append((call.id, text)),
             skip=unexpected, parallel=False,
         )], cancelled=lambda: False)
-        return LoopDecision.CONTINUE
+        messages.append({"role": "tool", "content": observed[-1][1]})
+        return Continue.NEXT
 
-    def after_text(context, response):
+    def after_text(response):
         observed.append(("answer", response.content))
-        return LoopDecision.STOP
+        messages.append({"role": "assistant", "content": response.content})
+        return Stop("final_answer")
 
     def unexpected(*args):
         raise AssertionError(f"Unexpected port call {args}")
 
-    ports = LoopPorts(prepare, request, unexpected, after_text, run_tools)
-    run_loop(Context(), ports, max_iterations=3)
-    assert observed == [("request", 1), ("one", "hello"), ("request", 2), ("answer", "done")]
+    events = []
+    ports = LoopPorts(
+        before_iteration=lambda ctx: None, prepare_request=prepare, request=request,
+        record_partial=unexpected, after_text=after_text, run_tools=run_tools,
+        poll_inputs=lambda: observed.append(("poll", 1)), on_cancel=unexpected,
+        read_delta=messages.copy, read_usage=lambda: {"total_tokens": 9},
+    )
+    context = LoopContext([], LLMRuntimeSnapshot("offline", "model", ""), [])
+    result = run_loop(context, ports, RunLimits(3), Event(), lambda kind, data: events.append((kind, data)))
+    assert observed == [("request", 1), ("one", "hello"), ("poll", 1), ("request", 2), ("answer", "done")]
+    assert result.messages == [{"role": "tool", "content": "hello"}, {"role": "assistant", "content": "done"}]
+    assert (result.iterations, result.reason, result.usage) == (2, "final_answer", {"total_tokens": 9})
+    assert events == [("item.delta", {"kind": "text.delta", "delta": "done"})]
 
 
 if __name__ == "__main__":
     _standalone_turn()
+
+
+def test_run_contract_honors_cancellation_before_a_request():
+    from src.kernel.contracts import LLMRuntimeSnapshot, LoopContext, LoopPorts, RunLimits
+    from src.kernel.loop import run_loop
+
+    def unexpected(*args):
+        raise AssertionError("A cancelled run cannot request a model or execute a tool")
+
+    cancelled = Event()
+    cancelled.set()
+    seen = []
+    ports = LoopPorts(before_iteration=unexpected, prepare_request=unexpected,
+                      request=unexpected, record_partial=unexpected, after_text=unexpected,
+                      run_tools=unexpected, poll_inputs=unexpected,
+                      on_cancel=lambda: seen.append("cancel"), read_delta=lambda: [],
+                      read_usage=lambda: {})
+    context = LoopContext([], LLMRuntimeSnapshot("offline", "model", ""), [])
+    result = run_loop(context, ports, RunLimits(2), cancelled, unexpected)
+    assert (result.reason, result.iterations, result.messages, result.usage) == ("cancelled", 0, [], {})
+    assert seen == ["cancel"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 import logging
 import threading
 import time as _time
@@ -26,7 +27,7 @@ from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
 from src.core.state import RunStateStore
 from src.goal.context import get_current_goal_context
-from src.kernel.contracts import LLMRuntimeSnapshot, LoopPorts, ModelMessage
+from src.kernel.contracts import LLMRuntimeSnapshot, LoopContext, LoopPorts, ModelMessage, RunLimits
 from src.kernel.events import EventSink
 from src.kernel.loop import run_loop
 from src.kernel.state import RunActivity
@@ -41,7 +42,7 @@ from src.product.resources.memory import WorkspaceMemory
 from src.product.tool_execution import ToolExecution
 from src.product.tool_execution_context import ToolEnvironment
 from src.product.tool_invocation import ToolInvocation
-from src.product.tool_loading import prepare_registry, request_definitions
+from src.product.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
 from src.product.tool_replay import ToolReplay
 from src.product.usage import UsageLedger, _new_llm_usage_summary
 from src.product.verification import _verification_ledger
@@ -266,6 +267,7 @@ class AgentRuntime:
         self.goals.stop_reason = None
         self.activity.start()
         self._conversation.turn_messages = None
+        self._conversation.delta = []
         setup = self._prepare_turn(user_message, history, session_id)
         if setup.denied_result is not None:
             return setup.denied_result
@@ -280,23 +282,32 @@ class AgentRuntime:
                     timeout_seconds=_llm_timeout_seconds, backoff=_stream_retry_backoff_s,
                     max_delay=_stream_retry_max_delay_s,
                 ),
-                runtime=self._llm_runtime, max_iterations=self.max_iterations,
+                state=state,
                 activity=self.activity, goals=self.goals, tools=self.tools, compactor=self._context_compactor,
                 conversation=self._conversation, writes=self._write_targets, usage=self.usage,
-                background=self._background_manager, emit=self._emit,
+                background=self._background_manager,
                 pacing=pacing,
             )
-            ports = LoopPorts(prepare_iteration=steps.prepare_iteration, request=steps.request,
-                              record_partial=steps.record_partial, after_text=pacing.handle, run_tools=steps.run_tools)
-            run_loop(state, ports, max_iterations=self.max_iterations)
+            ports = LoopPorts(
+                before_iteration=steps.before_iteration, prepare_request=steps.prepare_request,
+                request=steps.request, record_partial=steps.record_partial,
+                after_text=partial(pacing.handle, state), run_tools=steps.run_tools,
+                poll_inputs=steps.poll_inputs, on_cancel=steps.on_cancel,
+                read_delta=self._conversation.delta.copy,
+                read_usage=lambda: dict(self.usage.summary["totals"]),
+            )
+            turn = run_loop(
+                state.view,
+                ports, RunLimits(self.max_iterations), self.activity.cancel, self._emit,
+            )
         except Exception as exc:
             return self._handle_bound_error(exc, setup)
         result = finish_outcome(
-            setup, activity=self.activity, runtime=self._llm_runtime, max_iterations=self.max_iterations,
+            setup, iterations=turn.iterations, activity=self.activity, runtime=self._llm_runtime, max_iterations=self.max_iterations,
             budget_reason=self.goals.stop_reason, waiting_user=self.delivery.waiting_user is not None,
             pending_write=self._write_targets.pending,
         )
-        self._conversation.end_turn(self.tool_env, self.usage.summary)
+        self._conversation.end_turn(self.tool_env, turn.usage)
         recorder = self._conversation.thread
         items = recorder._runtime.thread.turn_items(recorder.turn_id)
         result["tool_count"] = sum(item.type == "tool_result" for item in items)
@@ -306,14 +317,18 @@ class AgentRuntime:
 
     def _prepare_turn(self, user_message: str, history: Optional[list[ModelMessage]], session_id: str) -> TurnSetup:
         """Build run resources and per-turn state before iteration."""
-        self.tool_env.registry = self.registry = prepare_registry(self.registry)
+        if isinstance(self.registry, DeferredToolRegistry):
+            self.registry.reset_exposure()
+        else:
+            self.tool_env.registry = self.registry = prepare_registry(self.registry)
         if self.memory.session_workspace:
             setattr(self.registry, "session_workspace", self.memory.session_workspace)
         if self._conversation.thread is not None and self._conversation.thread.loaded_tools is not None:
             restore_exposure = getattr(self.registry, "restore_exposure", None)
             if callable(restore_exposure):
                 restore_exposure(self._conversation.thread.loaded_tools)
-        self._context_compactor.update_tool_schemas(request_definitions(self.registry))
+        schemas = request_definitions(self.registry)
+        self._context_compactor.update_tool_schemas(schemas)
         run_started_wall = _time.time()
         state_store = RunStateStore()
         RUNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -406,7 +421,7 @@ class AgentRuntime:
             reason = prompt_hook.reason or "UserPromptSubmit hook denied the prompt"
             trace.write({"type": "end", "iter": self.activity.iteration, "status": "failed", "reason": reason})
             state_store.mark_failure(run_dir, reason)
-            self._conversation.end_turn(self.tool_env, self.usage.summary)
+            self._conversation.end_turn(self.tool_env, self.usage.summary["totals"])
             return TurnSetup(
                 run_dir=run_dir, trace=trace, state_store=state_store,
                 denied_result={
@@ -428,7 +443,7 @@ class AgentRuntime:
         self._watchdog.start(trace, run_dir, state_store, stall_timeout)
 
         state = TurnState(
-            messages=messages, run_dir=run_dir, trace=trace, context=context,
+            view=LoopContext(messages, self._llm_runtime, schemas), run_dir=run_dir, trace=trace, context=context,
             user_message=user_message,
             run_started_wall=run_started_wall, session_id=session_id,
             mid_turn_nudge_rounds=mid_turn_nudge_rounds,
@@ -444,7 +459,7 @@ class AgentRuntime:
         error_code = "provider_stream_error" if isinstance(exc, ProviderStreamError) else "agent_loop_error"
         setup.trace.write({"type": "end", "iter": self.activity.iteration, "status": "error", "reason": reason, "iterations": state.iteration})
         setup.state_store.mark_failure(setup.run_dir, reason)
-        self._conversation.end_turn(self.tool_env, self.usage.summary)
+        self._conversation.end_turn(self.tool_env, self.usage.summary["totals"])
         self.activity.done.set()
         return {"status": "failed", "error_code": error_code, "reason": reason, "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "iterations": state.iteration, "max_iterations": self.max_iterations}
 

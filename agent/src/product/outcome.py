@@ -209,7 +209,7 @@ def build_result_dict(
     return result
 
 
-def finish_outcome(setup, *, activity, runtime, max_iterations, budget_reason, waiting_user, pending_write):
+def finish_outcome(setup, *, iterations, activity, runtime, max_iterations, budget_reason, waiting_user, pending_write):
     """Commit the terminal status and event before the recorder flushes the turn."""
     state = setup.state
     assert state is not None
@@ -254,12 +254,12 @@ def finish_outcome(setup, *, activity, runtime, max_iterations, budget_reason, w
         # pre-extraction code flagged it degraded only for this case.
         state.released_fallback = True
 
-    trace.write(build_end_event(outcome, activity.iteration, state.iteration))
+    trace.write(build_end_event(outcome, activity.iteration, iterations))
 
     return build_result_dict(
         outcome,
         run_dir,
-        state.iteration,
+        iterations,
         max_iterations,
         state.final_content,
         runtime,
