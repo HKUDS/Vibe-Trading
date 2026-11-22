@@ -160,7 +160,7 @@ def test_cancel_during_stream_skips_that_turns_tool_calls(tmp_path):
         f"got {registry.executed}"
     )
     assert "worker_cancelled" in events
-    assert "tool_call" not in events
+    assert "item.started" not in events
 
 
 @pytest.mark.parametrize("cancel_at", ["first_result", "next_tool_event"])
@@ -178,7 +178,7 @@ def test_cancel_during_tool_batch_keeps_completed_result(tmp_path, cancel_at):
             return result
 
     def cancel_before_dispatch(event):
-        if cancel_at == "next_tool_event" and event.type == "tool_call" and event.data["call_id"] == "c2":
+        if cancel_at == "next_tool_event" and event.type == "item.started" and event.data["item"]["tool_call_id"] == "c2":
             cancel_event.set()
 
     registry = Registry()
@@ -187,7 +187,7 @@ def test_cancel_during_tool_batch_keeps_completed_result(tmp_path, cancel_at):
     assert result.status == "cancelled"
     assert llm.calls == 1
     assert registry.executed == ["noop_tool"]
-    assert events.count("tool_result") == 1
+    assert events.count("item.completed") == 1
     assert "worker_cancelled" in events
     artifact_dir = worker_mod.agent_artifact_dir(tmp_path, "analyst", "t1")
     saved = json.loads((artifact_dir / checkpoint.FILENAME).read_text(encoding="utf-8"))
@@ -208,7 +208,7 @@ def test_same_response_dispatches_its_tool_when_nothing_is_cancelled(tmp_path):
 
     assert result.status != "cancelled"
     assert registry.executed == ["noop_tool", "noop_tool"], registry.executed
-    assert "tool_call" in events
+    assert "item.started" in events
     assert "worker_cancelled" not in events
 
 

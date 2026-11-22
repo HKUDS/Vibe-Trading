@@ -11,7 +11,7 @@ from src.session.events import EventBus, SSEEvent
 
 def test_first_connect_does_not_replay_completed_history_by_default() -> None:
     bus = EventBus()
-    bus.emit("s1", "tool_call", {"tool": "load_skill"})
+    bus.emit("s1", 'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'load_skill'}, 'live_id': "tool:" + str('')})
 
     assert bus.replay("s1") == []
 

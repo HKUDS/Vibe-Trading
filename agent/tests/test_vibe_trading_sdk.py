@@ -361,10 +361,8 @@ def test_a_stream_ignores_events_of_other_sessions_and_attempts(kernel) -> None:
                     if not release.is_set():
                         # Same attempt id under another session, and another
                         # attempt of this session: neither belongs to the stream.
-                        bus.emit("other-session", "text_delta",
-                                 {"delta": "leak-a", "attempt_id": stream.attempt_id})
-                        bus.emit(session.session_id, "text_delta",
-                                 {"delta": "leak-b", "attempt_id": "another-attempt"})
+                        bus.emit("other-session", 'item.delta', {"kind": 'text.delta', 'delta': 'leak-a', 'attempt_id': stream.attempt_id})
+                        bus.emit(session.session_id, 'item.delta', {"kind": 'text.delta', 'delta': 'leak-b', 'attempt_id': 'another-attempt'})
                         await asyncio.sleep(0.05)
                         release.set()
             return texts

@@ -19,5 +19,5 @@ class AskUserTool(BaseTool):
         question_id = uuid.uuid4().hex
         question = {"question_id": question_id, "prompt": prompt, "options": options, "allow_free_text": bool(allow_free_text)}
         if self.event_callback:
-            self.event_callback("question.asked", {**question, "session_id": self.session_id})
+            self.event_callback("item.started", {"kind": "item.started", "item": {"type": "question", **question}, "session_id": self.session_id})
         return json.dumps({"status": "waiting_user", **question}, ensure_ascii=False)

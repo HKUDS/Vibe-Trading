@@ -59,7 +59,7 @@ class FinalAnswerHandler:
     def _syntax_retry(self, state: Any) -> str:
         """Withhold tool syntax and grant one bounded plain-text retry."""
         if state.stream.streamed_chars:
-            self.owner._emit("stream_reset", {"iter": state.current_iter, "reason": "tool_call_syntax_in_answer"})
+            state.stream.emit("item.delta", {"kind": "text.reset", "iter": state.current_iter, "reason": "tool_call_syntax_in_answer"})
         state.trace.write({"type": "tool_call_syntax_in_answer", "iter": state.current_iter})
         self.owner._append_assistant(
             state.messages, {"role": "assistant", "content": state.final_content}, phase="commentary"
@@ -75,7 +75,7 @@ class FinalAnswerHandler:
         state.final_content = "My final response could not be delivered: it contained tool-call syntax instead of a plain-text answer. Please ask me to continue."
         self.owner._released_fallback = True
         self.owner._released_fallback_reason = "final answer withheld: it contained tool-call syntax on the forced-text iteration"
-        self.owner._emit("text_delta", {"delta": state.final_content, "iter": state.current_iter, "phase": "final"})
+        state.stream.emit("item.delta", {"kind": "text.delta", "delta": state.final_content, "iter": state.current_iter, "phase": "final"})
         self._release(state, stream_finish=False)
         return "done"
 

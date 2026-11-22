@@ -581,6 +581,7 @@ def display_item(item: ThreadItem) -> Optional[Dict[str, Any]]:
             provider=item.get("provider"),
             model=item.get("model"),
             pending_inputs=item.get("pending_inputs"),
+            display=item.get("display"),
         )
     return view
 
@@ -649,6 +650,7 @@ class _Tail:
     # stays until its ``user`` item is recorded or it is discarded; it
     # outlives the turn it was sent during.
     inputs: List[Tuple[str, str, _LiveItem]] = field(default_factory=list)
+    completed_tools: set[Tuple[str, str]] = field(default_factory=set)
     counter: int = 0
     live_by_seq: "OrderedDict[int, str]" = field(default_factory=OrderedDict)
 
@@ -670,8 +672,9 @@ class ThreadEvents:
 
     Every event the session publishes goes through :meth:`emit`, which first
     reads the items appended to the thread since the last call and publishes
-    their item and run events, then translates any still-in-flight activity
-    into item deltas. Flat agent event names never leave this seam.
+    their item and run events, then forwards canonical live item events. The
+    loop owns event construction and this class only supplies the durable
+    cursor and live-item correlation.
 
     Vocabulary (``data["kind"]`` names the lifecycle step inside the item
     envelope):
@@ -688,7 +691,7 @@ class ThreadEvents:
       from ``turn_start`` / ``turn_end`` (an ``interrupted`` turn is
       ``run.failed`` with that status). A run event names its ``turn_id``: a
       stale turn closed when the next turn begins is reported live too.
-    * A message sent while a turn runs (legacy ``input.queued``) is a live
+    * A message sent while a turn runs is a live
       ``item.started`` of type ``user`` with ``status: queued`` and its
       ``input_id``; the ``user`` item recorded when it joins the conversation
       completes it under the same ``live_id`` (the oldest queued input with
@@ -722,12 +725,12 @@ class ThreadEvents:
     # ---- Publishing ----
 
     def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> Optional[SSEEvent]:
-        """Publish durable items and any live item event implied by a callback.
+        """Publish durable items and a canonical live event from a callback.
 
         Args:
             session_id: Session ID.
-            event_type: Legacy event type.
-            data: Legacy payload, published as given.
+            event_type: Canonical item/run event type.
+            data: Canonical payload.
 
         Returns:
             The live item event when the callback produced one.
@@ -736,8 +739,23 @@ class ThreadEvents:
         with self._lock:
             tail = self._tail(session_id)
             self._pump(session_id, tail)
-            self._translate(session_id, tail, event_type, payload)
-        return None
+            if event_type in {"goal.created", "goal.updated", "goal.evidence", "swarm.started", "swarm.event"}:
+                return self.bus.emit(session_id, event_type, payload)
+            if event_type not in ITEM_EVENT_TYPES and event_type not in RUN_EVENT_TYPES:
+                return None
+            item = payload.get("item") or {}
+            if event_type == ITEM_COMPLETED and item.get("type") == "tool_result" and (
+                payload.get("attempt_id") or payload.get("turn_id"), item.get("tool_call_id")
+            ) in tail.completed_tools:
+                return None
+            # A tool callback follows its durable result. Publish it only when
+            # no recorder completed the same live item (standalone callers).
+            if event_type == ITEM_COMPLETED and payload.get("live_id") in tail.live_by_seq.values():
+                return None
+            event = self._canonical_live_event(session_id, tail, event_type, payload)
+            if event is not None:
+                self.bus.publish(event)
+            return event
 
     def sync(self, session_id: str) -> int:
         """Publish the events of items recorded since the last read.
@@ -892,13 +910,18 @@ class ThreadEvents:
     # ---- Reading the thread ----
 
     def _read(self, session_id: str) -> List[ThreadItem]:
-        return ThreadLog(self._thread_path(session_id)).read()
+        from src.session.migration import migrate_session
+
+        path = self._thread_path(session_id)
+        migrate_session(path.parent, session_id=session_id)
+        return ThreadLog(path).read()
 
     def _tail(self, session_id: str) -> _Tail:
         tail = self._tails.get(session_id)
         if tail is None:
             # First touch in this process: items already on disk are history
             # (served from disk), not news, so reading starts at the end.
+            self._read(session_id)
             tail = _Tail(path=Path(self._thread_path(session_id)))
             for item in self._read_new(tail):
                 tail.last_seq = max(tail.last_seq, item.seq)
@@ -1005,6 +1028,7 @@ class ThreadEvents:
                 provider=item.get("provider"),
                 model=item.get("model"),
                 pending_inputs=item.get("pending_inputs"),
+            display=item.get("display"),
             )
         if run_type is not None:
             events.append(
@@ -1024,12 +1048,14 @@ class ThreadEvents:
             return
         live: Optional[_LiveItem] = None
         if item.type == "turn_start":
+            tail.completed_tools.clear()
             self._discard_live(session_id, tail, None)
         elif item.type == "assistant":
             if tail.assistant is not None and tail.assistant.turn_id == item.turn_id:
                 live, tail.assistant = tail.assistant, None
         elif item.type == "tool_result":
             key = (item.turn_id, item.get("tool_call_id"))
+            tail.completed_tools.add(key)
             pending = tail.tools.get(key)
             if pending:
                 live = pending.pop(0)
@@ -1044,7 +1070,7 @@ class ThreadEvents:
         elif item.type == "user":
             content = item.get("content")
             for index, (_, queued_content, queued) in enumerate(tail.inputs):
-                if queued_content == content:
+                if (item.get("input_id") == tail.inputs[index][0] if item.get("input_id") else queued_content == content):
                     live = queued
                     del tail.inputs[index]
                     break
@@ -1073,41 +1099,6 @@ class ThreadEvents:
         for event in self._recorded_events(session_id, item, live.live_id if live else None):
             self.bus.publish(event)
 
-    def _new_live(self, tail: _Tail, item_type: str, turn_id: str, iteration: Any = None) -> _LiveItem:
-        tail.counter += 1
-        return _LiveItem(
-            live_id=f"{turn_id}:live:{tail.counter}",
-            type=item_type,
-            turn_id=turn_id,
-            iteration=iteration,
-        )
-
-    def _start_live(self, session_id: str, tail: _Tail, live: _LiveItem, item: Dict[str, Any], kind: str) -> None:
-        self._publish(
-            session_id,
-            ITEM_STARTED,
-            {
-                "kind": kind,
-                "live_id": live.live_id,
-                "turn_id": live.turn_id,
-                "item": {"type": live.type, "turn_id": live.turn_id, "status": "in_progress", **item},
-                "cursor": tail.last_seq,
-            },
-        )
-
-    def _delta(self, session_id: str, tail: _Tail, live: _LiveItem, kind: str, payload: Dict[str, Any]) -> None:
-        self._publish(
-            session_id,
-            ITEM_DELTA,
-            {
-                "kind": kind,
-                "live_id": live.live_id,
-                "turn_id": live.turn_id,
-                **payload,
-                "cursor": tail.last_seq,
-            },
-        )
-
     def _discard(self, session_id: str, tail: _Tail, live: _LiveItem) -> None:
         self._publish(
             session_id,
@@ -1133,101 +1124,43 @@ class ThreadEvents:
             for live in tail.interactions.pop(key):
                 self._discard(session_id, tail, live)
 
-    def _assistant(self, session_id: str, tail: _Tail, turn_id: str, iteration: Any) -> _LiveItem:
-        current = tail.assistant
-        if current is not None and current.turn_id == turn_id and current.iteration == iteration:
-            return current
-        if current is not None:
-            # A new response began and the previous one was never recorded.
-            self._discard(session_id, tail, current)
-        live = self._new_live(tail, "assistant", turn_id, iteration)
-        tail.assistant = live
-        self._start_live(session_id, tail, live, {}, "item.started")
-        return live
-
-    def _translate(self, session_id: str, tail: _Tail, event_type: str, data: Dict[str, Any]) -> None:
-        """Publish the item event an internal agent callback implies."""
-        turn_id = data.get("attempt_id")
+    def _canonical_live_event(
+        self, session_id: str, tail: _Tail, event_type: str, data: Dict[str, Any]
+    ) -> Optional[SSEEvent]:
+        """Attach cursor and correlation metadata to a canonical live event."""
+        turn_id = data.get("attempt_id") or data.get("turn_id")
         if not isinstance(turn_id, str) or not turn_id:
-            return
-        if event_type == "text_delta":
-            live = self._assistant(session_id, tail, turn_id, data.get("iter"))
-            payload = {"delta": data.get("delta") or ""}
-            if data.get("phase"):
-                payload["phase"] = data["phase"]
-            self._delta(session_id, tail, live, "text.delta", payload)
-        elif event_type == "reasoning_delta":
-            live = self._assistant(session_id, tail, turn_id, data.get("iter"))
-            self._delta(
-                session_id, tail, live, "reasoning.delta",
-                {"chars": data.get("chars"), "tail": data.get("tail")},
-            )
-        elif event_type == "stream_reset":
-            live = tail.assistant
-            if live is not None and live.turn_id == turn_id:
-                self._delta(session_id, tail, live, "text.reset", {"reason": data.get("reason")})
-        elif event_type == "tool_call":
-            call_id = data.get("call_id")
-            if not isinstance(call_id, str) or not call_id:
-                return
-            live = self._new_live(tail, "tool_result", turn_id)
-            tail.tools.setdefault((turn_id, call_id), []).append(live)
-            item = {
-                "tool_call_id": call_id,
-                "name": data.get("tool"),
-                "arguments": data.get("arguments") or {},
-            }
-            if data.get("blocked"):
-                item["blocked"] = True
-            self._start_live(session_id, tail, live, item, "tool.started")
-        elif event_type in ("tool_progress", "tool_heartbeat"):
-            pending = tail.tools.get((turn_id, data.get("call_id")))
-            if not pending:
-                return
-            progress = {key: value for key, value in data.items() if key != "attempt_id"}
-            self._delta(
-                session_id, tail, pending[-1], "tool.progress",
-                {"progress": progress, "heartbeat": event_type == "tool_heartbeat"},
-            )
-        elif event_type == "input.queued":
-            input_id, content = data.get("input_id"), data.get("content")
-            if not isinstance(input_id, str) or not isinstance(content, str):
-                return
-            live = self._new_live(tail, "user", turn_id)
-            tail.inputs.append((input_id, content, live))
-            self._start_live(
-                session_id, tail, live,
-                {"input_id": input_id, "content": content, "status": "queued"},
-                "item.started",
-            )
-        elif event_type == "input.discarded":
-            for index, (input_id, _, queued) in enumerate(tail.inputs):
-                if input_id == data.get("input_id"):
-                    del tail.inputs[index]
-                    self._discard(session_id, tail, queued)
-                    break
-        elif event_type in ("plan.updated", "question.asked"):
-            item_type = "plan" if event_type == "plan.updated" else "question"
-            live = self._new_live(tail, item_type, turn_id)
-            tail.interactions.setdefault((turn_id, item_type), []).append(live)
-            payload = dict(data)
-            payload.pop("attempt_id", None)
-            self._start_live(session_id, tail, live, payload, "item.started")
-        elif event_type == "llm_waiting":
-            self._publish(
-                session_id,
-                ITEM_DELTA,
-                {"kind": "run.waiting", "turn_id": turn_id, **data, "cursor": tail.last_seq},
-            )
-        elif event_type == "llm_usage":
-            self._publish(
-                session_id,
-                ITEM_DELTA,
-                {"kind": "run.usage", "turn_id": turn_id, **data, "cursor": tail.last_seq},
-            )
-        elif event_type == "llm_usage_unavailable":
-            self._publish(
-                session_id,
-                ITEM_DELTA,
-                {"kind": "run.usage_unavailable", "turn_id": turn_id, **data, "cursor": tail.last_seq},
-            )
+            return None
+        payload = dict(data)
+        payload["turn_id"] = turn_id
+        payload.setdefault("cursor", tail.last_seq)
+        kind = payload.get("kind")
+        item = payload.get("item") if isinstance(payload.get("item"), dict) else {}
+        live_id = payload.get("live_id")
+        if event_type == ITEM_STARTED and not isinstance(live_id, str):
+            tail.counter += 1
+            live_id = f"{turn_id}:live:{tail.counter}"
+            payload["live_id"] = live_id
+        if isinstance(live_id, str) and event_type == ITEM_STARTED:
+            item_type = item.get("type") or ("tool_result" if kind == "tool.started" else "assistant")
+            live = _LiveItem(live_id, str(item_type), turn_id, payload.get("iter"))
+            if item_type == "assistant":
+                if tail.assistant is not None:
+                    self._discard(session_id, tail, tail.assistant)
+                tail.assistant = live
+            elif kind == "tool.started":
+                call_id = item.get("tool_call_id") or payload.get("call_id")
+                if isinstance(call_id, str):
+                    tail.completed_tools.discard((turn_id, call_id))
+                    tail.tools.setdefault((turn_id, call_id), []).append(live)
+            elif item_type in {"plan", "question"}:
+                tail.interactions.setdefault((turn_id, item_type), []).append(live)
+            elif item_type == "user" and item.get("status") == "queued":
+                input_id = item.get("input_id")
+                content = item.get("content")
+                if isinstance(input_id, str) and isinstance(content, str):
+                    tail.inputs.append((input_id, content, live))
+            payload["item"] = {"type": item_type, "turn_id": turn_id, "status": "in_progress", **item}
+        if event_type == ITEM_COMPLETED and kind == DISCARDED_KIND:
+            tail.inputs = [entry for entry in tail.inputs if entry[2].live_id != live_id]
+        return SSEEvent(event_type=event_type, data=payload, session_id=session_id)

@@ -23,5 +23,5 @@ class PlanTool(BaseTool):
             normalized.append({"step": item["step"], "status": item["status"]})
         plan_id = uuid.uuid4().hex
         if self.event_callback:
-            self.event_callback("plan.updated", {"plan_id": plan_id, "steps": normalized, "session_id": self.session_id})
+            self.event_callback("item.started", {"kind": "item.started", "item": {"type": "plan", "plan_id": plan_id, "steps": normalized}, "session_id": self.session_id})
         return json.dumps({"status": "ok", "plan_id": plan_id, "steps": normalized}, ensure_ascii=False)

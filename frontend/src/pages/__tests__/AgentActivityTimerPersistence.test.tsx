@@ -17,7 +17,7 @@ const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
   getRunPreview: vi.fn(),
-  getSessionMessages: vi.fn(),
+  getSessionThread: vi.fn(),
   autoTitleSession: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
 }));
@@ -30,7 +30,11 @@ const sseMock = vi.hoisted(() => ({
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return { ...actual, api: apiMock };
+  const { threadFixture } = await import("./threadFixture");
+  return { ...actual, api: { ...apiMock,
+    getSessionThread: async (sid: string) => threadFixture(await apiMock.getSessionThread(sid)),
+    listPendingInputs: async () => ({ items: [] }),
+  } };
 });
 
 vi.mock("@/hooks/useSSE", () => ({
@@ -51,7 +55,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
     sseMock.connect.mockClear();
     apiMock.autoTitleSession.mockReset().mockResolvedValue({ status: "updated" });
     apiMock.getGoal.mockResolvedValue(null);
-    apiMock.getSessionMessages.mockResolvedValue([]);
+    apiMock.getSessionThread.mockResolvedValue([]);
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
       model_name: "deepseek-v4-pro",
@@ -120,7 +124,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
       { initialEntries: ["/?session=session-one"] },
     );
     render(<RouterProvider router={router} />);
-    await waitFor(() => expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-one"));
+    await waitFor(() => expect(apiMock.getSessionThread).toHaveBeenCalledWith("session-one"));
 
     // An attempt has been running for a while on this session.
     const originalStart = Date.now() - 51_000;
@@ -164,7 +168,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
       { initialEntries: ["/?session=session-one"] },
     );
     render(<RouterProvider router={router} />);
-    await waitFor(() => expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-one"));
+    await waitFor(() => expect(apiMock.getSessionThread).toHaveBeenCalledWith("session-one"));
 
     act(() => {
       const store = useAgentStore.getState();
@@ -251,7 +255,7 @@ describe("Agent activity finished while the page was away", () => {
     const startedAtMs = Date.UTC(2026, 7, 1, 0, 0, 0);
     const endedAtMs = startedAtMs + 8_000;
     let committed = false;
-    apiMock.getSessionMessages.mockImplementation(() => Promise.resolve(
+    apiMock.getSessionThread.mockImplementation(() => Promise.resolve(
       committed
         ? [
           {
@@ -290,7 +294,7 @@ describe("Agent activity finished while the page was away", () => {
       { initialEntries: ["/?session=session-one"] },
     );
     render(<RouterProvider router={router} />);
-    await waitFor(() => expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-one"));
+    await waitFor(() => expect(apiMock.getSessionThread).toHaveBeenCalledWith("session-one"));
 
     act(() => {
       const store = useAgentStore.getState();
@@ -328,7 +332,7 @@ describe("Agent completion trusts the backend's attempt start", () => {
     sseMock.connect.mockClear();
     apiMock.getGoal.mockResolvedValue(null);
     apiMock.getRunPreview.mockResolvedValue({ metrics: null, equity_curve: [], report_worthy: false });
-    apiMock.getSessionMessages.mockResolvedValue([]);
+    apiMock.getSessionThread.mockResolvedValue([]);
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
       model_name: "deepseek-v4-pro",
@@ -352,7 +356,7 @@ describe("Agent completion trusts the backend's attempt start", () => {
   it("backdates a late-joined live activity to the backend start when the attempt completes", async () => {
     const router = createMemoryRouter(
       [{ path: "/", element: <Agent /> }],
-      { initialEntries: ["/?session=session-one"] },
+      { initialEntries: ["/?session=session-late"] },
     );
     render(<RouterProvider router={router} />);
     await waitFor(() => expect(sseMock.connect).toHaveBeenCalled());

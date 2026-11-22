@@ -1128,11 +1128,10 @@ def _run_worker_impl(
                 break
             mcp_meta = _remote_tool_metadata(registry, tc.name)
             _emit(
-                event_callback, "tool_call", agent_id, task_id,
-                {"tool": tc.name, "iteration": iteration,
-                 "call_id": tc.id,
-                 "arguments": _preview_tool_arguments(tc.arguments),
-                 **mcp_meta},
+                event_callback, "item.started", agent_id, task_id,
+                {"kind": "tool.started", "live_id": f"tool:{tc.id}", "iteration": iteration,
+                 "item": {"type": "tool_result", "name": tc.name, "tool_call_id": tc.id,
+                          "arguments": _preview_tool_arguments(tc.arguments), **mcp_meta}},
             )
             tc_start = time.monotonic()
             args, run_dir_refusal = _tool_arguments(
@@ -1173,17 +1172,19 @@ def _run_worker_impl(
             tc_elapsed = time.monotonic() - tc_start
             _emit(
                 event_callback,
-                "tool_result",
+                "item.completed",
                 agent_id,
                 task_id,
                 {
-                    "tool": tc.name,
-                    "call_id": tc.id,
+                    "kind": "tool.failed" if result_is_error else "tool.completed",
+                    "live_id": f"tool:{tc.id}",
+                    "item": {"type": "tool_result", "name": tc.name,
+                    "tool_call_id": tc.id,
                     "elapsed_ms": int(tc_elapsed * 1000),
                     "status": "error" if result_is_error else "ok",
                     "iteration": iteration,
-                    "result_preview": _preview_tool_result(result),
-                    **mcp_meta,
+                    "content": _preview_tool_result(result),
+                    **mcp_meta},
                 },
             )
             messages.append(

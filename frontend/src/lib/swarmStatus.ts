@@ -265,23 +265,23 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): Swa
     }));
   }
 
-  if (type === "tool_call") {
+  if (type === "item.started" && data.kind === "tool.started") {
     return updateAgent(current, { agentId, taskId }, (agent) => ({
       ...agent,
       status: "running",
-      tool: asString(data.tool, agent.tool || "?"),
+      tool: asString(asRecord(data.item).name, agent.tool || "?"),
       iterations: Math.max(agent.iterations ?? 0, (asNumber(data.iteration) ?? (agent.iterations ?? 0)) + 1),
     }));
   }
 
-  if (type === "tool_result") {
+  if (type === "item.completed" && ["tool.completed", "tool.failed"].includes(String(data.kind))) {
     return updateAgent(current, { agentId, taskId }, (agent) => {
-      const tool = asString(data.tool, agent.tool || "?");
-      const ok = asString(data.status, "ok") === "ok";
+      const tool = asString(asRecord(data.item).name, agent.tool || "?");
+      const ok = asString(asRecord(data.item).status, "ok") === "ok";
       return {
         ...agent,
         tool: `${tool} ${ok ? "ok" : "error"}`,
-        elapsed_s: (asNumber(data.elapsed_ms) ?? 0) / 1000 || agent.elapsed_s,
+        elapsed_s: (asNumber(asRecord(data.item).elapsed_ms) ?? 0) / 1000 || agent.elapsed_s,
       };
     });
   }

@@ -16,7 +16,7 @@ const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
   getRunPreview: vi.fn(),
-  getSessionMessages: vi.fn(),
+  getSessionThread: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
 }));
 
@@ -28,7 +28,11 @@ const sseMock = vi.hoisted(() => ({
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return { ...actual, api: apiMock };
+  const { threadFixture } = await import("./threadFixture");
+  return { ...actual, api: { ...apiMock,
+    getSessionThread: async (sid: string) => threadFixture(await apiMock.getSessionThread(sid)),
+    listPendingInputs: async () => ({ items: [] }),
+  } };
 });
 
 vi.mock("@/hooks/useSSE", () => ({
@@ -86,7 +90,7 @@ describe("Agent background stream completion reconciliation", () => {
   });
 
   it("clears a background session's stale streamingSessionId once its reply is committed", async () => {
-    apiMock.getSessionMessages.mockImplementation((sid: string) => (
+    apiMock.getSessionThread.mockImplementation((sid: string) => (
       sid === "session-bg" ? Promise.resolve([storedReply(sid)]) : Promise.resolve([])
     ));
 
@@ -95,7 +99,7 @@ describe("Agent background stream completion reconciliation", () => {
       { initialEntries: ["/?session=session-one"] },
     );
     render(<RouterProvider router={router} />);
-    await waitFor(() => expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-one"));
+    await waitFor(() => expect(apiMock.getSessionThread).toHaveBeenCalledWith("session-one"));
 
     // Simulate: session-bg was mid-turn when the user navigated away from it earlier.
     act(() => {
@@ -112,7 +116,7 @@ describe("Agent background stream completion reconciliation", () => {
   });
 
   it("leaves streamingSessionId alone when the background session genuinely has no reply yet", async () => {
-    apiMock.getSessionMessages.mockImplementation((sid: string) => (
+    apiMock.getSessionThread.mockImplementation((sid: string) => (
       sid === "session-bg" ? Promise.resolve([storedPrompt(sid)]) : Promise.resolve([])
     ));
 
@@ -121,7 +125,7 @@ describe("Agent background stream completion reconciliation", () => {
       { initialEntries: ["/?session=session-one"] },
     );
     render(<RouterProvider router={router} />);
-    await waitFor(() => expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-one"));
+    await waitFor(() => expect(apiMock.getSessionThread).toHaveBeenCalledWith("session-one"));
 
     act(() => {
       useAgentStore.setState({ streamingSessionId: "session-bg" });
@@ -132,13 +136,13 @@ describe("Agent background stream completion reconciliation", () => {
     });
 
     await waitFor(() => {
-      expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-bg");
+      expect(apiMock.getSessionThread).toHaveBeenCalledWith("session-bg");
     });
     expect(useAgentStore.getState().streamingSessionId).toBe("session-bg");
   });
 
   it("recovers an unavailable conversation without discarding the composer draft", async () => {
-    apiMock.getSessionMessages.mockReset()
+    apiMock.getSessionThread.mockReset()
       .mockRejectedValueOnce(new Error("History unavailable"))
       .mockResolvedValueOnce([storedReply("session-one")]);
     const router = createMemoryRouter(
@@ -153,6 +157,6 @@ describe("Agent background stream completion reconciliation", () => {
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     await waitFor(() => expect(useAgentStore.getState().messages.some((message) => message.content === "done")).toBe(true));
     expect(composer).toHaveValue("Keep my draft");
-    expect(apiMock.getSessionMessages).toHaveBeenCalledTimes(2);
+    expect(apiMock.getSessionThread).toHaveBeenCalledTimes(2);
   });
 });

@@ -343,7 +343,7 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
     assert [e for e in trace if e.get("type") == "compact_declined"]
     assert not [e for e in trace if e.get("type") in ("compact", "compact_requested")]
     # The step is visible: a compact call used to emit no tool_call event at all.
-    assert ("tool_call", "compact") in [(n, d.get("tool")) for n, d in events]
+    assert ("tool.started", "compact") in [(d.get("kind"), d.get("item", {}).get("name")) for n, d in events]
 
 
 def test_layer_one_clears_oldest_results_only_until_the_prompt_fits() -> None:

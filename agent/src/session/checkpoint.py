@@ -55,11 +55,11 @@ class ResponseCheckpoint:
             event_type: Agent event name.
             data: Event payload.
         """
-        if event_type not in {"text_delta", "stream_reset"}:
+        if event_type != "item.delta" or data.get("kind") not in {"text.delta", "text.reset"}:
             return
 
         with self._lock:
-            if event_type == "stream_reset":
+            if data.get("kind") == "text.reset":
                 self._text = ""
                 self._dirty = True
                 self._flush_locked()

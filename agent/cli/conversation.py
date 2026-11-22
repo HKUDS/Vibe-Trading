@@ -176,7 +176,7 @@ def open_turn(
     try:
         runtime = SessionRuntime(store.thread_log(session_id), session_id)
         recorder = runtime.begin_turn(
-            uuid.uuid4().hex[:12], store.get_messages(session_id, limit=None),
+            uuid.uuid4().hex[:12],
             provider=provider, model=model,
         )
     except Exception:  # noqa: BLE001 - an unusable store must not block the turn

@@ -537,7 +537,7 @@ class AgentLoop(ToolCallLifecycle):
 
             record_dir = SESSIONS_DIR / session_id if session_id else run_dir
             runtime = SessionRuntime(ThreadLog(record_dir / "thread.jsonl"), session_id)
-            self._thread = runtime.begin_turn(uuid.uuid4().hex[:12], [])
+            self._thread = runtime.begin_turn(uuid.uuid4().hex[:12])
             self._conversation.thread = self._thread
             self.memory.session_workspace = str(runtime.workspace_path)
             setattr(self.registry, "session_workspace", self.memory.session_workspace)
@@ -931,7 +931,7 @@ class AgentLoop(ToolCallLifecycle):
         """Account one child-provider usage event in the parent run.
 
         Args:
-            event_type: ``llm_usage`` or ``llm_usage_unavailable``.
+            event_type: ``item.delta`` with ``run.usage`` or ``run.usage_unavailable``.
             data: Provider usage payload without the child's iteration keys.
 
         Returns:

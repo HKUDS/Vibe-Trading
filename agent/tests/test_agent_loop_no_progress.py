@@ -72,7 +72,7 @@ def build_loop(tmp_path: Path, tool: DiscoveryTool, llm: DiscoveryLLM):
         registry=registry,
         llm=llm,
         max_iterations=24,
-        event_callback=lambda name, data: events.append((name, data)),
+        event_callback=lambda name, data: events.append((data.get("kind", name), data)),
     )
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -97,7 +97,7 @@ def test_failed_discovery_stops_with_visible_recovery(tmp_path, vary_arguments):
     assert "path" in result["content"]
     assert "rerun" in result["content"]
     assert any(
-        name == "text_delta" and data["delta"] == result["content"]
+        name == "text.delta" and data["delta"] == result["content"]
         for name, data in events
     )
     assert json.loads((run_dir / "state.json").read_text())["status"] == "failed"

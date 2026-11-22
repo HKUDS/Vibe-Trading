@@ -368,7 +368,7 @@ def _run_loop(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(
-            (lambda event_type, data: events.append((event_type, data)))
+            (lambda event_type, data: events.append((data.get("kind", event_type), data)))
             if events is not None
             else None
         ),
@@ -413,7 +413,7 @@ def test_loop_retry_after_honored_and_emitted(monkeypatch, tmp_path: Path) -> No
 
     assert result["status"] == "success"
     assert sleeps == [7.0]
-    reset = next(data for event_type, data in events if event_type == "stream_reset")
+    reset = next(data for event_type, data in events if event_type == "text.reset")
     assert reset["retry_delay_s"] == 7.0
 
 

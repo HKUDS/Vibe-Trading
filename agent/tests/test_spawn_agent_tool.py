@@ -184,9 +184,9 @@ def test_child_sees_only_the_task_and_the_parent_gets_its_answer(run_root: Path)
     assert json.loads((run_root / "req.json").read_text())["prompt"].startswith("PARENT-QUESTION")
 
     # Progress reaches the parent as tool name and status; child text does not.
-    deltas = "".join(d.get("delta", "") for name, d in events if name == "text_delta")
+    deltas = "".join(d.get("delta", "") for name, d in events if name == "item.delta" and d.get("kind") == "text.delta")
     assert "Child verdict" not in deltas
-    stages = [d.get("stage") for name, d in events if name == "tool_progress"]
+    stages = [d.get("progress", {}).get("stage") for name, d in events if name == "item.delta" and d.get("kind") == "tool.progress"]
     assert "subagent_started" in stages and "subagent_finished" in stages
 
 
@@ -340,7 +340,7 @@ def test_parent_run_usage_artifact_includes_child_provider_calls(run_root: Path)
     assert sum(
         1 for entry in usage["per_iteration"] if entry.get("purpose") == "subagent"
     ) == 1
-    child_events = [data for name, data in events if name == "llm_usage" and data.get("purpose") == "subagent"]
+    child_events = [data for name, data in events if name == "item.delta" and data.get("kind") == "run.usage" and data.get("purpose") == "subagent"]
     assert len(child_events) == 1
     assert "call_index" not in child_events[0]
 
@@ -657,7 +657,7 @@ def test_a_child_cannot_read_or_change_the_parents_research_goal(run_root: Path,
     # The child's three provider calls are the goal's spend, and nothing else
     # about the goal moved: only usage updates reached the parent's stream.
     assert stored.tokens_used == 3 * USAGE["total_tokens"]
-    assert set(events) == {"goal.updated", "llm_usage"}
+    assert set(events) == {"goal.updated", "item.delta"}
 
 
 def test_child_usage_is_charged_to_the_goal_and_stops_the_child_at_its_budget(run_root: Path, goal_db) -> None:
@@ -707,7 +707,7 @@ def test_child_usage_reaches_the_parent_stream_without_a_parent_call_key(run_roo
 
     json.loads(registry.get("spawn_agent").execute(task="Answer once.", run_dir=str(run_root)))
 
-    usage = [data for name, data in events if name == "llm_usage"]
+    usage = [data for name, data in events if name == "item.delta" and data.get("kind") == "run.usage"]
     assert len(usage) == 1
     assert usage[0]["purpose"] == "subagent"
     assert usage[0]["total_tokens"] == USAGE["total_tokens"]

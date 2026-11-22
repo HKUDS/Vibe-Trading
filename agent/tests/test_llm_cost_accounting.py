@@ -41,7 +41,7 @@ def _agent(tmp_path, callback=None):
 
 def test_every_summary_chunk_is_persisted_and_reported(tmp_path):
     events = []
-    agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
+    agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     trace = recorder_at(tmp_path)
     try:
         agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
@@ -52,12 +52,12 @@ def test_every_summary_chunk_is_persisted_and_reported(tmp_path):
     assert report["totals"]["calls"] == 3
     assert report["totals"]["total_tokens"] == 3300
     assert all(row["purpose"] == "compaction" for row in report["per_iteration"])
-    assert [data["total_tokens"] for kind, data in events if kind == "llm_usage"] == [1100] * 3
+    assert [data["total_tokens"] for kind, data in events if kind == "run.usage"] == [1100] * 3
 
 
 def test_summary_budget_cancellation_prevents_more_summaries_and_agent_call(tmp_path, monkeypatch):
     def monitor(kind, data):
-        if kind == "llm_usage":
+        if kind == "item.delta" and data.get("kind") == "run.usage":
             agent.cancel()
 
     agent, llm = _agent(tmp_path, monitor)
@@ -108,7 +108,7 @@ def test_summary_usage_obeys_goal_budget_without_stopping_funded_work(
 
 def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypatch):
     events = []
-    agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
+    agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     llm.chat.side_effect = RuntimeError("Provider disconnected")
     monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 0)
     trace = recorder_at(tmp_path)
@@ -119,7 +119,7 @@ def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypa
         trace.close()
     # Counted as unreported rather than announced: the live decision budget
     # halts on llm_usage_unavailable (see the live-budget test below).
-    assert not [event for event in events if event[0] == "llm_usage_unavailable"]
+    assert not [event for event in events if event[0] == "run.usage_unavailable"]
     report = json.loads((tmp_path / "llm_usage.json").read_text())
     assert report["totals"]["unreported_calls"] == 1
     assert report["totals"]["calls"] == report["totals"]["total_tokens"] == 0
@@ -127,7 +127,7 @@ def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypa
 
 def test_cancelled_agent_response_keeps_reported_usage(tmp_path):
     events = []
-    agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
+    agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
 
     def cancel_response(*args, **kwargs):
         agent.cancel()
@@ -138,7 +138,7 @@ def test_cancelled_agent_response_keeps_reported_usage(tmp_path):
     assert result["status"] == "cancelled"
     report = json.loads((tmp_path / "llm_usage.json").read_text())
     assert report["totals"]["total_tokens"] == 1100
-    assert len([event for event in events if event[0] == "llm_usage"]) == 1
+    assert len([event for event in events if event[0] == "run.usage"]) == 1
     llm.stream_chat.assert_called_once()
 
 
@@ -290,14 +290,14 @@ def test_failed_stream_usage_is_counted_before_retry(tmp_path, monkeypatch, reco
 
 
 def _usage_events(events):
-    return [(kind, data) for kind, data in events if kind.startswith("llm_usage")]
+    return [(kind, data) for kind, data in events if kind.startswith("run.usage")]
 
 
 def test_failed_stream_without_usage_is_counted_not_announced(tmp_path, monkeypatch):
     from src.providers.chat import ProviderStreamError
 
     events = []
-    agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
+    agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
     llm.stream_chat.side_effect = [
         ProviderStreamError(provider="deepseek", model="m", original=ConnectionError("reset")),
@@ -305,7 +305,7 @@ def test_failed_stream_without_usage_is_counted_not_announced(tmp_path, monkeypa
     ]
     result = agent.run("Say hello.")
     assert result["status"] == "success"
-    assert [kind for kind, _ in _usage_events(events)] == ["llm_usage"]
+    assert [kind for kind, _ in _usage_events(events)] == ["run.usage"]
     report = json.loads((tmp_path / "llm_usage.json").read_text())
     assert report["totals"]["calls"] == 1
     assert report["totals"]["unreported_calls"] == 1
@@ -319,7 +319,7 @@ def test_live_decision_budget_survives_a_retried_connection_reset(tmp_path, monk
     from src.providers.chat import ProviderStreamError
 
     events = []
-    agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
+    agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
     llm.stream_chat.side_effect = [
         ProviderStreamError(provider="deepseek", model="m", original=ConnectionError("reset")),
@@ -331,16 +331,16 @@ def test_live_decision_budget_survives_a_retried_connection_reset(tmp_path, monk
     decision = budget.begin(settings, now)
     for kind, data in _usage_events(events):
         # The way live_routes forwards events to the budget.
-        budget.record(decision, data if kind == "llm_usage" else {}, settings, now)
+        budget.record(decision, data if kind == "run.usage" else {}, settings, now)
     budget.finish(decision, settings, now)
 
 
 def test_an_ordinary_response_without_usage_is_still_announced(tmp_path):
     events = []
-    agent, llm = _agent(tmp_path, lambda kind, data: events.append((kind, data)))
+    agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     llm.stream_chat.return_value = LLMResponse(content="Hello", usage_metadata=None)
     agent.run("Say hello.")
-    assert ("llm_usage_unavailable", {"iter": 1}) in _usage_events(events)
+    assert ("run.usage_unavailable", {"kind": "run.usage_unavailable", "iter": 1}) in _usage_events(events)
 
 
 def test_a_text_answer_that_crosses_the_goal_budget_is_released(tmp_path, monkeypatch):

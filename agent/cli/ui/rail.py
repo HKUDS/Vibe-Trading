@@ -318,7 +318,13 @@ class RailRunDashboard:
             self.live.update(self.render())
 
     def handle_event(self, event_type: str, data: dict[str, Any]) -> None:
-        if event_type == "text_delta":
+        kind = data.get("kind", event_type)
+        item = data.get("item") or {}
+        if kind in {"tool.started", "tool.completed", "tool.failed"}:
+            data = {**item, "tool": item.get("name"), "call_id": item.get("tool_call_id"), "preview": item.get("content")}
+        elif kind == "tool.progress":
+            data = data.get("progress") or {}
+        if kind == "text.delta":
             delta = _collapse_ws(data.get("delta"))
             if delta:
                 self.latest_text = (self.latest_text + delta).strip()[-500:]
@@ -326,12 +332,12 @@ class RailRunDashboard:
                 self.refresh()
             return
 
-        if event_type == "thinking_done":
+        if kind == "item.completed":
             self.thinking_active = False
             self.refresh()
             return
 
-        if event_type == "llm_usage":
+        if kind == "run.usage":
             input_tokens = _coerce_int(data.get("input_tokens"))
             output_tokens = _coerce_int(data.get("output_tokens"))
             total_tokens = _coerce_int(data.get("total_tokens"))
@@ -343,7 +349,7 @@ class RailRunDashboard:
             self.refresh()
             return
 
-        if event_type == "tool_call":
+        if kind == "tool.started":
             self.thinking_active = False
             tool = str(data.get("tool") or "tool")
             args = data.get("arguments") or {}
@@ -358,7 +364,7 @@ class RailRunDashboard:
             self.refresh()
             return
 
-        if event_type == "tool_progress":
+        if kind == "tool.progress":
             tool = str(data.get("tool") or "")
             step = self._active_step(tool, call_id=str(data.get("call_id") or ""))
             pieces: list[str] = []
@@ -381,13 +387,7 @@ class RailRunDashboard:
                 self.refresh()
             return
 
-        if event_type == "tool_heartbeat":
-            tool = str(data.get("tool") or "")
-            self._active_step(tool, call_id=str(data.get("call_id") or ""))
-            self.refresh()
-            return
-
-        if event_type == "tool_result":
+        if kind in {"tool.completed", "tool.failed"}:
             tool = str(data.get("tool") or "")
             status = str(data.get("status") or "ok")
             step = self._active_step(tool, call_id=str(data.get("call_id") or ""))
@@ -403,7 +403,7 @@ class RailRunDashboard:
             self.refresh()
             return
 
-        if event_type == "compact":
+        if kind == "context.compacted":
             tokens = data.get("tokens_before", "?")
             self.steps.append(
                 RailStep(

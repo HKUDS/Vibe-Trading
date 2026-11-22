@@ -486,7 +486,7 @@ def test_crash_mid_tool_then_restart_closes_the_turn_and_keeps_finished_results(
 # ---------------------------------------------------------------------------
 
 
-def test_migrated_session_replays_history_and_keeps_it_after_new_turns(tmp_path, monkeypatch):
+def test_pre_thread_session_migrates_and_replays_after_new_turns(tmp_path, monkeypatch):
     def policy(llm, messages, tools, on_text):
         del tools, on_text
         return _response(content=f"answer {len(llm.requests)}")
@@ -496,11 +496,15 @@ def test_migrated_session_replays_history_and_keeps_it_after_new_turns(tmp_path,
     session = service.create_session(title="legacy")
     sid = session.session_id
     run_id = "20261026_230021_46_a7d6f2"
-    log = service.store.thread_log(sid)
-    log.append("turn_start", "old", prompt="backtest AAPL")
-    log.append("user", "old", content="backtest AAPL", llm_content="backtest AAPL")
-    log.append("assistant", "old", content=f"[prev_run: {run_id}]\ndone", phase="final")
-    log.append("turn_end", "old", status="completed")
+    import json
+    rows = [
+        {"role": "user", "content": "backtest AAPL", "created_at": "2026-10-26T23:00:00+00:00"},
+        {"role": "assistant", "content": "done", "metadata": {"run_id": run_id}, "linked_attempt_id": "old", "created_at": "2026-10-26T23:01:00+00:00"},
+    ]
+    directory = service.store.thread_path(sid).parent
+    (directory / "messages.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    (directory / "thread_migration.json").unlink()
+    assert not service.store.thread_path(sid).exists()
 
     async def scenario() -> None:
         await _send(service, sid, "deeper")

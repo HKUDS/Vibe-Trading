@@ -444,7 +444,7 @@ class SpawnAgentTool(BaseTool):
         of the tool keep the local goal-meter fallback when no sink is set.
 
         Args:
-            callback: Receives ``llm_usage`` or ``llm_usage_unavailable`` and
+            callback: Receives ``item.delta`` with ``run.usage`` or ``run.usage_unavailable`` and
                 returns whether the parent budget has been exhausted.
         """
         self._usage_callback = callback
@@ -520,11 +520,11 @@ class SpawnAgentTool(BaseTool):
 
         def forward(event_type: str, data: dict[str, Any]) -> None:
             # Tool name, status and usage only: child text never reaches the parent's stream.
-            if event_type == "tool_call":
-                progress("subagent_tool", f"{data.get('tool')}: running")
-            elif event_type == "tool_result":
-                progress("subagent_tool", f"{data.get('tool')}: {data.get('status')}")
-            elif event_type in ("llm_usage", "llm_usage_unavailable"):
+            if event_type == "item.started" and data.get("kind") == "tool.started":
+                progress("subagent_tool", f"{(data.get('item') or {}).get('name')}: running")
+            elif event_type == "item.completed" and data.get("kind") in {"tool.completed", "tool.failed"}:
+                progress("subagent_tool", f"{(data.get('item') or {}).get('name')}: {(data.get('item') or {}).get('status')}")
+            elif event_type == "item.delta" and data.get("kind") in {"run.usage", "run.usage_unavailable"}:
                 usage = {k: v for k, v in data.items() if k not in ("iter", "call_index")}
                 if self._usage_callback is not None:
                     try:
@@ -535,7 +535,7 @@ class SpawnAgentTool(BaseTool):
                 else:
                     emit_parent(event_type, {**usage, "purpose": "subagent", "subagent": child_dir.name})
                     exhausted = (
-                        event_type == "llm_usage"
+                        data.get("kind") == "run.usage"
                         and meter is not None
                         and meter.charge(int(data.get("total_tokens") or 0))
                     )

@@ -41,7 +41,7 @@ class StallWatchdog:
                 continue
             if not warned:
                 warned = True
-                self.owner._emit("stall_warning", {"idle_s": round(idle, 1), "timeout_s": timeout})
+                self.owner._emit("item.delta", {"kind": "run.stall_warning", "idle_s": round(idle, 1), "timeout_s": timeout})
                 continue
             self.reason = (
                 "run stalled: no LLM completion or tool result for "
@@ -56,6 +56,6 @@ class StallWatchdog:
                 state_store.mark_failure(run_dir, self.reason)
             except Exception:
                 pass
-            self.owner._emit("stalled", {"reason": self.reason})
+            self.owner._emit("item.delta", {"kind": "run.stalled", "reason": self.reason})
             self.owner._cancel_event.set()
             return

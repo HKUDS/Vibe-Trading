@@ -29,26 +29,24 @@ class TestConcurrentToolCallPairing:
     """
 
     def test_missing_call_does_not_complete_another_active_call(self, dashboard):
-        dashboard.handle_event("tool_call", {"tool": "backtest", "call_id": "active"})
-        dashboard.handle_event("tool_result", {"tool": "backtest", "call_id": "evicted", "status": "error"})
+        dashboard.handle_event('item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'backtest', 'tool_call_id': 'active'}, 'live_id': "tool:" + str('active')})
+        dashboard.handle_event('item.completed', {"kind": 'tool.failed', 'item': {'type': 'tool_result', 'name': 'backtest', 'tool_call_id': 'evicted', 'status': 'error'}, 'live_id': "tool:" + str('evicted')})
         assert next(step for step in dashboard.steps if step.call_id == "active").status == "active"
         assert next(step for step in dashboard.steps if step.call_id == "evicted").status == "error"
 
     def test_results_pair_with_their_own_call_via_call_id(self, dashboard: RailRunDashboard) -> None:
         dashboard.handle_event(
-            "tool_call", {"tool": "get_market_data", "arguments": {"symbol": "AAPL"}, "call_id": "call-1"}
+            'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'call-1', 'arguments': {'symbol': 'AAPL'}}, 'live_id': "tool:" + str('call-1')}
         )
         dashboard.handle_event(
-            "tool_call", {"tool": "get_market_data", "arguments": {"symbol": "MSFT"}, "call_id": "call-2"}
+            'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'call-2', 'arguments': {'symbol': 'MSFT'}}, 'live_id': "tool:" + str('call-2')}
         )
 
         dashboard.handle_event(
-            "tool_result",
-            {"tool": "get_market_data", "status": "ok", "preview": '{"summary": "AAPL result"}', "call_id": "call-1"},
+            'item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'call-1', 'content': '{"summary": "AAPL result"}', 'status': 'ok'}, 'live_id': "tool:" + str('call-1')},
         )
         dashboard.handle_event(
-            "tool_result",
-            {"tool": "get_market_data", "status": "ok", "preview": '{"summary": "MSFT result"}', "call_id": "call-2"},
+            'item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'tool_call_id': 'call-2', 'content': '{"summary": "MSFT result"}', 'status': 'ok'}, 'live_id': "tool:" + str('call-2')},
         )
 
         aapl_step = next(s for s in dashboard.steps if s.args == {"symbol": "AAPL"})
@@ -60,14 +58,14 @@ class TestConcurrentToolCallPairing:
 
     def test_progress_event_updates_its_own_call_via_call_id(self, dashboard: RailRunDashboard) -> None:
         dashboard.handle_event(
-            "tool_call", {"tool": "backtest", "arguments": {"symbol": "AAPL"}, "call_id": "call-1"}
+            'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'backtest', 'tool_call_id': 'call-1', 'arguments': {'symbol': 'AAPL'}}, 'live_id': "tool:" + str('call-1')}
         )
         dashboard.handle_event(
-            "tool_call", {"tool": "backtest", "arguments": {"symbol": "MSFT"}, "call_id": "call-2"}
+            'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'backtest', 'tool_call_id': 'call-2', 'arguments': {'symbol': 'MSFT'}}, 'live_id': "tool:" + str('call-2')}
         )
 
         dashboard.handle_event(
-            "tool_progress", {"tool": "backtest", "message": "halfway for MSFT", "call_id": "call-2"}
+            'item.delta', {"kind": 'tool.progress', 'progress': {'tool': 'backtest', 'message': 'halfway for MSFT', 'call_id': 'call-2'}, 'heartbeat': False, 'live_id': "tool:" + str('call-2')}
         )
 
         aapl_step = next(s for s in dashboard.steps if s.args == {"symbol": "AAPL"})

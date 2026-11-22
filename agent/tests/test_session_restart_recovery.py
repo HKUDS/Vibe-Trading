@@ -36,8 +36,8 @@ def test_stream_checkpoint_tracks_deltas_and_resets(tmp_path: Path) -> None:
     store.create_attempt(attempt)
     checkpoint = ResponseCheckpoint(store, attempt, min_interval_seconds=60)
 
-    checkpoint.handle_event("text_delta", {"delta": "first"})
-    checkpoint.handle_event("text_delta", {"delta": " second"})
+    checkpoint.handle_event('item.delta', {"kind": 'text.delta', 'delta': 'first'})
+    checkpoint.handle_event('item.delta', {"kind": 'text.delta', 'delta': ' second'})
     assert SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id) == "first"
 
     checkpoint.flush()
@@ -46,10 +46,10 @@ def test_stream_checkpoint_tracks_deltas_and_resets(tmp_path: Path) -> None:
         == "first second"
     )
 
-    checkpoint.handle_event("stream_reset", {})
+    checkpoint.handle_event('item.delta', {"kind": 'text.reset', })
     assert SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id) == ""
 
-    checkpoint.handle_event("text_delta", {"delta": "replacement"})
+    checkpoint.handle_event('item.delta', {"kind": 'text.delta', 'delta': 'replacement'})
     assert (
         SessionRuntime(store.thread_log(session.session_id), session.session_id).partial_response(attempt.attempt_id)
         == "replacement"
@@ -67,6 +67,7 @@ def test_service_restart_recovers_partial_reply_once(
     store.create_attempt(attempt)
     SessionRuntime(store.thread_log(session.session_id), session.session_id).record_checkpoint(attempt.attempt_id, "Partial answer")
 
+    (store.thread_path(session.session_id).parent / "thread_migration.json").unlink()
     _service(store, tmp_path / "runs", monkeypatch)
 
     recovered = store.get_attempt(session.session_id, attempt.attempt_id)

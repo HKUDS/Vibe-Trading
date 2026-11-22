@@ -21,7 +21,7 @@ from src.session.events import EventBus
 
 def test_clear_removes_buffer() -> None:
     bus = EventBus()
-    bus.emit("s1", "tool_call", {"tool": "x"})
+    bus.emit("s1", 'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'x'}, 'live_id': "tool:" + str('')})
     bus.clear("s1")
     assert bus.replay("s1", replay_all=True) == []
 
@@ -75,7 +75,7 @@ def test_publish_after_clear_does_not_enqueue() -> None:
         task = asyncio.ensure_future(gen.__anext__())
         await asyncio.sleep(0.05)
         bus.clear("s1")
-        bus.emit("s1", "tool_call", {"tool": "x"})
+        bus.emit("s1", 'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'x'}, 'live_id': "tool:" + str('')})
         assert "s1" not in bus._subscribers
         event = await asyncio.wait_for(task, timeout=2.0)
         assert event.event_type == "session_cleared"

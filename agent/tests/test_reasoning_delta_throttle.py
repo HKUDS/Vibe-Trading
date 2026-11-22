@@ -71,7 +71,7 @@ def _build_agent(llm: Any, events: list, tmp_run_dir: Path):
     agent = AgentLoop(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
-        event_callback=lambda event_type, data: events.append((event_type, data)),
+        event_callback=lambda event_type, data: events.append((data.get("kind", event_type), data)),
         max_iterations=3,
         persistent_memory=pm,
     )
@@ -88,7 +88,7 @@ def test_reasoning_delta_throttled_but_first_chunk_immediate(tmp_path: Path) -> 
     result = agent.run(user_message="think hard")
 
     assert result["status"] == "success"
-    deltas = [data for event_type, data in events if event_type == "reasoning_delta"]
+    deltas = [data for event_type, data in events if event_type == "reasoning.delta"]
 
     # First chunk emitted immediately: cumulative chars equals exactly one chunk.
     assert deltas, "expected at least one reasoning_delta event"
@@ -117,6 +117,6 @@ def test_provider_waiting_reaches_loop_without_answer_or_reasoning(tmp_path):
     events = []
     result = _build_agent(llm, events, tmp_path / "waiting").run(user_message="say done")
     assert result["status"] == "success"
-    waiting = [data for kind, data in events if kind == "llm_waiting"]
-    assert waiting == [{"iter": 1}]
-    assert not any(kind == "reasoning_delta" for kind, _ in events)
+    waiting = [data for kind, data in events if kind == "run.waiting"]
+    assert waiting == [{"kind": "run.waiting", "iter": 1}]
+    assert not any(kind == "reasoning.delta" for kind, _ in events)

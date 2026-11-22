@@ -1271,7 +1271,7 @@ def test_agent_loop_delivers_original_answer_without_numeric_rewrite(
     assert result["content"] == "建议买入价为 0.881。"
     assert market.calls == 2
     assert_system_messages_only_lead(llm.messages_history)
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "item.delta" and data.get("kind") == "text.delta")
     assert streamed == result["content"]
     assert len(llm.responses) == 1  # no corrective model call
 

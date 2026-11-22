@@ -6,7 +6,7 @@ from src.session.thread import ThreadLog, diagnostic_records
 
 def recorder_at(directory: Path) -> TurnRecorder:
     runtime = SessionRuntime(ThreadLog(directory / "thread.jsonl"), directory.name)
-    return runtime.begin_turn("test-turn", [])
+    return runtime.begin_turn("test-turn")
 
 
 def records_at(directory: Path) -> list[dict]:

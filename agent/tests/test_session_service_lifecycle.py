@@ -10,7 +10,10 @@ import pytest
 
 from src.session.events import EventBus
 from src.session.models import Attempt, AttemptStatus
-from src.session.runtime import legacy_history
+from src.session.migration import migrate_session
+from src.session.thread import ThreadLog, replay
+import tempfile
+import json
 from src.session.service import STOPPED_MARKER, SessionBusyError, SessionService
 from src.session.store import SessionStore
 
@@ -269,6 +272,17 @@ def test_empty_successful_answer_says_so():
 # ---------------------------------------------------------------------------
 
 
+def migrated_history(messages):
+    """Replay archived rows through the real one-time migration."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory)
+        rows = [{"role": m.role, "content": m.content, "metadata": getattr(m, "metadata", {})}
+                for m in messages[:-1]]
+        (path / "messages.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+        migrate_session(path)
+        return replay(ThreadLog(path / "thread.jsonl").read())
+
+
 def test_one_oversized_message_is_kept_whole_for_the_context_budget():
     """No character cap: replayed history is sized by the loop's context budget.
 
@@ -280,7 +294,7 @@ def test_one_oversized_message_is_kept_whole_for_the_context_budget():
         type("M", (), {"role": "assistant", "content": "x" * 20000})(),
         type("M", (), {"role": "user", "content": "current turn is dropped"})(),
     ]
-    history = legacy_history(messages)
+    history = migrated_history(messages)
     assert [m["content"] for m in history] == ["older turn", "x" * 20000]
 
 
@@ -291,7 +305,7 @@ def test_normal_history_is_untouched():
         type("M", (), {"role": "assistant", "content": "second"})(),
         type("M", (), {"role": "user", "content": "current turn is dropped"})(),
     ]
-    history = legacy_history(messages)
+    history = migrated_history(messages)
     assert [m["content"] for m in history] == ["first", "second"]
 
 
@@ -307,21 +321,21 @@ def test_assistant_reply_carries_its_run_id_into_the_next_turn():
     (``test_session_conversation_kernel.py`` checks that).
     """
     run_id = "20261026_230021_46_a7d6f2"
-    history = legacy_history(
+    history = migrated_history(
         [_turn("user", "backtest"), _turn("assistant", "done", run_id), _turn("user", "deeper")]
     )
     assert [m["content"] for m in history] == ["backtest", f"[prev_run: {run_id}]\ndone"]
 
-    long_reply = legacy_history([_turn("assistant", "x" * 20000, run_id), _turn("user", "now")])
+    long_reply = migrated_history([_turn("assistant", "x" * 20000, run_id), _turn("user", "now")])
     assert long_reply[-1]["content"].startswith(f"[prev_run: {run_id}]")
     marked = _turn("assistant", f"see [prev_run: {run_id}]", run_id)
-    assert legacy_history([marked, _turn("user", "now")])[0]["content"].count("[prev_run:") == 1
+    assert migrated_history([marked, _turn("user", "now")])[0]["content"].count("[prev_run:") == 1
 
 
 @pytest.mark.parametrize("run_id", ["../../etc/passwd", "a b", "x\ny", "", 42])
 def test_hostile_run_ids_in_metadata_never_reach_the_prompt(run_id):
     message = type("M", (), {"role": "assistant", "content": "reply", "metadata": {"run_id": run_id}})()
-    assert legacy_history([message, _turn("user", "now")])[0]["content"] == "reply"
+    assert migrated_history([message, _turn("user", "now")])[0]["content"] == "reply"
 
 
 def test_claim_is_released_when_pre_run_bookkeeping_fails(tmp_path, monkeypatch):

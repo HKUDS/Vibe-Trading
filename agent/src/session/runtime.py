@@ -23,7 +23,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import re
 import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -45,69 +44,6 @@ logger = logging.getLogger(__name__)
 #: Directory, inside a run directory, that ``deliver_tool_result`` and
 #: ``persist_calculation_result`` offload complete tool results into.
 TOOL_RESULTS_DIRNAME = "tool-results"
-
-_RUN_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,80}")
-_RUN_DIRECTORY_RE = re.compile(r"Run directory:\s*\S+")
-
-
-# ---- History ----
-
-
-def legacy_history(rows: Sequence[Any]) -> List[Dict[str, Any]]:
-    """Text-only history for messages a session recorded before its thread log.
-
-    Sessions created before ``thread.jsonl`` existed have only
-    Older display rows are accepted as an in-memory migration input. Their
-    text can be replayed when a one-time migration has not yet run. A trailing
-    user row is the turn being answered now, so it is left out. Size is not capped here; the loop's
-    context budget compacts replayed history like any other.
-
-    The run id of a reply lives only in its metadata, so it is written into
-    the reply as ``[prev_run: <id>]`` for a later turn to find that run.
-
-    Args:
-        rows: ``Message`` objects or dicts in chronological order.
-
-    Returns:
-        OpenAI-format user/assistant messages.
-    """
-    rows = list(rows)
-    if rows and _field(rows[-1], "role") == "user":
-        rows = rows[:-1]
-
-    def _shorten_run_dir(match: re.Match) -> str:
-        path_str = match.group(0).replace("Run directory:", "").strip()
-        run_id = Path(path_str).name if path_str else ""
-        return f"[prev_run: {run_id}]" if run_id else ""
-
-    history: List[Dict[str, Any]] = []
-    for row in rows:
-        role = _field(row, "role") or "user"
-        content = _field(row, "content") or ""
-        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
-            continue
-        content = _RUN_DIRECTORY_RE.sub(_shorten_run_dir, content).strip()
-        metadata = _field(row, "metadata")
-        run_id = metadata.get("run_id") if isinstance(metadata, Mapping) else None
-        marker = f"[prev_run: {run_id}]"
-        if (
-            role == "assistant"
-            and content
-            and isinstance(run_id, str)
-            and _RUN_ID_RE.fullmatch(run_id)
-            and marker not in content
-        ):
-            content = f"{marker}\n{content}"
-        if content:
-            history.append({"role": role, "content": content})
-    return history
-
-
-def _field(row: Any, name: str) -> Any:
-    if isinstance(row, Mapping):
-        return row.get(name)
-    return getattr(row, name, None)
-
 
 def _message_key(message: Mapping[str, Any]) -> str:
     return json.dumps(message, sort_keys=True, ensure_ascii=False, default=str)
@@ -599,7 +535,6 @@ class SessionRuntime:
 
     def replay_history(
         self,
-        rows: Sequence[Any],
         *,
         provider: Optional[str] = None,
         model: Optional[str] = None,
@@ -630,7 +565,6 @@ class SessionRuntime:
     def begin_turn(
         self,
         turn_id: str,
-        rows: Sequence[Any],
         *,
         provider: Optional[str] = None,
         model: Optional[str] = None,
@@ -644,8 +578,6 @@ class SessionRuntime:
 
         Args:
             turn_id: The new turn (attempt) id.
-            rows: Optional pre-thread display rows used only during migration.
-
         Returns:
             The turn's recorder, carrying its replayed history.
         """
@@ -654,9 +586,7 @@ class SessionRuntime:
             if stale != turn_id:
                 self._append_safely("turn_end", stale, status="interrupted")
         items = self.thread.read()
-        history, history_seqs, user_history = self.replay_history(
-            rows, provider=provider, model=model
-        )
+        history, history_seqs, user_history = self.replay_history(provider=provider, model=model)
         recorder = TurnRecorder(
             self,
             turn_id,

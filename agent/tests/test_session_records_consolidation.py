@@ -55,10 +55,10 @@ def test_stream_checkpoint_is_thread_backed_for_new_sessions(tmp_path: Path) -> 
     session = store.create_session(Session(title="checkpoint"))
     runtime = SessionRuntime(store.thread_log(session.session_id), session.session_id)
     attempt = Attempt(session_id=session.session_id, prompt="write")
-    recorder = runtime.begin_turn(attempt.attempt_id, [])
+    recorder = runtime.begin_turn(attempt.attempt_id)
     recorder.start(prompt="write", message={"role": "user", "content": "write"}, model=None, provider=None)
     checkpoint = ResponseCheckpoint(store, attempt, runtime=runtime, min_interval_seconds=0)
-    checkpoint.handle_event("text_delta", {"delta": "partial"})
+    checkpoint.handle_event('item.delta', {"kind": 'text.delta', 'delta': 'partial'})
     checkpoint.flush()
 
     assert runtime.partial_response(attempt.attempt_id) == "partial"
@@ -93,7 +93,7 @@ def test_channel_poll_waits_for_terminal_thread_reply(tmp_path):
     async def scenario():
         store = SessionStore(tmp_path / "sessions")
         runtime = SessionRuntime(store.thread_log("s"), "s")
-        recorder = runtime.begin_turn("t", [])
+        recorder = runtime.begin_turn("t")
         recorder.start(prompt="q", message={"content": "q"}, provider=None, model=None)
         recorder.assistant({"content": "draft"}, phase="final")
         channel = ChannelRuntime(bus=MessageBus(), session_service=SimpleNamespace(get_messages=store.get_messages),

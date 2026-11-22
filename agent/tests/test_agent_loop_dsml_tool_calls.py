@@ -101,7 +101,7 @@ def test_agent_loop_executes_dsml_textual_tool_call(
     agent = AgentLoop(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM([dsml, "final answer"])),
-        event_callback=lambda event_type, payload: events.append((event_type, payload)),
+        event_callback=lambda event_type, payload: events.append((payload.get("kind", event_type), payload)),
         max_iterations=2,
         persistent_memory=memory,
     )
@@ -115,19 +115,21 @@ def test_agent_loop_executes_dsml_textual_tool_call(
         event_type: payload
         for event_type, payload in events
         if event_type
-        in {"tool_call", "tool_progress", "tool_heartbeat", "tool_result"}
+        in {"tool.started", "tool.progress", "tool.progress", "tool.completed"}
     }
+    assert any(p.get("heartbeat") is True for k, p in events if k == "tool.progress")
+    assert any(p.get("heartbeat") is False for k, p in events if k == "tool.progress")
     assert set(tool_events) == {
-        "tool_call",
-        "tool_progress",
-        "tool_heartbeat",
-        "tool_result",
+        "tool.started",
+        "tool.progress",
+        "tool.progress",
+        "tool.completed",
     }
     assert {
-        payload["call_id"] for payload in tool_events.values()
+        (payload.get("item") or payload.get("progress"))["tool_call_id" if "item" in payload else "call_id"] for payload in tool_events.values()
     } == {"dsml_call_1"}
     assert {
-        payload["tool"] for payload in tool_events.values()
+        (payload.get("item") or payload.get("progress"))["name" if "item" in payload else "tool"] for payload in tool_events.values()
     } == {"echo_probe"}
 
 def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
@@ -166,7 +168,7 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
     agent = AgentLoop(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM([garbage, garbage])),
-        event_callback=lambda event_type, payload: events.append((event_type, payload)),
+        event_callback=lambda event_type, payload: events.append((payload.get("kind", event_type), payload)),
         max_iterations=1,  # the single iteration is the forced-text last one
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
     )
@@ -223,7 +225,7 @@ def test_final_tool_syntax_gets_one_text_only_retry(
     agent = AgentLoop(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM(responses)),
-        event_callback=lambda kind, payload: events.append((kind, payload)),
+        event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
         max_iterations=max_iterations,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
     )
@@ -235,13 +237,13 @@ def test_final_tool_syntax_gets_one_text_only_retry(
     assert result["content"] == "The report is ready."
     assert result["iterations"] == max_iterations + 1
     assert not result.get("degraded")
-    assert sum(kind == "tool_result" for kind, _ in events) == max_iterations - 1
+    assert sum(kind == "tool.completed" for kind, _ in events) == max_iterations - 1
     assert not responses
     shown = ""
     for kind, payload in events:
-        if kind == "stream_reset":
+        if kind == "text.reset":
             shown = ""
-        elif kind == "text_delta":
+        elif kind == "text.delta":
             shown += payload["delta"]
     assert shown == "The report is ready."
 
@@ -289,7 +291,7 @@ def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> No
     agent = AgentLoop(
         registry=registry,
         llm=llm,
-        event_callback=lambda kind, payload: events.append((kind, payload)),
+        event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
     )
@@ -297,7 +299,7 @@ def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> No
 
     result = agent.run("report")
 
-    assert not any(kind in {"tool_call", "tool_result"} for kind, _ in events)
+    assert not any(kind in {"tool.started", "tool.completed"} for kind, _ in events)
     assert llm.offered_tools == [None, None]
     assert result["iterations"] == 2
     assert result.get("degraded") is True
@@ -363,7 +365,7 @@ def test_cancel_after_rejected_answer_prevents_retry(tmp_path: Path) -> None:
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
         event_callback=lambda kind, payload: (
-            agent.cancel() if kind == "stream_reset" else None
+            agent.cancel() if payload.get("kind") == "text.reset" else None
         ),
     )
     agent.memory.run_dir = str(tmp_path / "run")

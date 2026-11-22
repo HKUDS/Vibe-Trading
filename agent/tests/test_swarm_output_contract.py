@@ -279,8 +279,8 @@ def test_tool_result_event_status_and_evidence_credit_agree(
         event_callback=events.append,
     )
 
-    tool_result = next(event for event in events if event.type == "tool_result")
-    assert tool_result.data["status"] == expected_event_status
+    tool_result = next(event for event in events if event.type == "item.completed")
+    assert tool_result.data["item"]["status"] == expected_event_status
     assert worker_result.status == expected_worker_status
 
 
