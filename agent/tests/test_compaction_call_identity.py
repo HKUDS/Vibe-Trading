@@ -309,7 +309,7 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
             raise RuntimeError("offline summary failure")
 
         monkeypatch.setattr(h.agent.llm, "chat", fail_summary)
-    monkeypatch.setattr("src.agent.loop._llm_timeout_seconds", lambda: 1)
+    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 1)
 
     h.agent._auto_compact(h.messages, h.run_dir, h.trace)
 
@@ -346,7 +346,7 @@ def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypat
         return SimpleNamespace(content="summary")
 
     monkeypatch.setattr(h.agent.llm, "chat", chat)
-    monkeypatch.setattr("src.agent.loop._llm_timeout_seconds", lambda: 1)
+    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 1)
     token = bind_llm_session_id("vibe-session-42")
     try:
         h.agent._auto_compact(h.messages, h.run_dir, h.trace)

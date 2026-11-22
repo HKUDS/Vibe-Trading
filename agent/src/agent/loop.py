@@ -13,7 +13,6 @@ Tool execution:
 
 from __future__ import annotations
 
-import contextvars
 import json
 import logging
 import threading
@@ -38,19 +37,14 @@ from src.agent.tuning import (
     _wrap_up_nudge_remaining as _wrap_up_nudge_remaining,
 )
 
-from src.agent.loop_streaming import TurnStream, repair_provider_messages
 from src.agent.context import ContextBuilder
 from src.agent.tool_loading import prepare_registry, request_definitions
 from src.agent.instrument_identity import IdentityLedger
 from src.agent.memory import WorkspaceMemory
 from src.agent.progress import HeartbeatTimer as HeartbeatTimer, ProgressEvent as ProgressEvent, _set_emitter as _set_emitter
 from src.agent.context_budget import (
-    MIN_CONVERSATION_TOKENS,
     CompactionBudget,
     ContextMeter,
-    is_context_overflow,
-    parse_context_limit,
-    resolve_window,
 )
 from src.agent.context_compact import (  # noqa: F401  (re-exported so loop imports keep working)
     COLLAPSE_HEAD,
@@ -82,18 +76,9 @@ from src.agent.tool_progress import ToolProgress
 from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
 from src.core.state import RunStateStore
-from src.goal.context import (
-    format_goal_continuation_prompt,
-    get_current_goal_context,
-    goal_needs_continuation,
-    goal_progress_tuple,
-)
+from src.goal.context import get_current_goal_context
 from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError, reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
-from src.providers.content_filter import (
-    CONTENT_FILTER_SKIP_MESSAGE,
-    MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
-)
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
 from src.tools.background_tools import get_background_manager
@@ -106,6 +91,13 @@ from src.agent.tool_lifecycle import (
     _format_timeout as _format_timeout,
 )
 from src.agent.hooks import HookDecision
+from src.agent.loop_conversation import ConversationState
+from src.agent.loop_usage_state import UsageLedger
+from src.agent.loop_watchdog import StallWatchdog
+from src.agent.loop_compaction import ContextCompactor
+from src.agent.loop_driver import IterationDriver
+from src.agent.loop_state import TurnSetup, TurnState
+from src.agent.loop_directives import WriteTargetState
 
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
@@ -169,7 +161,7 @@ from src.agent.tool_results import (  # noqa: E402
     _TARGET_ACTION_RE as _TARGET_ACTION_RE,
     _failure_code as _failure_code,
     _is_tool_success as _is_tool_success,
-    _looks_like_tool_call_syntax,
+    _looks_like_tool_call_syntax,  # noqa: F401 - compatibility import
     _named_target_paths as _named_target_paths,
     _normalize_tool_run_dir as _normalize_tool_run_dir,
     _previously_archived as _previously_archived,
@@ -254,6 +246,10 @@ class AgentLoop(ToolCallLifecycle):
         """
         self._thread = thread_recorder
         self._queued_inputs = queued_inputs
+        self._conversation = ConversationState(thread_recorder, queued_inputs)
+        self._context_compactor = ContextCompactor(self)
+        self._iteration_driver = IterationDriver(self)
+        self._write_targets = WriteTargetState()
         self.registry = prepare_registry(registry)
         self._hooks = getattr(self.registry, "hooks", None)
         if self._hooks is not None and thread_recorder is not None:
@@ -302,7 +298,7 @@ class AgentLoop(ToolCallLifecycle):
             or getattr(registry, "background", None)
             or get_background_manager()
         )
-        self._previous_summary: str = ""
+        self._context_compactor.previous_summary = ""
         self._persistent_memory = persistent_memory
         # Set by the CLI to its launch directory so ./AGENTS.md is loaded too.
         self.instruction_launch_dir: Path | None = None
@@ -317,6 +313,7 @@ class AgentLoop(ToolCallLifecycle):
         self._budget_stop_reason: str | None = None
         self._last_activity_wall: float = 0.0
         self._run_done = threading.Event()
+        self._watchdog = StallWatchdog(self)
         # Identical deterministic tool calls (e.g. financial_rigor calc with
         # the same expression) are served from this cache instead of being
         # re-executed. Regression: after auto-compact cleared earlier tool
@@ -336,11 +333,12 @@ class AgentLoop(ToolCallLifecycle):
         self._readonly_replay_visibility_pending: set[str] = set()
         self._readonly_replay_recoveries = 0
         self._tool_progress = ToolProgress()
-        self._context_meter = ContextMeter()
-        self._learned_context_window: int | None = None
-        self._compacted_to_tokens: int | None = None
-        self._tool_schema_tokens = 0
+        self._context_compactor.context_meter = ContextMeter()
+        self._context_compactor.learned_context_window = None
+        self._context_compactor.compacted_to_tokens = None
+        self._context_compactor.tool_schema_tokens = 0
         self._llm_usage_summary = _new_llm_usage_summary(self.llm)
+        self._usage_ledger = UsageLedger(self, self._llm_usage_summary)
         self._goal_usage_callback = None
         spawn_agent = self.registry.get("spawn_agent")
         set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
@@ -477,10 +475,10 @@ class AgentLoop(ToolCallLifecycle):
             self._has_run = True
         self._called_ok = set()
         self._successful_call_keys = {}
-        self._previous_summary = ""
+        self._context_compactor.reset()
         self._released_fallback = False
         self._released_fallback_reason = None
-        self._written_files = set()
+        self._write_targets.reset()
         self._stall_reason = None
         self._budget_stop_reason = None
         self._last_activity_wall = _time.time()
@@ -492,27 +490,29 @@ class AgentLoop(ToolCallLifecycle):
         self._readonly_replay_visibility_pending = set()
         self._readonly_replay_recoveries = 0
         self._tool_progress = ToolProgress()
-        self._context_meter = ContextMeter()
-        self._learned_context_window: int | None = None
-        self._compacted_to_tokens: int | None = None
         self._turn_messages = None
+        setup = self._prepare_turn(user_message, history, session_id)
+        if setup.denied_result is not None:
+            return setup.denied_result
+        state = setup.state
+        assert state is not None
+        try:
+            self._iteration_driver.run(state)
+        except Exception as exc:
+            return self._handle_bound_error(exc, setup)
+        return self._complete_turn(setup)
+
+    def _prepare_turn(self, user_message: str, history: Optional[List[Dict[str, Any]]], session_id: str) -> TurnSetup:
+        """Build run resources and per-turn state before iteration."""
         self.registry = prepare_registry(self.registry)
-        # Result receipts are conversation-scoped. Run directories remain the
-        # public identity for backtests and run cards, while the registry lets
-        # the delivery projection write one shared workspace across turns.
         if self.memory.session_workspace:
             setattr(self.registry, "session_workspace", self.memory.session_workspace)
-        # A conversation keeps the schemas it already loaded; only a new one
-        # starts from the initial set.
         if self._thread is not None and self._thread.loaded_tools is not None:
             restore_exposure = getattr(self.registry, "restore_exposure", None)
             if callable(restore_exposure):
                 restore_exposure(self._thread.loaded_tools)
-        # Sent with every request and never compacted, so they count against
-        # the window exactly like the system prompt.
-        self._tool_schema_tokens = estimate_tokens(request_definitions(self.registry))
+        self._context_compactor.tool_schema_tokens = estimate_tokens(request_definitions(self.registry))
         run_started_wall = _time.time()
-
         state_store = RunStateStore()
         RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -560,7 +560,6 @@ class AgentLoop(ToolCallLifecycle):
                 f"<user-message>\n{user_message}\n</user-message>"
             )
         goal_store = None
-        goal_turn_accounted = False
         messages = context.build_messages(llm_user_message, history)
         self._turn_messages = messages
         if self._thread is not None:
@@ -578,8 +577,6 @@ class AgentLoop(ToolCallLifecycle):
             "SessionStart",
             {"session_id": session_id, "attempt_id": getattr(self._thread, "turn_id", "")},
         )
-        react_trace: List[Dict[str, Any]] = []
-
         trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
         trace = TraceWriter(trace_dir)
         self._write_run_manifest(trace_dir, messages)
@@ -611,22 +608,29 @@ class AgentLoop(ToolCallLifecycle):
             trace.close()
             state_store.mark_failure(run_dir, reason)
             self._end_thread_turn()
-            return {
-                "status": "failed", "error_code": "hook_denied", "reason": reason,
-                "run_dir": str(run_dir), "run_id": run_dir.name, "content": "",
-                "react_trace": [], "iterations": 0, "max_iterations": self.max_iterations,
-            }
+            return TurnSetup(
+                run_dir=run_dir, trace=trace, state_store=state_store,
+                denied_result={
+                    "status": "failed", "error_code": "hook_denied", "reason": reason,
+                    "run_dir": str(run_dir), "run_id": run_dir.name, "content": "",
+                    "react_trace": [], "iterations": 0, "max_iterations": self.max_iterations,
+                },
+            )
 
-        iteration = 0
-        final_content = ""
-        no_progress_reason: str | None = None
-        content_filter_count = 0
-        consecutive_content_filter_count = 0
-        content_filter_circuit_breaker = False
+        return self._configure_turn_control(
+            messages, run_dir, trace, context, user_message, session_id,
+            run_started_wall, state_store, active_goal_id, goal_store,
+        )
+
+    def _configure_turn_control(
+        self, messages: list, run_dir: Path, trace: TraceWriter, context: ContextBuilder,
+        user_message: str, session_id: str, run_started_wall: float,
+        state_store: RunStateStore, active_goal_id: str | None, goal_store: Any,
+    ) -> TurnSetup:
+        """Configure usage, goal accounting, watchdog, and iteration state."""
         empty_model_response_iter: int | None = None
-        consecutive_empty_responses = 0
-        truncation_reason: str | None = None
         self._llm_usage_summary = _new_llm_usage_summary(self.llm)
+        goal_turn_accounted = False
 
         def check_goal_token_budget(snapshot: dict[str, Any] | None) -> None:
             goal = (snapshot or {}).get("goal") or {}
@@ -673,9 +677,7 @@ class AgentLoop(ToolCallLifecycle):
                 logger.debug("Goal usage accounting skipped: %s", exc)
 
         self._goal_usage_callback = account_goal_usage
-        last_response_model: str | None = None
-        goal_continuations = 0
-        goal_last_progress: tuple[int, int] | None = None
+        react_trace: List[Dict[str, Any]] = []
         wrap_up_remaining = _wrap_up_nudge_remaining()
         wrap_up_at = (
             max(2, self.max_iterations - wrap_up_remaining)
@@ -690,590 +692,49 @@ class AgentLoop(ToolCallLifecycle):
         # of leaving it "running" forever with no state.json. Heartbeats do
         # not count as progress - a hung tool keeps emitting them.
         stall_timeout = _stall_timeout_seconds()
-        if stall_timeout > 0:
-            watchdog = threading.Thread(
-                target=self._stall_watchdog,
-                args=(trace, run_dir, state_store, stall_timeout),
-                name="run-stall-watchdog",
-                daemon=True,
-            )
-            watchdog.start()
+        self._watchdog.start(trace, run_dir, state_store, stall_timeout)
 
-        stream_failure_streak = 0
-        final_answer_retry_pending = False
-        try:
-            while iteration < self.max_iterations or final_answer_retry_pending:
-                final_answer_retry = final_answer_retry_pending
-                final_answer_retry_pending = False
-                self._tool_schema_tokens = estimate_tokens(request_definitions(self.registry))
-                if self._budget_stop_reason is not None:
-                    break
-                if self._cancel_event.is_set():
-                    trace.write({"type": "cancelled", "iter": self._run_iteration + 1})
-                    logger.info("AgentLoop cancelled by user")
-                    break
+        state = TurnState(
+            messages=messages, run_dir=run_dir, trace=trace, context=context,
+            react_trace=react_trace, user_message=user_message,
+            run_started_wall=run_started_wall, session_id=session_id,
+            state_store=state_store, goal_store=goal_store,
+            active_goal_id=active_goal_id, empty_model_response_iter=empty_model_response_iter,
+            wrap_up_at=wrap_up_at, no_commentary_rounds=no_commentary_rounds,
+            mid_turn_nudge_rounds=mid_turn_nudge_rounds,
+        )
+        return TurnSetup(state=state, run_dir=run_dir, trace=trace, state_store=state_store, run_started_wall=run_started_wall, active_goal_id=active_goal_id)
 
-                iteration += 1
-                self._run_iteration += 1
-                current_iter = self._run_iteration
+    def _handle_bound_error(self, exc: Exception, setup: TurnSetup) -> Dict[str, Any]:
+        """Persist an iteration exception using the historical error envelope."""
+        state = setup.state
+        assert state is not None and setup.run_dir is not None and setup.trace is not None and setup.state_store is not None
+        logger.exception(f"AgentLoop error: {exc}")
+        error_code = "provider_stream_error" if isinstance(exc, ProviderStreamError) else "agent_loop_error"
+        setup.trace.write({"type": "end", "iter": self._run_iteration, "status": "error", "reason": str(exc), "iterations": state.iteration})
+        setup.trace.close()
+        setup.state_store.mark_failure(setup.run_dir, str(exc))
+        self._end_thread_turn()
+        self._run_done.set()
+        return {"status": "failed", "error_code": error_code, "reason": str(exc), "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "react_trace": state.react_trace, "iterations": state.iteration, "max_iterations": self.max_iterations}
 
-                # Inject background task notifications for this conversation.
-                notifs = self._background_manager.drain_notifications()
-                if notifs:
-                    notif_text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
-                    self._inject(messages, f"<background-results>\n{notif_text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>")
-
-                if _override("TOKEN_THRESHOLD") is not None:
-                    # Test hook: a monkeypatched module-level TOKEN_THRESHOLD
-                    # keeps the old estimate-based layers so compaction tests
-                    # can force each layer with a tiny number.
-                    tokens = estimate_tokens(messages)
-                    if tokens > int(_token_threshold() * 0.5):
-                        self._microcompact_and_unblock(
-                            messages,
-                            trace,
-                            iteration,
-                            preserve_tool_call_ids=self._readonly_replay_visibility_pending,
-                        )
-                        tokens = estimate_tokens(messages)
-                    if tokens > int(_token_threshold() * 0.7):
-                        before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
-                        _context_collapse(messages, preserve_tool_call_ids=self._readonly_replay_visibility_pending)
-                        self._record_compaction_layer(messages, 2, before)
-                        tokens = estimate_tokens(messages)
-                    _tok_threshold = _token_threshold()
-                    if tokens > _tok_threshold:
-                        logger.info(f"Auto compact triggered: {tokens} tokens > {_tok_threshold}")
-                        compact_hook = self._run_hook(
-                            "PreCompact",
-                            {"session_id": session_id, "iteration": current_iter, "prompt_tokens": tokens},
-                        )
-                        if compact_hook is None or not compact_hook.denied:
-                            self._auto_compact(messages, run_dir, trace, iteration=current_iter)
-                else:
-                    self._compact_to_budget(messages, run_dir, trace, iteration, current_iter)
-
-                # A compaction response also costs tokens. Its usage callback
-                # can exhaust the caller's budget before the next agent call.
-                if self._cancel_event.is_set() or self._budget_stop_reason is not None:
-                    break
-
-                logger.info(f"ReAct iteration {iteration}/{self.max_iterations}")
-
-                # Inject wrap-up nudge when approaching iteration limit.
-                # Skip on the first iteration (tiny budgets) and on the last
-                # iteration (the forced text-only path already guarantees an
-                # answer there) so the nudge never displaces the active-goal
-                # context as the most recent user message.
-                if wrap_up_at is not None and iteration == wrap_up_at and 1 < iteration < self.max_iterations:
-                    remaining = self.max_iterations - iteration
-                    wrap_content = (
-                        f"[SYSTEM] You have {remaining} iterations remaining out of "
-                        f"{self.max_iterations}. Wrap up your work now: finish any "
-                        "outstanding file writes or data updates that are part of your "
-                        "task FIRST, while tools are still available for a few more "
-                        "iterations. Do not start new analysis or re-verify data you "
-                        "already hold. Then provide your final answer as plain text; "
-                        "if your task was to update a file, state that it is done and where."
-                    )
-                    pending_directive = self._pending_write_directive(
-                        user_message, run_started_wall
-                    )
-                    if pending_directive:
-                        wrap_content += "\n\n" + pending_directive
-                        trace.write(
-                            {
-                                "type": "pending_write_directive",
-                                "iter": current_iter,
-                            }
-                        )
-                    self._inject(messages, wrap_content)
-
-                # Safety net: on the second-to-last iteration tools are still
-                # available, but the final iteration is text-only and cannot
-                # call tools. If the task names a target file that has not been
-                # written, force the write now so the run does not end
-                # "answered but incomplete".
-                if iteration == self.max_iterations - 1:
-                    pending_directive = self._pending_write_directive(
-                        user_message, run_started_wall
-                    )
-                    if pending_directive:
-                        trace.write(
-                            {
-                                "type": "pending_write_directive",
-                                "iter": current_iter,
-                            }
-                        )
-                        self._inject(messages, f"<system>{pending_directive}</system>")
-
-                stream = TurnStream(
-                    emit=self._emit, iteration=current_iter,
-                    heartbeat_interval=_heartbeat_interval_s,
-                    reasoning_interval=_reasoning_delta_min_interval_s,
-                )
-
-                # Reserve the final iteration for the answer, within the research budget.
-                is_last_iteration = iteration >= self.max_iterations
-                tool_defs = None if is_last_iteration else request_definitions(self.registry)
-                if is_last_iteration:
-                    trace.write({"type": "forced_text_only", "iter": current_iter})
-
-                _llm_timeout_s = _llm_timeout_seconds()
-                llm_timeout = _llm_timeout_s if _llm_timeout_s > 0 else None
-                # Pairing repair belongs to the provider request, not the
-                # durable conversation. This also covers a cancellation or
-                # partial tool batch that left an unanswered call behind.
-                request_messages: list[dict[str, Any]] = []
-
-                def stream_request():
-                    """Count usage from a failed request before any retry."""
-                    nonlocal request_messages
-                    request_messages = repair_provider_messages(messages)
-                    try:
-                        return self.llm.stream_chat(
-                            request_messages,
-                            tools=tool_defs,
-                            on_text_chunk=stream.on_text,
-                            on_reasoning_chunk=stream.on_reasoning,
-                            on_waiting_chunk=stream.on_waiting,
-                            timeout=llm_timeout,
-                            idle_timeout_s=llm_timeout,
-                            should_cancel=self._cancel_event.is_set,
-                        )
-                    except ProviderStreamError as error:
-                        self._account_llm_usage(
-                            run_dir, getattr(error, "usage_metadata", None), current_iter,
-                            purpose="failed_stream",
-                        )
-                        raise
-
-                try:
-                    response = stream_request()
-                except ProviderStreamError as exc:
-                    # One retry for transient mid-stream failures (connection
-                    # reset, relay hiccup) — mirrors the swarm worker policy.
-                    # Deterministic 4xx errors fail immediately. Deltas from
-                    # the failed attempt are dropped so the trace does not
-                    # contain duplicated thinking text. The delay escalates
-                    # across consecutive retryable failures, honoring the
-                    # provider's Retry-After header (bounded by the configured
-                    # cap) when present. A successful retry does not reset the
-                    # streak — only a clean first-attempt success does.
-                    context_overflow = is_context_overflow(str(exc))
-                    if not exc.retryable and not context_overflow:
-                        raise
-                    if context_overflow:
-                        # Deterministic, so no backoff: shrink to the limit the
-                        # provider reported and send once more.
-                        self._recover_context_overflow(
-                            exc, messages, run_dir, trace, iteration, current_iter
-                        )
-                        retry_delay_s = 0.0
-                    else:
-                        stream_failure_streak += 1
-                        retry_delay_s = (
-                            min(exc.retry_after_s, _stream_retry_max_delay_s())
-                            if exc.retry_after_s is not None
-                            else _stream_retry_backoff_s(stream_failure_streak)
-                        )
-                    logger.warning(
-                        "Provider stream failed (iter %s), retrying once in %.2fs: %s",
-                        current_iter,
-                        retry_delay_s,
-                        exc,
-                    )
-                    self._emit(
-                        "stream_reset",
-                        {
-                            "iter": current_iter,
-                            "reason": "context_overflow" if context_overflow else "provider_stream_retry",
-                            "provider": exc.provider,
-                            "model": exc.model,
-                            "retry_delay_s": retry_delay_s,
-                        },
-                    )
-                    stream.reset_for_retry()
-                    # Wait on the cancel event, not time.sleep: the delay now
-                    # escalates to the configured cap (30s by default) and a
-                    # provider Retry-After can ask for that much on the first
-                    # failure. A blocking sleep would make Stop take that long
-                    # to be observed; the event returns the moment it is set.
-                    self._cancel_event.wait(retry_delay_s)
-                    if self._cancel_event.is_set() or self._budget_stop_reason is not None:
-                        break
-                    response = stream_request()
-                else:
-                    stream_failure_streak = 0
-
-                self._consume_readonly_replay_visibility(messages, trace, current_iter)
-
-                # An LLM response arrived - real progress for the stall watchdog.
-                self._last_activity_wall = _time.time()
-
-                usage = getattr(response, "usage_metadata", None)
-                current_response_model = getattr(response, "response_model", None)
-                # `messages` is still exactly what this request sent.
-                self._context_meter.observe(
-                    usage.get("context_input_tokens", usage.get("input_tokens")) if isinstance(usage, dict) else None,
-                    request_messages,
-                    tool_schema_tokens=estimate_tokens(tool_defs) if tool_defs else 0,
-                )
-                if current_response_model:
-                    last_response_model = current_response_model
-                self._account_llm_usage(run_dir, usage, current_iter)
-                # A caller's spending monitor can cancel synchronously on the
-                # usage event. Do not execute tools from that paid response; a
-                # text-only answer that crossed a goal budget is still released.
-                if self._cancel_event.is_set() or (
-                    self._budget_stop_reason is not None and response.has_tool_calls
-                ):
-                    break
-                thinking_text = "".join(stream.thinking_chunks)
-                if thinking_text:
-                    trace.write_text_entry(
-                        {"type": "thinking", "iter": current_iter},
-                        field="content",
-                        value=thinking_text,
-                        offload_kind=f"thinking-{current_iter}",
-                    )
-                    # The streamed deltas went out before the response said
-                    # whether tool calls follow; its phase is known only now.
-                    self._emit(
-                        "thinking_done",
-                        {
-                            "iter": current_iter,
-                            "content": thinking_text[:500],
-                            "phase": "commentary" if response.has_tool_calls else "final",
-                        },
-                    )
-
-                # Content-filter skip: provider blocked the response — continue
-                # to the next iteration instead of finalising on empty/garbage
-                # content.  Checked *before* the tool-call branch so a filtered
-                # response never executes its (likely empty) tool calls.
-                # Use getattr for duck-typed response objects from mock LLMs.
-                if getattr(response, "content_filter_triggered", False):
-                    content_filter_count += 1
-                    consecutive_content_filter_count += 1
-                    if consecutive_content_filter_count >= MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS:
-                        trace.write({
-                            "type": "content_filter_circuit_breaker",
-                            "iter": current_iter,
-                            "count": content_filter_count,
-                        })
-                        content_filter_circuit_breaker = True
-                        break
-                    trace.write({"type": "content_filter_skipped", "iter": current_iter})
-                    self._inject(messages, f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>")
-                    continue
-
-                # Not filtered — reset the consecutive-skip counter.
-                consecutive_content_filter_count = 0
-
-                finish_reason = getattr(response, "finish_reason", None)
-                if finish_reason in {"length", "max_tokens"}:
-                    # A provider termination is a runtime fact. Preserve its
-                    # partial text, but never execute partial calls or call it complete.
-                    final_content = response.content or ""
-                    stream.finish(final_content)
-                    truncation_reason = f"provider output truncated ({finish_reason}); partial answer retained"
-                    trace.write_text_entry(
-                        {"type": "answer_partial", "iter": current_iter, "reason": finish_reason},
-                        field="content", value=final_content, offload_kind=f"partial-answer-{current_iter}",
-                    )
-                    self._record_final_answer(final_content)
-                    break
-
-                unoffered_retry_call = final_answer_retry and response.has_tool_calls
-                if unoffered_retry_call or not response.has_tool_calls:
-                    final_content = response.content or ""
-                    syntax_fallback_emitted = False
-                    if not final_content and not unoffered_retry_call:
-                        empty_model_response_iter = iteration
-                        trace.write(
-                            {
-                                "type": "empty_model_response",
-                                "iter": current_iter,
-                                "provider": self._llm_runtime.provider,
-                                "model": getattr(self.llm, "model_name", None) or get_env_config().llm.langchain_model_name,
-                            }
-                        )
-                        # A transient empty completion (no text, no tool calls)
-                        # must not kill a run that has already done its work:
-                        # nudge once and retry, failing only on a second
-                        # consecutive empty response.
-                        if consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS:
-                            break
-                        consecutive_empty_responses += 1
-                        self._inject(
-                            messages,
-                            "<system>Your previous response was empty (no text, no tool "
-                            "calls). Respond again with either your next tool call or "
-                            "your final plain-text answer.</system>",
-                        )
-                        continue
-                    # A real response resets the consecutive-empty counter.
-                    consecutive_empty_responses = 0
-                    # A model can answer the forced-text final iteration with its
-                    # native tool-call DSL as prose (see _looks_like_tool_call_syntax).
-                    # That is not an answer: allow one text-only retry after the
-                    # iteration cap, then use a deterministic fallback if it also
-                    # fails. Cancellation and goal budgets still stop that retry.
-                    if unoffered_retry_call or _looks_like_tool_call_syntax(
-                        final_content
-                    ):
-                        if stream.streamed_chars:
-                            self._emit(
-                                "stream_reset",
-                                {
-                                    "iter": current_iter,
-                                    "reason": "tool_call_syntax_in_answer",
-                                },
-                            )
-                        trace.write(
-                            {
-                                "type": "tool_call_syntax_in_answer",
-                                "iter": current_iter,
-                            }
-                        )
-                        self._append_assistant(
-                            messages, {"role": "assistant", "content": final_content},
-                            phase="commentary",
-                        )
-                        self._inject(
-                            messages,
-                            "<system>Your previous response was not released: it contained "
-                            "tool-call syntax even though tool calling is unavailable now. "
-                            "Provide the final answer as plain prose only, with no XML/DSML tags.</system>",
-                        )
-                        final_content = ""
-                        if iteration <= self.max_iterations:
-                            # One extra text-only turn can re-emit a withheld final
-                            # answer; it does not extend the research/tool budget.
-                            final_answer_retry_pending = (
-                                iteration == self.max_iterations
-                            )
-                            continue
-                        # The bounded retry also failed: never leak the raw markup. The
-                        # use a neutral delivery-error message here instead.
-                        final_content = (
-                            "My final response could not be delivered: it contained "
-                            "tool-call syntax instead of a plain-text answer. "
-                            "Please ask me to continue."
-                        )
-                        self._released_fallback = True
-                        self._released_fallback_reason = (
-                            "final answer withheld: it contained tool-call syntax on "
-                            "the forced-text iteration"
-                        )
-                        self._emit(
-                            "text_delta",
-                            {"delta": final_content, "iter": current_iter, "phase": "final"},
-                        )
-                        syntax_fallback_emitted = True
-                    if not syntax_fallback_emitted:
-                        stream.finish(final_content)
-                    should_continue_goal = False
-                    continuation_snapshot = None
-                    _max_cont = _goal_max_continuations()
-                    if (
-                        not final_answer_retry
-                        and active_goal_id
-                        and session_id
-                        and _max_cont > 0
-                    ):
-                        try:
-                            if goal_store is None:
-                                from src.goal import GoalStore
-
-                                goal_store = GoalStore()
-                            continuation_snapshot = goal_store.get_goal_snapshot(active_goal_id)
-                            should_continue_goal = bool(
-                                continuation_snapshot
-                                and goal_needs_continuation(continuation_snapshot)
-                            )
-                        except Exception as exc:  # noqa: BLE001
-                            logger.debug("Goal continuation check skipped: %s", exc)
-
-                    if should_continue_goal and continuation_snapshot is not None:
-                        current_progress = goal_progress_tuple(continuation_snapshot)
-                        no_new_progress = (
-                            goal_last_progress is not None
-                            and current_progress <= goal_last_progress
-                        )
-                        if goal_continuations >= _max_cont or (
-                            no_new_progress and goal_continuations > 0
-                        ):
-                            trace.write(
-                                {
-                                    "type": "goal_continuation_suppressed",
-                                    "iter": current_iter,
-                                    "goal_id": active_goal_id,
-                                    "progress": current_progress,
-                                    "continuations": goal_continuations,
-                                }
-                            )
-                        else:
-                            trace.write_text_entry(
-                                {
-                                    "type": "goal_intermediate_answer",
-                                    "iter": current_iter,
-                                    "goal_id": active_goal_id,
-                                    "progress": current_progress,
-                                },
-                                field="content",
-                                value=final_content,
-                                offload_kind=f"goal-intermediate-answer-{current_iter}",
-                            )
-                            trace.write_text_entry(
-                                {"type": "message", "iter": current_iter, "role": "assistant"},
-                                field="content",
-                                value=final_content,
-                                offload_kind=f"assistant-message-{current_iter}",
-                            )
-                            react_trace.append(
-                                {"type": "goal_intermediate_answer", "content": final_content[:500]}
-                            )
-                            self._append_assistant(
-                                messages, {"role": "assistant", "content": final_content},
-                                phase="commentary",
-                            )
-                            self._inject(
-                                messages,
-                                format_goal_continuation_prompt(
-                                    continuation_snapshot,
-                                    previous_answer=final_content,
-                                ),
-                            )
-                            goal_last_progress = current_progress
-                            goal_continuations += 1
-                            continue
-
-                    trace.write_text_entry(
-                        {"type": "answer", "iter": current_iter},
-                        field="content",
-                        value=final_content,
-                        offload_kind=f"answer-{current_iter}",
-                    )
-                    trace.write_text_entry(
-                        {"type": "message", "iter": current_iter, "role": "assistant"},
-                        field="content",
-                        value=final_content,
-                        offload_kind=f"assistant-message-{current_iter}",
-                    )
-                    react_trace.append({"type": "answer", "content": final_content[:500]})
-                    self._record_final_answer(final_content)
-                    break
-
-                assistant_message = context.format_assistant_tool_calls(
-                    response.tool_calls,
-                    content=response.content,
-                    reasoning_content=response.reasoning_content or thinking_text or None,
-                    provider_items=getattr(response, "provider_items", None),
-                )
-                _attach_tool_call_thought_signatures(assistant_message, response.tool_calls)
-                self._append_assistant(messages, assistant_message, phase="commentary")
-
-                # Execute tools with read/write batching
-                self._active_model_id = (
-                    current_response_model or self._llm_runtime.configured_model
-                )
-                self._active_model_source = reported_model_source(
-                    self._llm_runtime, current_response_model
-                )
-                compact_requested, focus_topic = self._process_tool_calls(
-                    response.tool_calls, context, messages, trace, react_trace, current_iter,
-                )
-                if self._waiting_user is not None:
-                    final_content = self._waiting_user.get("prompt", "")
-                    options = self._waiting_user.get("options") or []
-                    if options:
-                        final_content += "\n" + "\n".join(f"{i + 1}. {option}" for i, option in enumerate(options))
-                    self._record_final_answer(final_content)
-                    break
-                self._sync_thread_state()
-
-                if response.content and response.content.strip():
-                    no_commentary_rounds = 0
-                else:
-                    no_commentary_rounds += 1
-                if (
-                    mid_turn_nudge_rounds > 0
-                    and no_commentary_rounds >= mid_turn_nudge_rounds
-                    and _has_successful_data_result(messages)
-                ):
-                    self._inject(
-                        messages,
-                        "<system>Evidence is already in hand. Answer the user's request now "
-                        "using the available evidence. Do not start extra analysis unless "
-                        "the user requested it.</system>",
-                    )
-                    trace.write({
-                        "type": "mid_turn_nudge",
-                        "iter": current_iter,
-                        "no_commentary_rounds": no_commentary_rounds,
-                    })
-                    no_commentary_rounds = 0
-
-                if (
-                    not self._cancel_event.is_set()
-                    and self._tool_progress.finish_iteration()
-                ):
-                    final_content = self._tool_progress.recovery_message()
-                    no_progress_reason = "no_progress: " + final_content
-                    trace.write(
-                        {
-                            "type": "no_progress",
-                            "iter": current_iter,
-                            "iterations_without_progress": self._tool_progress.stalled_iterations,
-                        }
-                    )
-                    trace.write_text_entry(
-                        {"type": "answer", "iter": current_iter},
-                        field="content",
-                        value=final_content,
-                        offload_kind=f"answer-{current_iter}",
-                    )
-                    react_trace.append({"type": "answer", "content": final_content})
-                    self._emit(
-                        "text_delta",
-                        {"delta": final_content, "iter": current_iter, "phase": "final"},
-                    )
-                    self._record_final_answer(final_content)
-                    break
-
-                # Layer 3: compress after all tools have executed
-                if compact_requested:
-                    logger.info("Manual compact triggered by model")
-                    self._auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=current_iter)
-
-                self._take_queued_inputs(messages, trace, current_iter)
-
-        except Exception as exc:
-            logger.exception(f"AgentLoop error: {exc}")
-            error_code = (
-                "provider_stream_error"
-                if isinstance(exc, ProviderStreamError)
-                else "agent_loop_error"
-            )
-            trace.write({"type": "end", "iter": self._run_iteration, "status": "error", "reason": str(exc), "iterations": iteration})
-            trace.close()
-            state_store.mark_failure(run_dir, str(exc))
-            self._end_thread_turn()
-            self._run_done.set()
-            return {
-                "status": "failed",
-                "error_code": error_code,
-                "reason": str(exc),
-                "run_dir": str(run_dir),
-                "run_id": run_dir.name,
-                "content": "",
-                "react_trace": react_trace,
-                "iterations": iteration,
-                "max_iterations": self.max_iterations,
-            }
-
+    def _complete_turn(self, setup: TurnSetup) -> Dict[str, Any]:
+        """Resolve status, persist the terminal state, and return the result."""
+        state = setup.state
+        assert state is not None
+        run_dir = setup.run_dir
+        trace = setup.trace
+        state_store = setup.state_store
+        assert run_dir is not None and trace is not None and state_store is not None
+        iteration = state.iteration
+        final_content = state.final_content
+        no_progress_reason = state.no_progress_reason
+        content_filter_count = state.content_filter_count
+        content_filter_circuit_breaker = state.content_filter_circuit_breaker
+        empty_model_response_iter = state.empty_model_response_iter
+        truncation_reason = state.truncation_reason
+        last_response_model = state.last_response_model
+        react_trace = state.react_trace
         # Determine final status. The reason is also propagated into the
         # returned dict so SessionService can surface a meaningful UI
         # message instead of "Execution failed: unknown" (issue #114).
@@ -1287,7 +748,7 @@ class AgentLoop(ToolCallLifecycle):
                 released_fallback=self._released_fallback,
                 released_fallback_reason=self._released_fallback_reason,
                 pending_write_directive=lambda: self._pending_write_directive(
-                    user_message, run_started_wall
+                    state.user_message, setup.run_started_wall
                 ),
                 empty_model_response_iter=empty_model_response_iter,
                 empty_response_provider=self._llm_runtime.provider,
@@ -1340,10 +801,7 @@ class AgentLoop(ToolCallLifecycle):
             messages: The turn's messages (appended in place).
             content: Injected text (``<system>`` notes, background results).
         """
-        message = {"role": "user", "content": content}
-        messages.append(message)
-        if self._records_into(messages):
-            self._thread.inject(message)
+        self._conversation.inject(messages, content, self._turn_messages)
 
     def _take_queued_inputs(self, messages: list, trace: TraceWriter, current_iter: int) -> None:
         """Append the user messages sent while this turn was running.
@@ -1359,20 +817,7 @@ class AgentLoop(ToolCallLifecycle):
             trace: The run's trace.
             current_iter: Session-wide iteration number.
         """
-        if (
-            self._queued_inputs is None
-            or self._cancel_event.is_set()
-            or self._budget_stop_reason is not None
-        ):
-            return
-        for index, message in enumerate(self._queued_inputs.deliver(), start=1):
-            messages.append(message)
-            trace.write_text_entry(
-                {"type": "message", "iter": current_iter, "role": "user", "queued": True},
-                field="content",
-                value=message.get("content") or "",
-                offload_kind=f"queued-user-message-{current_iter}-{index}",
-            )
+        self._conversation.take_queued_inputs(messages, trace, current_iter, self)
 
     def _append_assistant(self, messages: list, message: Dict[str, Any], *, phase: str) -> None:
         """Append a model response to the turn's messages and record it.
@@ -1382,9 +827,9 @@ class AgentLoop(ToolCallLifecycle):
             message: OpenAI-format assistant message, exactly as it will be sent.
             phase: ``commentary`` for a response more steps follow.
         """
-        messages.append(message)
-        if self._records_into(messages):
-            self._thread.assistant(message, phase=phase)
+        self._conversation.append_assistant(
+            messages, message, phase=phase, turn_messages=self._turn_messages
+        )
 
     def _record_final_answer(self, content: str) -> None:
         """Record the turn's released answer as the ``final`` assistant item.
@@ -1395,30 +840,15 @@ class AgentLoop(ToolCallLifecycle):
         Args:
             content: Released answer text.
         """
-        if self._thread is not None and content:
-            self._thread.assistant({"role": "assistant", "content": content}, phase="final")
+        self._conversation.record_final_answer(content)
 
     def _sync_thread_state(self) -> None:
         """Record the conversation state a later turn or a restart restores."""
-        if self._thread is None:
-            return
-        snapshot: Dict[str, Any] = {
-            "workspace": self.memory.run_dir,
-            "workspace_dir": self.memory.session_workspace,
-        }
-        if self._identity is not None:
-            snapshot["identity"] = self._identity.export_state()
-        exposed_names = getattr(self.registry, "exposed_names", None)
-        if callable(exposed_names):
-            snapshot["loaded_tools"] = exposed_names()
-        self._thread.state(snapshot)
+        self._conversation.sync_state(self)
 
     def _end_thread_turn(self) -> None:
         """Hand the turn's usage to the recorder and flush the final state."""
-        if self._thread is None:
-            return
-        self._thread.usage = dict(self._llm_usage_summary.get("totals") or {})
-        self._sync_thread_state()
+        self._conversation.end_turn(self)
 
     def _stall_watchdog(
         self,
@@ -1444,254 +874,36 @@ class AgentLoop(ToolCallLifecycle):
             state_store: RunStateStore.
             stall_timeout: Stall threshold in seconds.
         """
-        # Capture the done-event locally: a reused AgentLoop replaces
-        # self._run_done when the next run starts, and this thread must
-        # not keep watching with the old run timeout.
-        run_done = self._run_done
-        warned = False
-        while not run_done.is_set():
-            wait_s = min(30.0, max(5.0, stall_timeout / 4))
-            if run_done.wait(timeout=wait_s):
-                return
-            idle = _time.time() - self._last_activity_wall
-            if idle < stall_timeout:
-                warned = False
-                continue
-            if not warned:
-                warned = True
-                self._emit(
-                    "stall_warning",
-                    {"idle_s": round(idle, 1), "timeout_s": stall_timeout},
-                )
-                continue
-            reason = (
-                "run stalled: no LLM completion or tool result for "
-                + str(int(idle)) + "s (stall watchdog)"
-            )
-            self._stall_reason = reason
-            try:
-                trace.write(
-                    {
-                        "type": "end",
-                        "iter": self._run_iteration,
-                        "status": "failed",
-                        "reason": reason,
-                        "stalled": True,
-                    }
-                )
-            except Exception:  # noqa: BLE001 - best-effort
-                pass
-            try:
-                state_store.mark_failure(run_dir, reason)
-            except Exception:  # noqa: BLE001 - best-effort
-                pass
-            self._emit("stalled", {"reason": reason})
-            self._cancel_event.set()
-            return
+        self._watchdog.watch(trace, run_dir, state_store, stall_timeout)
+        if self._watchdog.reason:
+            self._stall_reason = self._watchdog.reason
 
     def _record_written_target(self, arguments: Mapping[str, Any]) -> None:
         """Track writes with the active response's model identity."""
-        from src.agent.write_targets import record_written_target
-
-        record_written_target(
-            arguments, written_files=self._written_files,
-            run_dir=self.memory.run_dir, llm_runtime=self._llm_runtime,
-            active_model_id=self._active_model_id,
-            active_model_source=self._active_model_source,
-        )
+        self._write_targets.record(arguments, self)
 
     def _pending_write_directive(
         self, user_message: str, run_started_wall: float
     ) -> str:
         """Name task targets not yet written in this run."""
-        from src.agent.write_targets import pending_write_directive
+        return self._write_targets.pending(user_message, run_started_wall)
 
-        return pending_write_directive(
-            user_message, run_started_wall, written_files=self._written_files,
-        )
+    @property
+    def _written_files(self) -> set[str]:
+        """Compatibility view of the composed write-target ledger."""
+        return self._write_targets.written_files
 
-    def _context_budget(self, messages: list) -> CompactionBudget:
-        """Compaction thresholds for the active model's real context window."""
-        cfg = get_env_config()
-        provider = (self._llm_runtime.provider or "").strip().lower().replace("_", "-")
-        model = getattr(self.llm, "model_name", "") or cfg.llm.langchain_model_name
-        window, source = resolve_window(
-            provider,
-            str(model or ""),
-            env_window=cfg.agent_tuning.vibe_trading_context_window,
-            learned_window=self._learned_context_window,
-        )
-        return CompactionBudget(
-            window=window,
-            source=source,
-            max_tokens=cfg.agent_tuning.vibe_trading_context_max_tokens,
-            static_tokens=self._context_meter.static(messages, self._tool_schema_tokens),
-        )
+    @_written_files.setter
+    def _written_files(self, value: set[str]) -> None:
+        if not hasattr(self, "_write_targets"):
+            self._write_targets = WriteTargetState()
+        self._write_targets.written_files = value
 
-    def _prompt_tokens(self, messages: list) -> int:
-        """Real-token size the next request would have."""
-        return self._context_meter.tokens(messages, self._tool_schema_tokens)
 
-    def _compact_to_budget(
-        self,
-        messages: list,
-        run_dir: Path,
-        trace: TraceWriter,
-        iteration: int,
-        current_iter: int,
-        *,
-        force: bool = False,
-    ) -> None:
-        """Run the compaction layers the prompt has actually grown into.
 
-        Args:
-            messages: Message list, mutated in place.
-            run_dir: Active run directory.
-            trace: Run trace.
-            iteration: Loop-local iteration (the microcompact event's key).
-            current_iter: Session-wide iteration number.
-            force: Summarise even under budget (the provider said it overflowed).
-        """
-        budget = self._context_budget(messages)
-        tokens = self._prompt_tokens(messages)
-        if tokens > budget.micro_at or force:
-            decision = self._run_hook(
-                "PreCompact",
-                {"session_id": getattr(self, "_session_id", ""), "iteration": current_iter, "prompt_tokens": tokens},
-            )
-            if decision is not None and decision.denied:
-                logger.info("PreCompact hook refused compaction: %s", decision.reason)
-                return
-        if tokens > budget.micro_at:
-            # Oldest results first and only until the prompt fits again:
-            # clearing all but the last few is what sent a 12-company
-            # comparison back to re-fetch its own evidence.
-            self._microcompact_and_unblock(
-                messages,
-                trace,
-                iteration,
-                target_tokens=budget.micro_at,
-                measure=self._prompt_tokens,
-                preserve_tool_call_ids=self._readonly_replay_visibility_pending,
-            )
-            tokens = self._prompt_tokens(messages)
-        if tokens > budget.collapse_at:
-            before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
-            _context_collapse(messages, preserve_tool_call_ids=self._readonly_replay_visibility_pending)
-            self._record_compaction_layer(messages, 2, before)
-            tokens = self._prompt_tokens(messages)
-        # A summary keeps the static prompt plus a ~20K-token tail, so on a
-        # window that small the prompt stays over the line after compacting;
-        # without this every later iteration paid for another summary call.
-        regrown = (
-            self._compacted_to_tokens is None
-            or tokens > self._compacted_to_tokens + MIN_CONVERSATION_TOKENS
-        )
-        if force or (tokens > budget.compact_at and regrown):
-            logger.info(
-                "Auto compact triggered: %s real tokens > %s (window %s from %s)",
-                tokens, budget.compact_at, budget.window, budget.source,
-            )
-            self._auto_compact(messages, run_dir, trace, iteration=current_iter)
-            self._compacted_to_tokens = self._prompt_tokens(messages)
 
-    def _recover_context_overflow(
-        self,
-        exc: Exception,
-        messages: list,
-        run_dir: Path,
-        trace: TraceWriter,
-        iteration: int,
-        current_iter: int,
-    ) -> None:
-        """Learn the real window from a context-length error and compact to it.
 
-        A model missing from ``context_windows.json`` runs on the default
-        window; if that is larger than the real one the provider says so, and
-        the run shrinks to the limit instead of failing.
 
-        Args:
-            exc: The provider error that reported the overflow.
-            messages: Message list, mutated in place.
-            run_dir: Active run directory.
-            trace: Run trace.
-            iteration: Loop-local iteration.
-            current_iter: Session-wide iteration number.
-        """
-        sent = self._prompt_tokens(messages)
-        stated = parse_context_limit(str(exc))
-        # The provider's own number when it gives one; otherwise the prompt
-        # that did not fit, with a margin for our estimate of it.
-        self._learned_context_window = stated or int(sent * 0.9)
-        trace.write({
-            "type": "context_overflow",
-            "iter": current_iter,
-            "prompt_tokens": sent,
-            "stated_limit": stated,
-            "learned_window": self._learned_context_window,
-        })
-        self._compact_to_budget(messages, run_dir, trace, iteration, current_iter, force=True)
-
-    def _microcompact_and_unblock(
-        self,
-        messages: list,
-        trace: TraceWriter,
-        iteration: int,
-        *,
-        target_tokens: Optional[int] = None,
-        measure: Optional[Callable[[list], int]] = None,
-        preserve_tool_call_ids: Optional[set[str]] = None,
-    ) -> list[str]:
-        """Run layer-1 microcompact and re-open lost readonly call identities.
-
-        A readable result for another argument variant, or a synthetic skip,
-        cannot satisfy "use the previous result". Keep an exact call gated if
-        any successful copy survives; never re-open mutating tools just because
-        their results were compacted away.
-
-        Args:
-            messages: Message list, mutated in place by the compaction.
-            trace: Run trace; a ``microcompact_cleared`` event is written
-                whenever the ledger is re-opened, because this layer used to
-                act silently and left no evidence for diagnosis.
-            iteration: Current ReAct iteration, recorded on the trace event.
-            target_tokens: Clear oldest-first only until the prompt fits.
-            measure: Prompt-size function for ``target_tokens``.
-            preserve_tool_call_ids: Replayed results still owed one model request.
-
-        Returns:
-            The tool names re-opened, for callers and tests to assert on.
-        """
-        readable_before = self._readable_success_keys(messages)
-        before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
-        _microcompact(
-            messages,
-            target_tokens=target_tokens,
-            measure=measure,
-            preserve_tool_call_ids=preserve_tool_call_ids,
-        )
-        self._record_compaction_layer(messages, 1, before)
-        unreadable_tools = self._unblock_lost_readonly_results(messages, readable_before)
-        if unreadable_tools:
-            trace.write({
-                "type": "microcompact_cleared",
-                "iter": iteration,
-                "tools": unreadable_tools,
-            })
-        return unreadable_tools
-
-    def _record_compaction_layer(
-        self, messages: list, layer: int, before: list[dict[str, Any]]
-    ) -> None:
-        """Persist the exact post-layer message view for thread replay."""
-        if self._thread is None:
-            return
-        changed = []
-        for previous, current in zip(before, messages):
-            # The list order is stable for both in-place compaction layers.
-            if previous != current:
-                changed.append(current)
-        self._thread.compaction_layer(layer, changed)
 
 
     def _account_llm_usage(
@@ -1709,30 +921,12 @@ class AgentLoop(ToolCallLifecycle):
                 parent's call-indexed stream. Child calls have their own
                 sequence and therefore omit this field.
         """
-        delta = _record_llm_usage(
-            run_dir, self._llm_usage_summary, usage, iteration, purpose=purpose,
+        self._usage_ledger.summary = self._llm_usage_summary
+        self._usage_ledger.goal_callback = self._goal_usage_callback
+        self._usage_ledger.record(
+            run_dir, usage, iteration, purpose=purpose,
+            include_call_index=include_call_index,
         )
-        if self._goal_usage_callback is not None:
-            self._goal_usage_callback(delta)
-        metadata = {"iter": iteration}
-        if purpose is not None:
-            metadata["purpose"] = purpose
-        if delta:
-            event = {**delta, **metadata}
-            if include_call_index:
-                event["call_index"] = self._llm_usage_summary["totals"]["calls"]
-            self._emit("llm_usage", event)
-        elif purpose is None and not self._cancel_event.is_set():
-            self._emit("llm_usage_unavailable", metadata)
-        elif purpose == "subagent":
-            self._emit("llm_usage_unavailable", metadata)
-            _record_unreported_llm_call(run_dir, self._llm_usage_summary)
-        else:
-            # A failed stream, a compaction call or a cancelled response that
-            # reported nothing is counted as unreported, not announced as a
-            # missing bill: the live decision budget halts on that event, so a
-            # retried connection reset stopped live decisions for the day.
-            _record_unreported_llm_call(run_dir, self._llm_usage_summary)
 
     def _record_subagent_usage(self, event_type: str, data: dict[str, Any]) -> bool:
         """Account one child-provider usage event in the parent run.
@@ -1744,224 +938,88 @@ class AgentLoop(ToolCallLifecycle):
         Returns:
             True when the parent's goal budget has stopped further work.
         """
-        run_dir = self.memory.run_dir
-        if not run_dir:
-            return False
-        usage = data if event_type == "llm_usage" else None
-        self._account_llm_usage(
-            Path(run_dir), usage, self._run_iteration,
-            purpose="subagent", include_call_index=False,
-        )
-        return self._budget_stop_reason is not None
+        self._usage_ledger.summary = self._llm_usage_summary
+        self._usage_ledger.goal_callback = self._goal_usage_callback
+        return self._usage_ledger.record_subagent(event_type, data)
 
     # -- Context compression ---------------------------------------------------
 
-    def _auto_compact(
-        self,
-        messages: list,
-        run_dir: Path,
-        trace: TraceWriter,
-        focus_topic: str = "",
-        iteration: int = 0,
-    ) -> None:
-        """Layer 3/4/5: structured LLM summary with token-budget tail protection.
 
-        Upgrades over the original:
-          - Token-budget tail: keeps ~20K tokens of recent messages (not a fixed count).
-          - Structured summary template: preserves goal, progress, decisions, files, etc.
-          - Iterative update: Nth compression updates previous summary, zero info decay.
-          - Tool pair fix: repairs orphaned tool_call/tool_result after compression.
-          - Focus-topic: optionally prioritize specific topic in summary.
+    def _context_budget(self, messages: list) -> CompactionBudget:
+        """Return the active model's compaction budget."""
+        return self._context_compactor._context_budget(messages)
 
-        Args:
-            messages: Message list (replaced in place).
-            run_dir: Run directory.
-            trace: TraceWriter.
-            focus_topic: Optional topic to prioritize in the summary.
-            iteration: Current trace iteration.
-        """
-        if self._cancel_event.is_set() or self._budget_stop_reason is not None:
-            return
-        readable_before = self._readable_success_keys(messages)
-        system_msg = messages[0]
-        body = messages[1:]
+    def _prompt_tokens(self, messages: list) -> int:
+        """Return the next request's measured token count."""
+        return self._context_compactor._prompt_tokens(messages)
 
-        # Token-budget tail: size messages with their tool-call arguments so
-        # oversized tool calls are folded instead of hiding in the tail.
-        cut_idx = _tail_cut_index(body)
+    def _compact_to_budget(self, messages: list, run_dir: Path, trace: TraceWriter, iteration: int, current_iter: int, *, force: bool = False) -> None:
+        """Apply context compaction layers through the composed component."""
+        self._context_compactor._compact_to_budget(messages, run_dir, trace, iteration, current_iter, force=force)
 
-        head = body[:cut_idx]
-        tail = body[cut_idx:]
+    def _recover_context_overflow(self, exc: Exception, messages: list, run_dir: Path, trace: TraceWriter, iteration: int, current_iter: int) -> None:
+        """Learn a provider-reported window and compact to it."""
+        self._context_compactor._recover_context_overflow(exc, messages, run_dir, trace, iteration, current_iter)
 
-        if not head:
-            # All body fits in tail budget — force a split to avoid infinite loop
-            if len(body) > 2:
-                cut_idx = max(1, len(body) // 2)
-                head = body[:cut_idx]
-                tail = body[cut_idx:]
-            else:
-                logger.warning("Auto compact: nothing to compress (body too small)")
-                return
+    def _microcompact_and_unblock(self, messages: list, trace: TraceWriter, iteration: int, *, target_tokens: Optional[int] = None, measure: Optional[Callable[[list], int]] = None, preserve_tool_call_ids: Optional[set[str]] = None) -> list[str]:
+        """Apply layer-one compaction and reopen lost readonly calls."""
+        return self._context_compactor._microcompact_and_unblock(messages, trace, iteration, target_tokens=target_tokens, measure=measure, preserve_tool_call_ids=preserve_tool_call_ids)
 
-        # Replayed results are owed one successful writing request. Keep the
-        # entire assistant-call/result pair out of summaries until then.
-        pending = self._readonly_replay_visibility_pending
-        leased = [msg for msg in head if (
-            msg.get("role") == "tool" and msg.get("tool_call_id") in pending
-        ) or any(call.get("id") in pending for call in msg.get("tool_calls") or [])]
-        if leased:
-            head = [msg for msg in head if all(msg is not kept for kept in leased)]
-            tail = leased + tail
+    def _record_compaction_layer(self, messages: list, layer: int, before: list[dict[str, Any]]) -> None:
+        """Persist a compaction layer through the context component."""
+        # A few lightweight compatibility tests construct the loop without
+        # calling ``__init__``. Keep the projection helper usable for those
+        # instances while normal runs use the composed component directly.
+        compactor = getattr(self, "_context_compactor", None)
+        if compactor is None:
+            compactor = ContextCompactor(self)
+            self._context_compactor = compactor
+        compactor._record_compaction_layer(messages, layer, before)
 
-        # Build focus section
-        focus_section = _FOCUS_SECTION.format(topic=focus_topic) if focus_topic else ""
+    def _auto_compact(self, messages: list, run_dir: Path, trace: TraceWriter, focus_topic: str = "", iteration: int = 0) -> None:
+        """Run structured or degraded compaction through the context component."""
+        self._context_compactor.auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=iteration)
 
-        # Fold every head chunk so no message falls between the summary prompt
-        # and the preserved tail. The first fresh chunk gets the full
-        # structured handoff; subsequent chunks incrementally update it.
-        # Encrypted provider items are opaque to the summariser and only
-        # cost tokens there; the messages they belong to are being folded.
-        chunks = _summary_chunks(
-            [{k: v for k, v in m.items() if k != "provider_items"} for m in head]
-        )
-        logger.info("Auto compact: folding %d summary chunks", len(chunks))
-        summary = self._previous_summary or ""
-        degraded_compact = False
-        _compact_timeout = _llm_timeout_seconds()
-        for conv_text in chunks:
-            if self._cancel_event.is_set() or self._budget_stop_reason is not None:
-                return
-            # Structured template while there is still nothing to update — that
-            # covers a fresh session's first chunk and the corner case where
-            # every fold so far returned empty content.
-            if not summary:
-                prompt = _STRUCTURED_SUMMARY_PROMPT.format(focus_section=focus_section) + conv_text
-            else:
-                prompt = _ITERATIVE_UPDATE_PROMPT.format(
-                    previous_summary=summary,
-                    new_turns=conv_text,
-                    focus_section=focus_section,
-                )
+    @property
+    def _context_meter(self) -> ContextMeter:
+        """Compatibility view of the composed context meter."""
+        return self._context_compactor.context_meter
 
-            # A silent provider stall on the summary call used to freeze the
-            # whole run (no chunk arrives, so nothing aborts it). The provider
-            # httpx timeout only bounds time-between-bytes, not total time, and
-            # LangChain does not honor a per-call config "timeout", so a slow
-            # but alive server can run for many minutes. Enforce a hard
-            # wall-clock deadline via a daemon thread; on expiry fall back to
-            # hard truncation so the loop continues.
-            _compact_result: list = []
-            _compact_error: list = []
+    @property
+    def _previous_summary(self) -> str:
+        """Compatibility view of the composed summary state."""
+        return self._context_compactor.previous_summary
 
-            def _run_compact_summary() -> None:
-                try:
-                    resp = self.llm.chat(
-                        [{"role": "user", "content": prompt}],
-                        timeout=_compact_timeout if _compact_timeout > 0 else None,
-                    )
-                    _compact_result.append(resp)
-                except BaseException as exc:  # noqa: BLE001 - compaction must not crash the run
-                    _compact_error.append(exc)
+    @_previous_summary.setter
+    def _previous_summary(self, value: str) -> None:
+        self._context_compactor.previous_summary = value
 
-            if _compact_timeout > 0:
-                # A new thread starts with an empty context, so the session
-                # bound by run() (x-opencode-session, #1416) would not reach
-                # this call: run it inside a copy of the caller's context.
-                worker = threading.Thread(
-                    target=contextvars.copy_context().run,
-                    args=(_run_compact_summary,),
-                    name="compact-summary",
-                    daemon=True,
-                )
-                worker.start()
-                worker.join(timeout=_compact_timeout)
-                if worker.is_alive():
-                    logger.warning(
-                        "Auto compact summary call exceeded %.1fs; degrading compaction",
-                        _compact_timeout,
-                    )
-                    degraded_compact = True
-                    self._account_llm_usage(run_dir, None, iteration, purpose="compaction")
-                    break
-                if _compact_error:
-                    logger.warning(
-                        "Auto compact LLM call failed (%s); degrading compaction",
-                        _compact_error[0],
-                    )
-                    degraded_compact = True
-                    self._account_llm_usage(run_dir, None, iteration, purpose="compaction")
-                    break
-                summary_resp = _compact_result[0]
-            else:
-                try:
-                    summary_resp = self.llm.chat([{"role": "user", "content": prompt}])
-                except Exception:
-                    self._account_llm_usage(run_dir, None, iteration, purpose="compaction")
-                    raise
-            self._account_llm_usage(
-                run_dir, getattr(summary_resp, "usage_metadata", None), iteration,
-                purpose="compaction",
-            )
-            if self._cancel_event.is_set() or self._budget_stop_reason is not None:
-                return
-            if summary_resp.content:
-                summary = summary_resp.content
-        if degraded_compact and not summary:
-            summary = (
-                "[compaction degraded: LLM summarization timed out or failed; "
-                "earlier tool results were truncated. Raw conversation items "
-                "remain available in the session thread."
-            )
-        self._previous_summary = summary
+    @property
+    def _learned_context_window(self) -> int | None:
+        """Compatibility view of the learned provider window."""
+        return self._context_compactor.learned_context_window
 
-        # Preserve deterministic verification records across the compaction.
-        # The LLM summary does not reliably retain exact calc results, so the
-        # model used to re-run the same financial_rigor expressions after a
-        # compact to "re-verify" numbers it could no longer see (2026-08-20
-        # INTC run: identical calcs re-ran 5-9x each). Re-attach a terse
-        # ledger of already-verified values so the model does not re-run them.
-        verification_ledger = _verification_ledger(head)
+    @_learned_context_window.setter
+    def _learned_context_window(self, value: int | None) -> None:
+        self._context_compactor.learned_context_window = value
 
-        tokens_before = estimate_tokens(messages)
-        trace.write_text_entry(
-            {
-                "type": "compact",
-                "iter": iteration,
-                "tokens_before": tokens_before,
-                "focus_topic": focus_topic or "(none)",
-                "summary_chunks": len(chunks),
-            },
-            field="summary",
-            value=summary,
-            offload_kind=f"compact-summary-{iteration}",
-        )
-        self._emit("compact", {"tokens_before": tokens_before, "summary": summary[:200]})
+    @property
+    def _compacted_to_tokens(self) -> int | None:
+        """Compatibility view of the last compacted size."""
+        return self._context_compactor.compacted_to_tokens
 
-        # Reconstruct: system + summary + acknowledge + preserved tail
-        state_summary = self.memory.to_summary()
-        compressed = f"[Conversation compressed — handoff summary]\n\n{summary}"
-        if verification_ledger:
-            compressed += (
-                "\n\n[Verified tool results from the compressed turns - do NOT "
-                "re-run these tools, they are already verified]:\n"
-                + verification_ledger
-            )
-        if state_summary and state_summary != "(empty state)":
-            compressed += f"\n\nCurrent agent state:\n{state_summary}"
+    @_compacted_to_tokens.setter
+    def _compacted_to_tokens(self, value: int | None) -> None:
+        self._context_compactor.compacted_to_tokens = value
 
-        summary_message = {"role": "user", "content": f"{compressed}\n\n<system>Continue from the summary above.</system>"}
-        messages.clear()
-        messages.append(system_msg)
-        messages.append(summary_message)
-        messages.extend(tail)
+    @property
+    def _tool_schema_tokens(self) -> int:
+        """Compatibility view of the schema-token measurement."""
+        return self._context_compactor.tool_schema_tokens
 
-        # Fix orphaned tool pairs in the reconstructed message list
-        _fix_tool_pairs(messages)
-        self._unblock_lost_readonly_results(messages, readable_before)
-        # The next turn replays from this summary instead of from the items it
-        # folded; those items stay in the thread file.
-        if self._records_into(messages):
-            self._thread.compaction(summary_message, tail)
+    @_tool_schema_tokens.setter
+    def _tool_schema_tokens(self, value: int) -> None:
+        self._context_compactor.tool_schema_tokens = value
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""
