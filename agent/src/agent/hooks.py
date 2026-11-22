@@ -14,6 +14,8 @@ import os
 import re
 import subprocess
 import time
+from src.tools.redaction import redact_text
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -215,7 +217,7 @@ class HookManager:
             current = HookDecision(
                 event=event,
                 decision=decision,
-                reason=reason,
+                reason=redact_text(reason),
                 command=command,
                 elapsed_ms=elapsed_ms,
                 timed_out=timed_out,

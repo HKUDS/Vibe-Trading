@@ -181,3 +181,37 @@ def test_cancelled_queued_tool_is_recorded_as_a_result(tmp_path: Path) -> None:
     payload = json.loads(messages[-1]["content"])
     assert payload["error_code"] == "tool_cancelled"
     assert registry.completed is False
+
+
+def test_failed_order_cannot_be_reissued_in_the_same_turn() -> None:
+    """A broker error can describe an accepted order with a lost response."""
+    class FailedOrderRegistry(_SlowOrderRegistry):
+        calls = 0
+
+        def execute(self, tool_name, args):
+            self.calls += 1
+            return json.dumps({"status": "error", "error": "connection lost"})
+
+    registry = FailedOrderRegistry()
+    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+    first, _ = agent._invoke_tool("trading_place_order", {"symbol": "AAPL"}, call_id="first")
+    repeated, _ = agent._invoke_tool("trading_place_order", {"symbol": "AAPL"}, call_id="second")
+    assert json.loads(first)["status"] == "error"
+    assert registry.calls == 1
+    assert json.loads(repeated)["retryable"] is False
+    assert json.loads(repeated)["error_code"] == "order_retry_blocked"
+
+
+def test_trading_state_tool_without_order_in_name_is_not_detached(monkeypatch) -> None:
+    """Closing a position has the same late-side-effect hazard as placing it."""
+    monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.02, raising=False)
+
+    class ClosePositionRegistry(_SlowOrderRegistry):
+        def get(self, tool_name):
+            return SimpleNamespace(name=tool_name, is_readonly=False, repeatable=False)
+
+    registry = ClosePositionRegistry()
+    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+    result, _ = agent._invoke_tool("etoro_close_position", {}, call_id="close")
+    assert json.loads(result)["status"] == "ok"
+    assert registry.completed is True

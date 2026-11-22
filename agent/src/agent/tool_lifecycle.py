@@ -828,6 +828,26 @@ class ToolCallLifecycle:
                     },
                     ensure_ascii=False,
                 ), decision.elapsed_ms
+        if order_tool:
+            # Broker errors can mean that the response was lost after acceptance.
+            # Latch before dispatch, including concurrent copies in one batch.
+            key = self._identical_call_key(tool_name, effective_args)
+            if key is None:
+                return json.dumps({
+                    "status": "error", "skipped": True,
+                    "error_code": "order_identity_invalid", "retryable": False,
+                    "message": "Cannot safely identify this order request.",
+                }), 0
+            with self._order_attempt_lock:
+                repeated = key in self._order_attempts
+                self._order_attempts.add(key)
+            if repeated:
+                return json.dumps({
+                    "status": "error", "skipped": True,
+                    "error_code": "order_retry_blocked", "retryable": False,
+                    "message": "This order action was already attempted in this turn. "
+                               "Check broker state before requesting another action.",
+                }), 0
         timed_out = threading.Event()
 
         def _on_progress(event: ProgressEvent) -> None:
@@ -993,11 +1013,16 @@ class ToolCallLifecycle:
             hooks.run("PostToolUse", {**hook_payload, "result": redact_tool_result(result), "status": "ok"})
         return result, elapsed_ms
 
-    @staticmethod
-    def _is_order_tool(tool_name: str) -> bool:
+    def _is_order_tool(self, tool_name: str) -> bool:
         """Return whether a tool name can submit or cancel an order."""
         name = str(tool_name or "").casefold()
-        return any(marker in name for marker in ("place_order", "cancel_order", "submit_order", "replace_order"))
+        if any(marker in name for marker in ("place_order", "cancel_order", "submit_order", "replace_order")):
+            return True
+        from src.tools.spawn_agent_tool import is_trading_state_tool
+
+        get_tool = getattr(self.registry, "get", None)
+        tool = get_tool(tool_name) if callable(get_tool) else None
+        return bool(tool and getattr(tool, "name", None) and is_trading_state_tool(tool))
 
     def _is_tool_readonly(self, tool_name: str) -> bool:
         """Return whether a tool is known to be side-effect free."""

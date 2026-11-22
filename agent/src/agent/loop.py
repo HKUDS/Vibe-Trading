@@ -287,6 +287,8 @@ class AgentLoop(ToolCallLifecycle):
         # deterministic cache uses, so the block path and the cache path can
         # never disagree about what 'the same call' means.
         self._called_ok: set[tuple[str, str]] = set()
+        self._order_attempts: set[tuple[str, str]] = set()
+        self._order_attempt_lock = threading.Lock()
         # Capture successful identities before context collapse can stub args.
         # Skipped/error call IDs never enter this ledger.
         self._successful_call_keys: dict[str, tuple[str, str]] = {}
@@ -482,6 +484,7 @@ class AgentLoop(ToolCallLifecycle):
         else:
             self._has_run = True
         self._called_ok = set()
+        self._order_attempts.clear()
         self._successful_call_keys = {}
         self._context_compactor.reset()
         self._released_fallback = False

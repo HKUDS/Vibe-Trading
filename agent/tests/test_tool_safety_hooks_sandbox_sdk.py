@@ -134,3 +134,28 @@ def test_host_registration_is_explicit_and_rejects_collisions() -> None:
         registry.register_host_tool(_TradingHostTool())
     assert "host_probe" not in {cls.name for cls in _discover_subclasses()}
 
+
+
+def test_hook_reason_is_redacted_before_return_and_thread_audit(tmp_path, monkeypatch) -> None:
+    """Hook output is untrusted text even when its command is operator-owned."""
+    from tests.recording_helpers import recorder_at
+
+    secret = "sk-" + "a" * 40
+    _write_hooks(tmp_path, "PreToolUse", "unused-command")
+    monkeypatch.setattr(
+        "src.agent.hooks.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"decision": "deny", "reason": f"api_key={secret}"}),
+        ),
+    )
+    recorder = recorder_at(tmp_path)
+    manager = HookManager(tmp_path)
+    manager.set_audit_sink(recorder)
+    decision = manager.run("PreToolUse", {"tool_name": "probe"})
+    recorder.close()
+    assert decision.denied
+    assert secret not in decision.reason
+    persisted = (tmp_path / "thread.jsonl").read_text()
+    assert "hook_decision" in persisted
+    assert secret not in persisted
