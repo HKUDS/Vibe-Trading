@@ -2912,7 +2912,9 @@ def cmd_sessions() -> None:
     table.add_column("Updated", width=20)
 
     for s in sessions:
-        messages = store.get_messages(s.session_id)
+        # The default limit=100 is for building chat history, not counting;
+        # this column is the total message count, so it needs every message.
+        messages = store.get_messages(s.session_id, limit=None)
         sc = "green" if s.status.value == "active" else "dim"
         table.add_row(
             s.session_id,
