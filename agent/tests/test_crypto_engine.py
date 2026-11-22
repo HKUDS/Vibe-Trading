@@ -367,6 +367,9 @@ class TestFundingFee:
             ("30m", "30min"),
             ("1H", "1h"),
             ("4H", "4h"),
+            ("6H", "6h"),
+            ("8H", "8h"),
+            ("12H", "12h"),
             ("1D", "1D"),
         ],
     )
@@ -381,6 +384,21 @@ class TestFundingFee:
         for timestamp in timestamps:
             engine.on_bar("BTC-USDT", bar, timestamp)
         assert initial - engine.capital == pytest.approx(18.0)
+
+    def test_intraday_funding_uses_utc_slots_and_deduplicates(self) -> None:
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial = engine.capital
+        bar = _make_bar(close=60000.0)
+        # This bar contains 08:00 UTC, the next bar does not.
+        bar_start = pd.Timestamp("2025-01-01 15:30:00+08:00")
+        engine.on_bar("BTC-USDT", bar, bar_start)
+        assert initial - engine.capital == pytest.approx(6.0)
+        engine.on_bar("BTC-USDT", bar, bar_start)
+        engine.on_bar("BTC-USDT", bar, bar_start + pd.Timedelta(hours=1))
+        assert initial - engine.capital == pytest.approx(6.0)
 
     def test_unknown_interval_keeps_daily_fallback(self) -> None:
         engine = _make_engine(funding_rate=0.0001, interval="nonsense")
