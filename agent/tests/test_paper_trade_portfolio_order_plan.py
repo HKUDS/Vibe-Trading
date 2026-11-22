@@ -66,6 +66,7 @@ def _fee_models(*specs: tuple[str, str, Currency]) -> tuple[EffectiveFeeModel, .
                 market=market,
                 currency=currency,
                 cash="0.00",
+                positions=(),
             )
         )
         for bucket_id, market, currency in selected
