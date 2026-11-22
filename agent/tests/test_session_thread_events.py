@@ -674,3 +674,13 @@ def test_new_and_historical_tool_results_are_safe_at_the_thread_boundary(tmp_pat
     assert "fixture-private-value" not in response.text
     assert json.loads(thread.read()[-1].get("content"))["stdout"] == "ok"
     assert thread.path.read_bytes() == original
+
+
+def test_thread_keeps_clean_tool_result_formatting(tmp_path):
+    thread = ThreadLog(tmp_path / "thread.jsonl")
+    compact_json = '{"status":"ok","message":"Compressing..."}'
+    for content in (compact_json, '{"public":"ok","public":"ok","api_key":"fixture-private-value"}'):
+        thread.append("tool_result", "t", name="compact", tool_call_id="c", status="ok", content=content)
+    first, second = thread.read()
+    assert first.get("content") == compact_json
+    assert "fixture-private-value" not in second.get("content")

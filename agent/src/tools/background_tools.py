@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 from src.agent.tools import BaseTool
 from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
-from src.tools.redaction import redact_text
+from src.tools.redaction import redact_text, redact_tool_result
 from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
 
 WORKDIR = Path(__file__).resolve().parents[2]
@@ -151,7 +151,8 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return redact_text(((stdout or "") + (stderr or "")).strip())[:_MAX_OUTPUT_CHARS]
+    text = ((stdout or "") + (stderr or "")).strip()
+    return redact_tool_result(text, preserve_format=True)[:_MAX_OUTPUT_CHARS]
 
 
 class BackgroundManager:

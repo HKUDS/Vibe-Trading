@@ -218,7 +218,7 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
         # Preserve the legacy user-item shape. Queued inputs carry a real id.
         result.pop("input_id", None)
     if item_type == "tool_result":
-        result["content"] = redact_tool_result(result["content"])
+        result["content"] = redact_tool_result(result["content"], preserve_format=True)
         for key in ("images", "artifact"):
             result[key] = redact_payload(result[key], sink=RESULT_SINK)
         if result["images"] is None:
