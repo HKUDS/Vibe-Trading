@@ -3,13 +3,11 @@
 Every CLI entry that runs the agent inside a session (interactive REPL,
 ``run``, ``continue``, ``session`` chat) goes through :func:`open_turn`:
 
-* the user's message is appended to ``messages.jsonl`` first, as the web
-  service does when it accepts a message;
-* :meth:`SessionRuntime.begin_turn` replays ``thread.jsonl`` (or, for a session
-  recorded before it, the text rows of ``messages.jsonl``) into the model's
+* the user's message is recorded in ``thread.jsonl`` when the turn starts;
+* :meth:`SessionRuntime.begin_turn` replays ``thread.jsonl`` into the model's
   history, and hands the loop a recorder that writes the turn's items;
-* :meth:`CliTurn.finish` closes the turn in the thread and projects the
-  display row (reply text and tool trail) into ``messages.jsonl``.
+* :meth:`CliTurn.finish` closes the turn in the thread and derives its display
+  view from thread items.
 
 So a session started in the terminal resumes in the web UI, and the other way
 round, with the same tool calls and results in the model's history.
@@ -23,7 +21,6 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.session.models import Message
 from src.session.runtime import SessionRuntime, TurnRecorder
 from src.session.service import STOPPED_MARKER
 from src.session.store import SessionStore
@@ -37,27 +34,13 @@ _EMPTY_REPLY = (
 )
 
 
-def record_message(store: SessionStore, message: Message) -> None:
-    """Append a message to ``messages.jsonl`` and the FTS5 search index.
-
-    Persistence is best effort: a failed write must not stop the turn. The two
-    writes sit in separate ``try`` blocks so a search-index failure does not
-    retry a JSONL write that succeeded.
-
-    Args:
-        store: Session store.
-        message: Message to record.
-    """
-    try:
-        store.append_message(message)
-    except Exception:  # noqa: BLE001 - never block a turn on persistence
-        logger.warning("Could not record a %s message", message.role, exc_info=True)
+def index_message(session_id: str, role: str, content: str) -> None:
+    """Refresh the optional FTS index from a thread-derived message."""
     try:
         from src.session.search import get_shared_index
-
-        get_shared_index().index_message(message.session_id, message.role, message.content)
+        get_shared_index().index_message(session_id, role, content)
     except Exception:  # noqa: BLE001 - the search index is optional
-        logger.debug("Could not index a %s message", message.role, exc_info=True)
+        logger.debug("Could not index a %s message", role, exc_info=True)
 
 
 def _reply_text(status: str, result: Dict[str, Any], streamed_text: str) -> str:
@@ -134,39 +117,26 @@ class CliTurn:
         status = _THREAD_STATUS.get(str(result.get("status")), "failed")
         elapsed_ms = max(0, round((time.perf_counter() - self._started) * 1000))
         run_dir = result.get("run_dir")
-        projection = None
+        reply_text = _reply_text(status, result, streamed_text)
+        metadata: Dict[str, Any] = {"status": status, "elapsed_ms": elapsed_ms}
+        if run_dir:
+            metadata["run_id"] = str(result.get("run_id") or Path(str(run_dir)).name)
         try:
-            projection = self._runtime.finish_turn(
+            self._runtime.finish_turn(
                 self.turn_id,
                 prompt=self._prompt,
                 status=status,
                 usage=self.recorder.usage,
                 elapsed_ms=elapsed_ms,
                 run_dir=str(run_dir) if run_dir else None,
-            )
-        except Exception:  # noqa: BLE001 - the reply below still gets written
-            logger.warning("Could not close thread turn %s", self.turn_id, exc_info=True)
-        metadata: Dict[str, Any] = {"status": status, "elapsed_ms": elapsed_ms}
-        if run_dir:
-            metadata["run_id"] = str(result.get("run_id") or Path(str(run_dir)).name)
-        record_message(
-            self._store,
-            Message(
-                session_id=self._session_id,
-                role="user",
-                content=self._prompt,
-            )
-        )
-        record_message(
-            self._store,
-            Message(
-                session_id=self._session_id,
-                role="assistant",
-                content=_reply_text(status, result, streamed_text),
+                summary=reply_text,
+                error=result.get("reason"),
                 metadata=metadata,
-                tool_trail=projection.tool_trail if projection is not None else [],
-            ),
-        )
+            )
+        except Exception:  # noqa: BLE001 - the thread close still gets reported
+            logger.warning("Could not close thread turn %s", self.turn_id, exc_info=True)
+        index_message(self._session_id, "user", self._prompt)
+        index_message(self._session_id, "assistant", reply_text)
         if self.recorder.usage:
             result["usage"] = dict(self.recorder.usage)
         return result
@@ -191,9 +161,8 @@ def open_turn(
 ) -> Optional[CliTurn]:
     """Start a recorded turn in a session.
 
-    Replays the session's history and opens the turn's recorder. A new session id gets a thread on
-    its first turn; a session recorded before the thread existed keeps working
-    through the text-only fallback of :meth:`SessionRuntime.begin_turn`.
+    Replays the session's thread and opens the turn's recorder. Existing
+    pre-thread sessions are migrated by the session migration entry point.
 
     Args:
         store: Session store rooted at the user-level sessions directory.

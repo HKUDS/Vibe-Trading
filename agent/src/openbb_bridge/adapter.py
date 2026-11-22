@@ -28,11 +28,11 @@ their public API.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, AsyncGenerator, List, Optional
 
 from openbb_ai.helpers import message_chunk, reasoning_step
 
-from src.session.models import Message
 
 from .context_injector import WorkspaceContextInjector
 from .event_mapper import SSEEventMapper
@@ -250,9 +250,14 @@ class OpenBBQueryAdapter:
             if not content:
                 continue
             try:
-                self.session_service.store.append_message(
-                    Message(session_id=session_id, role=vibe_role, content=content)
-                )
+                thread = self.session_service.store.thread_log(session_id)
+                turn_id = f"openbb-replay-{replayed}-{uuid.uuid4().hex[:8]}"
+                thread.append("turn_start", turn_id, prompt="")
+                if vibe_role == "user":
+                    thread.append("user", turn_id, content=content, llm_content=content)
+                if vibe_role == "assistant":
+                    thread.append("assistant", turn_id, content=content, tool_calls=[], phase="final")
+                thread.append("turn_end", turn_id, status="completed")
                 replayed += 1
             except Exception as exc:
                 logger.warning("Failed to replay history message: %s", exc)

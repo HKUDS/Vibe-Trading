@@ -18,7 +18,6 @@ from typing import Any, Dict, Mapping
 from src.agent.context import ContextBuilder
 from src.agent.context_compact import _replay_context_result, _result_data_gone
 from src.agent.progress import HeartbeatTimer, ProgressEvent, _set_emitter
-from src.agent.trace import TraceWriter
 from src.agent.tuning import _heartbeat_interval_s, _override, _tool_timeout_seconds
 from src.agent.tool_results import (
     _archive_backtest_result, _failure_code, _is_tool_success, _normalize_tool_run_dir,
@@ -114,7 +113,7 @@ class ToolCallLifecycle:
         return self._identity.pending_resolution_query(tc.arguments, field)
 
     def _prepare_identity_dependencies(
-        self, tool_calls, context, trace, react_trace, iteration,
+        self, tool_calls, context, trace, iteration,
     ) -> dict[str, str]:
         """Resolve new dependencies through the ordinary bounded tool lifecycle.
 
@@ -144,7 +143,7 @@ class ToolCallLifecycle:
             self._dependency_message_lists = (*self._dependency_message_lists, internal_messages)
             try:
                 self._process_tool_calls(
-                    [dependency], context, internal_messages, trace, react_trace, iteration,
+                    [dependency], context, internal_messages, trace, iteration,
                 )
             finally:
                 self._dependency_message_lists = tuple(
@@ -160,8 +159,7 @@ class ToolCallLifecycle:
         tool_calls: list,
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
     ) -> tuple[bool, str]:
         """Pre-process tool calls: handle compact, filter duplicates, batch execute.
@@ -170,8 +168,7 @@ class ToolCallLifecycle:
             tool_calls: Raw tool calls from LLM response.
             context: ContextBuilder for formatting messages.
             messages: Conversation messages (appended in place).
-            trace: TraceWriter.
-            react_trace: React trace list.
+            trace: Any.
             iteration: Current iteration number.
 
         Returns:
@@ -220,7 +217,7 @@ class ToolCallLifecycle:
                     for part in (segment, [tc]):
                         if part:
                             compact, focus = self._process_tool_calls(
-                                part, context, messages, trace, react_trace, iteration,
+                                part, context, messages, trace, iteration,
                             )
                             compact_requested |= compact
                             focus_topic = focus or focus_topic
@@ -229,7 +226,7 @@ class ToolCallLifecycle:
                     segment.append(tc)
             if segment:
                 compact, focus = self._process_tool_calls(
-                    segment, context, messages, trace, react_trace, iteration,
+                    segment, context, messages, trace, iteration,
                 )
                 compact_requested |= compact
                 focus_topic = focus or focus_topic
@@ -241,15 +238,15 @@ class ToolCallLifecycle:
                 not self._is_tool_readonly(previous.name) for previous in tool_calls[:index]
             ):
                 compact_a, focus_a = self._process_tool_calls(
-                    tool_calls[:index], context, messages, trace, react_trace, iteration,
+                    tool_calls[:index], context, messages, trace, iteration,
                 )
                 compact_b, focus_b = self._process_tool_calls(
-                    tool_calls[index:], context, messages, trace, react_trace, iteration,
+                    tool_calls[index:], context, messages, trace, iteration,
                 )
                 return compact_a or compact_b, focus_b or focus_a
 
         dependency_results = self._prepare_identity_dependencies(
-            tool_calls, context, trace, react_trace, iteration,
+            tool_calls, context, trace, iteration,
         )
         compact_requested = False
         focus_topic = ""
@@ -268,7 +265,7 @@ class ToolCallLifecycle:
         # Cancelled before this turn's tools ran — skip execution entirely.
         if self._cancel_event.is_set():
             self._record_unstarted_calls(
-                tool_calls, context, messages, trace, react_trace, iteration
+                tool_calls, context, messages, trace, iteration
             )
             return compact_requested, focus_topic
 
@@ -332,7 +329,6 @@ class ToolCallLifecycle:
                     context,
                     messages,
                     trace,
-                    react_trace,
                     iteration,
                 )
                 continue
@@ -357,7 +353,7 @@ class ToolCallLifecycle:
                     })
                     self._tool_progress.note("reused", tc.name)
                     self._finalize_tool_result(
-                        tc, reused, 0, context, messages, trace, react_trace, iteration,
+                        tc, reused, 0, context, messages, trace, iteration,
                         update_memory=False, update_identity=False,
                     )
                     continue
@@ -418,7 +414,6 @@ class ToolCallLifecycle:
                     "recovery_count": self._readonly_replay_recoveries,
                     "recovery_limit": MAX_READONLY_REPLAY_RECOVERIES,
                 })
-                react_trace.append({"type": "tool_result_replayed", "tool": tc.name})
                 self._tool_progress.note("replayed", tc.name)
                 self._emit(
                     "tool_result",
@@ -456,7 +451,6 @@ class ToolCallLifecycle:
                 self._append_tool_result(messages, context, tc.id, tc.name, skip_msg, elapsed_ms=0)
                 trace.write({"type": "tool_skipped", "iter": iteration, "tool": tc.name})
                 self._tool_progress.note("skipped", tc.name)
-                react_trace.append({"type": "tool_skipped", "tool": tc.name})
                 continue
 
             # Deterministic tools (e.g. financial_rigor calc) return the same
@@ -482,7 +476,6 @@ class ToolCallLifecycle:
                         "tool": tc.name,
                         "call_id": tc.id,
                     })
-                    react_trace.append({"type": "tool_result_cached", "tool": tc.name})
                     self._tool_progress.note("cached", tc.name)
                     self._emit(
                         "tool_result",
@@ -516,7 +509,6 @@ class ToolCallLifecycle:
                     context,
                     messages,
                     trace,
-                    react_trace,
                     iteration,
                 )
             elif len(authorized_segment) == 1:
@@ -525,7 +517,6 @@ class ToolCallLifecycle:
                     context,
                     messages,
                     trace,
-                    react_trace,
                     iteration,
                 )
             else:
@@ -534,7 +525,6 @@ class ToolCallLifecycle:
                     context,
                     messages,
                     trace,
-                    react_trace,
                     iteration,
                 )
             authorized_segment.clear()
@@ -550,7 +540,6 @@ class ToolCallLifecycle:
                 context,
                 messages,
                 trace,
-                react_trace,
                 iteration,
             )
         flush_authorized_segment()
@@ -563,8 +552,7 @@ class ToolCallLifecycle:
         result: str,
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
         *,
         blocked: bool = True,
@@ -577,7 +565,6 @@ class ToolCallLifecycle:
             context: Context builder.
             messages: Conversation messages.
             trace: Persistent trace writer.
-            react_trace: Compact returned trace.
             iteration: Current iteration.
         """
         self._tool_progress.note("blocked", tc.name, _failure_code(result))
@@ -596,11 +583,10 @@ class ToolCallLifecycle:
         )
         trace.write(
             {
-                "type": "tool_call",
+                "type": "tool_execution",
                 "iter": iteration,
                 "tool": tc.name,
                 "call_id": tc.id,
-                "args": redacted_args,
                 **({"blocked": True} if blocked else {}),
             }
         )
@@ -611,7 +597,6 @@ class ToolCallLifecycle:
             context,
             messages,
             trace,
-            react_trace,
             iteration,
             update_memory=False,
         )
@@ -621,8 +606,7 @@ class ToolCallLifecycle:
         tool_calls: list[Any],
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
     ) -> None:
         """Record calls skipped after cancellation as explicit tool errors."""
@@ -641,7 +625,6 @@ class ToolCallLifecycle:
                 context,
                 messages,
                 trace,
-                react_trace,
                 iteration,
                 blocked=False,
             )
@@ -651,8 +634,7 @@ class ToolCallLifecycle:
         tool_calls: list,
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
     ) -> None:
         """Execute tools with read/write batching.
@@ -664,8 +646,7 @@ class ToolCallLifecycle:
             tool_calls: Tool calls to execute.
             context: ContextBuilder.
             messages: Conversation messages.
-            trace: TraceWriter.
-            react_trace: React trace list.
+            trace: Any.
             iteration: Current iteration.
         """
         # Split into batches: consecutive readonly → parallel, write → serial
@@ -689,27 +670,26 @@ class ToolCallLifecycle:
             # batch (if any) finishes, but no new work starts.
             if self._cancel_event.is_set():
                 self._record_unstarted_calls(
-                    batch, context, messages, trace, react_trace, iteration
+                    batch, context, messages, trace, iteration
                 )
                 continue
             if mode == "parallel" and len(batch) > 1:
-                self._execute_parallel(batch, context, messages, trace, react_trace, iteration)
+                self._execute_parallel(batch, context, messages, trace, iteration)
             else:
                 for index, tc in enumerate(batch):
                     if self._cancel_event.is_set():
                         self._record_unstarted_calls(
-                            batch[index:], context, messages, trace, react_trace, iteration
+                            batch[index:], context, messages, trace, iteration
                         )
                         break
-                    self._execute_single(tc, context, messages, trace, react_trace, iteration)
+                    self._execute_single(tc, context, messages, trace, iteration)
 
     def _execute_parallel(
         self,
         tool_calls: list,
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
     ) -> None:
         """Execute readonly tools in parallel using threads.
@@ -718,8 +698,7 @@ class ToolCallLifecycle:
             tool_calls: Readonly tool calls to execute in parallel.
             context: ContextBuilder.
             messages: Conversation messages.
-            trace: TraceWriter.
-            react_trace: React trace list.
+            trace: Any.
             iteration: Current iteration.
         """
         # Prepare args + emit events
@@ -737,7 +716,7 @@ class ToolCallLifecycle:
                     "call_id": tc.id,
                 },
             )
-            trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": redacted_args})
+            trace.write({"type": "tool_execution", "iter": iteration, "tool": tc.name, "call_id": tc.id})
             runnable.append((tc, args))
 
         # Execute in parallel — each worker gets its own heartbeat + progress emitter.
@@ -758,15 +737,14 @@ class ToolCallLifecycle:
 
         # Process results in order
         for tc, result, elapsed_ms in results:
-            self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, react_trace, iteration)
+            self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, iteration)
 
     def _execute_single(
         self,
         tc: Any,
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
     ) -> None:
         """Execute a single tool call.
@@ -775,8 +753,7 @@ class ToolCallLifecycle:
             tc: Tool call object.
             context: ContextBuilder.
             messages: Conversation messages.
-            trace: TraceWriter.
-            react_trace: React trace list.
+            trace: Any.
             iteration: Current iteration.
         """
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
@@ -792,12 +769,12 @@ class ToolCallLifecycle:
                 "call_id": tc.id,
             },
         )
-        trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": redacted_args})
+        trace.write({"type": "tool_execution", "iter": iteration, "tool": tc.name, "call_id": tc.id})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
 
         result, elapsed_ms = self._invoke_tool(tc.name, args, call_id=tc.id)
 
-        self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, react_trace, iteration)
+        self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, iteration)
 
     def _invoke_tool(
         self,
@@ -1061,7 +1038,7 @@ class ToolCallLifecycle:
         return True
 
     def _consume_readonly_replay_visibility(
-        self, messages: list, trace: TraceWriter, iteration: int
+        self, messages: list, trace: Any, iteration: int
     ) -> None:
         """Release replay leases once a successful model request carried them."""
         visible = {
@@ -1127,8 +1104,7 @@ class ToolCallLifecycle:
         elapsed_ms: int,
         context: ContextBuilder,
         messages: list,
-        trace: TraceWriter,
-        react_trace: list,
+        trace: Any,
         iteration: int,
         *,
         update_memory: bool = True,
@@ -1142,8 +1118,7 @@ class ToolCallLifecycle:
             elapsed_ms: Execution time in milliseconds.
             context: ContextBuilder.
             messages: Conversation messages.
-            trace: TraceWriter.
-            react_trace: React trace list.
+            trace: Any.
             iteration: Current iteration.
             update_memory: Whether this call reached the tool implementation.
             update_identity: False for a local replay of an unchanged identity.
@@ -1263,16 +1238,7 @@ class ToolCallLifecycle:
             status=status, elapsed_ms=elapsed_ms, artifact=artifact,
             images=image_refs,
         )
-        trace.write_tool_result(
-            call_id=tc.id,
-            result=trace_result,
-            tool_name=tc.name,
-            status=status,
-            elapsed_ms=elapsed_ms,
-            iteration=iteration,
-        )
         preview = trace_result[:200]
-        react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
         self._emit(
             "tool_result",
             {

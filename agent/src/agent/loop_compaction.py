@@ -14,7 +14,6 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from src.agent.trace import TraceWriter
 from src.config.accessor import get_env_config
 
 from src.agent.context_budget import (
@@ -82,7 +81,7 @@ class ContextCompactor:
         self,
         messages: list,
         run_dir: Path,
-        trace: TraceWriter,
+        trace: Any,
         iteration: int,
         current_iter: int,
         *,
@@ -146,7 +145,7 @@ class ContextCompactor:
         exc: Exception,
         messages: list,
         run_dir: Path,
-        trace: TraceWriter,
+        trace: Any,
         iteration: int,
         current_iter: int,
     ) -> None:
@@ -181,7 +180,7 @@ class ContextCompactor:
     def _microcompact_and_unblock(
         self,
         messages: list,
-        trace: TraceWriter,
+        trace: Any,
         iteration: int,
         *,
         target_tokens: Optional[int] = None,
@@ -346,7 +345,7 @@ class ContextCompactor:
         self,
         messages: list,
         run_dir: Path,
-        trace: TraceWriter,
+        trace: Any,
         focus_topic: str = "",
         iteration: int = 0,
     ) -> None:
@@ -362,7 +361,7 @@ class ContextCompactor:
         Args:
             messages: Message list (replaced in place).
             run_dir: Run directory.
-            trace: TraceWriter.
+            trace: Any.
             focus_topic: Optional topic to prioritize in the summary.
             iteration: Current trace iteration.
         """
@@ -421,17 +420,15 @@ class ContextCompactor:
         verification_ledger = _verification_ledger(head)
 
         tokens_before = estimate_tokens(messages)
-        trace.write_text_entry(
+        trace.write(
             {
                 "type": "compact",
                 "iter": iteration,
                 "tokens_before": tokens_before,
                 "focus_topic": focus_topic or "(none)",
                 "summary_chunks": len(chunks),
+                "summary": summary,
             },
-            field="summary",
-            value=summary,
-            offload_kind=f"compact-summary-{iteration}",
         )
         self.owner._emit("compact", {"tokens_before": tokens_before, "summary": summary[:200]})
 

@@ -10,7 +10,7 @@ import pytest
 
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 
 
 class DiscoveryTool(BaseTool):
@@ -101,7 +101,7 @@ def test_failed_discovery_stops_with_visible_recovery(tmp_path, vary_arguments):
         for name, data in events
     )
     assert json.loads((run_dir / "state.json").read_text())["status"] == "failed"
-    records = list(TraceWriter.read(run_dir))
+    records = list(records_at(run_dir))
     assert any(r["type"] == "no_progress" for r in records)
     assert records[-1]["type"] == "end" and records[-1]["status"] == "failed"
 
@@ -159,17 +159,10 @@ def test_successful_repair_allows_a_previously_failed_read(tmp_path):
     repair.name = "repair_file"
     repair.is_readonly = False
     loop.registry.register(repair)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages = []
     for i, name in enumerate([tool.name, repair.name, tool.name]):
-        loop._process_tool_calls(
-            [SimpleNamespace(id=str(i), name=name, arguments={"path": "missing.csv"})],
-            ContextBuilder,
-            messages,
-            trace,
-            [],
-            i,
-        )
+        run_recorded_tools(loop, [SimpleNamespace(id=str(i), name=name, arguments={"path": "missing.csv"})], ContextBuilder, messages, trace, i)
     trace.close()
     assert tool.calls == 2
     assert json.loads(messages[-1]["content"])["data"] == "repaired"
@@ -180,7 +173,7 @@ def test_authorization_denial_does_not_poison_an_unexecuted_call(tmp_path):
 
     tool = DiscoveryTool(['{"status":"ok"}'])
     loop, _, run_dir = build_loop(tmp_path, tool, DiscoveryLLM())
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages = []
     call = SimpleNamespace(
         id="denied", name=tool.name, arguments={"path": "artifact.csv"}
@@ -191,11 +184,10 @@ def test_authorization_denial_does_not_poison_an_unexecuted_call(tmp_path):
         ContextBuilder,
         messages,
         trace,
-        [],
         1,
     )
     call = SimpleNamespace(id="authorized", name=tool.name, arguments=call.arguments)
-    loop._process_tool_calls([call], ContextBuilder, messages, trace, [], 2)
+    run_recorded_tools(loop, [call], ContextBuilder, messages, trace, 2)
     trace.close()
     assert tool.calls == 1
 

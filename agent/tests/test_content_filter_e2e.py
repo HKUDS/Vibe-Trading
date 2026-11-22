@@ -149,9 +149,9 @@ def _run(
 
 def _read_trace(run_dir: str) -> list[dict[str, Any]]:
     """Read trace.jsonl entries from a run directory."""
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import records_at
 
-    return TraceWriter.read(Path(run_dir))
+    return records_at(Path(run_dir))
 
 
 # ---------------------------------------------------------------------------

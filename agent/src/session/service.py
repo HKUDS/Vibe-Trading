@@ -3,7 +3,7 @@
 The conversation, not the attempt, is the unit: each session has one
 :class:`~src.session.runtime.SessionRuntime` whose ``thread.jsonl`` records
 every turn in full. A turn's model input is replayed from it, and the
-``messages.jsonl`` display row is projected from it when the turn ends.
+Display rows are derived from the thread when a consumer requests them.
 
 A caller that opts in (``queue_if_busy``, the web send route) may send while a
 turn runs: the message waits in :mod:`src.session.pending_inputs` and joins
@@ -193,20 +193,14 @@ class SessionService:
                 continue
             runtime = self.runtime(attempt.session_id)
             partial = runtime.partial_response(attempt.attempt_id)
-            if partial is None:
-                partial = self.store.get_partial_response(
-                    attempt.session_id, attempt.attempt_id
-                )
             has_partial = bool(partial)
             existing_reply = self.store.get_message_for_attempt(
                 attempt.session_id, attempt.attempt_id
             )
             if existing_reply is None:
-                projection = self._close_recovered_turn(
+                self._close_recovered_turn(
                     attempt, AttemptStatus.INTERRUPTED.value
                 )
-                if not self._has_projected_user(attempt.session_id, attempt):
-                    self._append_projected_user(attempt)
                 reply = Message(
                     session_id=attempt.session_id,
                     role="assistant",
@@ -217,9 +211,7 @@ class SessionService:
                         "partial": has_partial,
                         "recovery_reason": "service_restart",
                     },
-                    tool_trail=projection.tool_trail if projection is not None else [],
                 )
-                self.store.append_message(reply)
                 self._search_index.index_message(
                     attempt.session_id, "assistant", reply.content
                 )
@@ -249,15 +241,14 @@ class SessionService:
                         "service restarted before attempt completed"
                     )
             self.store.update_attempt(attempt)
-            self.store.delete_partial_response(attempt.session_id, attempt.attempt_id)
 
     def _recover_pending_inputs(self) -> None:
         """Settle queued inputs a previous process was writing when it stopped.
 
         Runs after the attempts are reconciled, so a turn the process lost is
         already closed in the thread. An input whose claimed turn holds it is
-        delivered: it leaves the queue, and gets its ``messages.jsonl`` row if
-        the process stopped before writing one. Any other claimed input waits
+        delivered: it leaves the queue, and is settled from the thread if
+        the process stopped before the turn closed. Any other claimed input waits
         again. Waiting inputs are kept and do not start a turn on their own:
         a restart must not spend tokens nobody asked for now; the next
         message sent to the session, or a discard, settles them.
@@ -288,24 +279,25 @@ class SessionService:
     ) -> Optional[TurnProjection]:
         """Write the missing ``turn_end`` of a turn the previous process lost.
 
-        A session without a thread log predates it; recovery does not create
-        one for it.
+        Pending attempts may not have reached their first thread append;
+        finish_turn records their prompt and interruption summary together.
 
         Args:
             attempt: The attempt being reconciled.
             status: Thread status to close the turn with.
 
         Returns:
-            The turn's projection, or None for a session with no thread log.
+            The recovered turn's derived display projection.
         """
         runtime = self.runtime(attempt.session_id)
-        if not runtime.thread.path.exists():
-            return None
+        partial = runtime.partial_response(attempt.attempt_id)
         return runtime.finish_turn(
             attempt.attempt_id,
             prompt=attempt.prompt,
             status=status,
             run_dir=attempt.run_dir,
+            summary=self._format_interrupted_message(partial),
+            metadata={"status": status, "partial": bool(partial), "recovery_reason": "service_restart"},
         )
 
     def runtime(self, session_id: str) -> SessionRuntime:
@@ -323,53 +315,6 @@ class SessionService:
                 runtime = SessionRuntime(self.store.thread_log(session_id), session_id)
                 self._runtimes[session_id] = runtime
             return runtime
-
-    def _has_projected_user(self, session_id: str, attempt: Attempt) -> bool:
-        if not self.store._messages_file(session_id).exists():
-            return False
-        return any(
-            message.role == "user" and message.content == attempt.prompt
-            for message in self.store.get_messages(session_id, limit=None)
-        )
-
-    def _append_projected_user(self, attempt: Attempt) -> None:
-        items = self.store.thread_log(attempt.session_id).turn_items(attempt.attempt_id)
-        user_items = [item for item in items if item.type == "user"]
-        message_path = self.store._messages_file(attempt.session_id)
-        existing = self.store.get_messages(attempt.session_id, limit=None) if message_path.exists() else []
-        for item in user_items:
-            metadata = {}
-            input_id = item.get("input_id")
-            if isinstance(input_id, str) and input_id:
-                metadata["queued_input_id"] = input_id
-            content = item.get("content") or ""
-            if any(
-                message.role == "user"
-                and message.content == content
-                and message.metadata == metadata
-                for message in existing
-            ):
-                continue
-            self.store.append_message(Message(
-                session_id=attempt.session_id,
-                role="user",
-                content=content,
-                metadata=metadata,
-            ))
-            self._search_index.index_message(attempt.session_id, "user", content)
-            existing.append(Message(
-                session_id=attempt.session_id,
-                role="user",
-                content=content,
-                metadata=metadata,
-            ))
-        if not user_items and not self._has_projected_user(attempt.session_id, attempt):
-            self.store.append_message(Message(
-                session_id=attempt.session_id,
-                role="user",
-                content=attempt.prompt,
-            ))
-            self._search_index.index_message(attempt.session_id, "user", attempt.prompt)
 
     @staticmethod
     def _format_interrupted_message(partial: Optional[str]) -> str:
@@ -580,7 +525,6 @@ class SessionService:
         from src.agent.loop import AgentLoop
         from src.agent.memory import WorkspaceMemory
         from src.agent.tools import ToolRegistry
-        from src.agent.trace import TraceWriter
         from src.session.model_selection import chat_llm_for_session
         from src.session.runtime import TurnRecorder
 
@@ -609,7 +553,7 @@ class SessionService:
         )
         run_dir = Path(self.runs_dir) / "compactions" / compact_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        trace = TraceWriter(run_dir)
+        trace = recorder
         messages = [{"role": "system", "content": ""}, *copy.deepcopy(history)]
         agent = AgentLoop(
             registry=ToolRegistry(),
@@ -630,7 +574,6 @@ class SessionService:
             )
         finally:
             recorder.close()
-            trace.close()
             await llm.aclose()
         compacted = next(
             (
@@ -735,7 +678,15 @@ class SessionService:
 
         if role != "user":
             message = Message(session_id=session_id, role=role, content=content)
-            self.store.append_message(message)
+            log = self.store.thread_log(session_id)
+            turn_id = message.message_id
+            log.append("turn_start", turn_id, prompt="")
+            if role == "assistant":
+                log.append("assistant", turn_id, content=content, phase="final")
+                log.append("turn_end", turn_id, status="completed")
+            else:
+                log.append("inject", turn_id, role=role, content=content)
+                log.append("turn_end", turn_id, status="completed")
             self._search_index.index_message(session_id, role, content)
             self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
             return {"message_id": message.message_id}
@@ -1110,14 +1061,14 @@ class SessionService:
                 attempt.attempt_id,
                 run_dir=attempt.run_dir,
             )
-            reports = [entry["artifact"] for entry in prefinish_projection.tool_trail
+            reports = [entry["artifact"] for entry in prefinish_projection.tool_results
                        if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
             if reports:
                 reply_metadata["generated_reports"] = reports
                 links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
                          for report in reports]
                 reply_content += "\n\n" + "\n\n".join(dict.fromkeys(links))
-            projection = self.runtime(session.session_id).finish_turn(
+            self.runtime(session.session_id).finish_turn(
                 attempt.attempt_id,
                 prompt=attempt.prompt,
                 status=attempt.status.value,
@@ -1130,37 +1081,18 @@ class SessionService:
                 model=result.get("model"),
                 pending_inputs=(self.list_pending_inputs(session.session_id)
                                 if attempt.status == AttemptStatus.CANCELLED else None),
+                metadata=reply_metadata,
             )
             reply = Message(
                 session_id=session.session_id, role="assistant",
                 content=reply_content,
                 linked_attempt_id=attempt.attempt_id,
                 metadata=reply_metadata,
-                # Every terminal attempt keeps its steps. A failed run saved an
-                # empty trail, so after a reload the history said "0 steps"
-                # for a run that made eight rounds of tool calls — hiding the
-                # one thing a failure report needs.
-                tool_trail=projection.tool_trail,
             )
-            if not self._has_projected_user(session.session_id, attempt):
-                self._append_projected_user(attempt)
-            reports = [entry["artifact"] for entry in reply.tool_trail
-                       if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
-            if reports:
-                reply.metadata["generated_reports"] = reports
-                # Persist and stream the same concrete download links even if
-                # the model forgot to include them in its final answer.
-                links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
-                         for report in reports]
-                link_text = "\n\n" + "\n\n".join(dict.fromkeys(links))
-                if link_text.strip() not in reply.content:
-                    reply.content += link_text
-            self.store.append_message(reply)
-            # The append-only transcript is the user-visible source of truth.
-            # Commit it before attempt.json so startup recovery can finish a
-            # process interrupted between the two writes.
             self.store.update_attempt(attempt)
-            self.store.delete_partial_response(session.session_id, attempt.attempt_id)
+            for item in self.store.thread_log(session.session_id).turn_items(attempt.attempt_id):
+                if item.type == "user":
+                    self._search_index.index_message(session.session_id, "user", item.get("content") or "")
             self._search_index.index_message(session.session_id, "assistant", reply.content)
             self.thread_events.sync(session.session_id)
 
@@ -1172,9 +1104,6 @@ class SessionService:
                 attempt.mark_cancelled(reason="cancelled by user")
                 self._finish_thread_turn_quietly(session.session_id, attempt)
                 self.store.update_attempt(attempt)
-                self.store.delete_partial_response(
-                    session.session_id, attempt.attempt_id
-                )
                 self.thread_events.sync(session.session_id)
             else:
                 logger.info(
@@ -1186,7 +1115,6 @@ class SessionService:
             attempt.mark_failed(error=str(exc))
             self._finish_thread_turn_quietly(session.session_id, attempt)
             self.store.update_attempt(attempt)
-            self.store.delete_partial_response(session.session_id, attempt.attempt_id)
             self.thread_events.sync(session.session_id)
         finally:
             if attempt.status not in (AttemptStatus.COMPLETED, AttemptStatus.WAITING_USER):
@@ -1240,8 +1168,7 @@ class SessionService:
 
         Args:
             attempt: Current execution attempt.
-            messages: The session's ``messages.jsonl`` rows; read only for
-                history recorded before the session had a thread log.
+            messages: A derived in-memory display view of the session thread.
             include_shell_tools: Whether the registry may include shell tools.
             session_config: Optional session-level config overrides. MCP server
                 definitions under the ``mcpServers`` key are merged on top of

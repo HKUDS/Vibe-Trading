@@ -153,15 +153,16 @@ def test_swarm_runs_root_derives_from_runtime_root() -> None:
 def test_trace_lookup_searches_runtime_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from src.agent.trace import TraceWriter
+    from src.session.store import SessionStore
 
     root = tmp_path / "state-root"
     monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
     trace_dir = root / "sessions" / "sess-1"
     trace_dir.mkdir(parents=True)
-    (trace_dir / "trace.jsonl").write_text("", encoding="utf-8")
+    (trace_dir / "thread.jsonl").write_text("", encoding="utf-8")
 
-    assert TraceWriter.find_trace_dir("sess-1") == trace_dir
+    from src.config.paths import get_sessions_dir
+    assert SessionStore(get_sessions_dir()).thread_path("sess-1").parent == trace_dir
 
 
 def test_upload_handle_resolves_to_runtime_uploads_dir(

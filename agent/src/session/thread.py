@@ -7,9 +7,8 @@ a later turn is *derived* from it by :func:`replay`; nothing derived is ever
 written back, so a repair made for one provider request (a synthetic result for
 an interrupted call, a dropped orphan result) never becomes history.
 
-``messages.jsonl`` keeps one display row per turn. :func:`project_turn` builds
-that row's content and ``tool_trail`` from the thread, so the thread is the only
-place a turn is recorded in full.
+Display rows are derived in memory from the thread when an API needs them. The
+thread is the only persisted conversation record.
 
 Replayed history is conversation text only. It never grants tool permission or
 instrument authorization: those are restored from their own persisted records,
@@ -27,7 +26,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 try:
     import fcntl
@@ -169,6 +168,10 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "artifact": _Field(_optional(_is_dict)),
         "images": _Field(_optional(_is_list)),
     },
+    "event": {
+        "name": _Field(_is_str, required=True),
+        "data": _Field(_is_dict, default={}),
+    },
     "plan": {
         "plan_id": _Field(_is_str, required=True),
         "steps": _Field(_is_list, required=True),
@@ -214,6 +217,7 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
         "provider": _Field(_optional(_is_str)),
         "model": _Field(_optional(_is_str)),
         "pending_inputs": _Field(_optional(_is_list)),
+        "metadata": _Field(_optional(_is_dict)),
     },
 }
 
@@ -483,10 +487,17 @@ class ThreadLog:
         """Open the log and serialize appends across processes when supported."""
         process_lock = _file_lock(self.path)
         with process_lock:
+            created = not self.path.exists()
             with self.path.open("a+b") as log:
                 if fcntl is not None:
                     fcntl.flock(log.fileno(), fcntl.LOCK_EX)
                 try:
+                    if created and os.name != "nt":
+                        directory_fd = os.open(self.path.parent, os.O_RDONLY)
+                        try:
+                            os.fsync(directory_fd)
+                        finally:
+                            os.close(directory_fd)
                     yield log
                 finally:
                     if fcntl is not None:
@@ -902,13 +913,13 @@ def replay(
 
 @dataclass
 class TurnProjection:
-    """The legacy ``messages.jsonl`` row fields for one finished turn.
+    """A read-only view of one finished turn.
 
     Attributes:
         turn_id: Turn id.
         status: ``turn_end`` status, or None when the turn has not ended.
         content: Final answer text, or None when the turn produced none.
-        tool_trail: Compact tool records in the ``Message.tool_trail`` shape.
+        tool_results: Compact tool records derived from thread items.
         usage: ``turn_end`` usage, if recorded.
         elapsed_ms: ``turn_end`` elapsed time, if recorded.
     """
@@ -916,9 +927,10 @@ class TurnProjection:
     turn_id: str
     status: Optional[str]
     content: Optional[str]
-    tool_trail: List[Dict[str, Any]]
+    tool_results: List[Dict[str, Any]]
     usage: Optional[Dict[str, Any]] = None
     elapsed_ms: Optional[float] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 def _trail_arguments(raw: Any, run_dir: Optional[str]) -> Dict[str, Any]:
@@ -943,7 +955,7 @@ def project_turn(
 ) -> TurnProjection:
     """Project one turn's items onto the legacy display row.
 
-    The trail follows ``SessionService._record_tool_trail_event``: one entry
+    The result view follows the former live tool event shape: one entry
     per call in call order with ``tool`` / ``status`` / ``arguments`` /
     ``timestamp`` / ``call_id``, completed by its result with ``status``
     (``ok`` / ``error``), ``elapsed_ms``, ``preview`` and an ``ok`` result's
@@ -961,12 +973,15 @@ def project_turn(
         The projection.
     """
     turn = [item for item in items if item.turn_id == turn_id]
+    if run_dir is None:
+        run_dir = next((item.get("run_dir") for item in reversed(turn) if item.type == "turn_end"), None)
     trail: List[Dict[str, Any]] = []
     final_content: Optional[str] = None
     fallback_content: Optional[str] = None
     status: Optional[str] = None
     usage: Optional[Dict[str, Any]] = None
     elapsed_ms: Optional[float] = None
+    metadata: Dict[str, Any] = {}
 
     for item in turn:
         if item.type == "assistant":
@@ -1014,6 +1029,10 @@ def project_turn(
             status = item.get("status")
             usage = copy.deepcopy(item.get("usage"))
             elapsed_ms = item.get("elapsed_ms")
+            if isinstance(item.get("summary"), str) and item.get("summary"):
+                final_content = item.get("summary")
+            if isinstance(item.get("metadata"), dict):
+                metadata = copy.deepcopy(item.get("metadata"))
 
     if status is not None:
         for entry in trail:
@@ -1025,7 +1044,61 @@ def project_turn(
         turn_id=turn_id,
         status=status,
         content=final_content if final_content is not None else fallback_content,
-        tool_trail=trail,
+        tool_results=trail,
         usage=usage,
         elapsed_ms=elapsed_ms,
+        metadata=metadata,
     )
+
+
+def diagnostic_records(items: Sequence[ThreadItem]) -> list[dict[str, Any]]:
+    """Derive the run diagnostic view used by evaluation and CLI readers.
+
+    Args:
+        items: Recorded conversation items, in sequence order.
+    """
+    records: list[dict[str, Any]] = []
+    executions = {item.get("data", {}).get("call_id"): item.get("data", {})
+                  for item in items if item.type == "event" and item.get("name") == "tool_execution"}
+    for item in items:
+        if item.type == "turn_start":
+            records.append({"type": "start", "ts": item.ts, "prompt": item.get("prompt"), "_line": item.seq})
+        elif item.type == "user":
+            records.append({"type": "message", "role": "user", "content": item.get("content"), "_line": item.seq})
+        elif item.type == "assistant":
+            for call in item.get("tool_calls") or []:
+                function = call.get("function") or {}
+                try:
+                    args = json.loads(function.get("arguments", "{}"))
+                except (TypeError, ValueError):
+                    args = function.get("arguments")
+                records.append({
+                    "type": "tool_call", "ts": item.ts, "tool": function.get("name"),
+                    "call_id": call.get("id"), "args": args, "_line": item.seq,
+                    **executions.get(call.get("id"), {}),
+                })
+            if item.get("content") is not None:
+                records.append({"type": "answer" if item.get("phase") == "final" else "message", "role": "assistant", "content": item.get("content"), "_line": item.seq})
+        elif item.type == "tool_result":
+            records.append({
+                "type": "tool_result", "ts": item.ts, "tool": item.get("name"),
+                "call_id": item.get("tool_call_id"), "status": item.get("status"),
+                "result": item.get("content"), "preview": str(item.get("content") or "")[:500],
+                "elapsed_ms": item.get("elapsed_ms"), "_line": item.seq,
+            })
+        elif item.type == "event":
+            data = item.get("data") or {}
+            if item.get("name") == "identity_dependency":
+                records.append({"type": "tool_call", "ts": item.ts, "tool": data.get("tool"),
+                                "call_id": data.get("call_id"), "args": {"query": data.get("query")},
+                                "_line": item.seq, **executions.get(data.get("call_id"), {})})
+            if isinstance(data, dict) and item.get("name") != "tool_execution":
+                records.append({"type": item.get("name", "event"), "ts": item.ts, **data, "_line": item.seq})
+        elif item.type == "turn_end":
+            status = {"completed": "success", "interrupted": "failed"}.get(item.get("status"), item.get("status"))
+            previous = next((record for record in reversed(records) if record.get("type") in {"start", "end"}), None)
+            if previous is not None and previous["type"] == "end":
+                previous.update(status=status, _line=item.seq)
+            else:
+                records.append({"type": "end", "ts": item.ts, "status": status, "_line": item.seq})
+    return records

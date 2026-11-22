@@ -1,5 +1,7 @@
 """Each financial task has a passing fixture and a deliberately wrong answer."""
 
+from .thread_fixture import write_records
+
 import json
 from pathlib import Path
 
@@ -32,7 +34,7 @@ def make_bundle(root, case):
         {"type": "message", "iter": 1, "role": "user", "content": case.prompt},
         {"type": "end", "iter": 1, "iterations": 1, "status": "success", "ts": 102.0},
     ]
-    (root / "trace.jsonl").write_text("".join(json.dumps(row) + "\n" for row in records))
+    write_records(root / "thread.jsonl", records)
     from src.governance.manifest import build_run_manifest
 
     manifest = build_run_manifest(

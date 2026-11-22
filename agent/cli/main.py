@@ -643,27 +643,11 @@ def _print_debug_summary(
     result: Dict[str, Any],
     elapsed: float,
 ) -> None:
-    """Render the one-line ``[debug]`` summary after a turn.
-
-    Reads the iteration count from ``result`` (populated by
-    :class:`src.agent.loop.AgentLoop`), counts tool events from
-    ``react_trace`` when present, and reports the turn's token usage as the
-    provider returned it. Best-effort — any missing field falls back to ``?``
-    so the summary still prints.
-    """
+    """Render the one-line debug summary after a turn."""
     iterations = result.get("iterations", "?")
-    trace = result.get("react_trace") or []
-    if isinstance(trace, list):
-        tools = sum(
-            1
-            for entry in trace
-            if isinstance(entry, dict) and entry.get("type") == "tool_result"
-        )
-    else:
-        tools = "?"
     usage = result.get("usage") or {}
     console.print(
-        f"[dim][debug] iter={iterations} tools={tools} "
+        f"[dim][debug] iter={iterations} tools={result.get('tool_count', '?')} "
         f"elapsed={elapsed:.1f}s tokens in={usage.get('input_tokens', '?')} "
         f"out={usage.get('output_tokens', '?')}[/dim]"
     )

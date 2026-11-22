@@ -18,7 +18,7 @@ import pytest
 from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 from src.tools.financial_rigor_tool import FinancialRigorTool
 
 
@@ -58,20 +58,12 @@ def _drive(
     Returns:
         Tuple of (messages appended, trace records written).
     """
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict] = []
-    react_trace: list[dict] = []
     for index, arguments in enumerate(arg_sets, start=1):
-        agent._process_tool_calls(
-            [SimpleNamespace(id=f"call_{index}", name=tool_name, arguments=arguments)],
-            ContextBuilder,
-            messages,
-            trace,
-            react_trace,
-            index,
-        )
+        run_recorded_tools(agent, [SimpleNamespace(id=f"call_{index}", name=tool_name, arguments=arguments)], ContextBuilder, messages, trace, index)
     trace.close()
-    return messages, list(TraceWriter.read(run_dir))
+    return messages, list(records_at(run_dir))
 
 
 @pytest.fixture()

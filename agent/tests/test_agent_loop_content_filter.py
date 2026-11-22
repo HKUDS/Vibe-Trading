@@ -103,9 +103,9 @@ def _run(
 
 
 def _read_trace(run_dir: str) -> list[dict[str, Any]]:
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import records_at
 
-    return TraceWriter.read(Path(run_dir))
+    return records_at(Path(run_dir))
 
 
 def test_content_filter_skip_and_continue(
@@ -263,7 +263,7 @@ def test_auto_compact_summary_hard_deadline(
     import src.agent.tuning as tuning_module
     from src.agent.loop import AgentLoop
     from src.agent.tools import ToolRegistry
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import recorder_at
 
     class _HangingSummaryLLM:
         def __init__(self) -> None:
@@ -289,7 +289,7 @@ def test_auto_compact_summary_hard_deadline(
         {"role": "assistant", "content": "a2 " * 4000},
     ]
     trace_dir = tmp_path / "compact_trace"
-    trace = TraceWriter(trace_dir)
+    trace = recorder_at(trace_dir)
 
     start = time.monotonic()
     agent._auto_compact(messages, trace_dir, trace, focus_topic="", iteration=1)

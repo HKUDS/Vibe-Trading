@@ -15,7 +15,6 @@ class TurnState:
     run_dir: Path
     trace: Any
     context: Any
-    react_trace: list[dict[str, Any]]
     user_message: str
     run_started_wall: float
     session_id: str

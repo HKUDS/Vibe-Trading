@@ -170,7 +170,7 @@ class IterationDriver:
         """Persist reasoning text only after the response phase is known."""
         if not state.thinking_text:
             return
-        state.trace.write_text_entry({"type": "thinking", "iter": state.current_iter}, field="content", value=state.thinking_text, offload_kind=f"thinking-{state.current_iter}")
+        state.trace.write({"type": "thinking", "iter": state.current_iter, "content": state.thinking_text})
         self.owner._emit("thinking_done", {"iter": state.current_iter, "content": state.thinking_text[:500], "phase": "commentary" if state.response.has_tool_calls else "final"})
 
     def _skip_content_filter(self, state: TurnState) -> bool:
@@ -194,7 +194,6 @@ class IterationDriver:
             state.final_content = response.content or ""
             state.stream.finish(state.final_content)
             state.truncation_reason = f"provider output truncated ({finish_reason}); partial answer retained"
-            state.trace.write_text_entry({"type": "answer_partial", "iter": state.current_iter, "reason": finish_reason}, field="content", value=state.final_content, offload_kind=f"partial-answer-{state.current_iter}")
             self.owner._record_final_answer(state.final_content)
             return True
         if not response.has_tool_calls or state.final_answer_retry:
@@ -204,7 +203,7 @@ class IterationDriver:
         self.owner._append_assistant(state.messages, assistant, phase="commentary")
         self.owner._active_model_id = state.current_response_model or self.owner._llm_runtime.configured_model
         self.owner._active_model_source = reported_model_source(self.owner._llm_runtime, state.current_response_model)
-        state.compact_requested, state.focus_topic = self.owner._process_tool_calls(response.tool_calls, state.context, state.messages, state.trace, state.react_trace, state.current_iter)
+        state.compact_requested, state.focus_topic = self.owner._process_tool_calls(response.tool_calls, state.context, state.messages, state.trace, state.current_iter)
         if self.owner._waiting_user is not None:
             state.final_content = self.owner._waiting_user.get("prompt", "")
             options = self.owner._waiting_user.get("options") or []
@@ -228,8 +227,6 @@ class IterationDriver:
             state.final_content = owner._tool_progress.recovery_message()
             state.no_progress_reason = "no_progress: " + state.final_content
             state.trace.write({"type": "no_progress", "iter": state.current_iter, "iterations_without_progress": owner._tool_progress.stalled_iterations})
-            state.trace.write_text_entry({"type": "answer", "iter": state.current_iter}, field="content", value=state.final_content, offload_kind=f"answer-{state.current_iter}")
-            state.react_trace.append({"type": "answer", "content": state.final_content})
             owner._emit("text_delta", {"delta": state.final_content, "iter": state.current_iter, "phase": "final"})
             owner._record_final_answer(state.final_content)
             state.finished = True

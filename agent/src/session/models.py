@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 def _utc_now_iso() -> str:
@@ -212,7 +212,6 @@ class Message:
         created_at: Creation time in ISO format.
         linked_attempt_id: Related Attempt ID, if any.
         metadata: Additional metadata.
-        tool_trail: Compact completed tool-call records for history hydration.
     """
 
     message_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
@@ -222,7 +221,6 @@ class Message:
     created_at: str = field(default_factory=_utc_now_iso)
     linked_attempt_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-    tool_trail: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the message to a dictionary.
@@ -242,6 +240,7 @@ class Message:
         Returns:
             A Message instance.
         """
+        data = dict(data)
         return cls(**data)
 
 
@@ -257,7 +256,6 @@ class Attempt:
         prompt: User input that triggered this execution.
         run_dir: Run directory path.
         summary: Execution summary.
-        react_trace: ReAct agent trace records.
         created_at: Creation time in ISO format.
         started_at: Wall-clock time (epoch seconds) execution began, once running.
             Clients that join mid-attempt resume their elapsed clock from it, so
@@ -274,7 +272,6 @@ class Attempt:
     prompt: str = ""
     run_dir: Optional[str] = None
     summary: Optional[str] = None
-    react_trace: List[Dict[str, Any]] = field(default_factory=list)
     created_at: str = field(default_factory=_utc_now_iso)
     started_at: Optional[float] = None
     completed_at: Optional[str] = None

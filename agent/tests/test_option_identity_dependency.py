@@ -10,7 +10,7 @@ from src.agent.context import ContextBuilder
 from src.agent.instrument_identity import IdentityLedger
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import records_at, recorder_at, run_recorded_tools
 from src.providers.chat import ToolCallRequest
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.symbol_search_tool import SymbolSearchTool
@@ -44,11 +44,11 @@ def runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(options, "execute", chain)
     registry.register(resolver)
     registry.register(options)
-    messages, react_trace = [], []
-    trace = TraceWriter(tmp_path)
+    messages, _react_trace = [], []
+    trace = recorder_at(tmp_path)
 
     def run(calls):
-        agent._process_tool_calls(calls, ContextBuilder, messages, trace, react_trace, 1)
+        run_recorded_tools(agent, calls, ContextBuilder, messages, trace, 1)
         return messages
 
     yield SimpleNamespace(agent=agent, events=events, response=response, run=run, messages=messages,
@@ -67,7 +67,7 @@ def test_missing_prerequisite_runs_before_first_option_and_keeps_protocol_ids(ru
     assert r.events == [("resolve", ticker), ("options", ticker)]
     assert len(messages) == 1 and messages[0]["tool_call_id"] == "options1"
     assert json.loads(messages[0]["content"])["ok"]
-    records = [json.loads(line) for line in (r.path / "trace.jsonl").read_text().splitlines()]
+    records = records_at(r.path)
     link = next(row for row in records if row["type"] == "identity_dependency")
     assert link["parent_call_id"] == "options1"
     assert not any(row.get("status") == "error" for row in records)

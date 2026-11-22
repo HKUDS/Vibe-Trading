@@ -11,7 +11,7 @@ from typing import Any
 from src.agent import tuning as tuning_mod
 from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, run_recorded_tools
 
 
 class _SlowRegistry:
@@ -172,16 +172,9 @@ def test_cancelled_queued_tool_is_recorded_as_a_result(tmp_path: Path) -> None:
     agent.memory.run_dir = str(tmp_path)
     agent.cancel()
     messages: list[dict[str, Any]] = []
-    trace = TraceWriter(tmp_path)
+    trace = recorder_at(tmp_path)
 
-    agent._process_tool_calls(
-        [SimpleNamespace(id="queued-call", name="place_order", arguments={})],
-        ContextBuilder,
-        messages,
-        trace,
-        [],
-        1,
-    )
+    run_recorded_tools(agent, [SimpleNamespace(id="queued-call", name="place_order", arguments={})], ContextBuilder, messages, trace, 1)
     trace.close()
 
     payload = json.loads(messages[-1]["content"])

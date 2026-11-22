@@ -25,7 +25,6 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -58,9 +57,9 @@ def legacy_history(rows: Sequence[Any]) -> List[Dict[str, Any]]:
     """Text-only history for messages a session recorded before its thread log.
 
     Sessions created before ``thread.jsonl`` existed have only
-    ``messages.jsonl``: one user row and one assistant reply per turn. Their
-    text is all there is to replay. A trailing user row is the turn being
-    answered now, so it is left out. Size is not capped here; the loop's
+    Older display rows are accepted as an in-memory migration input. Their
+    text can be replayed when a one-time migration has not yet run. A trailing
+    user row is the turn being answered now, so it is left out. Size is not capped here; the loop's
     context budget compacts replayed history like any other.
 
     The run id of a reply lives only in its metadata, so it is written into
@@ -108,28 +107,6 @@ def _field(row: Any, name: str) -> Any:
     if isinstance(row, Mapping):
         return row.get(name)
     return getattr(row, name, None)
-
-
-def _created_ts(row: Any) -> Optional[float]:
-    value = _field(row, "created_at")
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value).timestamp()
-    except ValueError:
-        return None
-
-
-def _rows_before_thread(rows: Sequence[Any], items: Sequence[ThreadItem]) -> List[Any]:
-    """Return the ``messages.jsonl`` rows the thread log does not cover.
-
-    With no thread yet, every row is legacy. Otherwise a row is legacy when it
-    was written before the thread's first item.
-    """
-    if not items:
-        return list(rows)
-    first_ts = items[0].ts
-    return [row for row in rows if (_created_ts(row) or float("inf")) < first_ts]
 
 
 def _message_key(message: Mapping[str, Any]) -> str:
@@ -335,11 +312,25 @@ class TurnRecorder:
             message: OpenAI-format assistant message.
             phase: ``commentary`` (more steps follow) or ``final``.
         """
+        from src.tools.redaction import redact_payload, redact_text
+
+        calls = copy.deepcopy(list(message.get("tool_calls") or []))
+        for call in calls:
+            function = call.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    original = json.loads(arguments)
+                    redacted = redact_payload(original)
+                    if redacted != original:
+                        function["arguments"] = json.dumps(redacted, ensure_ascii=False)
+                except (ValueError, TypeError):
+                    function["arguments"] = redact_text(arguments)
         self._write(
             "assistant",
             message,
             content=message.get("content"),
-            tool_calls=list(message.get("tool_calls") or []),
+            tool_calls=calls,
             reasoning_content=message.get("reasoning_content"),
             provider_items=message.get("provider_items") or None,
             provider=self.provider,
@@ -390,6 +381,21 @@ class TurnRecorder:
         self._write("hook_decision", None, **dict(decision))
 
     hook_decision = hook
+
+    def write(self, event: Dict[str, Any]) -> None:
+        """Record a diagnostic event in the conversation thread.
+
+        The loop historically accepted a trace writer. Keeping this small sink
+        method lets the loop record diagnostics without creating a second JSONL
+        record or a sidecar blob tree.
+        """
+        if not isinstance(event, dict):
+            return
+        payload = copy.deepcopy(event)
+        name = payload.pop("type", "event")
+        if not isinstance(name, str) or not name:
+            name = "event"
+        self._write("event", None, name=name, data=payload)
 
     def plan(self, plan_id: str, steps: list[dict[str, Any]]) -> None:
         self._write("plan", None, plan_id=plan_id, steps=steps)
@@ -604,15 +610,13 @@ class SessionRuntime:
         assistant item came from the same provider and model as the request.
         """
         items = self.thread.read()
-        prefix_rows = [] if last_compaction(items) is not None else _rows_before_thread(rows, items)
-        prefix = legacy_history(prefix_rows)
         replayed, seqs = replay_with_seqs(items, provider=provider, model=model)
-        user_history = [m for m in prefix if m["role"] == "user"] + [
+        user_history = [
             {"role": "user", "content": item.get("content")}
             for item in items
             if item.type == "user" and isinstance(item.get("content"), str)
         ]
-        return prefix + replayed, [None] * len(prefix) + seqs, user_history
+        return replayed, seqs, user_history
 
     def pending_question_id(self) -> Optional[str]:
         """Return the latest unanswered structured question."""
@@ -640,8 +644,7 @@ class SessionRuntime:
 
         Args:
             turn_id: The new turn (attempt) id.
-            rows: The session's ``messages.jsonl`` rows, for a session whose
-                history began before its thread log.
+            rows: Optional pre-thread display rows used only during migration.
 
         Returns:
             The turn's recorder, carrying its replayed history.
@@ -681,6 +684,7 @@ class SessionRuntime:
         provider: Optional[str] = None,
         model: Optional[str] = None,
         pending_inputs: Optional[list[Dict[str, Any]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> TurnProjection:
         """Close a turn in the thread and project its display row.
 
@@ -718,6 +722,7 @@ class SessionRuntime:
                 "turn_end", turn_id, status=status, usage=usage, elapsed_ms=elapsed_ms,
                 summary=summary, error=error, run_dir=run_dir,
                 provider=provider, model=model, pending_inputs=pending_inputs,
+                metadata=metadata,
             )
         return project_turn(self.thread.read(), turn_id, run_dir=run_dir)
 

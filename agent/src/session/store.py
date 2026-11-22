@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.session.models import Attempt, Message, Session
-from src.session.thread import THREAD_FILENAME, ThreadLog, open_turns, project_turn
+from src.session.thread import THREAD_FILENAME, ThreadLog, project_turn
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,6 @@ class SessionStore:
         sessions/
         ├── {session_id}/
         │   ├── session.json
-        │   ├── messages.jsonl
         │   ├── thread.jsonl
         │   └── attempts/
         │       └── {attempt_id}/
@@ -48,9 +47,6 @@ class SessionStore:
 
     def _session_file(self, session_id: str) -> Path:
         return self._session_dir(session_id) / "session.json"
-
-    def _messages_file(self, session_id: str) -> Path:
-        return self._session_dir(session_id) / "messages.jsonl"
 
     def thread_path(self, session_id: str) -> Path:
         """Return the location of a session's conversation thread log.
@@ -79,9 +75,6 @@ class SessionStore:
 
     def _attempt_file(self, session_id: str, attempt_id: str) -> Path:
         return self._attempt_dir(session_id, attempt_id) / "attempt.json"
-
-    def _partial_response_file(self, session_id: str, attempt_id: str) -> Path:
-        return self._attempt_dir(session_id, attempt_id) / "partial_response.json"
 
     # ---- Session CRUD ----
 
@@ -176,94 +169,20 @@ class SessionStore:
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         return sessions[:limit]
 
-    # ---- Message Append-Only Log ----
-
-    def append_message(self, message: Message) -> None:
-        """Append a message to the session JSONL log.
-
-        Args:
-            message: Message to append.
-        """
-        path = self._messages_file(message.session_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(message.to_dict(), ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+    # ---- Derived message views ----
 
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
     ) -> List[Message]:
-        """Read the most recent messages for a session.
-
-        Args:
-            session_id: Session ID.
-            limit: Maximum number of messages, or None for the full history.
-                A nonpositive limit returns an empty list.
-
-        Returns:
-            List of Message objects in chronological order.
-        """
+        """Return display messages derived from the session thread."""
         if limit is not None and limit <= 0:
             return []
-        path = self._messages_file(session_id)
-        if not path.exists():
-            return self._project_messages_from_thread(session_id, limit)
-        messages: List[Message] = []
-        # Decode physical JSONL records separately: one unreadable byte must
-        # cost one record, never the intact messages on either side of it.
-        with path.open("rb") as log:
-            for line_number, raw_line in enumerate(log, start=1):
-                if not raw_line.strip():
-                    continue
-                try:
-                    line = raw_line.decode("utf-8")
-                    payload = json.loads(line)
-                    if not isinstance(payload, dict):
-                        raise TypeError(
-                            f"message line must be a JSON object, got {type(payload).__name__}"
-                        )
-                    messages.append(Message.from_dict(payload))
-                except (
-                    json.JSONDecodeError,
-                    UnicodeDecodeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                ) as exc:
-                    logger.warning(
-                        "Skipping corrupted message record %d in session %s (%s)",
-                        line_number,
-                        session_id,
-                        type(exc).__name__,
-                    )
-        # A running turn is durable in the thread before its terminal display
-        # rows are written. Include its user items in reads without creating a
-        # second append-only projection.
-        thread_items = self.thread_log(session_id).read()
-        open_ids = set(open_turns(thread_items))
-        if open_ids:
-            for item in thread_items:
-                if item.turn_id not in open_ids or item.type != "user":
-                    continue
-                metadata = {}
-                input_id = item.get("input_id")
-                if isinstance(input_id, str) and input_id:
-                    metadata["queued_input_id"] = input_id
-                messages.append(Message(
-                    session_id=session_id,
-                    role="user",
-                    content=item.get("content") or "",
-                    created_at=datetime.fromtimestamp(item.ts, timezone.utc).isoformat(),
-                    metadata=metadata,
-                ))
-            messages.sort(key=lambda message: message.created_at)
-        return messages if limit is None else messages[-limit:]
+        return self._project_messages_from_thread(session_id, limit)
 
     def _project_messages_from_thread(
         self, session_id: str, limit: Optional[int]
     ) -> List[Message]:
-        """Build compatibility display rows when the projection file is absent."""
+        """Build display rows from canonical thread items."""
         items = self.thread_log(session_id).read()
         starts = [item for item in items if item.type == "turn_start"]
         rows: List[Message] = []
@@ -277,6 +196,7 @@ class SessionStore:
                     if isinstance(input_id, str) and input_id:
                         metadata["queued_input_id"] = input_id
                     rows.append(Message(
+                        message_id=f"{session_id}:{item.seq}",
                         session_id=session_id,
                         role="user",
                         content=item.get("content") or "",
@@ -285,24 +205,28 @@ class SessionStore:
                     ))
             else:
                 prompt = start.get("prompt")
-                if isinstance(prompt, str):
+                if isinstance(prompt, str) and prompt:
                     rows.append(Message(
                         session_id=session_id,
                         role="user",
                         content=prompt,
                         created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
                     ))
+            for item in turn_items:
+                if item.type == "inject" and item.get("role") == "system":
+                    rows.append(Message(message_id=f"{session_id}:{item.seq}", session_id=session_id,
+                                        role="system", content=item.get("content") or ""))
             projection = project_turn(items, start.turn_id)
-            if projection.content is None and projection.status is None:
+            if projection.status is None or projection.content is None:
                 continue
             rows.append(Message(
+                message_id=f"{session_id}:{start.turn_id}:reply",
                 session_id=session_id,
                 role="assistant",
                 content=projection.content or "",
                 linked_attempt_id=start.turn_id,
                 created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
-                metadata={"status": projection.status} if projection.status else {},
-                tool_trail=projection.tool_trail,
+                metadata={**projection.metadata, **({"status": projection.status} if projection.status else {})},
             ))
         if not starts:
             # A task can be accepted before its worker gets a chance to open
@@ -394,52 +318,17 @@ class SessionStore:
         Returns:
             The linked message, or None when the reply is not in the log.
         """
-        for message in reversed(self.get_messages(session_id, limit=1_000_000)):
-            if message.linked_attempt_id == attempt_id:
-                return message
-        return None
-
-    # ---- Streaming Response Checkpoints ----
-
-    def save_partial_response(
-        self, session_id: str, attempt_id: str, content: str
-    ) -> None:
-        """Atomically persist the current streamed assistant text.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-            content: Assistant text accumulated so far.
-        """
-        self._write_json(
-            self._partial_response_file(session_id, attempt_id),
-            {"content": content},
-        )
-
-    def get_partial_response(self, session_id: str, attempt_id: str) -> Optional[str]:
-        """Read a streamed assistant response checkpoint.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-
-        Returns:
-            Saved response text, or None when no checkpoint exists.
-        """
-        data = self._read_json(self._partial_response_file(session_id, attempt_id))
-        if not isinstance(data, dict):
+        items = self.thread_log(session_id).read()
+        projection = project_turn(items, attempt_id)
+        if projection.status is None:
             return None
-        content = data.get("content")
-        return content if isinstance(content, str) else None
-
-    def delete_partial_response(self, session_id: str, attempt_id: str) -> None:
-        """Remove a response checkpoint after the attempt becomes terminal.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-        """
-        self._partial_response_file(session_id, attempt_id).unlink(missing_ok=True)
+        return Message(
+            session_id=session_id,
+            role="assistant",
+            content=projection.content or "",
+            linked_attempt_id=attempt_id,
+            metadata={**projection.metadata, **({"status": projection.status} if projection.status else {})},
+        )
 
     # ---- IO Helpers ----
 

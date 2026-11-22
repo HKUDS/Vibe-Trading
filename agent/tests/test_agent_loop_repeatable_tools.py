@@ -11,7 +11,7 @@ import pytest
 from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
 from src.agent.tools import ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 from src.tools.fund_flow_tool import FundFlowTool
 from src.tools.get_fundamentals_tool import GetFundamentalsTool
 from src.tools.market_data_tool import MarketDataTool
@@ -85,27 +85,19 @@ def test_repeatable_query_executes_again_with_different_arguments(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict[str, object]] = []
-    react_trace: list[dict[str, object]] = []
 
     for iteration, (call_id, arguments) in enumerate(
         (("call_first", first_args), ("call_second", second_args)), start=1
     ):
-        agent._process_tool_calls(
-            [
+        run_recorded_tools(agent, [
                 SimpleNamespace(
                     id=call_id,
                     name=tool.name,
                     arguments=arguments,
                 )
-            ],
-            ContextBuilder,
-            messages,
-            trace,
-            react_trace,
-            iteration,
-        )
+            ], ContextBuilder, messages, trace, iteration)
     trace.close()
 
     assert [
@@ -114,7 +106,7 @@ def test_repeatable_query_executes_again_with_different_arguments(
     ] == [first_args, second_args]
     assert len(messages) == 2
     assert not any(
-        event["type"] == "tool_skipped" for event in TraceWriter.read(run_dir)
+        event["type"] == "tool_skipped" for event in records_at(run_dir)
     )
 
 
@@ -147,20 +139,12 @@ def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict[str, object]] = []
-    react_trace: list[dict[str, object]] = []
     args = {"code": "600584.SH"}
 
     def _call(call_id: str, iteration: int) -> None:
-        agent._process_tool_calls(
-            [SimpleNamespace(id=call_id, name=tool.name, arguments=dict(args))],
-            ContextBuilder,
-            messages,
-            trace,
-            react_trace,
-            iteration,
-        )
+        run_recorded_tools(agent, [SimpleNamespace(id=call_id, name=tool.name, arguments=dict(args))], ContextBuilder, messages, trace, iteration)
 
     _call("call_1", 1)
     assert len(calls) == 1, "first call must execute"
@@ -182,7 +166,7 @@ def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path:
     trace.close()
 
     assert len(calls) == 1, "cleared readonly evidence must be restored without a second fetch"
-    events = TraceWriter.read(run_dir)
+    events = records_at(run_dir)
     assert any(e["type"] == "microcompact_cleared" for e in events), (
         "the clear must leave a trace event"
     )

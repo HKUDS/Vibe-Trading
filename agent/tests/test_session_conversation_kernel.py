@@ -26,8 +26,7 @@ from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus
 from src.session.service import STOPPED_MARKER, SessionService
 from src.session.store import SessionStore
-from src.session.models import Message
-from src.session.thread import INTERRUPTED_RESULT_CONTENT, STOPPED_TURN_NOTES
+from src.session.thread import project_turn, INTERRUPTED_RESULT_CONTENT, STOPPED_TURN_NOTES
 from src.tools.read_file_tool import ReadFileTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 
@@ -409,7 +408,7 @@ def test_cancel_keeps_finished_results_and_the_next_turn_sees_them_with_a_note(t
         reply = service.store.get_messages(session.session_id)[-1]
         assert reply.metadata["status"] == "cancelled"
         assert reply.content == f"Two of three markets are loaded\n\n{STOPPED_MARKER}"
-        assert [e["call_id"] for e in reply.tool_trail] == ["c-first"]
+        assert [e["call_id"] for e in project_turn(service.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results] == ["c-first"]
         follow_up = await _send(service, session.session_id, "continue")
         return cancelled, follow_up
 
@@ -463,7 +462,7 @@ def test_crash_mid_tool_then_restart_closes_the_turn_and_keeps_finished_results(
     assert items[-1].type == "turn_end" and items[-1].get("status") == "interrupted"
     reply = restarted.store.get_message_for_attempt(sid, crashed)
     assert reply.metadata["status"] == "interrupted"
-    assert {e["call_id"]: e["status"] for e in reply.tool_trail} == {"c-read": "ok", "c-write": "error"}
+    assert {e["call_id"]: e["status"] for e in project_turn(service.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results} == {"c-read": "ok", "c-write": "error"}
 
     async def follow_up() -> None:
         await _send(restarted, sid, "What happened?")
@@ -487,7 +486,7 @@ def test_crash_mid_tool_then_restart_closes_the_turn_and_keeps_finished_results(
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_session_falls_back_to_text_history_and_keeps_it_after_the_thread_starts(tmp_path, monkeypatch):
+def test_migrated_session_replays_history_and_keeps_it_after_new_turns(tmp_path, monkeypatch):
     def policy(llm, messages, tools, on_text):
         del tools, on_text
         return _response(content=f"answer {len(llm.requests)}")
@@ -497,12 +496,11 @@ def test_legacy_session_falls_back_to_text_history_and_keeps_it_after_the_thread
     session = service.create_session(title="legacy")
     sid = session.session_id
     run_id = "20261026_230021_46_a7d6f2"
-    service.store.append_message(Message(session_id=sid, role="user", content="backtest AAPL",
-                                         created_at="2026-10-26T23:00:00+00:00"))
-    service.store.append_message(Message(session_id=sid, role="assistant", content="done",
-                                         metadata={"run_id": run_id}, linked_attempt_id="old",
-                                         created_at="2026-10-26T23:01:00+00:00"))
-    assert not service.store.thread_path(sid).exists()
+    log = service.store.thread_log(sid)
+    log.append("turn_start", "old", prompt="backtest AAPL")
+    log.append("user", "old", content="backtest AAPL", llm_content="backtest AAPL")
+    log.append("assistant", "old", content=f"[prev_run: {run_id}]\ndone", phase="final")
+    log.append("turn_end", "old", status="completed")
 
     async def scenario() -> None:
         await _send(service, sid, "deeper")
@@ -567,8 +565,8 @@ def test_projected_row_has_the_pre_change_shape_and_matches_the_live_events(tmp_
         for e in events
         if e.event_type == "item.completed" and e.data.get("kind") == "tool.completed"
     }
-    assert [e["call_id"] for e in reply.tool_trail] == ["c1", "c2"]
-    for entry in reply.tool_trail:
+    assert [e["call_id"] for e in project_turn(service.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results] == ["c1", "c2"]
+    for entry in project_turn(service.store.thread_log(reply.session_id).read(), reply.linked_attempt_id).tool_results:
         assert set(entry) == {"tool", "status", "arguments", "timestamp", "call_id", "elapsed_ms", "preview"}
         live_call, live_result = calls[entry["call_id"]], results[entry["call_id"]]
         assert entry["tool"] == live_call["name"]

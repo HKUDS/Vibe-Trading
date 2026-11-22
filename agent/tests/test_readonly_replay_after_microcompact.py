@@ -16,7 +16,7 @@ from src.agent.loop import (
 )
 from src.agent.tool_progress import NO_PROGRESS_LIMIT, ToolProgress
 from src.providers.chat import LLMResponse, ToolCallRequest
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at
 from src.tools.web_reader_tool import WebReaderTool
 
 
@@ -127,8 +127,7 @@ def test_replay_restores_result_without_external_execution():
     tc = SimpleNamespace(name="read_url", arguments=args, id="replay-1")
     messages = []
     trace = _Trace()
-    react_trace = []
-    loop._process_tool_calls([tc], _Context(), messages, trace, react_trace, 22)
+    loop._process_tool_calls([tc], _Context(), messages, trace, 22)
     assert registry.execute_calls == 0
     replayed_payload = __import__("json").loads(messages[-1]["content"])
     assert replayed_payload["status"] == "ok"
@@ -250,13 +249,13 @@ def test_agent_loop_sends_replay_before_consuming_its_visibility_lease(
     assert "metric_beta" in delivered["content"]
     assert loop._readonly_replay_visibility_pending == set()
 
-    events = TraceWriter.read(run_dir)
+    events = records_at(run_dir)
     assert sum(event["type"] == "tool_result_replayed" for event in events) == 1
     assert sum(event["type"] == "replay_visibility_consumed" for event in events) == 1
 
     # The successful third request consumed the one-decision lease. A later
     # ordinary Layer 1 pass can now clear the replay behind KEEP_RECENT tools.
-    post_request_trace = TraceWriter(run_dir)
+    post_request_trace = recorder_at(run_dir)
     loop._microcompact_and_unblock(llm._last_messages, post_request_trace, 4)
     post_request_trace.close()
     delivered_after = next(
@@ -317,15 +316,14 @@ def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_pro
     args = {"url": "https://example.test/report"}
     messages = []
     trace = _Trace()
-    react_trace = []
 
     tc1 = SimpleNamespace(name="read_url", arguments=args, id="call-1")
-    loop._process_tool_calls([tc1], _Context(), messages, trace, react_trace, 1)
+    loop._process_tool_calls([tc1], _Context(), messages, trace, 1)
     assert registry.execute_calls == 1
 
     # Before compaction loss, repeatable keeps its ordinary refresh semantics.
     tc2 = SimpleNamespace(name="read_url", arguments=args, id="call-2")
-    loop._process_tool_calls([tc2], _Context(), messages, trace, react_trace, 2)
+    loop._process_tool_calls([tc2], _Context(), messages, trace, 2)
     assert registry.execute_calls == 2
 
     key = loop._identical_call_key("read_url", args)
@@ -338,7 +336,7 @@ def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_pro
     # First exact call after loss is restored from the run-scoped cache, and
     # only a restored key is protected against an immediate re-fetch.
     tc3 = SimpleNamespace(name="read_url", arguments=args, id="call-3")
-    loop._process_tool_calls([tc3], _Context(), messages, trace, react_trace, 3)
+    loop._process_tool_calls([tc3], _Context(), messages, trace, 3)
     assert registry.execute_calls == 2
     assert key not in loop._readonly_replay_ready
     assert key in loop._readonly_replay_protected
@@ -348,7 +346,7 @@ def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_pro
     # restored result is already visible, so the exact-call protection gate
     # returns a synthetic skip and tells the planner to continue with it.
     tc4 = SimpleNamespace(name="read_url", arguments=args, id="call-4")
-    loop._process_tool_calls([tc4], _Context(), messages, trace, react_trace, 4)
+    loop._process_tool_calls([tc4], _Context(), messages, trace, 4)
     assert registry.execute_calls == 2
     assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
     assert messages[-1]["content"]
@@ -359,7 +357,7 @@ def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_pro
     # more without a network fetch.
     loop._unblock_lost_readonly_results([], {key})
     tc5 = SimpleNamespace(name="read_url", arguments=args, id="call-5")
-    loop._process_tool_calls([tc5], _Context(), messages, trace, react_trace, 5)
+    loop._process_tool_calls([tc5], _Context(), messages, trace, 5)
     assert registry.execute_calls == 2
     assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 2
 
@@ -375,7 +373,7 @@ def test_no_cache_executes_externally_even_after_normal_read_is_protected():
 
     fresh_args = {"url": "https://example.test/report", "no_cache": True}
     tc = SimpleNamespace(name="read_url", arguments=fresh_args, id="fresh-1")
-    loop._process_tool_calls([tc], _Context(), [], _Trace(), [], 6)
+    loop._process_tool_calls([tc], _Context(), [], _Trace(), 6)
     assert registry.execute_calls == 1
     assert loop._readonly_replay_visibility_pending == set()
 
@@ -394,7 +392,7 @@ def test_different_repeatable_arguments_still_execute_externally_after_protectio
         arguments={"url": "https://example.test/b"},
         id="different-1",
     )
-    loop._process_tool_calls([tc], _Context(), [], _Trace(), [], 7)
+    loop._process_tool_calls([tc], _Context(), [], _Trace(), 7)
     assert registry.execute_calls == 1
 
 
@@ -448,7 +446,7 @@ def test_past_the_replay_budget_a_lost_call_runs_again() -> None:
     messages = []
     trace = _Trace()
     tc = SimpleNamespace(name="read_url", arguments=args, id="budget-exhausted")
-    loop._process_tool_calls([tc], _Context(), messages, trace, [], 9)
+    loop._process_tool_calls([tc], _Context(), messages, trace, 9)
 
     assert registry.execute_calls == 1
     assert "skipped" not in messages[-1]["content"]
@@ -463,13 +461,13 @@ def test_a_first_loss_after_the_budget_is_spent_elsewhere_runs_again() -> None:
     registry = _Registry()
     loop = _loop(registry)
     args = {"symbol": "600519.SH"}
-    loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id="n1")], _Context(), [], _Trace(), [], 1)
+    loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id="n1")], _Context(), [], _Trace(), 1)
     key = loop._identical_call_key("get_stock_news", args)
     loop._readonly_replay_recoveries = MAX_READONLY_REPLAY_RECOVERIES
 
     assert loop._unblock_lost_readonly_results([], {key}) == ["get_stock_news"]
     messages = []
-    loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id="n2")], _Context(), messages, _Trace(), [], 2)
+    loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id="n2")], _Context(), messages, _Trace(), 2)
 
     assert registry.execute_calls == 2
     assert "skipped" not in messages[-1]["content"]
@@ -482,13 +480,13 @@ def test_one_compaction_cannot_replay_past_the_budget() -> None:
     loop = _loop(registry)
     calls = [{"symbol": f"S{i}"} for i in range(4)]
     for i, args in enumerate(calls):
-        loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id=f"s{i}")], _Context(), [], _Trace(), [], 1)
+        loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id=f"s{i}")], _Context(), [], _Trace(), 1)
     loop._readonly_replay_recoveries = MAX_READONLY_REPLAY_RECOVERIES - 1
     loop._unblock_lost_readonly_results([], {loop._identical_call_key("get_stock_news", a) for a in calls})
 
     trace = _Trace()
     for i, args in enumerate(calls):
-        loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id=f"r{i}")], _Context(), [], trace, [], 2)
+        loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id=f"r{i}")], _Context(), [], trace, 2)
 
     assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
     assert registry.execute_calls == 4 + 3
@@ -521,17 +519,14 @@ def test_a_write_makes_earlier_readonly_results_unreplayable() -> None:
     registry = _ReadAndWriteRegistry()
     loop = _loop(registry)
     read = {"factor_csv": "factor.csv"}
-    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), [], 1)
-    loop._process_tool_calls(
-        [SimpleNamespace(name="bash", arguments={"command": "python make_factor.py"}, id="w1")],
-        _Context(), [], _Trace(), [], 2,
-    )
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), 1)
+    loop._process_tool_calls([SimpleNamespace(name="bash", arguments={"command": "python make_factor.py"}, id="w1")], _Context(), [], _Trace(), 2)
     assert loop._readonly_replay_visibility_pending == set()
     key = loop._identical_call_key("factor_analysis", read)
     loop._unblock_lost_readonly_results([], {key})
 
     messages = []
-    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), [], 3)
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), 3)
 
     assert json.loads(messages[-1]["content"])["version"] == "v2"
     assert "_vibe_replay" not in messages[-1]["content"]
@@ -542,11 +537,11 @@ def test_without_a_write_the_lost_result_is_restored() -> None:
     registry = _ReadAndWriteRegistry()
     loop = _loop(registry)
     read = {"factor_csv": "factor.csv"}
-    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), [], 1)
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), 1)
     loop._unblock_lost_readonly_results([], {loop._identical_call_key("factor_analysis", read)})
 
     messages = []
-    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), [], 2)
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), 2)
 
     assert registry.execute_calls == 1
     assert "_vibe_replay" in messages[-1]["content"]

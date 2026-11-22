@@ -31,18 +31,14 @@ class _FakeEventBus:
         self.cleared.append(session_id)
 
 
-class _FakeStore:
-    def __init__(self):
-        self.messages = []
-
-    def append_message(self, message):
-        self.messages.append(message)
-
-
 class _FakeSessionService:
     def __init__(self, events):
         self.event_bus = _FakeEventBus(events)
-        self.store = _FakeStore()
+        import tempfile
+        from pathlib import Path
+        from src.session.store import SessionStore
+        self._temp = tempfile.TemporaryDirectory()
+        self.store = SessionStore(Path(self._temp.name))
         self._sessions = {}
         self.sent = []
         self._counter = 0
@@ -148,7 +144,7 @@ def test_full_supplied_history_is_replayed_on_every_request():
     ]
     asyncio.run(_collect(adapter.handle_query(_request(history))))
 
-    replayed = [(m.role, m.content) for m in service.store.messages]
+    replayed = [(m.role, m.content) for m in service.store.get_messages("sess-1", limit=None)]
     assert replayed == [
         ("user", "first question"),
         ("assistant", "first answer"),
@@ -173,7 +169,7 @@ def test_tool_messages_are_not_replayed_as_turns():
     ]
     asyncio.run(_collect(adapter.handle_query(_request(messages))))
 
-    assert [m.role for m in service.store.messages] == ["user"]
+    assert [m.role for m in service.store.get_messages("sess-1", limit=None)] == ["user"]
 
 
 def test_event_buffer_is_released_after_the_stream_ends():

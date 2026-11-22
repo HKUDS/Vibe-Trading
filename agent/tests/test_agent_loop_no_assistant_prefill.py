@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from src.agent.loop import AgentLoop
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at
 
 
 class _StubLLM:
@@ -139,7 +139,7 @@ def test_auto_compact_handoff_summary_is_reintroduced_as_user_message(
     """Auto-compact used to append a trailing assistant handoff ack."""
     llm = _StubLLM()
     agent = _build_agent(llm, max_iter=1, tmp_run_dir=tmp_path / "run")
-    trace = TraceWriter(tmp_path / "trace")
+    trace = recorder_at(tmp_path / "trace")
     messages = [
         {"role": "system", "content": "system prompt"},
         {"role": "user", "content": "earlier context"},

@@ -74,7 +74,6 @@ from src.agent.context_compact import (  # noqa: F401  (re-exported so loop impo
 )
 from src.agent.tool_progress import ToolProgress
 from src.agent.tools import ToolRegistry
-from src.agent.trace import TraceWriter
 from src.core.state import RunStateStore
 from src.goal.context import get_current_goal_context
 from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError, reported_model_source
@@ -245,6 +244,7 @@ class AgentLoop(ToolCallLifecycle):
                 takes none.
         """
         self._thread = thread_recorder
+        self._owns_recorder = thread_recorder is None
         self._queued_inputs = queued_inputs
         self._conversation = ConversationState(thread_recorder, queued_inputs)
         self._context_compactor = ContextCompactor(self)
@@ -359,13 +359,13 @@ class AgentLoop(ToolCallLifecycle):
         if self._background_manager is not None:
             self._background_manager.cancel_all()
 
-    def _write_run_manifest(self, trace_dir: "Path", messages: List[Dict[str, Any]]) -> None:
+    def _write_run_manifest(self, trace_dir: Path, messages: List[Dict[str, Any]]) -> None:
         """Record what methodology produced this run, beside its trace.
 
         Answers "under what system prompt, which skills, and which tool set was
         that number produced" -- the question a reproducibility review asks and
         that nothing in this repo could previously answer. Written once per run
-        as ``run_manifest.json`` next to ``trace.jsonl``.
+        as ``run_manifest.json`` in the run directory.
 
         The system-prompt hash transitively covers every skill injected at
         context-build time, because those skills ARE part of the prompt string.
@@ -406,7 +406,7 @@ class AgentLoop(ToolCallLifecycle):
                     "skill_coverage": (
                         "skills injected at context-build time are inside the "
                         "hashed system prompt; skills loaded mid-run via "
-                        "load_skill appear in trace.jsonl, not here"
+                        "load_skill are recorded in the conversation thread"
                     ),
                 },
             )
@@ -449,6 +449,14 @@ class AgentLoop(ToolCallLifecycle):
                 self._run_hook(
                     "SessionEnd",
                     {"session_id": getattr(self, "_session_id", "")},
+                )
+            if self._owns_recorder and self._thread is not None:
+                outcome = result or {}
+                self._thread._runtime.finish_turn(
+                    self._thread.turn_id, prompt=user_message,
+                    status={"success": "completed", "waiting_user": "waiting_user", "cancelled": "cancelled"}.get(outcome.get("status"), "failed"),
+                    usage=self._thread.usage, run_dir=outcome.get("run_dir"),
+                    summary=outcome.get("content"), error=outcome.get("reason"),
                 )
             reset_llm_session_id(token)
             if result is None or result.get("status") not in {"success", "waiting_user"}:
@@ -522,12 +530,27 @@ class AgentLoop(ToolCallLifecycle):
             run_dir = state_store.create_run_dir(RUNS_DIR)
             self.memory.run_dir = str(run_dir)
 
+        if self._owns_recorder:
+            from src.session.runtime import SessionRuntime
+            from src.session.thread import ThreadLog
+            import uuid
+
+            record_dir = SESSIONS_DIR / session_id if session_id else run_dir
+            runtime = SessionRuntime(ThreadLog(record_dir / "thread.jsonl"), session_id)
+            self._thread = runtime.begin_turn(uuid.uuid4().hex[:12], [])
+            self._conversation.thread = self._thread
+            self.memory.session_workspace = str(runtime.workspace_path)
+            setattr(self.registry, "session_workspace", self.memory.session_workspace)
+            if self._hooks is not None:
+                self._hooks.set_audit_sink(self._thread)
+
         state_store.save_request(
             run_dir,
             user_message,
             {
                 "session_id": session_id,
                 "session_workspace": self.memory.session_workspace,
+                "turn_id": self._thread.turn_id,
             },
         )
         if self._thread is not None:
@@ -577,27 +600,8 @@ class AgentLoop(ToolCallLifecycle):
             "SessionStart",
             {"session_id": session_id, "attempt_id": getattr(self._thread, "turn_id", "")},
         )
-        trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
-        trace = TraceWriter(trace_dir)
-        self._write_run_manifest(trace_dir, messages)
-        if self._run_iteration == 0 and trace.path.exists():
-            existing = TraceWriter.read(trace_dir)
-            self._run_iteration = max(
-                (int(e.get("iter", 0)) for e in existing if "iter" in e),
-                default=0,
-            )
-        trace.write_text_entry(
-            {"type": "start", "iter": self._run_iteration + 1},
-            field="prompt",
-            value=user_message,
-            offload_kind=f"start-{self._run_iteration + 1}",
-        )
-        trace.write_text_entry(
-            {"type": "message", "iter": self._run_iteration + 1, "role": "user"},
-            field="content",
-            value=user_message,
-            offload_kind=f"user-message-{self._run_iteration + 1}",
-        )
+        self._write_run_manifest(run_dir, messages)
+        trace = self._thread
         prompt_hook = self._run_hook(
             "UserPromptSubmit",
             {"session_id": session_id, "prompt": user_message, "attempt_id": getattr(self._thread, "turn_id", "")},
@@ -605,7 +609,6 @@ class AgentLoop(ToolCallLifecycle):
         if prompt_hook is not None and prompt_hook.denied:
             reason = prompt_hook.reason or "UserPromptSubmit hook denied the prompt"
             trace.write({"type": "end", "iter": self._run_iteration, "status": "failed", "reason": reason})
-            trace.close()
             state_store.mark_failure(run_dir, reason)
             self._end_thread_turn()
             return TurnSetup(
@@ -613,7 +616,7 @@ class AgentLoop(ToolCallLifecycle):
                 denied_result={
                     "status": "failed", "error_code": "hook_denied", "reason": reason,
                     "run_dir": str(run_dir), "run_id": run_dir.name, "content": "",
-                    "react_trace": [], "iterations": 0, "max_iterations": self.max_iterations,
+                    "iterations": 0, "max_iterations": self.max_iterations,
                 },
             )
 
@@ -623,7 +626,7 @@ class AgentLoop(ToolCallLifecycle):
         )
 
     def _configure_turn_control(
-        self, messages: list, run_dir: Path, trace: TraceWriter, context: ContextBuilder,
+        self, messages: list, run_dir: Path, trace: Any, context: ContextBuilder,
         user_message: str, session_id: str, run_started_wall: float,
         state_store: RunStateStore, active_goal_id: str | None, goal_store: Any,
     ) -> TurnSetup:
@@ -677,7 +680,6 @@ class AgentLoop(ToolCallLifecycle):
                 logger.debug("Goal usage accounting skipped: %s", exc)
 
         self._goal_usage_callback = account_goal_usage
-        react_trace: List[Dict[str, Any]] = []
         wrap_up_remaining = _wrap_up_nudge_remaining()
         wrap_up_at = (
             max(2, self.max_iterations - wrap_up_remaining)
@@ -696,7 +698,7 @@ class AgentLoop(ToolCallLifecycle):
 
         state = TurnState(
             messages=messages, run_dir=run_dir, trace=trace, context=context,
-            react_trace=react_trace, user_message=user_message,
+            user_message=user_message,
             run_started_wall=run_started_wall, session_id=session_id,
             state_store=state_store, goal_store=goal_store,
             active_goal_id=active_goal_id, empty_model_response_iter=empty_model_response_iter,
@@ -712,11 +714,10 @@ class AgentLoop(ToolCallLifecycle):
         logger.exception(f"AgentLoop error: {exc}")
         error_code = "provider_stream_error" if isinstance(exc, ProviderStreamError) else "agent_loop_error"
         setup.trace.write({"type": "end", "iter": self._run_iteration, "status": "error", "reason": str(exc), "iterations": state.iteration})
-        setup.trace.close()
         setup.state_store.mark_failure(setup.run_dir, str(exc))
         self._end_thread_turn()
         self._run_done.set()
-        return {"status": "failed", "error_code": error_code, "reason": str(exc), "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "react_trace": state.react_trace, "iterations": state.iteration, "max_iterations": self.max_iterations}
+        return {"status": "failed", "error_code": error_code, "reason": str(exc), "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "iterations": state.iteration, "max_iterations": self.max_iterations}
 
     def _complete_turn(self, setup: TurnSetup) -> Dict[str, Any]:
         """Resolve status, persist the terminal state, and return the result."""
@@ -734,7 +735,6 @@ class AgentLoop(ToolCallLifecycle):
         empty_model_response_iter = state.empty_model_response_iter
         truncation_reason = state.truncation_reason
         last_response_model = state.last_response_model
-        react_trace = state.react_trace
         # Determine final status. The reason is also propagated into the
         # returned dict so SessionService can surface a meaningful UI
         # message instead of "Execution failed: unknown" (issue #114).
@@ -773,12 +773,10 @@ class AgentLoop(ToolCallLifecycle):
             self._released_fallback = True
 
         trace.write(build_end_event(outcome, self._run_iteration, iteration))
-        trace.close()
 
         result = build_result_dict(
             outcome,
             run_dir,
-            react_trace,
             iteration,
             self.max_iterations,
             final_content,
@@ -788,6 +786,7 @@ class AgentLoop(ToolCallLifecycle):
         )
 
         self._end_thread_turn()
+        result["tool_count"] = sum(item.type == "tool_result" for item in self._thread._runtime.thread.turn_items(self._thread.turn_id))
         self._run_done.set()
 
         return result
@@ -803,7 +802,7 @@ class AgentLoop(ToolCallLifecycle):
         """
         self._conversation.inject(messages, content, self._turn_messages)
 
-    def _take_queued_inputs(self, messages: list, trace: TraceWriter, current_iter: int) -> None:
+    def _take_queued_inputs(self, messages: list, trace: Any, current_iter: int) -> None:
         """Append the user messages sent while this turn was running.
 
         The one point a queued input enters a running turn: its tool batch has
@@ -852,7 +851,7 @@ class AgentLoop(ToolCallLifecycle):
 
     def _stall_watchdog(
         self,
-        trace: TraceWriter,
+        trace: Any,
         run_dir: Path,
         state_store: Any,
         stall_timeout: float,
@@ -953,15 +952,15 @@ class AgentLoop(ToolCallLifecycle):
         """Return the next request's measured token count."""
         return self._context_compactor._prompt_tokens(messages)
 
-    def _compact_to_budget(self, messages: list, run_dir: Path, trace: TraceWriter, iteration: int, current_iter: int, *, force: bool = False) -> None:
+    def _compact_to_budget(self, messages: list, run_dir: Path, trace: Any, iteration: int, current_iter: int, *, force: bool = False) -> None:
         """Apply context compaction layers through the composed component."""
         self._context_compactor._compact_to_budget(messages, run_dir, trace, iteration, current_iter, force=force)
 
-    def _recover_context_overflow(self, exc: Exception, messages: list, run_dir: Path, trace: TraceWriter, iteration: int, current_iter: int) -> None:
+    def _recover_context_overflow(self, exc: Exception, messages: list, run_dir: Path, trace: Any, iteration: int, current_iter: int) -> None:
         """Learn a provider-reported window and compact to it."""
         self._context_compactor._recover_context_overflow(exc, messages, run_dir, trace, iteration, current_iter)
 
-    def _microcompact_and_unblock(self, messages: list, trace: TraceWriter, iteration: int, *, target_tokens: Optional[int] = None, measure: Optional[Callable[[list], int]] = None, preserve_tool_call_ids: Optional[set[str]] = None) -> list[str]:
+    def _microcompact_and_unblock(self, messages: list, trace: Any, iteration: int, *, target_tokens: Optional[int] = None, measure: Optional[Callable[[list], int]] = None, preserve_tool_call_ids: Optional[set[str]] = None) -> list[str]:
         """Apply layer-one compaction and reopen lost readonly calls."""
         return self._context_compactor._microcompact_and_unblock(messages, trace, iteration, target_tokens=target_tokens, measure=measure, preserve_tool_call_ids=preserve_tool_call_ids)
 
@@ -976,7 +975,7 @@ class AgentLoop(ToolCallLifecycle):
             self._context_compactor = compactor
         compactor._record_compaction_layer(messages, layer, before)
 
-    def _auto_compact(self, messages: list, run_dir: Path, trace: TraceWriter, focus_topic: str = "", iteration: int = 0) -> None:
+    def _auto_compact(self, messages: list, run_dir: Path, trace: Any, focus_topic: str = "", iteration: int = 0) -> None:
         """Run structured or degraded compaction through the context component."""
         self._context_compactor.auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=iteration)
 

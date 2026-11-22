@@ -11,6 +11,8 @@ session is misread as a manual rename and keeps its raw truncated prompt
 forever (CONTRIBUTING.md:36-37).
 """
 
+from tests.recording_helpers import seed_message
+
 import asyncio
 import json
 import sys
@@ -108,17 +110,13 @@ def _seed_web_chat_session(service, index, *, wrapped: str, title: str):
     session = service.create_session(title=title[:50])
     # The auto-title route reads a real stored user message; it is admitted
     # directly so no agent or provider runs during setup.
-    service.store.append_message(
-        Message(session_id=session.session_id, role="user", content=wrapped)
-    )
+    seed_message(service.store, Message(session_id=session.session_id, role="user", content=wrapped))
     index.index_message(session.session_id, "user", wrapped)
-    service.store.append_message(
-        Message(
+    seed_message(service.store, Message(
             session_id=session.session_id,
             role="assistant",
             content="Realized vol is 18% annualized over the trailing quarter.",
-        )
-    )
+        ))
     return session
 
 
@@ -202,4 +200,3 @@ def test_auto_title_preserves_manual_rename_on_wrapped_session(
     assert (
         service.store.get_session(session.session_id).title == "Manual protected title"
     )
-

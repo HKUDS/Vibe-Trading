@@ -18,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.session.events import SSEEvent, display_page
+from src.session.events import display_page
 from src.session.pending_inputs import PendingInputLimitError
 from src.session.service import SessionBusyError
 
@@ -146,7 +146,6 @@ class MessageResponse(BaseModel):
     created_at: str
     linked_attempt_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-    tool_trail: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ThreadPageResponse(BaseModel):
@@ -1098,7 +1097,6 @@ def register_sessions_routes(app: FastAPI) -> None:
                 created_at=m.created_at,
                 linked_attempt_id=m.linked_attempt_id,
                 metadata=m.metadata if m.metadata else None,
-                tool_trail=m.tool_trail,
             )
             for m in messages
         ]

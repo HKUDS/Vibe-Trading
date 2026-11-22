@@ -110,7 +110,7 @@ def test_catalog_includes_research_runs_without_backtest_config(isolated):
     root = isolated / "research-run"
     root.mkdir()
     (root / "req.json").write_text('{"prompt":"task"}')
-    (root / "trace.jsonl").write_text("{}\n")
+    (root / "thread.jsonl").write_text("{}\n")
     row = service.catalog()["runs"][0]
     assert row["id"] == "research-run"
     assert row["has_trace"] and not row["has_prices"]
