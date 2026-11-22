@@ -135,7 +135,7 @@ export function OptionsLab() {
     if (!result || !resultRequest) return;
     try {
       const json = format === "json";
-      const content = json ? buildOptionsAnalysisJson(resultRequest, result) : buildOptionsScenarioCsv(result);
+      const content = json ? buildOptionsAnalysisJson(resultRequest, result) : buildOptionsScenarioCsv(result, resultRequest);
       const blob = new Blob([content], { type: json ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
