@@ -578,16 +578,12 @@ class ScheduledResearchExecutor:
             return 0
 
         changed = 0
-        now = self._now_fn()
-        for job_id in list(self._store.load()):
-            # Read each job when its turn comes, not from one snapshot taken up
-            # front: the sends below are awaited, and a kernel tick or a PATCH
-            # can rewrite any job meanwhile. Writing a pre-await copy back
-            # would roll those changes back (an old next_run_at re-fires the
-            # job; an old delivery row resurrects the previous firing).
-            job = self._store.get(job_id)
+        jobs = self._store.load()
+        for job_id in tuple(jobs):
+            job = jobs.get(job_id)
             if job is None or not job.delivery.session_id:
                 continue
+            now = self._now_fn()
             if job.delivery.status is DeliveryStatus.NONE:
                 # No briefing is owed to a channel, but this sweep is the only
                 # terminal-observer a channel-less monitor has: read the run's
@@ -627,48 +623,57 @@ class ScheduledResearchExecutor:
             current = self._store.get(job.id)
             if current is None or current.delivery.key != job.delivery.key:
                 continue
+            now = self._now_fn()
             if not self._delivery_is_eligible(current, now):
                 continue
             current.delivery.status = DeliveryStatus.SENDING
             current.delivery.updated_at = now
             self._store.upsert(current, validate=False)
 
+            receipt = None
+            send_error: Exception | None = None
             try:
-                if job.protect_pdf:
+                if current.protect_pdf:
                     receipt = await self._channel_sender(
-                        job.delivery_channel,
-                        job.delivery_target,
+                        current.delivery_channel,
+                        current.delivery_target,
                         text,
-                        job.delivery_format,
+                        current.delivery_format,
                         True,
                     )
-                elif job.delivery_format is None:
+                elif current.delivery_format is None:
                     receipt = await self._channel_sender(
-                        job.delivery_channel, job.delivery_target, text
+                        current.delivery_channel, current.delivery_target, text
                     )
                 else:
                     receipt = await self._channel_sender(
-                        job.delivery_channel,
-                        job.delivery_target,
+                        current.delivery_channel,
+                        current.delivery_target,
                         text,
-                        job.delivery_format,
+                        current.delivery_format,
                     )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error("briefing delivery failed for job %s", job.id, exc_info=True)
-                latest = self._reload_claimed(current)
-                if latest is not None:
-                    self._mark_delivery_failed(latest, exc, retryable=True)
-                    changed += 1
-                continue
+                send_error = exc
 
-            # The send was awaited: record its outcome on the job as it is now,
-            # so an edit or reschedule that landed during the send is kept.
-            latest = self._reload_claimed(current)
-            if latest is None:
+            # The catalog may have changed while the send yielded control.
+            # Refresh both this delivery and the remaining jobs in this sweep.
+            jobs = self._store.load()
+            latest = jobs.get(job_id)
+            if (
+                latest is None
+                or latest.delivery.key != current.delivery.key
+                or latest.delivery.status is not DeliveryStatus.SENDING
+                or latest.delivery.updated_at != current.delivery.updated_at
+            ):
                 continue
             current = latest
+            if send_error is not None:
+                self._mark_delivery_failed(current, send_error, retryable=True)
+                changed += 1
+                continue
             if receipt is None:
                 # Compatibility for pre-receipt injected senders used by
                 # embedders and older tests. Production adapters always return
@@ -693,24 +698,6 @@ class ScheduledResearchExecutor:
             self._store.upsert(current, validate=False)
             changed += 1
         return changed
-
-    def _reload_claimed(
-        self, claimed: ScheduledResearchJob
-    ) -> ScheduledResearchJob | None:
-        """Re-read a job whose delivery was claimed before an awaited send.
-
-        Returns:
-            The current record if this send still owns the delivery lease.
-        """
-        current = self._store.get(claimed.id)
-        if (
-            current is None
-            or current.delivery.key != claimed.delivery.key
-            or current.delivery.status is not DeliveryStatus.SENDING
-            or current.delivery.updated_at != claimed.delivery.updated_at
-        ):
-            return None
-        return current
 
     def _record_verdict_on(
         self, job: ScheduledResearchJob, session_id: str, text: str, now_ms: int

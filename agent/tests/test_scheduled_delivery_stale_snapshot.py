@@ -195,6 +195,56 @@ def test_late_send_result_does_not_replace_a_new_claim_for_the_same_delivery(tmp
     assert store.get("a").delivery.status is DeliveryStatus.SENT
 
 
+def test_each_send_gets_a_fresh_lease_after_a_slow_delivery(tmp_path):
+    store = ScheduledResearchJobStore(tmp_path / "jobs.json")
+    store.save({
+        job_id: _job(
+            job_id, delivery_channel="telegram", delivery_target=job_id,
+            delivery=_pending_delivery(job_id, f"S{job_id}"),
+        )
+        for job_id in ("a", "b")
+    })
+
+    async def scenario() -> None:
+        now = NOW
+        second_send = _BlockingSender()
+
+        async def sender(channel, target, text):
+            nonlocal now
+            if target == "a":
+                now += HOUR_MS
+                return None
+            return await second_send(channel, target, text)
+
+        executor = _executor(store, sender, now_fn=lambda: now)
+        sweep = asyncio.create_task(executor.sweep_deliveries())
+        try:
+            await asyncio.wait_for(second_send.started.wait(), timeout=2)
+            assert store.get("b").delivery.updated_at == now
+            assert await executor.sweep_deliveries() == 0
+        finally:
+            second_send.release.set()
+            await sweep
+
+    asyncio.run(scenario())
+    assert store.get("b").delivery.status is DeliveryStatus.SENT
+
+
+def test_idle_sweep_loads_the_catalog_once(tmp_path, monkeypatch):
+    store = ScheduledResearchJobStore(tmp_path / "jobs.json")
+    store.save({job_id: _job(job_id) for job_id in ("a", "b", "c")})
+    original_load = store.load
+    loads = []
+
+    def load():
+        loads.append(1)
+        return original_load()
+
+    monkeypatch.setattr(store, "load", load)
+    assert asyncio.run(_executor(store, None).sweep_deliveries()) == 0
+    assert loads == [1]
+
+
 def test_sweep_does_not_resurrect_a_job_deleted_while_its_briefing_was_sent(
     tmp_path: Path,
 ) -> None:
