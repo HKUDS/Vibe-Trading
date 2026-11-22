@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.presets import build_run_from_preset
 from src.swarm.worker import run_worker
 import src.swarm.worker as worker

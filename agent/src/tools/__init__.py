@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.hooks import HookManager, load_hooks
+from src.product.resources.hooks import HookManager, load_hooks
 from src.tools.sandbox import SandboxSettings
 
 if TYPE_CHECKING:
@@ -71,7 +71,7 @@ def _discover_subclasses() -> list[type[BaseTool]]:
         module_name = str(getattr(cls, "__module__", ""))
         if cls.name and (
             module_name.startswith("src.tools.")
-            or module_name == "src.agent.tool_loading"
+            or module_name == "src.product.tool_loading"
         ):
             classes.append(cls)
         queue.extend(cls.__subclasses__())
@@ -175,7 +175,7 @@ def build_registry(
             start. When omitted the scope is derived from ``session_id``, or is
             private to this registry when there is no session either. The
             resolved handle is exposed as ``registry.background`` so the host
-            can give the same one to ``AgentLoop`` and keep task results and
+            can give the same one to ``AgentRuntime`` and keep task results and
             completion notifications inside one conversation.
 
     Returns:

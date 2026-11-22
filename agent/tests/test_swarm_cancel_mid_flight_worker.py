@@ -4,14 +4,14 @@ not just skip layers that have not started yet.
 Pre-fix: cancel_event was threaded from cancel_run() into _execute_run and
 _execute_layer, and polled between layers, but was never passed into
 _run_worker_with_retries or run_worker. A worker already running when
-cancel_run() fired ran to completion untouched, exactly the gap AgentLoop's
+cancel_run() fired ran to completion untouched, exactly the gap AgentRuntime's
 should_cancel mechanism (agent/src/agent/loop.py) already closed for the
 main, non-swarm agent loop.
 
 Post-fix: cancel_event reaches run_worker(), is passed to
 ChatLLM.stream_chat() as should_cancel (interrupting an in-flight LLM
 stream), and is checked at the top of each ReAct iteration and right after
-the stream returns, mirroring AgentLoop's cooperative-cancellation
+the stream returns, mirroring AgentRuntime's cooperative-cancellation
 contract: an in-flight stream stops promptly and that turn's tool calls
 are skipped, but a tool call already executing is not interrupted.
 """

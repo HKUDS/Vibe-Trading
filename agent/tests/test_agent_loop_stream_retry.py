@@ -1,4 +1,4 @@
-"""AgentLoop single stream retry on ProviderStreamError.
+"""AgentRuntime single stream retry on ProviderStreamError.
 
 Mirrors the swarm worker policy: a transient mid-stream failure (connection
 reset, relay hiccup, 5xx) is retried exactly once; a deterministic 4xx fails
@@ -14,7 +14,8 @@ from typing import Any, Callable
 
 
 import src.agent.tuning as tuning_mod
-from src.providers.chat import LLMResponse, ProviderStreamError
+from src.kernel.contracts import LLMResponse
+from src.providers.response import ProviderStreamError
 
 
 class _FlakyLoopLLM:
@@ -112,7 +113,7 @@ def _run(
     llm: _FlakyLoopLLM,
     events: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Run an AgentLoop turn against the given scripted LLM.
+    """Run an AgentRuntime turn against the given scripted LLM.
 
     Args:
         monkeypatch: pytest monkeypatch fixture (zeroes the retry sleep).
@@ -121,15 +122,15 @@ def _run(
         events: Optional event sink collecting ``(event_type, data)`` tuples.
 
     Returns:
-        The AgentLoop result dict.
+        The AgentRuntime result dict.
     """
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 0.0, raising=False)
     pm = PersistentMemory()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(

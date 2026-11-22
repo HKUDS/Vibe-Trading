@@ -19,7 +19,7 @@ from src.channels.manager import ChannelManager
 from src.channels.pairing import PAIRING_COMMAND_META_KEY, handle_pairing_command
 from src.config.paths import get_data_dir
 from src.session.models import Message, Session
-from src.session.service import SessionBusyError
+from src.session.models import SessionBusyError
 
 logger = logging.getLogger(__name__)
 

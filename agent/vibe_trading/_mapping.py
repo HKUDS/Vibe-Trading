@@ -18,6 +18,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Optional
 
+from src.kernel import events as vocabulary
 from vibe_trading.events import (
     Event,
     ReasoningDelta,
@@ -32,7 +33,7 @@ from vibe_trading.events import (
     ToolStarted,
 )
 
-#: Run artifact holding provider-reported usage (``src.agent.llm_usage``).
+#: Run artifact holding provider-reported usage (``src.product.usage``).
 _USAGE_ARTIFACT = "llm_usage.json"
 
 Builder = Callable[[str, str, Mapping[str, Any]], Optional[Event]]
@@ -181,16 +182,16 @@ def _terminal(event_cls: type, status: str) -> Builder:
 #: returning None drops a malformed payload rather than inventing fields.
 EVENT_TABLE: Mapping[str, Builder] = MappingProxyType(
     {
-        "run.started": _run_started,
-        "item.delta:text.delta": _text_delta,
-        "item.delta:text.reset": _text_reset,
-        "item.delta:reasoning.delta": _reasoning_delta,
-        "item.started:tool.started": _tool_started,
-        "item.completed:tool.completed": _tool_finished,
-        "item.completed:tool.failed": _tool_finished,
-        "run.completed": _terminal(RunCompleted, "completed"),
-        "run.failed": _terminal(RunFailed, "failed"),
-        "run.cancelled": _terminal(RunCancelled, "cancelled"),
+        vocabulary.RUN_STARTED: _run_started,
+        f"{vocabulary.ITEM_DELTA}:{vocabulary.TEXT_DELTA}": _text_delta,
+        f"{vocabulary.ITEM_DELTA}:{vocabulary.TEXT_RESET}": _text_reset,
+        f"{vocabulary.ITEM_DELTA}:{vocabulary.REASONING_DELTA}": _reasoning_delta,
+        f"{vocabulary.ITEM_STARTED}:{vocabulary.TOOL_STARTED}": _tool_started,
+        f"{vocabulary.ITEM_COMPLETED}:{vocabulary.TOOL_COMPLETED}": _tool_finished,
+        f"{vocabulary.ITEM_COMPLETED}:{vocabulary.TOOL_FAILED}": _tool_finished,
+        vocabulary.RUN_COMPLETED: _terminal(RunCompleted, "completed"),
+        vocabulary.RUN_FAILED: _terminal(RunFailed, "failed"),
+        vocabulary.RUN_CANCELLED: _terminal(RunCancelled, "cancelled"),
     }
 )
 

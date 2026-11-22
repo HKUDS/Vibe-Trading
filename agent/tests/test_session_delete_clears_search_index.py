@@ -10,7 +10,8 @@ import pytest
 from src.session.events import EventBus
 from src.session.models import Message
 from src.session.search import SessionSearchIndex
-from src.session.service import SessionBusyError, SessionService
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 from src.tools.session_search_tool import SessionSearchTool
 

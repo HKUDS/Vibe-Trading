@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from backtest.loaders.registry import VALID_SOURCES
-from src.agent.progress import emit_progress
+from src.kernel.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT

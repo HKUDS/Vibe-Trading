@@ -7,8 +7,8 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 
-from src.agent.data_window import UserDataWindow
-from src.agent.loop import AgentLoop
+from src.product.data_window import UserDataWindow
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import ToolRegistry
 from src.tools.market_data_tool import MarketDataTool
 from src.tools.technical_indicator_tool import TechnicalIndicatorTool
@@ -68,9 +68,9 @@ def runtime(tmp_path, monkeypatch):
     monkeypatch.setattr('src.tools.market_data_tool.fetch_market_data_json',fetch)
     registry=ToolRegistry()
     registry.register(MarketDataTool())
-    agent=AgentLoop(registry=registry,llm=SimpleNamespace())
+    agent=AgentRuntime(registry=registry,llm=SimpleNamespace())
     agent.memory.run_dir=str(tmp_path)
-    agent._user_data_window=UserDataWindow.parse(PROMPT)
+    agent.tool_env.data_window=UserDataWindow.parse(PROMPT)
     return agent, seen, tmp_path
 
 

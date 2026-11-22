@@ -4,32 +4,23 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.loop import AgentLoop
-from src.agent.loop_directives import WriteTargetState
-from src.agent.memory import WorkspaceMemory
+from src.agent.runtime import AgentRuntime
+from src.product.write_directives import WriteTargetState
+from src.product.resources.memory import WorkspaceMemory
 
 
 def test_successful_strategy_file_write_records_the_active_model(
     tmp_path: Path,
 ) -> None:
-    loop = object.__new__(AgentLoop)
-    loop.memory = WorkspaceMemory(run_dir=str(tmp_path))
-    loop._write_targets = WriteTargetState()
-    loop._active_model_id = "gpt-5.6-luna"
-    loop._active_model_source = "configured"
-    loop._llm_runtime = SimpleNamespace(
-        provider="openai",
-        configured_model="gpt-5.6-luna",
+    targets = WriteTargetState(
+        WorkspaceMemory(run_dir=str(tmp_path)),
+        SimpleNamespace(provider="openai", configured_model="gpt-5.6-luna"), "configured",
     )
-
-    loop._record_written_target({"path": "config.json"})
-    loop._llm_runtime = SimpleNamespace(
-        provider="openrouter",
-        configured_model="anthropic/claude-sonnet",
-    )
-    loop._active_model_id = "claude-sonnet-4-5"
-    loop._active_model_source = "provider_response"
-    loop._record_written_target({"path": "code/signal_engine.py"})
+    targets.record({"path": "config.json"})
+    targets.runtime = SimpleNamespace(provider="openrouter", configured_model="anthropic/claude-sonnet")
+    targets.active_model_id = "claude-sonnet-4-5"
+    targets.active_model_source = "provider_response"
+    targets.record({"path": "code/signal_engine.py"})
 
     provenance = json.loads(
         (tmp_path / "strategy_provenance.json").read_text(encoding="utf-8")
@@ -53,20 +44,20 @@ def test_successful_strategy_file_write_records_the_active_model(
 def test_strategy_file_write_on_a_constructed_loop_records_the_configured_model(
     tmp_path: Path,
 ) -> None:
-    """A real AgentLoop must carry the provenance fields from construction on.
+    """A real AgentRuntime must carry the provenance fields from construction on.
 
     The test above sets them by hand; this one goes through ``__init__`` so a
     loop that never assigns them fails here instead of in a user's backtest.
     """
     from src.agent.tools import ToolRegistry
 
-    loop = AgentLoop(
+    loop = AgentRuntime(
         registry=ToolRegistry(),
         llm=None,
         memory=WorkspaceMemory(run_dir=str(tmp_path)),
     )
 
-    loop._record_written_target({"path": "config.json"})
+    loop._write_targets.record({"path": "config.json"})
 
     provenance = json.loads(
         (tmp_path / "strategy_provenance.json").read_text(encoding="utf-8")
@@ -127,7 +118,7 @@ def test_real_tool_execution_uses_each_responses_model(
     )
     registry = ToolRegistry()
     registry.register(WriteFileTool())
-    loop = AgentLoop(
+    loop = AgentRuntime(
         registry=registry,
         llm=llm,
         memory=WorkspaceMemory(run_dir=str(tmp_path)),

@@ -1,6 +1,6 @@
 """Swarm Worker: standalone worker execution engine with a lightweight ReAct loop.
 
-Uses ChatLLM.chat + manual for-loop directly (without instantiating AgentLoop),
+Uses ChatLLM.chat + manual for-loop directly (without instantiating AgentRuntime),
 keeping the worker self-contained and the agent core unchanged.
 """
 
@@ -14,15 +14,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple, Protocol
 
-from src.agent.context import ContextBuilder
-from src.agent.instructions import build_instruction_block
-from src.agent.llm_usage import _normalize_llm_usage
-from src.agent.progress import HeartbeatTimer
-from src.agent.skills import SkillsLoader
+from src.product.context import ContextBuilder
+from src.product.resources.instructions import build_instruction_block
+from src.product.usage import _normalize_llm_usage
+from src.kernel.progress import HeartbeatTimer
+from src.product.resources.skills import SkillsLoader
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.result_artifacts import deliver_tool_result
+from src.product.result_artifacts import deliver_tool_result
 from src.config.schema import AgentConfig
-from src.providers.chat import ChatLLM, LLMResponse, ProviderStreamError
+from src.kernel.contracts import LLMResponse
+from src.providers.chat import ChatLLM
+from src.providers.response import ProviderStreamError
+from src.providers.messages import repair_provider_messages
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
@@ -207,8 +210,8 @@ def _measure_usage(
     """Return full token usage for a single LLM call, real if available.
 
     Prefers the provider-reported counts attached to the response by
-    :func:`ChatLLM._parse_response` (``usage_metadata``), normalized through
-    :func:`src.agent.llm_usage._normalize_llm_usage` — the exact same
+    :func:`src.providers.response.parse_response` (``usage_metadata``), normalized through
+    :func:`src.product.usage._normalize_llm_usage` — the exact same
     normalization the main agent loop applies behind ``llm_usage.json``, so
     the swarm never grows a second cache-token accounting rule. Falls back to a
     character-length heuristic (``len // 4``) only when the provider didn't
@@ -232,8 +235,6 @@ def _measure_usage(
         report it and the fallback couldn't compute it either (e.g.
         binary content).
     """
-    from src.providers.chat import LLMResponse
-
     if isinstance(response, LLMResponse) and response.usage_metadata:
         normalized = _normalize_llm_usage(response.usage_metadata)
         if normalized is not None:
@@ -891,7 +892,7 @@ def _run_worker_impl(
                 ):
                     try:
                         return llm.stream_chat(
-                            messages,
+                            repair_provider_messages(messages),
                             tools=tool_defs,
                             timeout=remaining_timeout,
                             on_text_chunk=_on_text_chunk,

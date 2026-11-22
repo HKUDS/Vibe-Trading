@@ -4,7 +4,7 @@ Covers ``redact_payload`` (recursive sensitive-key scrubbing),
 ``is_sensitive_arg`` (sink-aware key-name classification) and
 ``redact_tool_result`` (the single tool-result choke point), now consumed by
 the swarm worker, the live-action audit ledger and the agent loop from one
-module. The end-to-end tests at the bottom drive the real ``AgentLoop`` +
+module. The end-to-end tests at the bottom drive the real ``AgentRuntime`` +
 ``TraceWriter`` and assert that a planted secret reaches neither the persisted
 trace nor an event preview.
 """
@@ -18,8 +18,8 @@ from typing import Any
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from tests.recording_helpers import recorder_at, records_at, run_recorded_tool
 from src.tools.redaction import (
     RESULT_SINK,
@@ -361,7 +361,7 @@ def test_redact_tool_result_none_and_empty_safe() -> None:
 
 # --------------------------------------------------------------------------- #
 # End-to-end: a planted secret must reach neither the persisted trace nor an
-# event preview, through the real AgentLoop + TraceWriter.
+# event preview, through the real AgentRuntime + TraceWriter.
 # --------------------------------------------------------------------------- #
 
 _PLAINTEXT_KEY_SECRET = "pk-live-plaintext-9df3"
@@ -401,7 +401,7 @@ def _run_one_tool_call(
     tc: SimpleNamespace,
     run_dir: Path,
 ) -> tuple[list[tuple[str, dict]], list[dict], list[dict]]:
-    """Drive one tool call through ``AgentLoop`` with a real ``TraceWriter``.
+    """Drive one tool call through ``AgentRuntime`` with a real ``TraceWriter``.
 
     Args:
         registry: Stub registry supplying the tool result.
@@ -413,7 +413,7 @@ def _run_one_tool_call(
         LLM-facing message list, and the react trace.
     """
     events: list[tuple[str, dict]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         max_iterations=1,
@@ -439,7 +439,7 @@ def _persisted_text(run_dir: Path) -> str:
 
 def test_tool_progress_redacts_secrets_before_streaming(tmp_path: Path) -> None:
     """Progress crosses the same public boundary as the final tool result."""
-    from src.agent.progress import emit_progress
+    from src.kernel.progress import emit_progress
 
     class ProgressRegistry(_StubRegistry):
         def execute(self, tool_name, args):

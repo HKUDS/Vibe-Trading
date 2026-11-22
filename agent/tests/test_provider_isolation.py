@@ -11,8 +11,12 @@ from dataclasses import FrozenInstanceError
 import pytest
 from pydantic import ValidationError
 
-from src.providers import llm as llm_module
-from src.providers.chat import ChatLLM, ProviderStreamError
+from src.providers.adapters import anthropic as anthropic_adapter
+from src.providers.adapters import common as common_adapter
+from src.providers.adapters import openai as openai_adapter
+from src.providers import request_guards
+from src.providers.chat import ChatLLM
+from src.providers.response import ProviderStreamError
 from src.providers.settings import resolve_config
 from tests.provider_helpers import provider_server as provider_server
 from tests.provider_helpers import assert_stream_tool_roundtrip
@@ -137,8 +141,8 @@ def test_cross_origin_redirect_never_receives_credentials(provider_server, provi
             else:
                 call = client.stream_chat if mode == "stream" else client.chat
                 call([{"role": "user", "content": "private prompt"}])
-        error = llm_module.unwrap_provider_error(failure.value)
-        assert isinstance(error, llm_module.ProviderRedirectError)
+        error = request_guards.unwrap_provider_error(failure.value)
+        assert isinstance(error, request_guards.ProviderRedirectError)
         assert "Configure the final provider base URL" in str(error)
         if mode == "stream":
             assert isinstance(failure.value, ProviderStreamError) and not failure.value.retryable
@@ -178,7 +182,7 @@ def test_stream_errors_keep_original_provider_and_redact_original_key(monkeypatc
 
 def test_learned_rejections_do_not_cross_endpoints_or_protocols():
     first, second = [
-        llm_module.ChatOpenAIWithReasoning(
+        openai_adapter.ChatOpenAIWithReasoning(
             model="same-name",
             api_key="test",
             temperature=0,
@@ -186,16 +190,16 @@ def test_learned_rejections_do_not_cross_endpoints_or_protocols():
         )
         for name in ("first", "second")
     ]
-    llm_module._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+    anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     try:
         error = RuntimeError("`temperature` is deprecated for this model.")
         assert first._remember_temperature_unsupported(error)
         assert not first._remember_temperature_unsupported(error)
         assert "temperature" not in first._get_request_payload("hello")
         assert "temperature" in second._get_request_payload("hello")
-        assert llm_module._endpoint_model(first) != llm_module._endpoint_model(second)
+        assert common_adapter._endpoint_model(first) != common_adapter._endpoint_model(second)
     finally:
-        llm_module._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+        anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
 
 
 @pytest.mark.parametrize("provider,key", [("anthropic", "snapshot-key"), ("deepseek", "snapshot-key"), ("deepseek", "")])
@@ -257,12 +261,12 @@ def test_no_fallback_replays_an_emitted_chunk(monkeypatch, native, asynchronous)
             _stream = stream
             _astream = astream
 
-        client = llm_module._make_temperature_safe_anthropic(Base)()
+        client = anthropic_adapter._make_temperature_safe_anthropic(Base)()
         iterator = client._astream() if asynchronous else client._stream()
     else:
-        monkeypatch.setattr(llm_module.ChatOpenAI, "_stream", stream)
-        monkeypatch.setattr(llm_module.ChatOpenAI, "_astream", astream)
-        client = llm_module.ChatOpenAIWithReasoning(model="partial", api_key="test")
+        monkeypatch.setattr(openai_adapter.ChatOpenAI, "_stream", stream)
+        monkeypatch.setattr(openai_adapter.ChatOpenAI, "_astream", astream)
+        client = openai_adapter.ChatOpenAIWithReasoning(model="partial", api_key="test")
         iterator = client._astream_with_usage_fallback() if asynchronous else client._stream_with_usage_fallback()
     seen = []
     with pytest.raises(RuntimeError, match="deprecated|unsupported"):

@@ -10,11 +10,11 @@ from typing import Any, Callable
 
 import pytest
 
-from src.agent.loop import AgentLoop
-from src.agent.progress import emit_progress
+from src.agent.runtime import AgentRuntime
+from src.kernel.progress import emit_progress
 from src.agent.tools import BaseTool, ToolRegistry
 from src.memory.persistent import PersistentMemory
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 class _Chunk:
@@ -85,7 +85,7 @@ def test_agent_loop_executes_dsml_textual_tool_call(
             return None
 
     monkeypatch.setattr(
-        "src.agent.tool_lifecycle.HeartbeatTimer", _ImmediateHeartbeatTimer
+        "src.product.tool_invocation.HeartbeatTimer", _ImmediateHeartbeatTimer
     )
     dsml = (
         '<｜｜DSML｜｜tool_calls>'
@@ -98,7 +98,7 @@ def test_agent_loop_executes_dsml_textual_tool_call(
     registry.register(_EchoProbeTool())
     memory = PersistentMemory(memory_dir=tmp_path / "memory")
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM([dsml, "final answer"])),
         event_callback=lambda event_type, payload: events.append((payload.get("kind", event_type), payload)),
@@ -158,14 +158,14 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
             return None
 
     monkeypatch.setattr(
-        "src.agent.tool_lifecycle.HeartbeatTimer", _ImmediateHeartbeatTimer
+        "src.product.tool_invocation.HeartbeatTimer", _ImmediateHeartbeatTimer
     )
     # The fullwidth-vbar (U+FF5C) form is what the real failure looked like; the
     # streaming DSML parser does not recognize it, so it arrives as text.
     garbage = "<││DSML││tool_calls><││invoke name=\"trading_quote\">"
     registry = ToolRegistry()
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM([garbage, garbage])),
         event_callback=lambda event_type, payload: events.append((payload.get("kind", event_type), payload)),
@@ -190,7 +190,7 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
 def test_closing_dsml_tags_alone_are_tool_call_syntax() -> None:
     """A DeepSeek draft once ended in closing tags only, inside its figures block;
     the opening-tag pattern missed them and the gate got three unreadable lines."""
-    from src.agent.tool_results import _looks_like_tool_call_syntax
+    from src.product.tool_results import _looks_like_tool_call_syntax
 
     tail = "\n".join(
         [
@@ -222,7 +222,7 @@ def test_final_tool_syntax_gets_one_text_only_retry(
     registry = ToolRegistry()
     registry.register(_EchoProbeTool())
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM(responses)),
         event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
@@ -288,7 +288,7 @@ def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> No
     registry = ToolRegistry()
     registry.register(_EchoProbeTool())
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=llm,
         event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
@@ -313,7 +313,7 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
     from src.goal import GoalStore
 
     monkeypatch.setenv("VIBE_TRADING_GOAL_DB_PATH", str(tmp_path / "goals.db"))
-    monkeypatch.setattr("src.agent.loop.SESSIONS_DIR", tmp_path / "sessions")
+    monkeypatch.setattr("src.agent.runtime.SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr("src.agent.tuning.GOAL_MAX_CONTINUATIONS", 1, raising=False)
     store = GoalStore()
     goal = store.replace_goal(
@@ -331,7 +331,7 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
             ),
         ]
     )
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=ToolRegistry(),
         llm=llm,
         max_iterations=1,
@@ -359,7 +359,7 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
 def test_cancel_after_rejected_answer_prevents_retry(tmp_path: Path) -> None:
     garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
     llm = _AnswerRetryLLM([LLMResponse(content=garbage)])
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=ToolRegistry(),
         llm=llm,
         max_iterations=1,
@@ -384,7 +384,7 @@ def test_protocol_retry_delivers_answer_without_numeric_gate(tmp_path: Path) -> 
             LLMResponse(content="AAPL is trading at $999.00."),
         ]
     )
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=ToolRegistry(),
         llm=llm,
         max_iterations=1,

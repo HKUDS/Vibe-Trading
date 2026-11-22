@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from src.agent.skills import SkillsLoader
+from src.product.resources.skills import SkillsLoader
 from src.goal import GoalStore
 from src.tools.goal_tool import (
     AddGoalEvidenceTool,

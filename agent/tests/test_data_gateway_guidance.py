@@ -3,8 +3,8 @@
 import json
 from types import SimpleNamespace
 
-from src.agent.context import ContextBuilder
-from src.agent.memory import WorkspaceMemory
+from src.product.context import ContextBuilder
+from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.data_gateway.guidance import DATA_ACCESS_POLICY, MCP_DATA_GUIDANCE, SHELL_DATA_GUIDANCE
 from src.swarm.models import SwarmAgentSpec

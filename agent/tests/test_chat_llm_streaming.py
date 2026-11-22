@@ -12,7 +12,8 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import AIMessageChunk
 
-from src.providers.chat import ChatLLM, ProviderStreamError
+from src.providers.response import parse_response
+from src.providers.response import ProviderStreamError
 
 
 class _FakeStreamingLLM:
@@ -71,7 +72,7 @@ def test_parse_dsml_tool_call_content_as_structured_tool_call() -> None:
         "</｜｜DSML｜｜tool_calls>/"
     )
 
-    response = ChatLLM._parse_response(AIMessageChunk(content=content))
+    response = parse_response(AIMessageChunk(content=content))
 
     assert response.content == ""
     assert len(response.tool_calls) == 1
@@ -92,7 +93,7 @@ def test_parse_dsml_tool_call_requires_pure_tool_call_payload() -> None:
         "</｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>"
     )
 
-    response = ChatLLM._parse_response(AIMessageChunk(content=content))
+    response = parse_response(AIMessageChunk(content=content))
 
     assert response.content == content
     assert response.tool_calls == []
@@ -235,7 +236,7 @@ def test_provider_stream_error_retryable_classification(
     ("content_filter", "", True), ("stop", "text", False),
 ])
 def test_content_filter_flag_follows_finish_reason(reason, content, filtered):
-    response = ChatLLM._parse_response(
+    response = parse_response(
         AIMessageChunk(content=content, response_metadata={"finish_reason": reason})
     )
     assert response.content == content
@@ -319,7 +320,7 @@ def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call, adap
     """Replay a clean EOF through the real SDK; truncated JSON is not a call."""
     import json
     import httpx
-    from src.providers.llm import ChatOpenAIWithReasoning
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
     requests = []
     delta = ({"tool_calls": [{"index": 0, "id": "call-partial", "type": "function",
@@ -385,11 +386,11 @@ def test_only_complete_tool_arguments_can_execute(metadata, args, valid):
         {"id": "call-1", "index": 0, "name": "write_file", "args": args},
     ])
     if valid:
-        assert ChatLLM._parse_response(chunk).tool_calls[0].arguments == {"path": "a.txt"}
+        assert parse_response(chunk).tool_calls[0].arguments == {"path": "a.txt"}
     else:
         with pytest.raises(ValueError, match="tool.call"):
-            ChatLLM._parse_response(chunk)
-    cancelled = ChatLLM._parse_response(chunk, cancelled=True)
+            parse_response(chunk)
+    cancelled = parse_response(chunk, cancelled=True)
     assert not cancelled.has_tool_calls and cancelled.finish_reason == "stop"
 
 

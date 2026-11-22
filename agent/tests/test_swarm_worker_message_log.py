@@ -18,7 +18,7 @@ import pytest
 
 import src.swarm.worker as worker_mod
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.swarm.worker import agent_artifact_dir, run_worker
 

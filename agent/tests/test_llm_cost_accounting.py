@@ -1,6 +1,6 @@
 """Paid responses remain accounted for when compaction or Stop interrupts work."""
 
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import deepseek as deepseek_adapter
 from src.providers.settings import resolve_config
 
 from types import SimpleNamespace
@@ -10,12 +10,12 @@ import json
 import pytest
 from langchain_core.messages import AIMessageChunk
 
-from src.agent.llm_usage import _normalize_llm_usage
-from src.agent.loop import AgentLoop
+from src.product.usage import _normalize_llm_usage
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import ToolRegistry
 from tests.recording_helpers import recorder_at
 from src.config.accessor import reset_env_config
-from src.providers.chat import ChatLLM, LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 USAGE = {"input_tokens": 1000, "output_tokens": 100, "total_tokens": 1100}
@@ -34,7 +34,7 @@ def _agent(tmp_path, callback=None):
         chat=Mock(return_value=LLMResponse(content="Summary retained.", usage_metadata=USAGE)),
         stream_chat=Mock(return_value=LLMResponse(content="Done.", usage_metadata=USAGE)),
     )
-    agent = AgentLoop(registry=ToolRegistry(), llm=llm, event_callback=callback)
+    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, event_callback=callback)
     agent.memory.run_dir = str(tmp_path)
     return agent, llm
 
@@ -44,7 +44,7 @@ def test_every_summary_chunk_is_persisted_and_reported(tmp_path):
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     trace = recorder_at(tmp_path)
     try:
-        agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
+        agent._context_compactor.auto_compact(_messages(), tmp_path, trace, iteration=7)
     finally:
         trace.close()
     assert llm.chat.call_count == 3
@@ -64,9 +64,9 @@ def test_summary_budget_cancellation_prevents_more_summaries_and_agent_call(tmp_
 
     def compact(messages, run_dir, trace, iteration, current_iter):
         messages[:] = _messages()
-        agent._auto_compact(messages, run_dir, trace, iteration=current_iter)
+        agent._context_compactor.auto_compact(messages, run_dir, trace, iteration=current_iter)
 
-    monkeypatch.setattr(agent, "_compact_to_budget", compact)
+    monkeypatch.setattr(agent._context_compactor, "_compact_to_budget", compact)
     result = agent.run("Summarize the earlier work.")
     assert result["status"] == "cancelled"
     assert llm.chat.call_count == 1
@@ -94,9 +94,9 @@ def test_summary_usage_obeys_goal_budget_without_stopping_funded_work(
 
     def compact(messages, run_dir, trace, iteration, current_iter):
         messages[:] = _messages()
-        agent._auto_compact(messages, run_dir, trace, iteration=current_iter)
+        agent._context_compactor.auto_compact(messages, run_dir, trace, iteration=current_iter)
 
-    monkeypatch.setattr(agent, "_compact_to_budget", compact)
+    monkeypatch.setattr(agent._context_compactor, "_compact_to_budget", compact)
     result = agent.run("Summarize the earlier work.", session_id="summary-cost")
     assert result["status"] == status
     assert llm.chat.call_count == summary_calls
@@ -110,11 +110,11 @@ def test_failed_summary_without_timeout_reports_unknown_usage(tmp_path, monkeypa
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
     llm.chat.side_effect = RuntimeError("Provider disconnected")
-    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 0)
+    monkeypatch.setattr("src.agent.tuning.LLM_TIMEOUT_SECONDS", 0, raising=False)
     trace = recorder_at(tmp_path)
     try:
         with pytest.raises(RuntimeError, match="Provider disconnected"):
-            agent._auto_compact(_messages(), tmp_path, trace, iteration=7)
+            agent._context_compactor.auto_compact(_messages(), tmp_path, trace, iteration=7)
     finally:
         trace.close()
     # Counted as unreported rather than announced: the live decision budget
@@ -143,14 +143,13 @@ def test_cancelled_agent_response_keeps_reported_usage(tmp_path):
 
 
 def test_cancelled_stream_keeps_usage_from_already_received_chunk():
-    client = object.__new__(ChatLLM)
+    from tests.provider_helpers import chat_with_adapter
     import threading
     cancel = threading.Event()
     def stream(*args, **kwargs):
         cancel.set()  # Usage arrived before cancellation was observed by the host.
         yield AIMessageChunk(content="", usage_metadata=USAGE)
-    client._llm = SimpleNamespace(stream=stream)
-    client._prompt_cache_request = lambda messages: (messages, {})
+    client = chat_with_adapter(SimpleNamespace(stream=stream))
     on_text = Mock()
     response = client.stream_chat(
         [{"role": "user", "content": "hello"}], should_cancel=cancel.is_set,
@@ -199,8 +198,8 @@ def test_goal_token_budget_stops_current_turn_and_blocks_unfunded_retry(tmp_path
 @pytest.mark.parametrize("limit", [None, 2048])
 def test_native_deepseek_forwards_configured_output_limit(monkeypatch, limit):
     factory = Mock(return_value=SimpleNamespace(root_client=None, root_async_client=None))
-    monkeypatch.setattr(_provider_adapters, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
-    _provider_adapters._build_native_deepseek(model="configured-model", temperature=0, snapshot=resolve_config(environment={"LANGCHAIN_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "test-key", "LANGCHAIN_MAX_TOKENS": str(limit or "")}))
+    monkeypatch.setattr(deepseek_adapter, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
+    deepseek_adapter._build_native_deepseek(model="configured-model", temperature=0, snapshot=resolve_config(environment={"LANGCHAIN_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "test-key", "LANGCHAIN_MAX_TOKENS": str(limit or "")}))
     kwargs = factory.call_args.kwargs
     assert kwargs.get("max_tokens") == limit
     assert ("max_tokens" in kwargs) == (limit is not None)
@@ -230,8 +229,8 @@ def test_native_deepseek_output_limit_reaches_http_request(monkeypatch):
         def factory(**kwargs):
             return native.ChatDeepSeek(**kwargs, http_client=client)
 
-        monkeypatch.setattr(_provider_adapters, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
-        adapter = _provider_adapters._build_native_deepseek(model="deepseek-chat", temperature=0, snapshot=resolve_config(environment={"LANGCHAIN_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "offline-test-key", "DEEPSEEK_BASE_URL": "https://example.invalid/v1", "LANGCHAIN_MAX_TOKENS": "2048"}))
+        monkeypatch.setattr(deepseek_adapter, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
+        adapter = deepseek_adapter._build_native_deepseek(model="deepseek-chat", temperature=0, snapshot=resolve_config(environment={"LANGCHAIN_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "offline-test-key", "DEEPSEEK_BASE_URL": "https://example.invalid/v1", "LANGCHAIN_MAX_TOKENS": "2048"}))
         response = adapter.invoke("Hello")
 
     assert response.content == "Hello"
@@ -245,7 +244,7 @@ def test_native_deepseek_output_limit_reaches_http_request(monkeypatch):
 ])
 def test_compatible_output_limit_uses_the_provider_wire_field(provider_name, model, field):
     import httpx
-    from src.providers.llm import ChatOpenAIWithReasoning
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
     requests = []
 
@@ -271,9 +270,9 @@ def test_compatible_output_limit_uses_the_provider_wire_field(provider_name, mod
 
 @pytest.mark.parametrize("recover", [True, False])
 def test_failed_stream_usage_is_counted_before_retry(tmp_path, monkeypatch, recover):
-    from src.providers.chat import ProviderStreamError
+    from src.providers.response import ProviderStreamError
     agent, llm = _agent(tmp_path)
-    monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     def error():
         return ProviderStreamError(
             provider="deepseek", model="deepseek-v4-pro",
@@ -294,11 +293,11 @@ def _usage_events(events):
 
 
 def test_failed_stream_without_usage_is_counted_not_announced(tmp_path, monkeypatch):
-    from src.providers.chat import ProviderStreamError
+    from src.providers.response import ProviderStreamError
 
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
-    monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     llm.stream_chat.side_effect = [
         ProviderStreamError(provider="deepseek", model="m", original=ConnectionError("reset")),
         LLMResponse(content="Hello", usage_metadata=USAGE),
@@ -316,11 +315,11 @@ def test_live_decision_budget_survives_a_retried_connection_reset(tmp_path, monk
     from datetime import datetime, timezone
 
     from src.live.runtime.decision_budget import DecisionBudget
-    from src.providers.chat import ProviderStreamError
+    from src.providers.response import ProviderStreamError
 
     events = []
     agent, llm = _agent(tmp_path, lambda kind, data: events.append((data.get("kind", kind), data)))
-    monkeypatch.setattr("src.agent.loop_driver._stream_retry_backoff_s", lambda _: 0)
+    monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     llm.stream_chat.side_effect = [
         ProviderStreamError(provider="deepseek", model="m", original=ConnectionError("reset")),
         LLMResponse(content="Hold.", usage_metadata=USAGE),

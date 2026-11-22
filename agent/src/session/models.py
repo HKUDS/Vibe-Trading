@@ -370,3 +370,14 @@ class Attempt:
         self.completed_at = _utc_now_iso()
         if reason:
             self.error = redact_text(reason)
+
+
+class SessionBusyError(RuntimeError):
+    """Raised when a session already has an in-flight run.
+
+    One AgentRuntime per session: two loops writing the same session would
+    interleave their messages and attempts. A second concurrent send is
+    therefore rejected unless its caller opted in to queueing
+    (``send_message(queue_if_busy=True)``). Callers surface this as HTTP 409
+    so the user can wait for the running attempt or cancel it first.
+    """

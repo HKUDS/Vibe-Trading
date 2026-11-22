@@ -44,7 +44,7 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
             "reasoning_effort": "high",
         }
 
-    monkeypatch.setattr(service, "_run_with_agent", _fake_run)
+    monkeypatch.setattr(service._factory, "run", _fake_run)
 
     asyncio.run(service._run_attempt(session, attempt))
 

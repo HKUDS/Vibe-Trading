@@ -18,9 +18,9 @@ from src.channelsui.cli_apps_api import normalize_cli_app_mentions
 from src.channelsui.gateway_services import build_gateway_services
 from src.channelsui.mcp_presets_api import normalize_mcp_preset_mentions
 from src.channelsui.transcription_ws import webui_transcription_event
-from src.session.goal_state import goal_state_ws_blob
+from src.product.goals import goal_state_ws_blob
 from src.session.models import Message, Session
-from src.session.service import SessionBusyError
+from src.session.models import SessionBusyError
 from src.session.webui_turns import (
     clear_websocket_turn_started,
     mark_websocket_turn_started,

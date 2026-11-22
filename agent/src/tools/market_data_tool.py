@@ -279,7 +279,7 @@ class MarketDataTool(BaseTool):
         loader_resolver = kwargs.get("loader_resolver")
         if loader_resolver is not None:
             fetch_kwargs["loader_resolver"] = loader_resolver
-        from src.agent.result_artifacts import persist_calculation_result
+        from src.product.result_artifacts import persist_calculation_result
         from src.data_gateway.bar_summary import summarize_bars
 
         payload = json.loads(fetch_market_data_json(**fetch_kwargs))

@@ -1,6 +1,6 @@
 """spawn_agent: delegate one self-contained task to a child agent.
 
-The child is a fresh ``AgentLoop`` with its own messages, instrument-identity
+The child is a fresh ``AgentRuntime`` with its own messages, instrument-identity
 ledger, no-progress budget and cancel flag. It shares the parent's LLM
 configuration and follows the parent's cancel signal. It works in its own
 directory inside the parent's run directory, and that is the only place it can
@@ -300,7 +300,7 @@ def _child_usage(run_dir: Path) -> dict[str, Any]:
         Input/output totals, the call counts, and ``token_source`` —
         ``"provider"`` when the provider reported usage, else ``None``.
     """
-    from src.agent.llm_usage import LLM_USAGE_ARTIFACT
+    from src.product.usage import LLM_USAGE_ARTIFACT
 
     try:
         summary = json.loads((run_dir / LLM_USAGE_ARTIFACT).read_text(encoding="utf-8"))
@@ -471,7 +471,7 @@ class SpawnAgentTool(BaseTool):
             return _error("invalid_arguments", "task must be a non-empty string")
         label = str(kwargs.get("label") or "").strip()
 
-        from src.agent.progress import ProgressEvent, _get_emitter
+        from src.kernel.progress import ProgressEvent, _get_emitter
         from src.config.accessor import get_env_config
         from src.config.paths import get_runs_dir
         from src.core.state import RunStateStore
@@ -563,7 +563,7 @@ class SpawnAgentTool(BaseTool):
         )
         watcher.start()
         try:
-            from src.agent.instrument_identity import agent_authored_request
+            from src.product.identity.ledger import agent_authored_request
 
             with agent_authored_request():
                 result = child.run(task)
@@ -585,9 +585,9 @@ class SpawnAgentTool(BaseTool):
         return json.dumps(payload, ensure_ascii=False)
 
     def _build_child(self, child_dir: Path, forward: Callable, max_iterations: int) -> Any:
-        """Build a fresh AgentLoop over the child registry and the child directory."""
-        from src.agent.loop import AgentLoop
-        from src.agent.memory import WorkspaceMemory
+        """Build a fresh AgentRuntime over the child registry and the child directory."""
+        from src.agent.runtime import AgentRuntime
+        from src.product.resources.memory import WorkspaceMemory
         from src.tools.background_tools import BackgroundScope, get_background_manager
 
         if self._llm_factory is not None:
@@ -606,7 +606,7 @@ class SpawnAgentTool(BaseTool):
             if parent_background is not None
             else get_background_manager()
         )
-        return AgentLoop(
+        return AgentRuntime(
             registry=child_registry(self._registry, child_dir),
             llm=llm,
             memory=WorkspaceMemory(run_dir=str(child_dir)),

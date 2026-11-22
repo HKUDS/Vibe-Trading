@@ -1,6 +1,6 @@
 """Messages sent while a turn runs wait and join the conversation in order.
 
-These drive the real ``SessionService`` -> ``AgentLoop`` -> ``thread.jsonl``
+These drive the real ``SessionService`` -> ``AgentRuntime`` -> ``thread.jsonl``
 path with a scripted offline model, as ``test_session_conversation_kernel``
 does. A message is sent mid-turn from inside a tool (or the model call) by
 scheduling ``send_message`` on the service's event loop, which is exactly what
@@ -20,7 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
-from src.api.sessions_routes import MAX_MESSAGE_CHARS
+from src.session.input_rules import MAX_MESSAGE_CHARS
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus, SSEEvent
 from src.session.pending_inputs import (
@@ -28,7 +28,8 @@ from src.session.pending_inputs import (
     PENDING_INPUTS_FILENAME,
     PendingInputQueue,
 )
-from src.session.service import SessionBusyError, SessionService
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 
 

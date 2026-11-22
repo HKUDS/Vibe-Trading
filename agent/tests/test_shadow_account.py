@@ -1315,7 +1315,7 @@ def test_shadow_account_skill_shipped() -> None:
 
 @pytest.mark.unit
 def test_context_prompt_references_shadow_account() -> None:
-    from src.agent.context import _SYSTEM_PROMPT  # noqa: SLF001 — intentional peek
+    from src.product.context import _SYSTEM_PROMPT  # noqa: SLF001 — intentional peek
 
     assert "Shadow Account" in _SYSTEM_PROMPT
     assert "extract_shadow_strategy" in _SYSTEM_PROMPT

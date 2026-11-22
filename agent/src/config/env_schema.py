@@ -489,7 +489,7 @@ class AgentTuningConfig(_EnvBase):
 
     # Deprecated: counted chars/4 of messages without tool schemas, so no value
     # tuned against it means anything under real-token accounting. Read only to
-    # warn (src/agent/context_budget.py); compaction ignores it.
+    # warn (src/session/context_budget.py); compaction ignores it.
     token_threshold: int = Field(alias="TOKEN_THRESHOLD", default=40000)
     # ReAct loop iteration cap for interactive/web sessions. Heavy pipelines
     # (multi-layer scoring, batch research) legitimately exceed 50 turns.

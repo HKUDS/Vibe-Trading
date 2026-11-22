@@ -670,7 +670,10 @@ def test_no_registered_tool_references_commit_mandate() -> None:
     """
     suspect_files = list((AGENT_DIR / "src" / "tools").glob("*.py"))
     suspect_files += [
-        AGENT_DIR / "src" / "agent" / "loop.py",
+        AGENT_DIR / "src" / "agent" / "runtime.py",
+        *(AGENT_DIR / "src" / "kernel").glob("*.py"),
+        *(AGENT_DIR / "src" / "product").rglob("*.py"),
+        *(AGENT_DIR / "src" / "session").glob("*.py"),
         AGENT_DIR / "src" / "swarm" / "worker.py",
     ]
     offenders: list[str] = []
@@ -690,7 +693,7 @@ def test_no_registered_tool_references_commit_mandate() -> None:
     assert not offenders, f"commit_mandate is reachable from the agent surface: {offenders}"
 
 
-def test_registry_has_propose_tool_but_no_mandate_writer() -> None:
+def test_registry_has_propose_tool_but_no_mandate_writer(registry_goal_db) -> None:
     """The assembled registry exposes propose_mandate_profiles, no commit tool."""
     from src.tools import build_registry
 

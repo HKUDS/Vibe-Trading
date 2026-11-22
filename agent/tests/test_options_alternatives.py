@@ -6,7 +6,7 @@ import json
 import pytest
 from fastmcp import Client
 
-from src.agent.result_artifacts import deliver_tool_result
+from src.product.result_artifacts import deliver_tool_result
 from src.agent.tools import ToolRegistry
 from src.tools.options_payoff_tool import OptionsPayoffTool
 from src.tools.read_file_tool import ReadFileTool

@@ -424,7 +424,7 @@ def register_system_routes(
         Authenticated: the skill inventory describes the agent's installed
         capabilities and is not appropriate pre-auth reconnaissance material.
         """
-        from src.agent.skills import SkillsLoader
+        from src.product.resources.skills import SkillsLoader
 
         loader = SkillsLoader()
         return [

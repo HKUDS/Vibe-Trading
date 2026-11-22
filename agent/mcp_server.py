@@ -98,13 +98,13 @@ class _ToolPolicyMiddleware(Middleware):
     """
 
     async def on_list_tools(self, context: Any, call_next: Any) -> Any:
-        from src.providers.tool_policy import _deny_prefixes
+        from src.product.tool_policy import _deny_prefixes
 
         prefixes = _deny_prefixes()
         return [tool for tool in await call_next(context) if not tool.name.startswith(prefixes)]
 
     async def on_call_tool(self, context: Any, call_next: Any) -> Any:
-        from src.providers.tool_policy import _deny_prefixes
+        from src.product.tool_policy import _deny_prefixes
 
         name = context.message.name
         if name.startswith(_deny_prefixes()):
@@ -347,7 +347,7 @@ def _build_network_app(transport: str, allowed_hosts: list[str]):
 def _get_skills_loader():
     global _skills_loader
     if _skills_loader is None:
-        from src.agent.skills import SkillsLoader
+        from src.product.resources.skills import SkillsLoader
 
         _skills_loader = SkillsLoader()
     return _skills_loader

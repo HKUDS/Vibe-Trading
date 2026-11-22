@@ -9,15 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from src.agent.resolution_context import ResolutionContext
+from src.product.identity.constraints import ResolutionContext
 
-from src.agent.instrument_identity import (
-    IdentityRecord,
-    IdentityLedger,
-    _RESOLVER_TOOL,
-    _scan_symbols,
-    _utc_now,
-)
+from src.product.identity.normalize import _scan_symbols
+from src.product.identity.ledger import IdentityRecord, IdentityLedger, _RESOLVER_TOOL, _utc_now
 from evals.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
 from evals.grounding.document_quotes import DocumentIntegerQuote
 from evals.grounding.figures import Figure, FiguresBlock, parse_figures_block, scan_figures

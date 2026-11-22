@@ -1,371 +1,23 @@
-"""ChatLLM: raw LLM message interface with function calling support.
-
-ChatLLM is designed specifically for the AgentLoop ReAct cycle.
-"""
+"""Synchronous and streaming chat facade and client lifecycle."""
 
 from __future__ import annotations
 
 import asyncio
-import html
 import inspect
-import json
 import logging
-import os
-import re
-import time
-from contextlib import closing
-from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from src.providers.content_filter import is_content_filter_triggered
-from src.providers.llm import build_llm, unwrap_provider_error
+from src.kernel import contracts
+from src.product.tool_policy import offered_tools
+from src.providers.adapters.anthropic import _DIRECT_ANTHROPIC_LLM_TYPE, _PROMPT_CACHE_CONTROL, prompt_cache_messages
+from src.providers.llm import build_llm
+from src.providers.request_guards import unwrap_provider_error
+from src.providers.response import parse_response
 from src.providers.settings import ProviderConfig, resolve_config
-from src.providers.stream_guard import StreamInterrupted, supervised_pulls
-from src.providers.tool_policy import offered_tools
+from src.providers.stream import collect_stream
+
 
 logger = logging.getLogger(__name__)
-
-_PROMPT_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral"}
-_DIRECT_ANTHROPIC_LLM_TYPE = "anthropic-chat"
-
-
-def prompt_cache_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Return a message list whose leading system string carries a cache breakpoint.
-
-    The system prompt is the end of the static prefix (tools render before it),
-    so a breakpoint there gives that prefix a guaranteed cache read point even
-    when later messages are edited by context compression. Anything other than
-    a leading ``{"role": "system", "content": <non-empty str>}`` is returned
-    unchanged, and the caller's list is never mutated.
-    """
-    if not messages:
-        return messages
-    first = messages[0]
-    if not isinstance(first, dict) or first.get("role") != "system":
-        return messages
-    content = first.get("content")
-    if not isinstance(content, str) or not content:
-        return messages
-    cached = dict(first)
-    cached["content"] = [
-        {"type": "text", "text": content, "cache_control": dict(_PROMPT_CACHE_CONTROL)}
-    ]
-    return [cached, *messages[1:]]
-
-
-def _dedupe_finish_reason(raw: str) -> str:
-    """Relays (OpenRouter) emit finish_reason per chunk; AIMessageChunk.__add__
-    concatenates into 'stopstop', 'tool_callstool_calls', etc. Return the
-    canonical suffix so ReAct equality checks survive.
-    """
-    return next(
-        (m for m in ("tool_calls", "function_call", "content_filter", "length", "stop")
-         if raw.endswith(m)),
-        raw,
-    )
-
-
-def _text_content(content: Any) -> str:
-    """Normalize provider text or content blocks to plain assistant text."""
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, str):
-            parts.append(block)
-        elif isinstance(block, dict) and isinstance(block.get("text"), str):
-            parts.append(block["text"])
-        elif isinstance(getattr(block, "text", None), str):
-            parts.append(block.text)
-    return "".join(parts)
-
-
-@dataclass
-class ToolCallRequest:
-    """Tool call request returned by the LLM.
-
-    Attributes:
-        id: Tool call ID (used to match tool_result messages).
-        name: Tool name.
-        arguments: Tool argument dict.
-        thought_signature: Gemini thinking-model signature to echo on the next turn.
-        extra_content: Provider-specific tool-call metadata that must be
-            replayed with the assistant turn, such as Gemini thought signatures.
-    """
-
-    id: str
-    name: str
-    arguments: Dict[str, Any]
-    thought_signature: Optional[str] = None
-    extra_content: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class LLMRuntimeSnapshot:
-    """Immutable identity of the model configuration used by one ChatLLM.
-
-    Attributes:
-        provider: Provider the client sends to.
-        configured_model: Model the client asks for.
-        reasoning_effort: Effort level the client sends, or "" when unset.
-        selection: Who chose the model: ``"configured"`` for the server's
-            settings, ``"session"`` for a selection stored on the session.
-    """
-
-    provider: str
-    configured_model: str
-    reasoning_effort: str
-    selection: str = "configured"
-
-
-def reported_model_source(runtime: LLMRuntimeSnapshot, response_model: Optional[str]) -> str:
-    """Name where a reported model id came from.
-
-    Args:
-        runtime: Snapshot of the client that made the request.
-        response_model: Model the provider response named, if any.
-
-    Returns:
-        ``provider_response`` / ``configured`` for the server's settings, and
-        ``session_provider_response`` / ``session`` when the session chose the
-        model, so a reader can always tell a session selection apart.
-    """
-    if runtime.selection == "session":
-        return "session_provider_response" if response_model else "session"
-    return "provider_response" if response_model else "configured"
-
-
-@dataclass
-class LLMResponse:
-    """LLM response.
-
-    Attributes:
-        content: Text content (final answer or thinking text).
-        tool_calls: List of tool call requests.
-        reasoning_content: Optional thinking trace surfaced by reasoning models.
-        finish_reason: Finish reason string.
-        usage_metadata: Real token counts reported by the provider, when
-            available. Mirrors LangChain's ``AIMessage.usage_metadata`` —
-            ``{"input_tokens": int, "output_tokens": int, "total_tokens": int}``.
-            ``None`` if the provider did not return usage information; callers
-            should fall back to a heuristic in that case.
-        content_filter_triggered: ``True`` when the provider blocked the
-            response via content moderation (e.g. DashScope/Qwen content
-            moderation filter, ``finish_reason == "content_filter"``).
-        response_model: Model identifier reported by the provider response,
-            when available. This is authoritative runtime metadata and must
-            not be inferred from the model's natural-language self-report.
-        provider_items: Opaque output items the provider needs back verbatim
-            on the next request of the same turn chain (the Codex backend's
-            encrypted reasoning items). Never shown, never summarised.
-    """
-
-    content: Optional[str] = None
-    tool_calls: List[ToolCallRequest] = field(default_factory=list)
-    reasoning_content: Optional[str] = None
-    finish_reason: str = "stop"
-    usage_metadata: Optional[Dict[str, int]] = None
-    content_filter_triggered: bool = False
-    response_model: Optional[str] = None
-    provider_items: List[Dict[str, Any]] = field(default_factory=list)
-
-    @property
-    def has_tool_calls(self) -> bool:
-        """Return True if the response contains tool calls."""
-        return len(self.tool_calls) > 0
-
-
-def _extract_retry_after_s(original: Exception) -> Optional[float]:
-    """Return the provider-suggested Retry-After delay in seconds, if any."""
-    response = getattr(original, "response", None)
-    headers = getattr(response, "headers", None)
-    if headers is None:
-        return None
-    raw = headers.get("Retry-After")
-    if raw is None:
-        return None
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return None
-    return value if value >= 0.0 else None
-
-
-class ProviderStreamError(RuntimeError):
-    """Raised when provider streaming fails before a complete response."""
-
-    def __init__(self, *, provider: str, model: str, original: Exception, usage_metadata: dict | None = None, secrets: tuple[str, ...] = ()) -> None:
-        """Initialize a provider-contextual stream error.
-
-        Args:
-            provider: Effective provider name.
-            model: Effective model name.
-            original: Original exception from the stream path.
-            usage_metadata: Usage already reported before stream failure.
-
-        Attributes:
-            retry_after_s: Provider-suggested Retry-After delay in seconds,
-                extracted from the original exception's response headers when
-                present and parseable as a non-negative number; otherwise None.
-        """
-        self.provider = provider
-        self.model = model
-        self.original = original
-        self.usage_metadata = usage_metadata
-        original = unwrap_provider_error(original)
-        self.status_code: Optional[int] = getattr(original, "status_code", None)
-        self.retry_after_s: Optional[float] = _extract_retry_after_s(original)
-        safe_message = _redact_provider_error(str(original))
-        for secret in secrets:
-            if secret:
-                safe_message = safe_message.replace(secret, "[redacted]")
-        hint = ""
-        lowered = safe_message.lower()
-        if any(m in lowered for m in ("<!doctype html", "<html", "__next_error__")):
-            # An HTML body from a JSON API almost always means the base URL
-            # points at a website root, not the API root (a frequent .env
-            # misconfiguration for OpenAI-compatible coding-plan gateways).
-            hint = (
-                " — the endpoint returned an HTML page instead of a JSON API "
-                f"response; verify the {provider} base URL points at the API "
-                "root (e.g. the OpenAI-compatible '/v1' path), not the site root"
-            )
-        super().__init__(
-            f"provider_stream_error provider={provider} model={model}: "
-            f"{type(original).__name__}: {safe_message}{hint}"
-        )
-
-    @property
-    def retryable(self) -> bool:
-        """Whether a single retry could plausibly succeed.
-
-        Returns:
-            False for deterministic client errors (4xx other than 408/429),
-            True for everything else — timeouts, rate limits, 5xx, and
-            transport errors that carry no HTTP status.
-        """
-        if self.status_code is None:
-            return True
-        if self.status_code in (408, 429):
-            return True
-        return not 400 <= self.status_code < 500
-
-
-def _redact_provider_error(message: str) -> str:
-    """Redact configured secret/proxy values from provider errors."""
-    redacted = message
-    sensitive_markers = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASS", "PROXY")
-    for key, value in os.environ.items():
-        if not value or len(value) < 8:
-            continue
-        if any(marker in key.upper() for marker in sensitive_markers):
-            redacted = redacted.replace(value, "[redacted]")
-    return redacted
-
-
-def _is_no_stream_chunk_error(exc: Exception) -> bool:
-    """True when a provider accepted the request but streamed zero chunks.
-
-    LangChain raises ``ValueError("No generation chunks were returned")`` when
-    an OpenAI-compatible endpoint returns a non-streaming (or empty-SSE) body.
-    That's a streaming-capability gap, not a provider failure — a plain
-    non-streaming ``invoke`` still succeeds, so ``stream_chat`` falls back
-    instead of surfacing it as a hard ``ProviderStreamError``.
-    """
-    return isinstance(exc, ValueError) and "no generation chunks" in str(exc).lower()
-
-
-_DSML_BAR = r"(?:\|\||｜｜)"
-_DSML_TAG = rf"{_DSML_BAR}\s*DSML\s*{_DSML_BAR}"
-_DSML_TOOL_CALLS_RE = re.compile(
-    rf"<\s*{_DSML_TAG}\s*tool_calls\s*>(?P<body>.*?)"
-    rf"</\s*{_DSML_TAG}\s*tool_calls\s*>",
-    re.DOTALL,
-)
-_DSML_INVOKE_RE = re.compile(
-    rf"<\s*{_DSML_TAG}\s*invoke\b(?P<attrs>[^>]*)>(?P<body>.*?)"
-    rf"</\s*{_DSML_TAG}\s*invoke\s*>",
-    re.DOTALL,
-)
-_DSML_PARAMETER_RE = re.compile(
-    rf"<\s*{_DSML_TAG}\s*parameter\b(?P<attrs>[^>]*)>(?P<body>.*?)"
-    rf"</\s*{_DSML_TAG}\s*parameter\s*>",
-    re.DOTALL,
-)
-_DSML_ATTR_RE = re.compile(r"""([A-Za-z_][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
-_DSML_PREFIXES = ("<||dsml||tool_calls", "<｜｜dsml｜｜tool_calls")
-
-
-def _parse_dsml_attrs(raw: str) -> dict[str, str]:
-    """Parse attributes from a DSML tag."""
-    attrs: dict[str, str] = {}
-    for match in _DSML_ATTR_RE.finditer(raw):
-        attrs[match.group(1)] = html.unescape(match.group(2) or match.group(3) or "")
-    return attrs
-
-
-def _is_possible_dsml_tool_call_prefix(content: str) -> bool:
-    """Return True while buffered stream text could still be a DSML call."""
-    compact = re.sub(r"\s+", "", content.lstrip()[:80]).lower()
-    if not compact:
-        return True
-    return any(prefix.startswith(compact) or compact.startswith(prefix) for prefix in _DSML_PREFIXES)
-
-
-def _parse_dsml_tool_calls(content: Any) -> list[ToolCallRequest]:
-    """Parse DeepSeek-style DSML tool calls embedded as assistant content.
-
-    Some OpenAI-compatible relays/models return tool calls as a textual DSML
-    block rather than LangChain ``AIMessage.tool_calls``. Treat only pure DSML
-    tool-call payloads as executable so examples embedded in normal prose never
-    cross into the tool path.
-    """
-    if not isinstance(content, str):
-        return []
-
-    stripped = content.strip()
-    blocks = list(_DSML_TOOL_CALLS_RE.finditer(stripped))
-    if not blocks:
-        return []
-
-    outside = _DSML_TOOL_CALLS_RE.sub("", stripped).strip()
-    if outside not in {"", "/"}:
-        return []
-
-    tool_calls: list[ToolCallRequest] = []
-    for block in blocks:
-        for invoke in _DSML_INVOKE_RE.finditer(block.group("body")):
-            invoke_attrs = _parse_dsml_attrs(invoke.group("attrs"))
-            name = invoke_attrs.get("name", "").strip()
-            if not name:
-                continue
-
-            arguments: dict[str, Any] = {}
-            for param in _DSML_PARAMETER_RE.finditer(invoke.group("body")):
-                param_attrs = _parse_dsml_attrs(param.group("attrs"))
-                param_name = param_attrs.get("name", "").strip()
-                if param_name:
-                    arguments[param_name] = html.unescape(param.group("body")).strip()
-
-            tool_calls.append(
-                ToolCallRequest(
-                    id=f"dsml_call_{len(tool_calls) + 1}",
-                    name=name,
-                    arguments=arguments,
-                )
-            )
-
-    return tool_calls
-
-
-def _chunk_model(chunk: Any) -> Optional[str]:
-    """Model name one stream chunk reports, before chunks are merged."""
-    metadata = getattr(chunk, "response_metadata", {}) or {}
-    model = metadata.get("model_name") or metadata.get("model")
-    return (str(model).strip() or None) if model is not None else None
 
 
 class ChatLLM:
@@ -394,7 +46,7 @@ class ChatLLM:
         self.config = snapshot or resolve_config(model_name=model_name)
         self._llm = build_llm(model_name=model_name, snapshot=self.config)
         self.model_name = model_name or self.config.model
-        self.runtime_snapshot = LLMRuntimeSnapshot(
+        self.runtime_snapshot = contracts.LLMRuntimeSnapshot(
             provider=self.config.provider or "openai",
             configured_model=self.model_name,
             reasoning_effort=self.config.options.langchain_reasoning_effort.strip().lower(),
@@ -439,7 +91,7 @@ class ChatLLM:
                 logger.debug("ChatLLM.aclose: failed to close %s", label, exc_info=True)
 
     def _prompt_cache_request(
-        self, messages: List[Dict[str, Any]]
+        self, messages: list[contracts.ModelMessage]
     ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Return the messages and call kwargs to send, with cache markers when they apply.
 
@@ -503,8 +155,16 @@ class ChatLLM:
                 )
 
         task.add_done_callback(_log_failure)
+    def _prepare_call(
+        self, messages: list[contracts.ModelMessage], tools: list[dict] | None,
+    ) -> tuple[Any, list[contracts.ModelMessage], dict[str, Any]]:
+        """Bind offered tools and apply the adapter's request cache markers."""
+        available = offered_tools(tools) if tools else []
+        llm = self._llm.bind_tools(available) if available else self._llm
+        prepared, call_kwargs = self._prompt_cache_request(messages)
+        return llm, prepared, call_kwargs
 
-    def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
+    def chat(self, messages: list[contracts.ModelMessage], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> contracts.LLMResponse:
         """Call the LLM synchronously.
 
         Args:
@@ -513,23 +173,21 @@ class ChatLLM:
             timeout: Optional per-call timeout in seconds.
 
         Returns:
-            LLMResponse.
+            contracts.LLMResponse.
         """
-        available = offered_tools(tools) if tools else []
-        llm = self._llm.bind_tools(available) if available else self._llm
+        llm, messages, call_kwargs = self._prepare_call(messages, tools)
         config = {"timeout": timeout} if timeout else {}
-        messages, call_kwargs = self._prompt_cache_request(messages)
         try:
             ai_message = llm.invoke(messages, config=config, **call_kwargs)
         except Exception as exc:
             if (cause := unwrap_provider_error(exc)) is not exc:
                 raise cause from None
             raise
-        return self._parse_response(ai_message)
+        return parse_response(ai_message)
 
     def stream_chat(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[contracts.ModelMessage],
         tools: Optional[List[Dict[str, Any]]] = None,
         on_text_chunk: Optional[Any] = None,
         on_reasoning_chunk: Optional[Any] = None,
@@ -537,7 +195,7 @@ class ChatLLM:
         idle_timeout_s: Optional[float] = None,
         should_cancel: Optional[Callable[[], bool]] = None,
         on_waiting_chunk: Optional[Callable[[], None]] = None,
-    ) -> LLMResponse:
+    ) -> contracts.LLMResponse:
         """Stream the LLM and optionally forward text deltas (e.g. thinking).
 
         Iterates AIMessageChunk; text deltas invoke ``on_text_chunk`` and
@@ -560,299 +218,13 @@ class ChatLLM:
                 Lets a caller abort a live stream promptly (cooperative cancel).
 
         Returns:
-            Parsed ``LLMResponse``.
+            Parsed ``contracts.LLMResponse``.
         """
-        accumulated = None
-        cancelled = False
-        cancelled_usage = None
-        try:
-            available = offered_tools(tools) if tools else []
-            llm = self._llm.bind_tools(available) if available else self._llm
-            config = {"timeout": timeout} if timeout else {}
-            messages, call_kwargs = self._prompt_cache_request(messages)
-            pending_text = ""
-            possible_dsml_text = True
-            started = time.monotonic()
-            streamed_model: Optional[str] = None
-            try:
-                stream_chunks = supervised_pulls(
-                    llm.stream(messages, config=config, **call_kwargs),
-                    idle_timeout_s=idle_timeout_s,
-                    total_timeout_s=timeout,
-                    should_cancel=should_cancel,
-                )
-                with closing(stream_chunks):
-                    for chunk in stream_chunks:
-                        if should_cancel and should_cancel():
-                            cancelled = True
-                            # This chunk already arrived. Preserve any reported usage
-                            # while still dropping its text and tool-call deltas.
-                            if getattr(chunk, "usage_metadata", None):
-                                usage_chunk = chunk if accumulated is None else accumulated + chunk
-                                cancelled_usage = usage_chunk.usage_metadata
-                            break
-                        accumulated = chunk if accumulated is None else accumulated + chunk
-                        if getattr(chunk, "additional_kwargs", {}).get("provider_waiting") is True and on_waiting_chunk:
-                            on_waiting_chunk()
-                        chunk_text = _text_content(chunk.content)
-                        if chunk_text and on_text_chunk:
-                            if possible_dsml_text:
-                                pending_text += chunk_text
-                                if _is_possible_dsml_tool_call_prefix(pending_text):
-                                    pass
-                                else:
-                                    possible_dsml_text = False
-                                    on_text_chunk(pending_text)
-                                    pending_text = ""
-                            else:
-                                on_text_chunk(chunk_text)
-                        reasoning = getattr(chunk, "additional_kwargs", {}).get("reasoning_content")
-                        if reasoning and not chunk.content and on_reasoning_chunk:
-                            on_reasoning_chunk(reasoning)
-                        if streamed_model is None:
-                            streamed_model = _chunk_model(chunk)
-            except Exception as exc:
-                if accumulated is not None or not _is_no_stream_chunk_error(exc):
-                    raise
-            if accumulated is None:
-                if cancelled or (should_cancel and should_cancel()):
-                    return LLMResponse(content="", usage_metadata=cancelled_usage)
-                logger.warning("Provider streamed no chunks; falling back to non-streaming invoke.")
-                remaining = timeout - (time.monotonic() - started) if timeout else None
-                if remaining is not None and remaining <= 0:
-                    raise TimeoutError("provider stream stopped: total timeout")
-
-                def invoke():
-                    yield llm.invoke(messages, config=config, **call_kwargs)
-
-                with closing(supervised_pulls(
-                    invoke(), idle_timeout_s=idle_timeout_s,
-                    total_timeout_s=remaining, should_cancel=should_cancel,
-                )) as fallback:
-                    accumulated = next(fallback)
-                return self._parse_response(accumulated, cancelled=bool(should_cancel and should_cancel()))
-            # Chat Completions must explicitly finish a choice; a clean socket
-            # EOF is not a final answer. LangChain otherwise defaults missing
-            # metadata to "stop" and releases a truncated report/tool call.
-            metadata = getattr(accumulated, "response_metadata", {}) or {}
-            if (not cancelled and getattr(self._llm, "_llm_type", None) in {"openai-chat", "chat-deepseek"}
-                    and not (metadata.get("finish_reason") or metadata.get("stop_reason")
-                             or metadata.get("status") in {"completed", "incomplete", "failed"})):
-                raise ConnectionError("Provider stream ended without a terminal finish reason")
-            response = self._parse_response(accumulated, cancelled=cancelled)
-            if streamed_model:
-                # Merging chunks concatenates their string metadata, so a
-                # provider that names the model in several chunks (OpenRouter)
-                # reported "deepseek/deepseek-v4-prodeepseek/deepseek-v4-pro".
-                response.response_model = streamed_model
-            if cancelled_usage is not None:
-                response.usage_metadata = cancelled_usage
-            if pending_text and not (response.has_tool_calls and response.content == ""):
-                on_text_chunk(pending_text)
-            return response
-        except StreamInterrupted as stop:
-            if stop.reason == "cancelled":
-                # A user stop is not an outage. Hand back whatever arrived
-                # rather than raising, and never fall back to a second request.
-                if cancelled_usage is None and getattr(stop.pending, "usage_metadata", None):
-                    cancelled_usage = stop.pending.usage_metadata
-                response = (
-                    self._parse_response(accumulated, cancelled=True)
-                    if accumulated is not None
-                    else LLMResponse(content="", tool_calls=[], finish_reason="stop")
-                )
-                if cancelled_usage is not None:
-                    response.usage_metadata = cancelled_usage
-                return response
-            provider = self.runtime_snapshot.provider
-            model = self.model_name or "(unset)"
-            raise ProviderStreamError(
-                provider=provider, model=model,
-                secrets=(self.config.api_key, self.config.auth_token),
-                original=TimeoutError(f"provider stream stopped: {stop.reason}"),
-                usage_metadata=getattr(accumulated, "usage_metadata", None),
-            ) from stop
-        except Exception as exc:
-            provider = self.runtime_snapshot.provider
-            model = self.model_name or "(unset)"
-            raise ProviderStreamError(
-                provider=provider, model=model,
-                secrets=(self.config.api_key, self.config.auth_token), original=exc,
-                usage_metadata=(getattr(exc, "usage_metadata", None)
-                                or getattr(accumulated, "usage_metadata", None)),
-            ) from exc
-
-    @staticmethod
-    def _tool_call_thought_signature_maps(ai_message: Any) -> tuple[dict[str, str], dict[int, str]]:
-        """Return Gemini thought signatures captured by ``ChatOpenAIWithReasoning``."""
-        by_id: dict[str, str] = {}
-        by_index: dict[int, str] = {}
-        additional_kwargs = getattr(ai_message, "additional_kwargs", {})
-        entries = additional_kwargs.get("tool_call_thought_signatures", [])
-
-        if isinstance(entries, dict):
-            entries = [entries]
-        if not isinstance(entries, list):
-            return by_id, by_index
-
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            signature = entry.get("thought_signature")
-            if not signature:
-                continue
-            if entry.get("id"):
-                by_id[str(entry["id"])] = signature
-            index = entry.get("index")
-            if isinstance(index, int):
-                by_index[index] = signature
-        return by_id, by_index
-
-    @staticmethod
-    def _parse_response(ai_message: Any, *, cancelled: bool = False) -> LLMResponse:
-        """Convert a LangChain AIMessage (or AIMessageChunk) to ``LLMResponse``.
-
-        Single source for reasoning: ``additional_kwargs["reasoning_content"]``,
-        populated by ``ChatOpenAIWithReasoning`` on both stream and non-stream paths.
-
-        ``usage_metadata`` is forwarded as-is from the underlying message so
-        downstream cost / billing audit code (e.g. swarm worker token totals)
-        can use real provider tokens instead of a character-count heuristic.
-        For ``AIMessageChunk`` the metadata accumulates via the ``__add__``
-        merge LangChain performs while the response is being streamed; the
-        final aggregate carries the same shape as the non-stream path.
-        """
-        usage = getattr(ai_message, "usage_metadata", None)
-        # Some providers / older LangChain versions surface a ``UsageMetadata``
-        # TypedDict that doesn't json-serialise without a cast. Normalise to a
-        # plain ``dict[str, int]`` so the value can be persisted alongside the
-        # rest of the run state without surprises.
-        if usage is not None and not isinstance(usage, dict):
-            try:
-                usage = dict(usage)
-            except (TypeError, ValueError):
-                usage = None
-        additional_kwargs = getattr(ai_message, "additional_kwargs", {}) or {}
-        response_metadata = getattr(ai_message, "response_metadata", {}) or {}
-        response_model = response_metadata.get("model_name") or response_metadata.get("model")
-        if response_model is not None:
-            response_model = str(response_model).strip() or None
-        thought_signatures_by_id, thought_signatures_by_index = (
-            ChatLLM._tool_call_thought_signature_maps(ai_message)
+        return collect_stream(
+            self._llm, self._prepare_call, messages, tools,
+            provider=self.runtime_snapshot.provider, model=self.model_name or "(unset)",
+            secrets=(self.config.api_key, self.config.auth_token),
+            on_text_chunk=on_text_chunk, on_reasoning_chunk=on_reasoning_chunk,
+            timeout=timeout, idle_timeout_s=idle_timeout_s,
+            should_cancel=should_cancel, on_waiting_chunk=on_waiting_chunk,
         )
-        if not cancelled:
-            if getattr(ai_message, "invalid_tool_calls", None):
-                raise ValueError("Provider returned invalid tool-call arguments")
-            if ai_message.tool_calls:
-                # AIMessageChunk repairs partial JSON for previews. Execution
-                # requires the original accumulated arguments to be complete.
-                for chunk in getattr(ai_message, "tool_call_chunks", ()):
-                    try:
-                        args = json.loads(chunk.get("args") or "{}")
-                    except (ValueError, TypeError):
-                        raise ValueError("Provider returned incomplete tool-call arguments") from None
-                    if not isinstance(args, dict):
-                        raise ValueError("Provider tool-call arguments must be an object")
-        raw_tool_calls = additional_kwargs.get("tool_calls") or []
-        raw_by_id = {
-            raw.get("id"): raw
-            for raw in raw_tool_calls
-            if isinstance(raw, dict) and raw.get("id")
-        }
-
-        native_tool_calls: list[ToolCallRequest] = []
-        for index, tc in enumerate(ai_message.tool_calls):
-            extra_content = _merge_tool_call_extra_content(tc, raw_by_id.get(tc["id"]))
-            signature = (
-                thought_signatures_by_id.get(str(tc["id"]))
-                or thought_signatures_by_index.get(index)
-                or extra_content.get("thought_signature")
-            )
-            if signature:
-                extra_content.setdefault("thought_signature", signature)
-            native_tool_calls.append(
-                ToolCallRequest(
-                    id=tc["id"],
-                    name=tc["name"],
-                    arguments=tc["args"],
-                    thought_signature=signature,
-                    extra_content=extra_content,
-                )
-            )
-
-        content = _text_content(ai_message.content)
-        dsml_tool_calls = [] if native_tool_calls else _parse_dsml_tool_calls(content)
-        tool_calls = native_tool_calls or dsml_tool_calls
-
-        raw_finish_reason = (
-            ai_message.response_metadata.get("finish_reason")
-            or ai_message.response_metadata.get("stop_reason")
-            or "stop"
-        )
-        finish_reason = (
-            "tool_calls"
-            if dsml_tool_calls
-            else "tool_calls"
-            if raw_finish_reason == "tool_use"
-            else _dedupe_finish_reason(
-                raw_finish_reason
-            )
-        )
-        if not cancelled and tool_calls and (
-            _dedupe_finish_reason(raw_finish_reason) in {"length", "max_tokens"}
-            or response_metadata.get("status") in {"incomplete", "failed"}
-        ):
-            raise ValueError("Provider truncated a tool call; no tools were executed")
-        content_filter_triggered = is_content_filter_triggered(
-            raw_finish_reason
-        )
-
-        return LLMResponse(
-            content="" if dsml_tool_calls else content,
-            tool_calls=[] if cancelled else tool_calls,
-            reasoning_content=additional_kwargs.get("reasoning_content"),
-            finish_reason="stop" if cancelled else finish_reason,
-            usage_metadata=usage,
-            content_filter_triggered=content_filter_triggered,
-            response_model=response_model,
-            provider_items=list(additional_kwargs.get("provider_items") or []),
-        )
-
-
-def _extract_tool_call_extra_content(raw_tool_call: Any) -> Dict[str, Any]:
-    """Extract provider-specific tool-call metadata LangChain would drop."""
-    if not isinstance(raw_tool_call, dict):
-        return {}
-
-    extra_content: Dict[str, Any] = {}
-    raw_extra = raw_tool_call.get("extra_content")
-    if isinstance(raw_extra, dict):
-        extra_content.update(raw_extra)
-        google_extra = raw_extra.get("google")
-        if isinstance(google_extra, dict):
-            signature = google_extra.get("thought_signature") or google_extra.get(
-                "thoughtSignature"
-            )
-            if signature:
-                extra_content["thought_signature"] = signature
-
-    function = raw_tool_call.get("function")
-    if isinstance(function, dict):
-        function_extra = function.get("extra_content")
-        if isinstance(function_extra, dict):
-            extra_content.update(function_extra)
-        if function.get("thought_signature"):
-            extra_content["thought_signature"] = function["thought_signature"]
-
-    if raw_tool_call.get("thought_signature"):
-        extra_content["thought_signature"] = raw_tool_call["thought_signature"]
-
-    return extra_content
-
-
-def _merge_tool_call_extra_content(*raw_tool_calls: Any) -> Dict[str, Any]:
-    """Merge provider metadata from standardized and raw tool-call shapes."""
-    extra_content: Dict[str, Any] = {}
-    for raw_tool_call in raw_tool_calls:
-        extra_content.update(_extract_tool_call_extra_content(raw_tool_call))
-    return extra_content

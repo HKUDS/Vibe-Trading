@@ -54,7 +54,7 @@ class AttemptProgress:
                 chars = int(data.get("chars", 0))
                 seen = self.reasoning_chars.get(iteration, 0)
                 self.reasoning_chars[iteration] = max(seen, chars)
-                # AgentLoop emits a bounded cumulative tail, not a delta.
+                # AgentRuntime emits a bounded cumulative tail, not a delta.
                 # A missing tail means no text was supplied: show only
                 # a status, never reconstruct text from any other payload.
                 tail = data.get("tail")

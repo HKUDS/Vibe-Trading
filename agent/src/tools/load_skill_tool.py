@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Tuple
 
-from src.agent.skills import (
+from src.product.resources.skills import (
     SkillSection,
     SkillsLoader,
     find_sections,
@@ -60,7 +60,7 @@ def _render_outline(name: str, sections: List[SkillSection], total: int) -> str:
 
     Args:
         name: Skill name, echoed into the usage hint.
-        sections: Output of :func:`src.agent.skills.split_sections`.
+        sections: Output of :func:`src.product.resources.skills.split_sections`.
         total: Length of the whole document.
 
     Returns:

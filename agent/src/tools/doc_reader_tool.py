@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from src.agent.progress import emit_progress
+from src.kernel.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.security.scanner import with_security_warnings
 from src.tools.ocr import get_ocr_engine, get_ocr_install_hint

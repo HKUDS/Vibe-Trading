@@ -9,8 +9,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from src.agent import tuning as tuning_mod
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from tests.recording_helpers import recorder_at, run_recorded_tools
 
 
@@ -52,14 +52,14 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.05, raising=False)
     monkeypatch.setattr(tuning_mod, "HEARTBEAT_INTERVAL_S", 0.01, raising=False)
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=_SlowRegistry(),  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         event_callback=lambda event_type, data: events.append((event_type, data)),
         max_iterations=1,
     )
 
-    result, elapsed_ms = agent._invoke_tool(
+    result, elapsed_ms = agent.invocation._invoke_tool(
         "slow_tool", {}, call_id="slow-call"
     )
     event_count_at_return = len(events)
@@ -86,14 +86,14 @@ def test_write_tool_timeout_reports_unknown_outcome(monkeypatch) -> None:
     monkeypatch.setattr(tuning_mod, "HEARTBEAT_INTERVAL_S", 0.01, raising=False)
     events: list[tuple[str, dict[str, Any]]] = []
     registry = _SlowWriteRegistry()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         event_callback=lambda event_type, data: events.append((event_type, data)),
         max_iterations=1,
     )
 
-    result, elapsed_ms = agent._invoke_tool(
+    result, elapsed_ms = agent.invocation._invoke_tool(
         "write_tool", {}, call_id="write-call"
     )
 
@@ -123,13 +123,13 @@ def test_order_tool_waits_for_completion_instead_of_detaching(monkeypatch) -> No
     """Order tools keep their broker-side timeout and cannot orphan a write."""
     monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.02, raising=False)
     registry = _SlowOrderRegistry()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         max_iterations=1,
     )
 
-    result, elapsed_ms = agent._invoke_tool(
+    result, elapsed_ms = agent.invocation._invoke_tool(
         "trading_place_order", {}, call_id="order-call"
     )
 
@@ -143,7 +143,7 @@ def test_cancel_returns_explicit_result_for_running_write(monkeypatch) -> None:
     """Parent cancellation ends the wait before a tool that ignores it."""
     monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 5.0, raising=False)
     registry = _SlowWriteRegistry()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         max_iterations=1,
@@ -156,7 +156,7 @@ def test_cancel_returns_explicit_result_for_running_write(monkeypatch) -> None:
     import threading
 
     threading.Thread(target=cancel, daemon=True).start()
-    result, elapsed_ms = agent._invoke_tool("write_tool", {}, call_id="cancel-call")
+    result, elapsed_ms = agent.invocation._invoke_tool("write_tool", {}, call_id="cancel-call")
 
     payload = json.loads(result)
     assert payload["status"] == "error"
@@ -169,7 +169,7 @@ def test_cancel_returns_explicit_result_for_running_write(monkeypatch) -> None:
 def test_cancelled_queued_tool_is_recorded_as_a_result(tmp_path: Path) -> None:
     """A call skipped before launch still closes its provider tool block."""
     registry = _SlowWriteRegistry()
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
     agent.memory.run_dir = str(tmp_path)
     agent.cancel()
     messages: list[dict[str, Any]] = []
@@ -193,9 +193,9 @@ def test_failed_order_cannot_be_reissued_in_the_same_turn() -> None:
             return json.dumps({"status": "error", "error": "connection lost"})
 
     registry = FailedOrderRegistry()
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
-    first, _ = agent._invoke_tool("trading_place_order", {"symbol": "AAPL"}, call_id="first")
-    repeated, _ = agent._invoke_tool("trading_place_order", {"symbol": "AAPL"}, call_id="second")
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+    first, _ = agent.invocation._invoke_tool("trading_place_order", {"symbol": "AAPL"}, call_id="first")
+    repeated, _ = agent.invocation._invoke_tool("trading_place_order", {"symbol": "AAPL"}, call_id="second")
     assert json.loads(first)["status"] == "error"
     assert registry.calls == 1
     assert json.loads(repeated)["retryable"] is False
@@ -211,7 +211,7 @@ def test_trading_state_tool_without_order_in_name_is_not_detached(monkeypatch) -
             return SimpleNamespace(name=tool_name, is_readonly=False, repeatable=False)
 
     registry = ClosePositionRegistry()
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
-    result, _ = agent._invoke_tool("etoro_close_position", {}, call_id="close")
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+    result, _ = agent.invocation._invoke_tool("etoro_close_position", {}, call_id="close")
     assert json.loads(result)["status"] == "ok"
     assert registry.completed is True

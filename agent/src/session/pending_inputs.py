@@ -5,7 +5,7 @@ durable ``pending_inputs.json`` and joins the conversation at the first point
 where the model can take it without losing work:
 
 * the running turn takes it after its current tool batch finished and before
-  its next model call (:class:`QueuedInputDelivery`, called by ``AgentLoop``);
+  its next model call (:class:`QueuedInputDelivery`, called by ``AgentRuntime``);
 * if that turn ends first, the oldest input starts the next turn.
 
 Each input leaves the queue exactly once. Before an input is written into the
@@ -159,6 +159,10 @@ class PendingInputQueue:
         """
         with self._lock(session_id):
             return self._read(session_id)
+
+    def public_items(self, session_id: str) -> list[dict[str, Any]]:
+        """Return the client view of the durable queue in delivery order."""
+        return [item.public() for item in self.list(session_id)]
 
     def waiting(self, session_id: str) -> List[PendingInput]:
         """Return the inputs no turn has claimed, oldest first.
@@ -392,7 +396,7 @@ def _was_delivered(
 class QueuedInputDelivery:
     """Hands a running turn the inputs queued for its session.
 
-    ``AgentLoop`` calls :meth:`deliver` at its one injection point, after a
+    ``AgentRuntime`` calls :meth:`deliver` at its one injection point, after a
     tool batch finished and before the next model call. Each input is claimed,
     written into the thread as a ``user`` item through the turn's recorder,
     announced, and only then removed from the queue. A write the recorder drops (the turn

@@ -16,7 +16,7 @@ include docker-compose.yml
 include agent/.env.example
 
 # Runtime schema-loading policy
-recursive-include agent/src/agent *.json
+include agent/src/product/tool_loading.json
 
 # Alpha Zoo factor metadata and per-zoo LICENSE / NOTICE files
 recursive-include agent/src/factors *.yaml *.md

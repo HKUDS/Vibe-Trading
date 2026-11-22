@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from src.agent.skills import SkillsLoader
+from src.product.resources.skills import SkillsLoader
 from src.swarm import worker as worker_mod
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.swarm.worker import run_worker
@@ -130,7 +130,7 @@ def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
             pass
 
         def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
-            from src.providers.chat import LLMResponse
+            from src.kernel.contracts import LLMResponse
 
             return LLMResponse(content="done")
 
@@ -185,7 +185,7 @@ def test_swarm_worker_empty_skills_stays_unrestricted(tmp_path: Path) -> None:
             pass
 
         def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
-            from src.providers.chat import LLMResponse
+            from src.kernel.contracts import LLMResponse
 
             return LLMResponse(content="done")
 

@@ -8,7 +8,7 @@ counts on every ``AIMessage.usage_metadata``; the swarm just wasn't
 reading them. These tests pin down both ends of the new contract:
 
 * :class:`LLMResponse` carries ``usage_metadata`` straight off the
-  parsed message (covered by exercising :meth:`ChatLLM._parse_response`
+  parsed message (covered by exercising :meth:`parse_response`
   on a fake AIMessage).
 * :func:`worker._estimate_tokens` prefers those real counts when present
   and only falls back to the legacy heuristic when the provider didn't
@@ -21,12 +21,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.providers.chat import ChatLLM, LLMResponse
+from src.kernel.contracts import LLMResponse
+from src.providers.response import parse_response
 from src.swarm.worker import _estimate_tokens
 
 
 # --------------------------------------------------------------------------- #
-# ChatLLM._parse_response — usage_metadata propagation
+# parse_response — usage_metadata propagation
 # --------------------------------------------------------------------------- #
 
 
@@ -45,7 +46,7 @@ def test_parse_response_propagates_usage_metadata_dict() -> None:
     msg = _fake_ai_message(
         usage_metadata={"input_tokens": 1234, "output_tokens": 56, "total_tokens": 1290}
     )
-    parsed = ChatLLM._parse_response(msg)
+    parsed = parse_response(msg)
     assert parsed.usage_metadata == {
         "input_tokens": 1234,
         "output_tokens": 56,
@@ -60,7 +61,7 @@ def test_parse_response_propagates_authoritative_provider_model_metadata() -> No
         }
     )
 
-    parsed = ChatLLM._parse_response(msg)
+    parsed = parse_response(msg)
 
     assert parsed.response_model == "deepseek-v4-flash-202607"
 
@@ -73,21 +74,21 @@ def test_parse_response_normalises_typed_dict_like_usage_to_plain_dict() -> None
             return iter([("input_tokens", 7), ("output_tokens", 11)])
 
     msg = _fake_ai_message(usage_metadata=_UsageLike())
-    parsed = ChatLLM._parse_response(msg)
+    parsed = parse_response(msg)
     assert isinstance(parsed.usage_metadata, dict)
     assert parsed.usage_metadata == {"input_tokens": 7, "output_tokens": 11}
 
 
 def test_parse_response_keeps_usage_metadata_none_when_provider_omits_it() -> None:
     msg = _fake_ai_message(usage_metadata=None)
-    parsed = ChatLLM._parse_response(msg)
+    parsed = parse_response(msg)
     assert parsed.usage_metadata is None
 
 
 def test_parse_response_handles_unconvertible_usage_gracefully() -> None:
     """A non-iterable, non-dict usage object should degrade to None, not crash."""
     msg = _fake_ai_message(usage_metadata=object())
-    parsed = ChatLLM._parse_response(msg)
+    parsed = parse_response(msg)
     assert parsed.usage_metadata is None
 
 

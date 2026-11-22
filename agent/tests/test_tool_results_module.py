@@ -2,8 +2,9 @@
 
 import pytest
 
-import src.agent.loop as loop
-import src.agent.tool_results as tool_results
+import src.agent.runtime as loop
+import src.product.tool_results as tool_results
+from src.tools import _arguments
 
 MOVED_CONSTANTS = [
     "_FORCED_TEXT_TOOL_CALL_RE",
@@ -17,7 +18,6 @@ MOVED_FUNCTIONS = [
     "_is_tool_success",
     "_looks_like_tool_call_syntax",
     "_named_target_paths",
-    "_normalize_tool_run_dir",
     "_previously_archived",
     "_archive_backtest_result",
 ]
@@ -30,6 +30,8 @@ def test_moved_name_is_owned_without_a_loop_compatibility_export(name):
 
 
 def test_moved_surface_is_complete():
+    assert callable(_arguments.normalize_tool_run_dir)
+    assert "_normalize_tool_run_dir" not in vars(tool_results)
     public_helpers = [
         n
         for n in dir(tool_results)

@@ -528,7 +528,7 @@ def test_worker_emits_task_heartbeat_during_tool_call():
     """
     import time
 
-    from src.agent.progress import HeartbeatTimer
+    from src.kernel.progress import HeartbeatTimer
 
     captured: list[dict] = []
     with HeartbeatTimer(tool_name="slow_tool", interval=0.5, emit=captured.append):
@@ -574,7 +574,7 @@ def test_swarm_tool_no_longer_cancels_on_budget_out():
         "SwarmTool.execute must not cancel the run on budget exhaustion; "
         "return partial state and let the agent decide."
     )
-    # The only legitimate trigger is the session cancel flag shared with AgentLoop.
+    # The only legitimate trigger is the session cancel flag shared with AgentRuntime.
     assert "_cancel_event" in source, (
         "SwarmTool.execute must watch the session cancel flag so a user stop "
         "reaches the run."

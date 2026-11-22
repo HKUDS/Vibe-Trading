@@ -183,7 +183,7 @@ class TestOwnerIsolation:
 class TestRegistryBinding:
     def test_filtered_registry_and_loop_keep_the_bound_handle(self) -> None:
         from types import SimpleNamespace
-        from src.agent.loop import AgentLoop
+        from src.agent.runtime import AgentRuntime
         from src.tools import build_filtered_registry
         from src.tools.background_tools import BackgroundScope
 
@@ -192,7 +192,7 @@ class TestRegistryBinding:
                                            include_shell_tools=True, background_manager=handle)
         assert registry.background.scope == handle.scope
         assert registry.background is registry.get("check_background").background
-        loop = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+        loop = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
         assert loop._background_manager is registry.background
 
     def test_scope_is_absent_from_the_model_visible_tool_schema(self) -> None:
@@ -242,7 +242,7 @@ class TestRegistryBinding:
     def test_agent_loop_drains_the_same_handle_the_tools_write_to(self) -> None:
         from types import SimpleNamespace
 
-        from src.agent.loop import AgentLoop
+        from src.agent.runtime import AgentRuntime
         from src.tools.background_tools import BackgroundScope
 
         scope = BackgroundScope(owner_id="session-wired", attempt_id="attempt-1")
@@ -257,7 +257,7 @@ class TestRegistryBinding:
             registry.get("background_run").background, _echo_command("wired")
         )
 
-        loop = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+        loop = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
 
         # The loop drains exactly the handle the tool wrote to, so the result
         # reaches this conversation and not another one.

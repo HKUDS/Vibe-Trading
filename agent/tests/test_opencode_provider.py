@@ -12,7 +12,8 @@ import pytest
 
 from src.providers.settings import get_llm_credentials
 from src.providers.registry import get_provider_capabilities
-from src.providers.llm import ChatOpenAIWithReasoning, _targets_opencode
+from src.providers.adapters.openai import ChatOpenAIWithReasoning
+from src.providers.request_guards import _targets_opencode
 from src.providers.session_context import (
     bind_llm_session_id,
     current_llm_session_id,

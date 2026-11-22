@@ -19,11 +19,11 @@ def test_model_inference_does_not_change_explicit_adapter_family(monkeypatch):
     route = resolve_config(environment={"LANGCHAIN_PROVIDER": "openai", "LANGCHAIN_MODEL_NAME": "deepseek-test"})
     assert route.backend == "openai_compatible"
     assert get_provider_capabilities(route.provider, route.model).name == "deepseek"
-    from src.providers import llm as llm_module
+    from src.providers import diagnostics
 
-    monkeypatch.setattr(llm_module, "resolve_config", lambda: route)
-    monkeypatch.setattr(llm_module, "_package_version", lambda _: "installed")
-    assert llm_module.provider_diagnostics()["adapter"]["type"] == "openai-compatible"
+    monkeypatch.setattr(diagnostics, "resolve_config", lambda: route)
+    monkeypatch.setattr(diagnostics, "_package_version", lambda _: "installed")
+    assert diagnostics.provider_diagnostics()["adapter"]["type"] == "openai-compatible"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "openai_codex", "LANGCHAIN_MODEL_NAME": "test"}).backend == "openai_codex"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "github-copilot", "LANGCHAIN_MODEL_NAME": "test"}).backend == "copilot"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "unknown-legacy-relay", "LANGCHAIN_MODEL_NAME": "test"}).backend == "openai_compatible"

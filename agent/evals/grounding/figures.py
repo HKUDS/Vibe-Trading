@@ -21,7 +21,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, Sequence
 
-from src.agent.instrument_identity import _CANONICAL_SYMBOL_RE
+from src.product.identity.normalize import _CANONICAL_SYMBOL_RE
 
 #: Maximum relative rounding gap; written precision can only narrow this.
 #: Coarse rounding such as 0.82467 -> 0.82 exceeds the existing 0.5% policy;

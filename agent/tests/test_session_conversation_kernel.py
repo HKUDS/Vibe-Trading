@@ -1,6 +1,6 @@
 """The conversation, not the run, is the kernel's unit.
 
-Every test here drives the real ``SessionService`` -> ``AgentLoop`` ->
+Every test here drives the real ``SessionService`` -> ``AgentRuntime`` ->
 ``thread.jsonl`` path with a scripted offline model; only the registry
 builder, the LLM factory and persistent memory are replaced. The model is
 scripted as a *policy*: it looks at the request it receives and only calls a
@@ -21,13 +21,14 @@ from typing import Any, Callable
 import pytest
 
 from src.providers.messages import INTERRUPTED_RESULT_CONTENT
-from src.agent.instrument_identity import IdentityLedger
-from src.agent.tool_loading import DeferredToolRegistry
+from src.product.identity.ledger import IdentityLedger
+from src.product.tool_loading import DeferredToolRegistry
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus
-from src.session.service import STOPPED_MARKER, SessionService
+from src.session.attempts import STOPPED_MARKER
+from src.session.service import SessionService
 from src.session.store import SessionStore
-from src.session.thread import project_turn, STOPPED_TURN_NOTES
+from src.session.replay import project_turn, STOPPED_TURN_NOTES
 from src.tools.read_file_tool import ReadFileTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 
@@ -730,7 +731,7 @@ def test_later_turn_reads_an_earlier_turns_offloaded_tool_result(tmp_path, monke
 def test_second_turn_request_body_repeats_the_first_turn_byte_for_byte(tmp_path, monkeypatch):
     """Captured with httpx.MockTransport through the real OpenAI-compatible adapter."""
     httpx = pytest.importorskip("httpx")
-    from src.providers.llm import ChatOpenAIWithReasoning
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
     bodies: list[bytes] = []
 
@@ -858,3 +859,45 @@ def test_failed_attempt_scrubs_exception_before_persistence_and_display(tmp_path
     assert "private-error-detail" not in str(service.get_messages(sid))
     if attempt.run_dir:
         assert "private-error-detail" not in (Path(attempt.run_dir) / "state.json").read_text()
+
+
+@pytest.mark.parametrize("first_response", ["text", "tool", "none"])
+def test_kernel_dispatch_reaches_provider_thread_and_sse(tmp_path, monkeypatch, first_response):
+    from src.kernel.contracts import LLMResponse, ToolCallRequest
+
+    def respond(llm, messages, tools, on_text):
+        if first_response == "none" and len(llm.requests) == 1:
+            return None
+        if first_response == "tool" and len(llm.requests) == 1:
+            return LLMResponse(tool_calls=[ToolCallRequest("quote", "lookup", {"key": "us"})])
+        if first_response == "tool":
+            assert [m["tool_call_id"] for m in _tool_messages(messages, "lookup")] == ["quote"]
+        on_text("Delivered.")
+        return LLMResponse(content="Delivered.")
+
+    llm = _PolicyLLM(respond)
+    service = _service(tmp_path, monkeypatch, _lookup_factory(), llm)
+
+    async def scenario():
+        sid = service.create_session("kernel dispatch").session_id
+        turn = await _send(service, sid, "Inspect the fixture")
+        items = _turn_items(service, sid, turn)
+        assert items[-1].type == "turn_end" and items[-1].get("status") == "completed"
+        stream = service.thread_events.stream(sid, cursor=0)
+        frames = []
+        try:
+            async for event in stream:
+                fields = dict(line.split(": ", 1) for line in event.to_sse().splitlines() if line)
+                frames.append((fields["event"], json.loads(fields["data"])))
+                if fields["event"] == "run.completed":
+                    break
+        finally:
+            await stream.aclose()
+        completed = [data["item"] for kind, data in frames if kind == "item.completed"]
+        answers = [row["content"] for row in completed if row["type"] == "assistant" and row["phase"] == "final"]
+        tool_results = [row["tool_call_id"] for row in completed if row["type"] == "tool_result"]
+        assert answers == ["Delivered."]
+        assert tool_results == (["quote"] if first_response == "tool" else [])
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=15))
+    assert len(llm.requests) == (1 if first_response == "text" else 2)

@@ -10,7 +10,7 @@ used to be thrown away at the end of every attempt:
 * the tool-result files earlier turns offloaded, so a later turn's
   ``read_file`` reaches them by the relative path their receipt names.
 
-Each turn gets a :class:`TurnRecorder`, the sink ``AgentLoop`` writes thread
+Each turn gets a :class:`TurnRecorder`, the sink ``AgentRuntime`` writes thread
 items through. The loop stays usable without one (CLI, tests).
 
 Replayed history is conversation text only. Identity authorization is restored
@@ -23,19 +23,13 @@ from __future__ import annotations
 import copy
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from src.session.thread import (
-    ThreadItem,
-    ThreadItemError,
-    ThreadLog,
-    TurnProjection,
-    durable_tool_calls,
-    open_turns,
-    project_turn,
-    replay_with_seqs,
-)
+from src.session.replay import TurnProjection, durable_tool_calls, project_turn, replay_with_seqs
+from src.session.thread import ThreadLog, open_turns
+from src.session.thread_schema import ThreadItem, ThreadItemError
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +40,7 @@ TOOL_RESULTS_DIRNAME = "tool-results"
 class TurnRecorder:
     """Thread sink for one turn.
 
-    ``AgentLoop`` writes every item of the turn through this object: the user
+    ``AgentRuntime`` writes every item of the turn through this object: the user
     message as sent, each model response, each delivered tool result, loop
     injections, compactions and state snapshots. A write failure is logged and
     the turn continues, as a failed trace or checkpoint write does; the
@@ -562,3 +556,26 @@ class SessionRuntime:
             self.thread.append(item_type, turn_id, **payload)
         except (OSError, ThreadItemError) as exc:
             logger.warning("Could not record %s for turn %s: %s", item_type, turn_id, exc)
+
+
+class SessionRuntimes:
+    """Own this service's per-conversation runtimes, shared by maintenance and attempts."""
+
+    def __init__(self, thread_log: Callable[[str], ThreadLog]) -> None:
+        self._thread_log = thread_log
+        self._sessions: dict[str, SessionRuntime] = {}
+        self._lock = threading.Lock()
+
+    def get(self, session_id: str) -> SessionRuntime:
+        """Rebuild a conversation from its thread on first use."""
+        with self._lock:
+            runtime = self._sessions.get(session_id)
+            if runtime is None:
+                runtime = SessionRuntime(self._thread_log(session_id), session_id)
+                self._sessions[session_id] = runtime
+            return runtime
+
+    def discard(self, session_id: str) -> None:
+        """Release the cached runtime after its session has been deleted."""
+        with self._lock:
+            self._sessions.pop(session_id, None)

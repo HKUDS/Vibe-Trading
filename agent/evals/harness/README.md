@@ -57,7 +57,7 @@ original standalone harness CLI retains its existing exit behavior.
 
 ## Research delivery and offline diagnostics
 
-The research runtime imports only `src.agent.instrument_identity` for instrument
+The research runtime imports only `src.product.identity.ledger` for instrument
 resolution and tool authorization. Numeric diagnostics live in `evals.grounding`;
 no runtime path imports them. They emit findings only: no correction prompts,
 redaction, fallback answers, declaration stripping or streaming limits. Legacy

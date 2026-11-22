@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
-from src.agent.memory import WorkspaceMemory
-from src.agent.skills import SkillsLoader
-from src.agent.tool_loading import loading_policy
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
+from src.product.resources.memory import WorkspaceMemory
+from src.product.resources.skills import SkillsLoader
+from src.product.tool_loading import loading_policy
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.config.accessor import get_env_config, reset_env_config
 
 pytestmark = pytest.mark.unit
@@ -106,7 +106,7 @@ def test_enabled_mid_turn_nudge_is_injected_after_data_without_commentary(
     registry = ToolRegistry()
     registry.register(_MarketObservation())
     llm = _ScriptedLLM()
-    loop = AgentLoop(registry=registry, llm=llm, max_iterations=4)
+    loop = AgentRuntime(registry=registry, llm=llm, max_iterations=4)
     loop.memory.run_dir = str(tmp_path)
 
     result = loop.run("Compare the two observations.")

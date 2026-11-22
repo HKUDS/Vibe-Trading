@@ -8,8 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.agent.context_budget import CompactionBudget, ContextMeter, estimate_tokens, resolve_window
-from src.agent.result_artifacts import save_result_parts
+from src.session.context_budget import CompactionBudget, ContextMeter, estimate_tokens, resolve_window
+from src.product.result_artifacts import save_result_parts
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.tools.redaction import redact_tool_result

@@ -211,12 +211,6 @@ register_research_artifact_routes(app)
 from src.api.research_lab_routes import register_research_lab_routes  # noqa: E402
 register_research_lab_routes(app, require_auth, require_settings_write_auth)
 
-from src.api.sessions_routes import (  # noqa: F401, E402
-    _goal_store,
-    _live_action_frame_from_tool_result,
-    _mandate_proposal_frame_from_tool_result,
-)
-
 # --- System ---
 from src.api.system_routes import register_system_routes  # noqa: E402
 register_system_routes(app)

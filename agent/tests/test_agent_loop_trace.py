@@ -1,4 +1,4 @@
-"""AgentLoop trace integration tests for PR #206 rebase."""
+"""AgentRuntime trace integration tests for PR #206 rebase."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from typing import Any, Callable
 
 import pytest
 
-import src.agent.loop as loop_mod
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+import src.agent.runtime as loop_mod
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from tests.recording_helpers import recorder_at, records_at, run_recorded_tool
 
 
@@ -42,7 +42,7 @@ class _SecretRegistry:
 
 def test_tool_call_trace_redacts_args_and_structured_results(tmp_path: Path) -> None:
     """Persistent trace entries should not store raw credentials/account fields."""
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=_SecretRegistry(),  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         max_iterations=1,
@@ -117,7 +117,7 @@ def test_session_trace_uses_session_dir_and_round_trips_long_answer(
 ) -> None:
     """Session runs aggregate trace.jsonl under sessions/<id> without truncation."""
     monkeypatch.setattr(loop_mod, "SESSIONS_DIR", tmp_path / "sessions")
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=_SecretRegistry(),  # type: ignore[arg-type]
         llm=_LongAnswerLLM(),
         max_iterations=1,

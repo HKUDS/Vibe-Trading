@@ -1,4 +1,4 @@
-"""Per-response text delivery and progress callbacks for AgentLoop.
+"""Per-response text delivery and progress callbacks for AgentRuntime.
 
 A fresh instance is created for each model iteration. Its state deliberately
 survives the one provider retry exactly as the former closure state did.
@@ -9,11 +9,15 @@ import time as _time
 import uuid
 from typing import Any, Callable
 
+from src.kernel import events as vocabulary
+from src.kernel.events import EventSink
+
+
 class TurnStream:
     """Stream model text unchanged and throttle progress events."""
 
     def __init__(
-        self, *, emit: Callable[[str, dict[str, Any]], None],
+        self, *, emit: EventSink,
         iteration: int, heartbeat_interval: Callable[[], float], reasoning_interval: Callable[[], float],
     ) -> None:
         self._emit = emit
@@ -32,10 +36,10 @@ class TurnStream:
 
     def emit(self, event_type: str, data: dict[str, Any]) -> None:
         """Emit one response lifecycle directly from the streaming owner."""
-        if data.get("kind") in {"text.delta", "text.reset", "reasoning.delta"}:
+        if data.get("kind") in {vocabulary.TEXT_DELTA, vocabulary.TEXT_RESET, vocabulary.REASONING_DELTA}:
             if not self.started:
                 self.started = True
-                self._emit("item.started", {"kind": "item.started", "live_id": self.live_id,
+                self._emit(vocabulary.ITEM_STARTED, {"kind": vocabulary.ITEM_STARTED, "live_id": self.live_id,
                                              "item": {"type": "assistant"}, "iter": self.iteration})
             data = {**data, "live_id": self.live_id}
         self._emit(event_type, data)
@@ -43,7 +47,7 @@ class TurnStream:
     def on_text(self, delta: str) -> None:
         self.thinking_chunks.append(delta)
         self.stream_total += len(delta)
-        self.emit("item.delta", {"kind": "text.delta", "delta": delta, "iter": self.iteration})
+        self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_DELTA, "delta": delta, "iter": self.iteration})
         self.streamed_chars = self.stream_total
 
     def finish(self, content: str) -> None:
@@ -57,19 +61,19 @@ class TurnStream:
         if not content.startswith(shown):
             # Some adapters return a normalized final message. Replace its own
             # partial stream; never rewrite the provider's final answer.
-            self.emit("item.delta", {"kind": "text.reset", "iter": self.iteration, "reason": "provider_final_text"})
+            self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_RESET, "iter": self.iteration, "reason": "provider_final_text"})
             shown = ""
         if len(content) > len(shown):
             self.emit(
-                "item.delta",
-                {"kind": "text.delta", "delta": content[len(shown):], "iter": self.iteration, "phase": "final"},
+                vocabulary.ITEM_DELTA,
+                {"kind": vocabulary.TEXT_DELTA, "delta": content[len(shown):], "iter": self.iteration, "phase": "final"},
             )
 
     def on_waiting(self) -> None:
         now = _time.monotonic()
         if self.last_waiting_emit is None or now - self.last_waiting_emit >= self.heartbeat_interval():
             self.last_waiting_emit = now
-            self.emit("item.delta", {"kind": "run.waiting", "iter": self.iteration})
+            self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_WAITING, "iter": self.iteration})
 
     def on_reasoning(self, delta: str) -> None:
         # Throttled: long reasoning streams produce hundreds of
@@ -94,8 +98,8 @@ class TurnStream:
             "chars": self.reasoning_chars,
         }
         reasoning_event["tail"] = self.reasoning_tail
-        reasoning_event["kind"] = "reasoning.delta"
-        self.emit("item.delta", reasoning_event)
+        reasoning_event["kind"] = vocabulary.REASONING_DELTA
+        self.emit(vocabulary.ITEM_DELTA, reasoning_event)
 
     def reset_for_retry(self) -> None:
         """Discard the failed text attempt with the existing retry semantics."""

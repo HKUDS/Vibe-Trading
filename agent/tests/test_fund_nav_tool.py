@@ -285,7 +285,7 @@ class TestIdentityGateBypass:
         # resolver cannot obtain for off-exchange codes. `funds` must stay
         # outside that set, or the tool becomes uncallable in the agent loop
         # (measured live: identity_required / identity_conflict loop).
-        from src.agent.instrument_identity import _SYMBOL_ARGUMENT_KEYS
+        from src.product.identity.ledger import _SYMBOL_ARGUMENT_KEYS
 
         param_names = set(GildataFundNavTool.parameters["properties"])
         assert param_names & set(_SYMBOL_ARGUMENT_KEYS) == set()

@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 
 from src.session.store import SessionStore
-from src.session.thread import ThreadItemError, ThreadLog, open_turns
+from src.session.thread import ThreadLog, open_turns
+from src.session.thread_schema import ThreadItemError
 
 
 def _tool_call(call_id: str, name: str, arguments: dict) -> dict:

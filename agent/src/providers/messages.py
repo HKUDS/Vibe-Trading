@@ -8,7 +8,9 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Mapping, Optional
+
+from src.kernel.contracts import ModelMessage
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ def assistant_message(
     *,
     target_provider: Optional[str] = None,
     target_model: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> ModelMessage:
     """Rebuild the assistant message the loop sent, in the loop's key order.
 
     Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
@@ -92,12 +94,12 @@ class MessagePairing:
         self._missing_result = missing_result
         self._missing_first = missing_first
         self._result_start = 0
-        self.messages: List[Dict[str, Any]] = []
-        self._pending: Dict[str, str] = {}
+        self.messages: list[ModelMessage] = []
+        self._pending: dict[str, str] = {}
         self._answered: set = set()
-        self._held: List[Dict[str, Any]] = []
+        self._held: list[ModelMessage] = []
 
-    def add(self, message: Dict[str, Any]) -> None:
+    def add(self, message: ModelMessage) -> None:
         """Consume an independently owned message, preserving its identity."""
         role = message.get("role")
         if role == "assistant":
@@ -131,11 +133,10 @@ class MessagePairing:
         self._held = []
 
 
-def repair_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
     """Repair tool blocks for one provider request without changing history.
 
-    The session thread's positional replayer is the single pairing
-    implementation. A fresh replayer output supplies one interrupted result
+    A new positional pairing supplies one interrupted result
     for an unanswered call and drops orphan results. The caller's message list
     is never mutated, so the repair remains request-local.
 
@@ -153,3 +154,136 @@ def repair_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
             replayer.add(copy.deepcopy(message))
     replayer.close_block()
     return replayer.messages
+
+
+def attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:
+    """Attach Gemini thought signatures to assistant replay tool calls.
+
+    The replay message is later converted back into LangChain messages from a
+    plain dict history. Keep signatures in both the provider-neutral
+    ``extra_content.thought_signature`` slot and Gemini's OpenAI-compatible
+    ``extra_content.google.thought_signature`` slot so both local replay tests
+    and the Gemini request injector can recover the value.
+    """
+    outbound_tool_calls = message.get("tool_calls")
+    if not isinstance(outbound_tool_calls, list):
+        return message
+
+    signatures_by_id: dict[str, str] = {}
+    signatures_by_index: dict[int, str] = {}
+    for index, tc in enumerate(tool_calls):
+        extra_content = getattr(tc, "extra_content", None)
+        signature = None
+        if isinstance(extra_content, dict):
+            signature = extra_content.get("thought_signature")
+            google_extra = extra_content.get("google")
+            if not signature and isinstance(google_extra, dict):
+                signature = google_extra.get("thought_signature") or google_extra.get(
+                    "thoughtSignature"
+                )
+        signature = signature or getattr(tc, "thought_signature", None)
+        if not signature:
+            continue
+        tc_id = getattr(tc, "id", None)
+        if tc_id:
+            signatures_by_id[str(tc_id)] = signature
+        signatures_by_index[index] = signature
+
+    if not signatures_by_id and not signatures_by_index:
+        return message
+
+    def attach(raw_tool_call: Any, index: int) -> None:
+        if not isinstance(raw_tool_call, dict):
+            return
+        signature = signatures_by_id.get(str(raw_tool_call.get("id"))) or signatures_by_index.get(index)
+        if not signature:
+            return
+        extra_content = raw_tool_call.setdefault("extra_content", {})
+        if not isinstance(extra_content, dict):
+            extra_content = {}
+            raw_tool_call["extra_content"] = extra_content
+        extra_content["thought_signature"] = signature
+        google = extra_content.setdefault("google", {})
+        if not isinstance(google, dict):
+            google = {}
+            extra_content["google"] = google
+        google["thought_signature"] = signature
+
+    for index, raw_tool_call in enumerate(outbound_tool_calls):
+        attach(raw_tool_call, index)
+
+    additional_kwargs = message.setdefault("additional_kwargs", {})
+    raw_tool_calls = additional_kwargs.setdefault(
+        "tool_calls",
+        copy.deepcopy(outbound_tool_calls),
+    )
+    if isinstance(raw_tool_calls, list):
+        for index, raw_tool_call in enumerate(raw_tool_calls):
+            attach(raw_tool_call, index)
+
+    return message
+
+
+def _tool_call_thought_signature_maps(ai_message: Any) -> tuple[dict[str, str], dict[int, str]]:
+    """Return Gemini thought signatures captured by ``ChatOpenAIWithReasoning``."""
+    by_id: dict[str, str] = {}
+    by_index: dict[int, str] = {}
+    additional_kwargs = getattr(ai_message, "additional_kwargs", {})
+    entries = additional_kwargs.get("tool_call_thought_signatures", [])
+
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return by_id, by_index
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        signature = entry.get("thought_signature")
+        if not signature:
+            continue
+        if entry.get("id"):
+            by_id[str(entry["id"])] = signature
+        index = entry.get("index")
+        if isinstance(index, int):
+            by_index[index] = signature
+    return by_id, by_index
+
+
+def _extract_tool_call_extra_content(raw_tool_call: Any) -> dict[str, Any]:
+    """Extract provider-specific tool-call metadata LangChain would drop."""
+    if not isinstance(raw_tool_call, dict):
+        return {}
+
+    extra_content: dict[str, Any] = {}
+    raw_extra = raw_tool_call.get("extra_content")
+    if isinstance(raw_extra, dict):
+        extra_content.update(raw_extra)
+        google_extra = raw_extra.get("google")
+        if isinstance(google_extra, dict):
+            signature = google_extra.get("thought_signature") or google_extra.get(
+                "thoughtSignature"
+            )
+            if signature:
+                extra_content["thought_signature"] = signature
+
+    function = raw_tool_call.get("function")
+    if isinstance(function, dict):
+        function_extra = function.get("extra_content")
+        if isinstance(function_extra, dict):
+            extra_content.update(function_extra)
+        if function.get("thought_signature"):
+            extra_content["thought_signature"] = function["thought_signature"]
+
+    if raw_tool_call.get("thought_signature"):
+        extra_content["thought_signature"] = raw_tool_call["thought_signature"]
+
+    return extra_content
+
+
+def _merge_tool_call_extra_content(*raw_tool_calls: Any) -> dict[str, Any]:
+    """Merge provider metadata from standardized and raw tool-call shapes."""
+    extra_content: dict[str, Any] = {}
+    for raw_tool_call in raw_tool_calls:
+        extra_content.update(_extract_tool_call_extra_content(raw_tool_call))
+    return extra_content

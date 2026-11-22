@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 from src.tools.financial_rigor_tool import FinancialRigorTool
@@ -42,7 +42,7 @@ class _CountingTool(BaseTool):
 
 
 def _drive(
-    agent: AgentLoop,
+    agent: AgentRuntime,
     tool_name: str,
     run_dir: Path,
     arg_sets: list[dict],
@@ -68,13 +68,13 @@ def _drive(
 
 @pytest.fixture()
 def agent_factory(tmp_path: Path):
-    """Return a builder for an AgentLoop wired to a run dir and one tool."""
+    """Return a builder for an AgentRuntime wired to a run dir and one tool."""
 
-    def _build(tool: BaseTool) -> tuple[AgentLoop, Path, list[tuple[str, dict]]]:
+    def _build(tool: BaseTool) -> tuple[AgentRuntime, Path, list[tuple[str, dict]]]:
         registry = ToolRegistry()
         registry.register(tool)
         captured: list[tuple[str, dict]] = []
-        agent = AgentLoop(
+        agent = AgentRuntime(
             registry=registry,
             llm=SimpleNamespace(),
             max_iterations=4,
@@ -218,7 +218,7 @@ def test_cache_hit_still_passes_the_identity_gate(agent_factory) -> None:
         def ingest_tool_result(self, **kwargs):
             ingested.append(kwargs["call_id"])
 
-    agent._identity = _Grounding()
+    agent.tool_env.identity = _Grounding()
     messages, records = _drive(agent, tool.name, run_dir, [{"a": 1}, {"a": 1}])
 
     # Both calls reached the gate; the blocked repeat was not served cached.

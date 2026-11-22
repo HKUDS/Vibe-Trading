@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from evals.grounding import GroundingLedger
-from src.agent.resolution_context import ResolutionContext
+from src.product.identity.constraints import ResolutionContext
 
 
 def _resolver_payload(query: str, candidates: list[dict[str, Any]]) -> str:

@@ -147,7 +147,7 @@ def _probe_skill_count() -> int:
     plus ``~/.vibe-trading/skills/user/``.
     """
     try:
-        from src.agent.skills import SkillsLoader
+        from src.product.resources.skills import SkillsLoader
 
         loader = SkillsLoader()
         return len(loader.skills)

@@ -28,7 +28,7 @@ def call(tool, **kwargs):
 
 
 def test_a_module_outside_the_allowlist_is_unreachable(tool):
-    for module in ("os", "subprocess", "builtins", "src.agent.loop", "sys"):
+    for module in ("os", "subprocess", "builtins", "src.agent.runtime", "sys"):
         result = call(tool, action="call", module=module, function="system", kwargs={})
         assert result["ok"] is False
         assert "unknown module" in result["error"]

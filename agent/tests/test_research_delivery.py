@@ -1,10 +1,10 @@
 """Research delivery preserves the model's answer without a prose gate."""
 import pytest
 
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.agent.loop_streaming import TurnStream
 from src.agent.tools import ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 import src.swarm.worker as worker
 
@@ -37,7 +37,7 @@ class AnswerModel:
 def test_final_answer_is_delivered_verbatim(tmp_path, monkeypatch, answer, stream):
     events = []
     llm = AnswerModel(answer, stream=stream)
-    agent = AgentLoop(registry=ToolRegistry(), llm=llm, max_iterations=3,
+    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, max_iterations=3,
                       event_callback=lambda event, data: events.append((event, data)))
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -100,7 +100,7 @@ def test_worker_actual_delivery_failure_is_not_success(tmp_path, monkeypatch, re
 @pytest.mark.parametrize("reason", ["length", "max_tokens"])
 def test_agent_preserves_truncated_text_without_success(tmp_path, reason):
     llm = AnswerModel("The position should be", finish_reason=reason)
-    agent = AgentLoop(registry=ToolRegistry(), llm=llm, max_iterations=3)
+    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, max_iterations=3)
     agent.memory.run_dir = str(tmp_path / "run")
     result = agent.run("Summarize the supplied research.")
     assert result["status"] == "failed"
@@ -134,7 +134,7 @@ def test_truncated_tool_call_is_never_executed(tmp_path, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("a truncated response cannot execute tools")
     monkeypatch.setattr(registry, "execute", forbidden)
-    agent = AgentLoop(registry=registry, llm=PartialCall(""), max_iterations=3)
+    agent = AgentRuntime(registry=registry, llm=PartialCall(""), max_iterations=3)
     agent.memory.run_dir = str(tmp_path / "run")
     result = agent.run("Analyze the supplied numbers.")
     assert result["status"] == "failed"

@@ -20,7 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
-from src.api.sessions_routes import UpdateSessionRequest, register_sessions_routes
+from src.api.session_actions import UpdateSessionRequest
+from src.api.sessions_routes import register_sessions_routes
 from src.session.events import EventBus
 from src.session.search import SessionSearchIndex
 from src.session.service import SessionService

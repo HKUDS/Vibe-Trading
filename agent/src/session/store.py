@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.session.models import Attempt, Message, Session
-from src.session.thread import THREAD_FILENAME, ThreadLog, project_turn
+from src.session.replay import project_turn
+from src.session.thread import THREAD_FILENAME, ThreadLog
 
 logger = logging.getLogger(__name__)
 

@@ -7,13 +7,14 @@ backend fails closed before a command is started.
 from __future__ import annotations
 
 import ast
-import os
 import platform
 import re
 import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from src.config.accessor import get_env_value
 
 
 class SandboxUnavailableError(RuntimeError):
@@ -88,10 +89,10 @@ class SandboxSettings:
     @classmethod
     def from_env(cls, runtime_root: Path | None = None) -> "SandboxSettings":
         """Resolve settings without relying on the cached Pydantic config."""
-        backend = os.environ.get("VIBE_TRADING_SANDBOX_BACKEND", "").strip().lower() or None
+        backend = get_env_value("VIBE_TRADING_SANDBOX_BACKEND", "").strip().lower() or None
         return cls(
-            enabled=_env_bool(os.environ.get("VIBE_TRADING_SANDBOX_ENABLED")),
-            network=_env_bool(os.environ.get("VIBE_TRADING_SANDBOX_NETWORK")),
+            enabled=_env_bool(get_env_value("VIBE_TRADING_SANDBOX_ENABLED")),
+            network=_env_bool(get_env_value("VIBE_TRADING_SANDBOX_NETWORK")),
             backend=backend,
             runtime_root=runtime_root,
         )
@@ -125,7 +126,7 @@ class SandboxSettings:
         backend = self._selected_backend()
         if backend != "sandbox-exec":
             raise SandboxUnavailableError("Seatbelt profile requested for a non-macOS backend")
-        root = Path(self.runtime_root or os.environ.get("VIBE_TRADING_HOME", Path.home() / ".vibe-trading")).expanduser().resolve()
+        root = Path(self.runtime_root or get_env_value("VIBE_TRADING_HOME", str(Path.home() / ".vibe-trading"))).expanduser().resolve()
         lines = [
             "(version 1)",
             "(deny default)",
@@ -153,7 +154,7 @@ class SandboxSettings:
         backend = self.resolved_backend()
         workspace = Path(workspace).expanduser().resolve()
         if backend == "sandbox-exec":
-            root = Path(self.runtime_root or os.environ.get("VIBE_TRADING_HOME", Path.home() / ".vibe-trading")).expanduser()
+            root = Path(self.runtime_root or get_env_value("VIBE_TRADING_HOME", str(Path.home() / ".vibe-trading"))).expanduser()
             root.mkdir(parents=True, exist_ok=True)
             handle = tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", prefix=".sandbox-", suffix=".sb", dir=root, delete=False
@@ -168,7 +169,7 @@ class SandboxSettings:
                 argv.append("--unshare-net")
             argv.extend(["--bind", str(workspace), str(workspace)])
             for protected in enumerate_protected_runtime_paths(
-                Path(self.runtime_root or os.environ.get("VIBE_TRADING_HOME", Path.home() / ".vibe-trading"))
+                Path(self.runtime_root or get_env_value("VIBE_TRADING_HOME", str(Path.home() / ".vibe-trading")))
             ):
                 if protected.exists():
                     argv.extend(["--tmpfs", str(protected)])

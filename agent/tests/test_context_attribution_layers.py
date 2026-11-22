@@ -7,7 +7,7 @@ import builtins
 import pytest
 
 from backtest.loaders.registry import VALID_SOURCES
-from src.agent.context import ContextBuilder
+from src.product.context import ContextBuilder
 
 
 @pytest.mark.unit
@@ -15,25 +15,25 @@ class TestAttributionLayersPresence:
     """Verify all 4 attribution layers exist in system prompt."""
 
     def test_system_prompt_contains_layer1_trade_attribution(self):
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert "Layer 1" in _SYSTEM_PROMPT
         assert "Trade Attribution" in _SYSTEM_PROMPT
 
     def test_system_prompt_contains_layer2_beta_regression(self):
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert "Layer 2" in _SYSTEM_PROMPT
         assert "Beta Regression" in _SYSTEM_PROMPT
 
     def test_system_prompt_contains_layer3_regime_analysis(self):
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert "Layer 3" in _SYSTEM_PROMPT
         assert "Regime Analysis" in _SYSTEM_PROMPT
 
     def test_system_prompt_contains_layer4_monte_carlo(self):
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert "Layer 4" in _SYSTEM_PROMPT
         assert "Monte Carlo" in _SYSTEM_PROMPT
@@ -45,19 +45,19 @@ class TestAttributionSkillReferences:
 
     def test_layer3_references_correlation_analysis_skill(self):
         """Layer 3 should delegate regime classification to correlation-analysis skill."""
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert 'load_skill("correlation-analysis")' in _SYSTEM_PROMPT
 
     def test_layer2_references_performance_attribution_skill(self):
         """Layer 2 should reference performance-attribution for deep analysis."""
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert 'load_skill("performance-attribution")' in _SYSTEM_PROMPT
 
     def test_at_risk_references_backtest_diagnose_skill(self):
         """At-risk routing should reference backtest-diagnose for code-level diagnosis."""
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert 'load_skill("backtest-diagnose")' in _SYSTEM_PROMPT
 
@@ -68,7 +68,7 @@ class TestAttributionPromptIntegrity:
 
     def test_system_prompt_format_succeeds(self):
         """Verify .format() with all required placeholders doesn't raise KeyError."""
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         result = _SYSTEM_PROMPT.format(
             tool_count=10,
@@ -92,21 +92,21 @@ class TestAttributionPromptIntegrity:
 
     def test_strategy_routing_thresholds_present(self):
         """Verify strategy routing classification is defined."""
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert "Sharpe" in _SYSTEM_PROMPT
         assert "MaxDD" in _SYSTEM_PROMPT
 
     def test_override_mechanism_present(self):
         """Verify user can override routing to run all layers."""
-        from src.agent.context import _SYSTEM_PROMPT
+        from src.product.context import _SYSTEM_PROMPT
 
         assert "Override" in _SYSTEM_PROMPT or "override" in _SYSTEM_PROMPT
 
     def test_threshold_rationale_self_contained(self):
         """Threshold rationale is documented inline, not via a gitignored docs/ path."""
         from pathlib import Path
-        import src.agent.context as ctx_module
+        import src.product.context as ctx_module
 
         source = Path(ctx_module.__file__).read_text(encoding="utf-8")
         # The rationale comment must be present and self-contained.

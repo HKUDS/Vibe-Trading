@@ -1,0 +1,429 @@
+"""Prepare authorized tool batches with explicit identity dependencies."""
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from src.agent.tuning import _override
+from src.kernel.contracts import BoundCall
+from src.kernel.tool_runner import execute_batch
+from src.product.context import ContextBuilder
+from src.product.tool_results import _failure_code
+from src.tools._arguments import normalize_tool_run_dir
+from src.tools.redaction import redact_payload
+
+logger = logging.getLogger(__name__)
+
+
+class ToolExecution:
+    """Plan identity dependencies, refusals and ordered runs of authorized calls."""
+    def __init__(self, env, replay, delivery, invocation, cancel_event, context_budget, prompt_tokens):
+        self.env = env
+        self.replay = replay
+        self.delivery = delivery
+        self.invocation = invocation
+        self._cancel_event = cancel_event
+        self._context_budget = context_budget
+        self._prompt_tokens = prompt_tokens
+
+    def _identity_dependency_query(self, tc: Any) -> str | None:
+        """Read the opted-in dependency without issuing a refused consumer call."""
+        if self.env.identity is None or self._cancel_event.is_set():
+            return None
+        from src.product.tool_policy import _deny_prefixes
+
+        tool = self.env.registry.get(tc.name)
+        field = getattr(tool, "identity_argument", None)
+        if not field or not self.replay._is_tool_readonly(tc.name) or tc.name.startswith(_deny_prefixes()):
+            return None
+        if self.env.registry.get("search_symbol") is None:
+            return None
+        return self.env.identity.pending_resolution_query(tc.arguments, field)
+
+    def _prepare_identity_dependencies(
+        self, tool_calls, context, trace, iteration,
+    ) -> dict[str, str]:
+        """Resolve new dependencies through the ordinary bounded tool lifecycle.
+
+        Internal prerequisite results go to the audit/identity ledger, not to
+        provider tool messages with invented call IDs. Failures are attached to
+        the requesting consumer's normal refusal so the model can see the cause.
+        """
+        from src.kernel.contracts import ToolCallRequest
+
+        outcomes = {}
+        for tc in tool_calls:
+            query = self._identity_dependency_query(tc)
+            if query is None:
+                continue
+            dependency = ToolCallRequest(
+                id=f"{tc.id}:identity", name="search_symbol", arguments={"query": query},
+            )
+            trace.write({
+                "type": "identity_dependency", "iter": iteration,
+                "parent_call_id": tc.id, "call_id": dependency.id,
+                "tool": dependency.name, "query": query,
+            })
+            internal_messages = []
+            # The lookup is not model input, but its result is part of the
+            # turn the user saw run; the thread records it for the display
+            # trail (replay drops a result whose call the model never made).
+            self.delivery.conversation.dependency_lists = (*self.delivery.conversation.dependency_lists, internal_messages)
+            try:
+                self.process(
+                    [dependency], context, internal_messages, trace, iteration,
+                )
+            finally:
+                self.delivery.conversation.dependency_lists = tuple(
+                    listed for listed in self.delivery.conversation.dependency_lists
+                    if listed is not internal_messages
+                )
+            if internal_messages:
+                outcomes[tc.id] = internal_messages[-1]["content"]
+        return outcomes
+
+    def process(
+        self,
+        tool_calls: list,
+        context: ContextBuilder,
+        messages: list,
+        trace: Any,
+        iteration: int,
+    ) -> tuple[bool, str]:
+        """Pre-process tool calls: handle compact, filter duplicates, batch execute.
+
+        Args:
+            tool_calls: Raw tool calls from LLM response.
+            context: ContextBuilder for formatting messages.
+            messages: Conversation messages (appended in place).
+            trace: Any.
+            iteration: Current iteration number.
+
+        Returns:
+            Tuple of (compact_requested, focus_topic).
+        """
+        # Move a matching explicit resolver ahead of its dependent read. Keep
+        # its real provider call ID and produce exactly one result for it.
+        tool_calls = list(tool_calls)
+        window = self.env.data_window
+        if window is not None:
+            from copy import copy
+
+            for index, tc in enumerate(tool_calls):
+                if not getattr(self.env.registry.get(tc.name), "use_user_date_window", False):
+                    continue
+                arguments = window.normalize(tc.arguments)
+                if arguments is not tc.arguments:
+                    effective = copy(tc)
+                    effective.arguments = arguments
+                    tool_calls[index] = effective
+                    trace.write({
+                        "type": "data_window_normalized", "iter": iteration,
+                        "call_id": tc.id, "tool": tc.name,
+                        "original_start": tc.arguments.get("start_date"),
+                        "original_end": tc.arguments.get("end_date"),
+                        "effective_start": arguments["start_date"],
+                        "effective_end": arguments["end_date"],
+                    })
+        for index, tc in enumerate(tool_calls):
+            query = self._identity_dependency_query(tc)
+            if query is None:
+                continue
+            for later in range(index + 1, len(tool_calls)):
+                other = tool_calls[later]
+                if other.name == "search_symbol" and str(other.arguments.get("query", "")).strip().casefold() == query.casefold():
+                    tool_calls.insert(index, tool_calls.pop(later))
+                    break
+
+        # A resolver is a real data dependency. Execute it at a boundary so
+        # subsequent reads see its result rather than a stale pre-turn snapshot.
+        if len(tool_calls) > 1 and any(tc.name == "search_symbol" for tc in tool_calls):
+            compact_requested, focus_topic = False, ""
+            segment = []
+            for tc in tool_calls:
+                if tc.name == "search_symbol":
+                    for part in (segment, [tc]):
+                        if part:
+                            compact, focus = self.process(
+                                part, context, messages, trace, iteration,
+                            )
+                            compact_requested |= compact
+                            focus_topic = focus or focus_topic
+                    segment = []
+                else:
+                    segment.append(tc)
+            if segment:
+                compact, focus = self.process(
+                    segment, context, messages, trace, iteration,
+                )
+                compact_requested |= compact
+                focus_topic = focus or focus_topic
+            return compact_requested, focus_topic
+
+        # Do not pull an implicit prerequisite ahead of a prior mutation.
+        for index, tc in enumerate(tool_calls):
+            if self._identity_dependency_query(tc) is not None and any(
+                not self.replay._is_tool_readonly(previous.name) for previous in tool_calls[:index]
+            ):
+                compact_a, focus_a = self.process(
+                    tool_calls[:index], context, messages, trace, iteration,
+                )
+                compact_b, focus_b = self.process(
+                    tool_calls[index:], context, messages, trace, iteration,
+                )
+                return compact_a or compact_b, focus_b or focus_a
+
+        dependency_results = self._prepare_identity_dependencies(
+            tool_calls, context, trace, iteration,
+        )
+        compact_requested = False
+        focus_topic = ""
+        execution_plan: list[tuple[Any, str | None]] = []
+        batch_authorized_symbols = (
+            set(self.env.identity.authorized_symbols)
+            if self.env.identity is not None
+            else set()
+        )
+        batch_identity_status = (
+            self.env.identity.identity_status
+            if self.env.identity is not None
+            else "not_required"
+        )
+
+        # Cancelled before this turn's tools ran — skip execution entirely.
+        if self._cancel_event.is_set():
+            self._record_unstarted_calls(
+                tool_calls, context, messages, trace, iteration
+            )
+            return compact_requested, focus_topic
+
+        for tc in tool_calls:
+            # Layer 4: compact tool — mark then defer execution
+            if tc.name == "compact":
+                self.delivery.progress.note("compact", "compact")
+                self.delivery._emit_tool_started(tc, {}, iteration)
+                budget = None if _override("TOKEN_THRESHOLD") is not None else self._context_budget(messages)
+                tokens = self._prompt_tokens(messages) if budget is not None else 0
+                if budget is not None and tokens <= budget.micro_at:
+                    # Summarising a prompt this small only destroys evidence the
+                    # model will then fetch again: decline, and say why.
+                    declined = json.dumps({
+                        "status": "ok",
+                        "skipped": True,
+                        "message": (
+                            f"Compaction not needed: the prompt is {tokens} tokens, "
+                            f"under the {budget.micro_at}-token threshold. Earlier "
+                            "tool results are still in context; keep using them."
+                        ),
+                    })
+                    self.delivery._append_tool_result(messages, context, tc.id, "compact", declined, status="ok", elapsed_ms=0)
+                    trace.write({"type": "compact_declined", "iter": iteration, "prompt_tokens": tokens})
+                else:
+                    compact_requested = True
+                    focus_topic = tc.arguments.get("focus_topic", "")
+                    self.delivery._append_tool_result(
+                        messages, context, tc.id, "compact",
+                        '{"status":"ok","message":"Compressing..."}', status="ok", elapsed_ms=0,
+                    )
+                    trace.write({"type": "compact_requested", "iter": iteration})
+                self.delivery._emit_tool_completed(tc, "ok", 0, "")
+                continue
+
+            tool_def = self.env.registry.get(tc.name)
+            repeatable = tool_def.repeatable if tool_def else False
+            # A None key means the arguments could not be canonicalised. The
+            # deterministic cache treats that as 'never cache'; the blocking
+            # gate must likewise treat it as 'never block', otherwise every
+            # un-serialisable call would collapse into a single identity and
+            # the second one would be skipped without ever running.
+            dedup_key = self.replay._identical_call_key(tc.name, tc.arguments)
+            if dedup_key is not None and self.delivery.progress.is_blocked(dedup_key):
+                failed_result = json.dumps(
+                    {
+                        "status": "error",
+                        "skipped": True,
+                        "reason": "This exact call already failed repeatedly in this run. Change strategy or ask the user for help.",
+                    }
+                )
+                self._record_blocked_tool_call(
+                    tc,
+                    failed_result,
+                    context,
+                    messages,
+                    trace,
+                    iteration,
+                )
+                continue
+            if (
+                self.env.identity is not None and tc.name == "search_symbol"
+                and getattr(tool_def, "reuse_session_identity", False)
+            ):
+                from src.product.tool_policy import _deny_prefixes
+
+                reused = (
+                    None if tc.name.startswith(_deny_prefixes())
+                    else self.env.identity.reusable_resolution(tc.arguments)
+                )
+                if reused is not None:
+                    self.delivery._emit_tool_started(tc, tc.arguments, iteration)
+                    trace.write({
+                        "type": "identity_reused", "iter": iteration, "tool": tc.name,
+                        "call_id": tc.id, "args": redact_payload(tc.arguments),
+                    })
+                    self.delivery.progress.note("reused", tc.name)
+                    self.delivery._finalize_tool_result(
+                        tc, reused, 0, context, messages, trace, iteration,
+                        update_memory=False, update_identity=False,
+                    )
+                    continue
+            if self.env.identity is not None:
+                authorization = self.env.identity.authorize_tool_call(
+                    tc.name,
+                    tc.arguments,
+                    batch_authorized_symbols=batch_authorized_symbols,
+                    call_id=tc.id,
+                    batch_identity_status=batch_identity_status,
+                )
+                if not authorization.allowed:
+                    refused = authorization.error_payload(tc.name, self.env.identity.identity_summary())
+                    if tc.id in dependency_results:
+                        payload = json.loads(refused)
+                        payload["identity_resolution"] = dependency_results[tc.id]
+                        refused = json.dumps(payload, ensure_ascii=False)
+                    execution_plan.append((tc, refused))
+                    continue
+
+            if self.replay.deliver_cached(tc, tool_def, repeatable, dedup_key, context, messages, trace, iteration, self.delivery):
+                continue
+
+            execution_plan.append((tc, None))
+
+        if not execution_plan:
+            return compact_requested, focus_topic
+
+        # Preserve provider tool-result ordering. A synthetic blocked result
+        # acts as a batch boundary, while adjacent authorized calls retain the
+        # existing readonly-parallel/write-serial scheduler.
+        authorized_segment: list[Any] = []
+
+        def flush_authorized_segment() -> None:
+            if not authorized_segment:
+                return
+            if self._cancel_event.is_set():
+                self._record_unstarted_calls(authorized_segment, context, messages, trace, iteration)
+            else:
+                plan = []
+                for tc in authorized_segment:
+                    tool = self.env.registry.get(tc.name) if len(authorized_segment) > 1 else None
+                    plan.append(self._bind(tc, context, messages, trace, iteration,
+                                           parallel=bool(tool and tool.is_readonly)))
+                execute_batch(plan, self._cancel_event.is_set)
+            authorized_segment.clear()
+
+        for tc, blocked_result in execution_plan:
+            if blocked_result is None:
+                authorized_segment.append(tc)
+                continue
+            flush_authorized_segment()
+            self._record_blocked_tool_call(
+                tc,
+                blocked_result,
+                context,
+                messages,
+                trace,
+                iteration,
+            )
+        flush_authorized_segment()
+
+        return compact_requested, focus_topic
+
+    def _record_blocked_tool_call(
+        self,
+        tc: Any,
+        result: str,
+        context: ContextBuilder,
+        messages: list,
+        trace: Any,
+        iteration: int,
+        *,
+        blocked: bool = True,
+    ) -> None:
+        """Record a blocked call without invoking its implementation.
+
+        Args:
+            tc: Provider tool-call object.
+            result: Structured identity-gate error payload.
+            context: Context builder.
+            messages: Conversation messages.
+            trace: Persistent trace writer.
+            iteration: Current iteration.
+        """
+        self.delivery.progress.note("blocked", tc.name, _failure_code(result))
+        args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
+        self.delivery._emit_tool_started(tc, args, iteration, blocked=blocked)
+        trace.write(
+            {
+                "type": "tool_execution",
+                "iter": iteration,
+                "tool": tc.name,
+                "call_id": tc.id,
+                **({"blocked": True} if blocked else {}),
+            }
+        )
+        self.delivery._finalize_tool_result(
+            tc,
+            result,
+            0,
+            context,
+            messages,
+            trace,
+            iteration,
+            update_memory=False,
+        )
+
+    def _record_unstarted_calls(
+        self,
+        tool_calls: list[Any],
+        context: ContextBuilder,
+        messages: list,
+        trace: Any,
+        iteration: int,
+    ) -> None:
+        """Record calls skipped after cancellation as explicit tool errors."""
+        result = json.dumps(
+            {
+                "status": "error",
+                "error_code": "tool_cancelled",
+                "message": "Run stopped before this tool started; no action was performed.",
+            },
+            ensure_ascii=False,
+        )
+        for tc in tool_calls:
+            self._record_blocked_tool_call(
+                tc,
+                result,
+                context,
+                messages,
+                trace,
+                iteration,
+                blocked=False,
+            )
+
+
+    def _bind(self, tc, context, messages, trace, iteration, *, parallel) -> BoundCall:
+        def start(in_parallel: bool):
+            args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
+            self.delivery._emit_tool_started(tc, args, iteration)
+            trace.write({"type": "tool_execution", "iter": iteration, "tool": tc.name, "call_id": tc.id})
+            if not in_parallel:
+                logger.info("Tool call: %s(%s)", tc.name, list(args))
+            return lambda: self.invocation._invoke_tool(tc.name, args, call_id=tc.id)
+
+        def finish(result, elapsed_ms):
+            self.delivery._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, iteration)
+
+        def skip():
+            self._record_unstarted_calls([tc], context, messages, trace, iteration)
+
+        return BoundCall(start=start, finish=finish, skip=skip, parallel=parallel)

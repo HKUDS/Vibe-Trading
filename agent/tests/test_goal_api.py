@@ -15,7 +15,8 @@ from src.session.models import Message
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("VIBE_TRADING_GOAL_DB_PATH", str(tmp_path / "goals.db"))
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / "runs"))
-    monkeypatch.setattr(api_server, "_goal_store", None)
+    from src.api import goal_routes
+    monkeypatch.setattr(goal_routes, "_goal_store", None)
     monkeypatch.setattr(api_server, "_session_service", None)
     monkeypatch.setattr(api_server, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(api_server, "RUNS_DIR", tmp_path / "runs")

@@ -1,4 +1,4 @@
-"""Content-filter resilience helpers shared by AgentLoop and swarm worker.
+"""Content-filter resilience helpers shared by AgentRuntime and swarm worker.
 
 When an LLM provider blocks a response via content moderation
 (``finish_reason == "content_filter"``), the caller skips that iteration

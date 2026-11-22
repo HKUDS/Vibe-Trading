@@ -111,7 +111,7 @@ def test_legacy_cli_constants_derive_from_runtime_root() -> None:
 
 
 def test_agent_loop_constants_derive_from_runtime_root() -> None:
-    from src.agent import loop
+    from src.agent import runtime as loop
     from src.config import paths
 
     assert loop.RUNS_DIR == paths.get_runs_dir()

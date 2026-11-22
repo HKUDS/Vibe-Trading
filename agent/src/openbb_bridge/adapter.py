@@ -6,7 +6,7 @@ The :class:`OpenBBQueryAdapter` is responsible for:
   replaying the full history the request carried into it;
 * injecting workspace context (explicit context items, widget metadata,
   dashboard info) into the user's message;
-* triggering the Vibe-Trading ``AgentLoop`` via ``SessionService.send_message``;
+* triggering the Vibe-Trading ``AgentRuntime`` via ``SessionService.send_message``;
 * consuming the session event bus and translating each event into OpenBB SSE
   objects until the underlying attempt completes or fails.
 

@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.instrument_identity import IdentityLedger
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.product.identity.ledger import IdentityLedger
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import records_at, recorder_at, run_recorded_tools
-from src.providers.chat import ToolCallRequest
+from src.kernel.contracts import ToolCallRequest
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 
@@ -24,9 +24,9 @@ def runtime(tmp_path, monkeypatch):
     resolver = SymbolSearchTool()
     options = OptionsChainTool()
     response = {"ok": True, "data": {"query": "AAPL", "sources": {"fixture": "ok"}, "candidates": [{"symbol": "AAPL.US", "market": "us"}]}}
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=4)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=4)
     agent.memory.run_dir = str(tmp_path)
-    agent._identity = IdentityLedger(run_dir=tmp_path, user_message="AAPL options and 00700.HK bars")
+    agent.tool_env.identity = IdentityLedger(run_dir=tmp_path, user_message="AAPL options and 00700.HK bars")
 
     def resolve(**kwargs):
         events.append(("resolve", kwargs["query"]))
@@ -35,8 +35,8 @@ def runtime(tmp_path, monkeypatch):
         return json.dumps(response)
 
     def chain(**kwargs):
-        assert agent._identity.identity_status == "locked"
-        assert "AAPL.US" in agent._identity.authorized_symbols
+        assert agent.tool_env.identity.identity_status == "locked"
+        assert "AAPL.US" in agent.tool_env.identity.authorized_symbols
         events.append(("options", kwargs["ticker"]))
         return '{"ok":true,"data":{"ticker":"AAPL","calls":[],"puts":[]}}'
 
@@ -92,7 +92,7 @@ def test_failed_dependency_never_starts_options_or_auto_retries(runtime, monkeyp
     elif failure == "wrong_symbol":
         r.response["data"]["candidates"] = [{"symbol": "MSFT.US", "market": "us"}]
     else:
-        monkeypatch.setattr("src.providers.tool_policy._deny_prefixes", lambda **kwargs: ("search_symbol",))
+        monkeypatch.setattr("src.product.tool_policy._deny_prefixes", lambda **kwargs: ("search_symbol",))
     messages = r.run([option()])
     refusal = json.loads(messages[-1]["content"])
     assert refusal["status"] == "error" and "identity_resolution" in refusal
@@ -103,7 +103,7 @@ def test_failed_dependency_never_starts_options_or_auto_retries(runtime, monkeyp
 
 
 def test_known_identity_needs_no_resolver(runtime):
-    runtime.agent._identity = IdentityLedger(run_dir=runtime.path, user_message="Read AAPL.US options")
+    runtime.agent.tool_env.identity = IdentityLedger(run_dir=runtime.path, user_message="Read AAPL.US options")
     runtime.run([option()])
     assert runtime.events == [("options", "AAPL")]
 
@@ -116,14 +116,14 @@ def test_two_option_reads_share_one_resolver(runtime):
 
 
 def test_cross_venue_mismatch_is_not_automatically_resolved(runtime):
-    runtime.agent._identity = IdentityLedger(run_dir=runtime.path, user_message="Read AAPL.L")
+    runtime.agent.tool_env.identity = IdentityLedger(run_dir=runtime.path, user_message="Read AAPL.L")
     runtime.run([option(ticker="AAPL.US")])
     assert runtime.events == []
     assert json.loads(runtime.messages[-1]["content"])["error_code"] == "identity_mismatch"
 
 
 def test_existing_conflict_is_not_re_resolved(runtime):
-    ledger = runtime.agent._identity
+    ledger = runtime.agent.tool_env.identity
     key = next(iter(ledger._identities))
     ledger._identities[key] = replace(ledger._identities[key], status="conflicting")
     runtime.run([option()])
@@ -132,7 +132,7 @@ def test_existing_conflict_is_not_re_resolved(runtime):
 
 
 def test_cancel_before_dependencies_performs_no_work(runtime):
-    runtime.agent._cancel_event.set()
+    runtime.agent.activity.cancel.set()
     cancelled = runtime.run([option()])
     assert len(cancelled) == 1
     assert json.loads(cancelled[0]["content"])["error_code"] == "tool_cancelled"
@@ -166,7 +166,7 @@ def test_unavailable_resolver_cannot_enable_options(runtime):
 
 
 def test_denied_consumer_does_not_trigger_a_dependency(runtime, monkeypatch):
-    monkeypatch.setattr("src.providers.tool_policy._deny_prefixes", lambda **kwargs: ("get_options_chain",))
+    monkeypatch.setattr("src.product.tool_policy._deny_prefixes", lambda **kwargs: ("get_options_chain",))
     runtime.run([option()])
     assert runtime.events == []
 
@@ -177,7 +177,7 @@ def test_cancellation_during_resolution_stops_before_options(runtime, monkeypatc
 
     def cancel(**kwargs):
         result = original(**kwargs)
-        runtime.agent._cancel_event.set()
+        runtime.agent.activity.cancel.set()
         return result
 
     monkeypatch.setattr(resolver, "execute", cancel)

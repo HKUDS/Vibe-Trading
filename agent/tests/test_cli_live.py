@@ -716,7 +716,7 @@ def _write_proposal_to_disk(root: Path, proposal_id: str, broker: str = "robinho
 def _capture_on_event(captured: Dict[str, Any]):
     """Run ``_run_agent`` with all heavy deps stubbed, returning its ``on_event``.
 
-    Replaces ``AgentLoop`` with a stub that captures the real ``event_callback``
+    Replaces ``AgentRuntime`` with a stub that captures the real ``event_callback``
     closure (``on_event``) instead of running an LLM, so a test can replay
     arbitrary events THROUGH the genuine relay logic. ``build_registry`` /
     ``ChatLLM`` / ``PersistentMemory`` / ``load_agent_config`` are stubbed to
@@ -743,7 +743,7 @@ def _capture_on_event(captured: Dict[str, Any]):
 
     # ``_run_agent`` does local ``from ... import`` for these, so patch the
     # SOURCE modules, not the ``cli.commands.dispatch`` namespace.
-    with patch("src.agent.loop.AgentLoop", _StubLoop), patch(
+    with patch("src.agent.runtime.AgentRuntime", _StubLoop), patch(
         "src.tools.build_registry", return_value=object()
     ), patch("src.providers.chat.ChatLLM", lambda *a, **k: object()), patch(
         "src.memory.persistent.PersistentMemory",

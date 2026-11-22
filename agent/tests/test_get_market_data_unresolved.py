@@ -103,7 +103,7 @@ def test_nothing_resolved_is_an_error_envelope(monkeypatch):
     loop neither refused the identical retry nor told the model to change the
     request; repeats only counted as "no new information".
     """
-    from src.agent.tool_results import _is_tool_success
+    from src.product.tool_results import _is_tool_success
 
     monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _BoomLoader)
     raw = _gmd(codes=["AAA.US", "BBB.US"], start_date="2026-05-01", end_date="2026-05-02", source="yfinance")
@@ -117,7 +117,7 @@ def test_nothing_resolved_is_an_error_envelope(monkeypatch):
 
 
 def test_partial_and_full_results_stay_successful(monkeypatch, good_only):
-    from src.agent.tool_results import _is_tool_success
+    from src.product.tool_results import _is_tool_success
 
     partial = _gmd(codes=["GOOD.US", "BOGUS.US"], start_date="2026-05-01", end_date="2026-05-02", source="yfinance")
     full = _gmd(codes=["GOOD.US"], start_date="2026-05-01", end_date="2026-05-02", source="yfinance")

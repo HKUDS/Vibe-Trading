@@ -1,6 +1,6 @@
 import { prependUploadedAttachments, type UploadedAttachment } from "@/lib/attachments";
 
-// Match the interactive and goal request schemas in sessions_routes.py.
+// Match the backend interactive and goal request schemas.
 export const MAX_MESSAGE_CHARS = 100_000;
 export const MAX_GOAL_CHARS = 5_000;
 export const SWARM_PROMPT_PREFIX =

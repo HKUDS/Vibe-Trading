@@ -1,7 +1,7 @@
 """Provider capability and diagnostic regression tests."""
 
 from __future__ import annotations
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import openai as openai_adapter
 
 from src.providers import settings as _provider_configuration
 
@@ -10,7 +10,8 @@ import os
 from unittest.mock import patch
 
 from src.providers.registry import get_provider_capabilities
-from src.providers.llm import build_llm, provider_diagnostics
+from src.providers.llm import build_llm
+from src.providers.diagnostics import provider_diagnostics
 
 
 def test_provider_diagnostics_redacts_secrets_and_proxy_values() -> None:
@@ -112,7 +113,7 @@ def test_reasoning_effort_extra_body_is_openrouter_only() -> None:
         "VIBE_TRADING_DEEPSEEK_ADAPTER": "openai-compatible",
     }
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
 
     assert captured["extra_body"] is None
@@ -135,7 +136,7 @@ def test_kimi_user_agent_header_is_moonshot_only() -> None:
         "LANGCHAIN_MODEL_NAME": "kimi-k2.6",
     }
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
 
     assert captured["default_headers"]["User-Agent"].startswith("Vibe-Trading/")
@@ -148,7 +149,7 @@ def test_kimi_user_agent_header_is_moonshot_only() -> None:
         "LANGCHAIN_MODEL_NAME": "gpt-4",
     }
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
 
     assert "default_headers" not in captured
@@ -172,7 +173,7 @@ def test_kimi_user_agent_respects_moonshot_user_agent_env_var() -> None:
         "MOONSHOT_USER_AGENT": "MyCustomAgent/2.0",
     }
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
 
     assert captured["default_headers"]["User-Agent"] == "MyCustomAgent/2.0"
@@ -180,7 +181,7 @@ def test_kimi_user_agent_respects_moonshot_user_agent_env_var() -> None:
     captured.clear()
     del env["MOONSHOT_USER_AGENT"]
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
 
     assert captured["default_headers"]["User-Agent"].startswith("Vibe-Trading/")
@@ -220,7 +221,7 @@ def test_nvidia_build_passes_only_capability_headers() -> None:
         "LANGCHAIN_MODEL_NAME": "nvidia/nemotron-3-ultra-550b-a55b",
     }
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             _provider_configuration._dotenv_loaded = True
             build_llm()
 

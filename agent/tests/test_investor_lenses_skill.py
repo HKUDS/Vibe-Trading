@@ -27,8 +27,8 @@ from typing import List
 
 import pytest
 
-from src.agent.frontmatter import parse_frontmatter
-from src.agent.skills import SkillsLoader
+from src.product.resources.frontmatter import parse_frontmatter
+from src.product.resources.skills import SkillsLoader
 from src.tools.read_file_tool import ReadFileTool
 
 import json

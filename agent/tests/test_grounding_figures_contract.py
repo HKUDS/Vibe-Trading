@@ -660,7 +660,7 @@ def test_a_fabricated_figure_is_refused_under_all_the_same_words(
 
 
 def _prompt_blocks() -> list[str]:
-    from src.agent.context import _SYSTEM_PROMPT
+    from src.product.context import _SYSTEM_PROMPT
 
     return [
         "```figures" + chunk.split("```")[0] + "```"

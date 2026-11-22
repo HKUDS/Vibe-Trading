@@ -75,7 +75,7 @@ def test_run_with_agent_keeps_event_loop_responsive_during_registry_build(
     llm = SimpleNamespace(aclose=AsyncMock())
     monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
-    monkeypatch.setattr("src.agent.loop.AgentLoop", _agent_factory)
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _agent_factory)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
     monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
 
@@ -94,7 +94,7 @@ def test_run_with_agent_keeps_event_loop_responsive_during_registry_build(
         events: list[float] = []
         start = time.perf_counter()
         asyncio.create_task(_ticker(events, start))
-        result = await service._run_with_agent(attempt, messages=[], session_config={})
+        result = await service._factory.run(attempt, session_config={})
         await asyncio.sleep(0.01)
         return events, result
 
@@ -120,5 +120,5 @@ def test_registry_failure_closes_attempt_owned_llm(monkeypatch, tmp_path):
                              event_bus=EventBus(), runs_dir=tmp_path / "runs")
     attempt = Attempt(session_id="session-1", prompt="hello")
     with pytest.raises(RuntimeError, match="registry construction failed"):
-        asyncio.run(service._run_with_agent(attempt))
+        asyncio.run(service._factory.run(attempt))
     llm.aclose.assert_awaited_once()

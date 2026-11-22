@@ -4,9 +4,11 @@ from pathlib import Path
 from types import MethodType, SimpleNamespace
 
 import src.providers.chat as chat_module
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.config.accessor import reset_env_config
-from src.providers.chat import ChatLLM, LLMResponse
+from src.kernel.contracts import LLMResponse
+from src.providers.chat import ChatLLM
+from src.providers.response import parse_response
 
 
 def test_parse_response_keeps_provider_reported_model() -> None:
@@ -21,7 +23,7 @@ def test_parse_response_keeps_provider_reported_model() -> None:
         usage_metadata=None,
     )
 
-    response = ChatLLM._parse_response(message)
+    response = parse_response(message)
 
     assert response.response_model == "deepseek-v4-flash-202607"
 
@@ -62,7 +64,7 @@ def test_runtime_metadata_is_frozen_at_construction_with_model_override(
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", "low")
     reset_env_config()
 
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=_EmptyRegistry(),  # type: ignore[arg-type]
         llm=llm,
         max_iterations=1,

@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.hooks import HookManager
-from src.agent.tool_lifecycle import ToolCallLifecycle
+from src.product.resources.hooks import HookManager
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from src.tools.bash_tool import BashTool
 from src.tools.sandbox import SandboxSettings, enumerate_protected_runtime_paths
@@ -44,14 +44,6 @@ class _TradingHostTool(_HostTool):
     is_trading_tool = True
 
 
-class _Lifecycle(ToolCallLifecycle):
-    def __init__(self, registry: ToolRegistry) -> None:
-        self.registry = registry
-        self.memory = SimpleNamespace(run_dir=None)
-        self._cancel_event = threading.Event()
-        self._emit = lambda *_args, **_kwargs: None
-
-
 def _write_hooks(root: Path, event: str, command: str, matcher: str = "*") -> None:
     (root / "hooks.json").write_text(
         json.dumps({"hooks": {event: [{"matcher": matcher, "hooks": [{"type": "command", "command": command}]}]}}),
@@ -67,7 +59,7 @@ def test_pre_tool_hook_denies_without_running_tool_and_audits(tmp_path: Path) ->
     tool.calls = []
     registry.register(tool)
     registry.hooks = manager
-    result, _elapsed = _Lifecycle(registry)._invoke_tool("hook_probe", {}, call_id="c1")
+    result, _elapsed = AgentRuntime(registry, SimpleNamespace()).invocation._invoke_tool("hook_probe", {}, call_id="c1")
     payload = json.loads(result)
     assert payload["error_code"] == "hook_denied"
     assert tool.calls == []
@@ -83,14 +75,14 @@ def test_pre_tool_hook_crash_and_timeout_deny(tmp_path: Path) -> None:
 def test_allowing_hook_cannot_bypass_tool_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     marker = tmp_path / "hook-ran"
     _write_hooks(tmp_path, "PreToolUse", f"touch {marker}")
-    monkeypatch.setattr("src.providers.tool_policy._deny_prefixes", lambda: ("blocked_",))
+    monkeypatch.setattr("src.product.tool_policy._deny_prefixes", lambda: ("blocked_",))
     tool = _ProbeTool()
     tool.name = "blocked_probe"
     tool.calls = []
     registry = ToolRegistry()
     registry.register(tool)
     registry.hooks = HookManager(tmp_path)
-    result, _elapsed = _Lifecycle(registry)._invoke_tool("blocked_probe", {}, call_id="c1")
+    result, _elapsed = AgentRuntime(registry, SimpleNamespace()).invocation._invoke_tool("blocked_probe", {}, call_id="c1")
     assert json.loads(result)["skipped"] is True
     assert not marker.exists()
     assert tool.calls == []
@@ -143,7 +135,7 @@ def test_hook_reason_is_redacted_before_return_and_thread_audit(tmp_path, monkey
     secret = "sk-" + "a" * 40
     _write_hooks(tmp_path, "PreToolUse", "unused-command")
     monkeypatch.setattr(
-        "src.agent.hooks.subprocess.run",
+        "src.product.resources.hooks.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0,
             stdout=json.dumps({"decision": "deny", "reason": f"api_key={secret}"}),
@@ -176,7 +168,7 @@ def test_post_tool_hook_receives_redacted_worker_exception(monkeypatch):
     registry.hooks = SimpleNamespace(run=observe)
     monkeypatch.setattr(registry, "execute", fail)
     with pytest.raises(RuntimeError, match="worker failed"):
-        _Lifecycle(registry)._invoke_tool("hook_probe", {}, call_id="c1")
+        AgentRuntime(registry, SimpleNamespace()).invocation._invoke_tool("hook_probe", {}, call_id="c1")
 
     event, payload = events[-1]
     assert event == "PostToolUse" and payload["status"] == "error"

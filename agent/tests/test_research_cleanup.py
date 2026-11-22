@@ -11,7 +11,7 @@ from evals.harness.artifacts import ArtifactBundle
 from evals.harness.assertions import evaluate_assertions
 from evals.harness.measurements import measurement_verdicts
 from evals.harness.schema import HarnessCase, VerdictStatus
-from src.agent.instrument_identity import IdentityLedger
+from src.product.identity.ledger import IdentityLedger
 
 FIXTURE = Path(__file__).parent / "fixtures/research_output/collar_sign.json"
 
@@ -20,7 +20,7 @@ def test_research_runtime_does_not_load_offline_numeric_checks():
     # A fresh interpreter catches transitive imports hidden by the test runner.
     code = """
 import sys
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.swarm.worker import run_worker
 assert not any(n.startswith(('evals.grounding', 'src.agent.grounding')) for n in sys.modules)
 """

@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 from src.providers.messages import INTERRUPTED_RESULT_CONTENT
-from src.session.thread import ThreadLog, project_turn
+from src.session.replay import project_turn
+from src.session.thread import ThreadLog
 
 
 def _call(call_id: str, name: str, arguments: dict) -> dict:

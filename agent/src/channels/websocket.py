@@ -28,7 +28,7 @@ from src.security.workspace_access import (
     WORKSPACE_SCOPE_METADATA_KEY,
     WorkspaceScopeError,
 )
-from src.session.goal_state import goal_state_ws_blob
+from src.product.goals import goal_state_ws_blob
 from src.session.webui_turns import websocket_turn_wall_started_at
 from src.utils.media_decode import (
     FileSizeExceeded,

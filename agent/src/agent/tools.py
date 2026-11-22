@@ -7,6 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+from src.product.tool_policy import check_tool_call
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +71,7 @@ class ToolRegistry:
     """Tool registry."""
 
     def __init__(self) -> None:
+        self._policy = check_tool_call
         self._tools: Dict[str, BaseTool] = {}
         self._import_failures: Dict[str, str] = {}
         self._registration_failures: Dict[str, str] = {}
@@ -102,17 +105,8 @@ class ToolRegistry:
         self._tools[name] = tool
 
     def check_policy(self, name: str, params: Dict[str, Any]) -> tuple[bool, str, Dict[str, Any]]:
-        """Apply the registry's provider tool policy without executing a tool."""
-        from src.providers.tool_policy import _deny_prefixes, screen_calls
-
-        if name.startswith(_deny_prefixes()):
-            return False, f"{name} is disabled by the active tool policy", params
-        if name in {"bash", "background_run", "cancel_background"}:
-            accepted, notes = screen_calls([{"name": name, "arguments": params}], {name})
-            if notes:
-                return False, notes[0], params
-            return True, "", accepted[0]["arguments"]
-        return True, "", params
+        """Apply the mandatory registry policy before a hook or a tool can run."""
+        return self._policy(name, params)
 
     def get(self, name: str) -> Optional[BaseTool]:
         """Retrieve a tool by name."""

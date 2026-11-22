@@ -28,7 +28,7 @@ The system prompt retains the complete catalog; `load_tools` only reveals exact
 schemas and never executes a domain tool or changes its permissions. Schema
 state belongs to one question and contributes to measured context usage.
 `VIBE_TRADING_TOOL_LOADING=eager` restores full schemas for provider compatibility.
-The discovery policy is packaged in `src/agent/tool_loading.json`.
+The discovery policy is packaged in `src/product/tool_loading.json`.
 
 A direct lookup uses its tool contract. A normal backtest reports results,
 validation warnings and limitations; additional attribution or optimization
@@ -393,21 +393,16 @@ Run the grounding suites before changing a predicate or its ordering.
 
 ### Agent loop boundaries
 
-`src/agent/loop.py` owns the iteration and run lifecycle. Keep changes in the
-module that owns the behavior: `tool_lifecycle.py` owns authorization, caches,
-read/write batching, tool timeouts and result recording; `loop_streaming.py`
-owns each response's buffers and progress callbacks; `loop_grounding.py` owns
-the existing final-draft repair/recovery/revision/release sequence. Grounding
-policy stays in `grounding/`, and compaction transforms, usage accounting and
-write-target tracking keep their existing dedicated modules.
+The session service, CLI, and child-agent tool construct `src.agent.runtime.AgentRuntime`.
+It binds the callbacks used by `kernel/loop.py` and owns the run's setup and cleanup.
+The product layer prepares authorized tool calls, tracks instrument identity and replay,
+and redacts results before delivery. `kernel/tool_runner.py` runs bound calls, groups
+adjacent reads and collects results in submission order. Each response's stream buffers
+belong to `agent/loop_streaming.py`.
 
-The tool lifecycle shares the loop's run-scoped state; it must not grow a
-second cache or ledger. A grounding decision returns correction state and
-whether the loop should retry. Stream state resets at each iteration and
-retains the existing one-retry behavior. When moving a helper, update tests
-to patch the module where it executes; re-exported names preserve imports,
-not monkeypatch propagation. Verify the existing loop, stream, cancellation,
-compaction and grounding suites after an extraction.
+When moving a policy, update its callers and patch its defining module in tests.
+Exercise loop, stream, cancellation, compaction and grounding behavior through the
+same entry points used by the application.
 
 ## Connection-specific gateways and quote times
 

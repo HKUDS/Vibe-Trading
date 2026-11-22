@@ -1,7 +1,7 @@
 """A CLI turn is recorded and replayed like a web turn.
 
 Every test drives the real CLI entry (``_run_agent`` and the commands built on
-it) -> ``AgentLoop`` -> ``thread.jsonl`` with a scripted offline model; only the
+it) -> ``AgentRuntime`` -> ``thread.jsonl`` with a scripted offline model; only the
 registry builder, the LLM factory and persistent memory are replaced. The model
 is a *policy*: it calls the ``lookup`` tool only when the request it receives
 does not already hold the result, so "no second lookup" is an outcome of what
@@ -25,12 +25,12 @@ from typing import Any, Callable
 import pytest
 
 from src.providers.messages import INTERRUPTED_RESULT_CONTENT
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.models import Message, Session
-from src.session.service import STOPPED_MARKER
+from src.session.attempts import STOPPED_MARKER
 from src.session.store import SessionStore
-from src.session.thread import project_turn, STOPPED_TURN_NOTES
+from src.session.replay import project_turn, STOPPED_TURN_NOTES
 
 cli_main = importlib.import_module("cli.main")
 
@@ -123,11 +123,11 @@ class _Harness:
         self.sessions = tmp_path / "sessions"
         self.sessions.mkdir()
         self.lookup_calls: list = []
-        self.agents: list[AgentLoop] = []
+        self.agents: list[AgentRuntime] = []
         self.llm = _PolicyLLM(_lookup_once_policy)
         harness = self
 
-        class _CapturingLoop(AgentLoop):
+        class _CapturingLoop(AgentRuntime):
             def __init__(self, *args: Any, **kwargs: Any) -> None:
                 super().__init__(*args, **kwargs)
                 harness.agents.append(self)
@@ -143,7 +143,7 @@ class _Harness:
         monkeypatch.setattr(_cmd_common, "RUNS_DIR", tmp_path / "runs")
         monkeypatch.setattr(cli_main, "_SESSION_STORE_CACHE", SessionStore(self.sessions))
         monkeypatch.setattr("src.session.search.get_shared_index", lambda: _DummyIndex())
-        monkeypatch.setattr("src.agent.loop.AgentLoop", _CapturingLoop)
+        monkeypatch.setattr("src.agent.runtime.AgentRuntime", _CapturingLoop)
         monkeypatch.setattr("src.tools.build_registry", registry)
         monkeypatch.setattr("src.providers.chat.ChatLLM", lambda *a, **k: self.llm)
         monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
@@ -638,7 +638,7 @@ def test_reused_loop_finishes_the_turn_after_a_question(cli, tmp_path):
 
     registry = ToolRegistry()
     registry.register(AskUserTool())
-    loop = AgentLoop(registry=registry, llm=cli.llm, max_iterations=4)
+    loop = AgentRuntime(registry=registry, llm=cli.llm, max_iterations=4)
     loop.memory.run_dir = tmp_path / "runs" / "reused"
     cli.llm.policy = lambda *args: _response(
         calls=(_call("q", "ask_user", prompt="Which period?", options=["Day", "Week"]),)

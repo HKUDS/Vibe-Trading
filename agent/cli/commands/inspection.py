@@ -216,7 +216,7 @@ def cmd_pine(run_id: str) -> None:
 
 def cmd_skills() -> None:
     """List available skills."""
-    from src.agent.skills import SkillsLoader
+    from src.product.resources.skills import SkillsLoader
     loader = SkillsLoader()
 
     table = common.Table(title="Skills", show_lines=False)
@@ -294,6 +294,6 @@ def _thread_entries_for_run(run_id: str) -> list[dict[str, common.Any]]:
     path = next((candidate for candidate in candidates if candidate.is_file()), None)
     if path is None:
         return []
-    from src.session.thread import diagnostic_records
+    from src.session.replay import diagnostic_records
 
     return diagnostic_records(ThreadLog(path).read())

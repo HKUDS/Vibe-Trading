@@ -5,9 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from src.session.events import display_item
+from src.session.event_projection import display_item
 from src.session.migration import migrate_session
-from src.session.thread import ThreadLog, replay
+from src.session.replay import replay
+from src.session.thread import ThreadLog
 
 
 def _archive(path):

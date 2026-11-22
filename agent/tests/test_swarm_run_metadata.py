@@ -11,7 +11,7 @@ re-read by ``SwarmStore.list_runs`` after this change.
 from __future__ import annotations
 
 from src.providers.registry import provider_names
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import deepseek as deepseek_adapter
 from src.providers import settings as _provider_configuration
 
 import pytest
@@ -294,7 +294,7 @@ def test_runtime_records_effective_responses_transport(
         monkeypatch.setenv("VIBE_TRADING_DEEPSEEK_ADAPTER", adapter)
     monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", True)
     monkeypatch.setattr(
-        _provider_adapters,
+        deepseek_adapter,
         "_native_deepseek_adapter_available",
         lambda: native_available,
     )

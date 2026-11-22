@@ -9,9 +9,9 @@ from typing import Any, Callable
 
 import pytest
 
-from src.agent.context import ContextBuilder
+from src.product.context import ContextBuilder
 from evals.grounding import GroundingLedger
-from src.agent.instrument_identity import (
+from src.product.identity.normalize import (
     _JOINED_CRYPTO_RE,
     _infer_currency,
     _infer_instrument_type,
@@ -23,8 +23,8 @@ from evals.grounding.evidence import (
     _symbol_from_csv_filename,
     _timestamp_matches_claim_date,
 )
-from src.agent.loop import AgentLoop
-from src.agent.tool_results import _is_tool_success
+from src.agent.runtime import AgentRuntime
+from src.product.tool_results import _is_tool_success
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 from src.session.runtime import TurnRecorder
@@ -164,18 +164,18 @@ def _tool_call(call_id: str, tool_name: str, **arguments: Any) -> SimpleNamespac
 def _build_direct_agent(
     tmp_path: Path,
     resolver_result: str,
-) -> tuple[AgentLoop, _ResolverTool, _MarketTool, _PrivateCompanySkillTool, TurnRecorder]:
+) -> tuple[AgentRuntime, _ResolverTool, _MarketTool, _PrivateCompanySkillTool, TurnRecorder]:
     resolver = _ResolverTool(resolver_result)
     market = _MarketTool(_market_payload())
     private_skill = _PrivateCompanySkillTool("private company workflow")
     registry = ToolRegistry()
     for tool in (resolver, market, private_skill):
         registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=5)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=5)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
-    agent._identity = GroundingLedger(
+    agent.tool_env.identity = GroundingLedger(
         run_dir=run_dir,
         user_message="分析机器人ETF并给出买入价",
     )
@@ -386,7 +386,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
 
     assert resolver.calls == 1
     assert market.calls == 1
-    assert agent._identity.authorized_symbols == {"562500.SH"}
+    assert agent.tool_env.identity.authorized_symbols == {"562500.SH"}
     blocked = [json.loads(message["content"]) for message in messages]
     assert not any(item.get("error_code") == "identity_required" for item in blocked)
 
@@ -733,9 +733,9 @@ def test_single_clean_not_found_source_is_not_enough_for_private_routing(
     run_recorded_tools(agent, [_tool_call("private", "load_skill", name="private-company-research")], ContextBuilder, messages, trace, 2)
     trace.close()
 
-    assert agent._identity.identity_status == "invalidated"
+    assert agent.tool_env.identity.identity_status == "invalidated"
     assert private_skill.calls == 1
-    assert agent._identity.authorized_symbols == set()
+    assert agent.tool_env.identity.authorized_symbols == set()
 
 
 def test_explicit_symbol_and_resolver_suffix_alias_are_one_identity(
@@ -892,8 +892,8 @@ def test_reading_private_methodology_does_not_relabel_listed_identity(
     trace.close()
 
     assert private_skill.calls == 1
-    assert agent._identity.authorized_symbols == {"SPCX.US"}
-    validation = agent._identity.validate_final_answer(
+    assert agent.tool_env.identity.authorized_symbols == {"SPCX.US"}
+    validation = agent.tool_env.identity.validate_final_answer(
         "SpaceX is a private company and is not publicly traded."
     )
     assert validation.valid is False
@@ -915,7 +915,7 @@ def test_not_found_identity_allows_private_company_workflow(
     trace.close()
 
     assert private_skill.calls == 1
-    assert agent._identity.identity_status == "not_found"
+    assert agent.tool_env.identity.identity_status == "not_found"
 
 
 def test_ambiguous_resolution_keeps_consumers_blocked(tmp_path: Path) -> None:
@@ -934,7 +934,7 @@ def test_ambiguous_resolution_keeps_consumers_blocked(tmp_path: Path) -> None:
     run_recorded_tools(agent, [_tool_call("prices", "get_market_data", codes=["ABC.US"])], ContextBuilder, messages, trace, 2)
     trace.close()
 
-    assert agent._identity.identity_status == "ambiguous"
+    assert agent.tool_env.identity.identity_status == "ambiguous"
     assert market.calls == 0
     assert json.loads(messages[-1]["content"])["error_code"] == "identity_conflict"
 
@@ -1256,7 +1256,7 @@ def test_agent_loop_delivers_original_answer_without_numeric_rewrite(
     registry.register(market)
     events: list[tuple[str, dict[str, Any]]] = []
     llm = _CorrectingLLM()
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=llm,
         max_iterations=4,
@@ -1588,7 +1588,7 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     """End-to-end: screen, load a workflow skill, narrow, quote, and answer (#955)."""
     agent, resolver, market, skill, trace = _build_direct_agent(tmp_path, _SHORTLIST_PAYLOAD)
     market.result = _SCREENED_MARKET_PAYLOAD
-    agent._identity = GroundingLedger(
+    agent.tool_env.identity = GroundingLedger(
         run_dir=Path(agent.memory.run_dir),
         user_message="推荐A股低价高增长股票并给出买入价",
     )
@@ -1607,7 +1607,7 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     trace.close()
 
     assert market.calls == 1
-    validation = agent._identity.validate_final_answer(
+    validation = agent.tool_env.identity.validate_final_answer(
         "000543.SZ 买入价 8.20 CNY（股数100，成本 820 CNY；source: tencent）\n\n"
         "```figures\n8.20 | observed | close | prices\n"
         "820 | derived | 100 × 8.20 | prices\n100 | count | 股数\n```"
@@ -1916,7 +1916,7 @@ def test_shanghai_lock_depends_on_symbol_canonicalization(
 ) -> None:
     """Mutation guard: drop canonicalization and Shanghai dead-ends again."""
     monkeypatch.setattr(
-        "src.agent.instrument_identity._normalize_symbol",
+        "src.product.identity.ledger._normalize_symbol",
         lambda value: str(value or "").strip().upper(),
     )
     ledger = GroundingLedger(run_dir=tmp_path, user_message="600519 现价多少")
@@ -2557,7 +2557,7 @@ class TestFiatPairAndIndexNormalization:
     """Search, fetch and grounding agree on one FX spelling; ^ is a symbol."""
 
     def test_fiat_pair_spellings_normalize_to_yahoo_form(self) -> None:
-        from src.agent.instrument_identity import _normalize_symbol
+        from src.product.identity.normalize import _normalize_symbol
 
         assert _normalize_symbol("GBP/USD") == "GBPUSD=X"
         assert _normalize_symbol("GBPUSD") == "GBPUSD=X"
@@ -2568,16 +2568,12 @@ class TestFiatPairAndIndexNormalization:
 
     def test_scanned_slashed_pair_matches_resolver_answer(self) -> None:
         """The query-as-asserted scan must agree with the chosen candidate."""
-        from src.agent.instrument_identity import _scan_symbols
+        from src.product.identity.normalize import _scan_symbols
 
         assert _scan_symbols("use GBP/USD spot") == {"GBPUSD=X"}
 
     def test_index_symbols_are_scanned_and_typed(self) -> None:
-        from src.agent.instrument_identity import (
-            _infer_currency,
-            _infer_instrument_type,
-            _scan_symbols,
-        )
+        from src.product.identity.normalize import _infer_currency, _infer_instrument_type, _scan_symbols
 
         assert _scan_symbols("quote ^SPX") == {"^SPX"}
         assert _infer_instrument_type("^SPX", "INDEX") == "index"
@@ -2586,7 +2582,7 @@ class TestFiatPairAndIndexNormalization:
 
     def test_ingest_search_symbol_does_not_create_conflicting_identity(self) -> None:
         """The flagship regression: ingest('GBP/USD') must lock, never conflict."""
-        from src.agent.instrument_identity import _normalize_symbol
+        from src.product.identity.normalize import _normalize_symbol
 
         # Chosen (from search_symbol) and asserted (the query text) must be
         # the same canonical identity — the comparison in _ingest_resolution.
@@ -3443,7 +3439,7 @@ def test_crypto_pair_tables_match_the_resolver() -> None:
     identity, which outranks every later lock and blocks all market tools —
     so the duplication needs a guard, not a comment.
     """
-    from src.agent import instrument_identity as g
+    from src.product.identity import normalize as g
     from src.tools import symbol_search_tool as ss
 
     assert set(g._CRYPTO_USD_BASES) == set(ss._CRYPTO_USD_BASES)

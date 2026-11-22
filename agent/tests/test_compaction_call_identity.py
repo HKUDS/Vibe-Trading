@@ -8,9 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
-from src.agent.context_compact import COLLAPSE_TEXT_MIN, KEEP_RECENT, _STUB_RESULT_CONTENT, _context_collapse, _fix_tool_pairs, _is_cleared
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
+from src.session.compaction_ops import COLLAPSE_TEXT_MIN, KEEP_RECENT, _STUB_RESULT_CONTENT, _context_collapse, _fix_tool_pairs, _is_cleared
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 
@@ -33,7 +33,7 @@ def harness(tmp_path):
     tool = _Query()
     registry = ToolRegistry()
     registry.register(tool)
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=SimpleNamespace(chat=lambda *a, **kw: SimpleNamespace(content="summary")),
     )
@@ -83,7 +83,7 @@ def test_microcompact_reopens_only_lost_argument_variant(harness):
     balance = h.call({"statement": "balance"})
     h.pad(KEEP_RECENT - 1)
 
-    h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+    h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
 
     assert _is_cleared(income["content"])
     assert not _is_cleared(balance["content"])
@@ -102,16 +102,16 @@ def test_variants_clear_separately_and_second_pass_is_idempotent(harness):
     income_call = h.messages[1]["tool_calls"][0]
     h.call({"statement": "balance"})
     h.pad(KEEP_RECENT - 1)
-    assert h.agent._microcompact_and_unblock(h.messages, h.trace, 2) == [h.tool.name]
-    assert h.agent._microcompact_and_unblock(h.messages, h.trace, 3) == []
+    assert h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2) == [h.tool.name]
+    assert h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 3) == []
     h.pad(1)
-    assert h.agent._microcompact_and_unblock(h.messages, h.trace, 4) == [h.tool.name]
-    assert h.agent._microcompact_and_unblock(h.messages, h.trace, 5) == []
+    assert h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 4) == [h.tool.name]
+    assert h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 5) == []
 
     _context_collapse(h.messages)
     assert income_call["function"]["arguments"] == "{}"
     # Layer 2's lossy arguments must not change the captured identity.
-    h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+    h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
     assert json.loads(h.call(income_args)["content"])["status"] == "ok"
     assert json.loads(h.call({"statement": "balance"})["content"])["status"] == "ok"
     assert len(h.tool.calls) == 2, "both compacted readonly variants must replay from run cache"
@@ -143,10 +143,10 @@ def test_only_real_readable_duplicate_keeps_lock(
     calls_before = len(h.tool.calls)
     if compact == "micro":
         h.pad(KEEP_RECENT - 1)
-        h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+        h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
         assert _is_cleared(original["content"])
     else:
-        h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+        h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
         assert original not in h.messages
     assert second in h.messages
     result = h.call(args)
@@ -169,10 +169,10 @@ def test_compaction_never_replays_mutating_tool(harness, compact):
     original = h.call(args)
     h.pad()
     if compact == "micro":
-        assert h.agent._microcompact_and_unblock(h.messages, h.trace, 2) == []
+        assert h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2) == []
         assert _is_cleared(original["content"])
     else:
-        h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+        h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
         assert original not in h.messages
     result = h.call(args)
     assert json.loads(result["content"])["skipped"] is True
@@ -183,7 +183,7 @@ def test_compaction_uses_same_run_dir_identity_as_gate(harness):
     h = harness
     h.call({"statement": "income"})
     h.pad()
-    h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+    h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
     result = h.call({"run_dir": ".", "statement": "income"})
     assert json.loads(result["content"])["status"] == "ok"
     assert len(h.tool.calls) == 1, "normalized run_dir identity must replay rather than refetch"
@@ -194,16 +194,16 @@ def test_compaction_uses_same_run_dir_identity_as_gate(harness):
 
 def test_none_canonical_key_never_creates_lock(harness, monkeypatch):
     h = harness
-    monkeypatch.setattr(h.agent, "_identical_call_key", lambda *args: None)
+    monkeypatch.setattr(h.agent.replay, "_identical_call_key", lambda *args: None)
     h.call({"statement": "income"})
     h.pad()
-    h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
-    h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+    h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
+    h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
     h.call({"statement": "income"})
     h.call({"statement": "income"})
     assert len(h.tool.calls) == 3
-    assert not h.agent._called_ok
-    assert not h.agent._successful_call_keys
+    assert not h.agent.replay._called_ok
+    assert not h.agent.replay._successful_call_keys
 
 
 def test_recovered_cached_result_restores_identical_call_gate(harness):
@@ -212,7 +212,7 @@ def test_recovered_cached_result_restores_identical_call_gate(harness):
     args = {"statement": "income"}
     h.call(args)
     h.pad()
-    h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+    h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
     assert json.loads(h.call(args)["content"])["status"] == "ok"
     assert len(h.tool.calls) == 1, "recovery must use the deterministic cache"
     assert json.loads(h.call(args)["content"]).get("skipped") is True
@@ -236,7 +236,7 @@ def test_replayable_repeatable_result_restores_gate_after_one_replay(harness):
     assert len(h.tool.calls) == 1
 
     h.pad()
-    h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+    h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
     assert _is_cleared(first["content"])
 
     replay = h.call(args)
@@ -252,7 +252,7 @@ def test_replayable_repeatable_result_restores_gate_after_one_replay(harness):
     # Lose the restored copy in a later compaction: that is a new recovery
     # event, so one more replay is allowed, still without an external fetch.
     h.pad()
-    h.agent._microcompact_and_unblock(h.messages, h.trace, 3)
+    h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 3)
     second_replay = h.call(args)
     assert json.loads(second_replay["content"])["status"] == "ok"
     assert len(h.tool.calls) == 1
@@ -269,7 +269,7 @@ def test_readable_cached_duplicate_keeps_exact_key_locked(harness):
     h.tool.repeatable = False
     h.pad(KEEP_RECENT - 1)
 
-    reopened = h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+    reopened = h.agent._context_compactor._microcompact_and_unblock(h.messages, h.trace, 2)
 
     assert _is_cleared(original["content"])
     assert not _is_cleared(cached["content"])
@@ -294,9 +294,9 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
             raise RuntimeError("offline summary failure")
 
         monkeypatch.setattr(h.agent.llm, "chat", fail_summary)
-    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 1)
+    monkeypatch.setattr("src.agent.tuning.LLM_TIMEOUT_SECONDS", 1, raising=False)
 
-    h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+    h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
 
     assert balance in h.messages
     if degraded:
@@ -311,7 +311,7 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
 def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypatch):
     """The compaction thread inherits the run's session binding (#1416).
 
-    ``AgentLoop.run()`` binds the session id in a ``ContextVar``. A fresh
+    ``AgentRuntime.run()`` binds the session id in a ``ContextVar``. A fresh
     thread starts with an empty context, so the summary call used to go out
     unbound and OpenCode Go saw a second conversation id for the same session.
     """
@@ -331,10 +331,10 @@ def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypat
         return SimpleNamespace(content="summary")
 
     monkeypatch.setattr(h.agent.llm, "chat", chat)
-    monkeypatch.setattr("src.agent.loop_compaction._llm_timeout_seconds", lambda: 1)
+    monkeypatch.setattr("src.agent.tuning.LLM_TIMEOUT_SECONDS", 1, raising=False)
     token = bind_llm_session_id("vibe-session-42")
     try:
-        h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+        h.agent._context_compactor.auto_compact(h.messages, h.run_dir, h.trace)
     finally:
         reset_llm_session_id(token)
 
