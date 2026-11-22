@@ -20,8 +20,8 @@ from .data import (CalendarCoverage, DataSnapshot, PreparedBucketData, PreparedP
                    PriceBar, PriorMark, PriorMarkValuation, TargetBarValuation)
 from .models import JsonObject, JsonValue, PortfolioDocument, PortfolioHashes, PortfolioModel, PortfolioRequest
 from .numeric import (FX_RATE_SPEC, MONEY_SPEC, PRICE_SPEC, WEIGHT_SPEC, DecimalSpec,
-                      EffectiveFeeModel, canonical_decimal, parse_decimal)
-from .schema import PortfolioRequestError
+                      EffectiveFeeModel, _reject as _reject_request, canonical_decimal,
+                      parse_decimal)
 from .sessions import BucketSession, PortfolioSessions
 
 __all__ = [
@@ -81,7 +81,7 @@ class PortfolioDataHashes:
 
 
 def _reject(path: str, detail: str) -> NoReturn:
-    raise PortfolioRequestError(reason="invalid_hash_payload", path=path, detail=detail)
+    _reject_request("invalid_hash_payload", path, detail=detail)
 
 
 def _dataclass_payload(value: _DataclassValue) -> JsonObject:

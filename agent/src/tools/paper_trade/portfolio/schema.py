@@ -8,16 +8,16 @@ immutable models and resolves the packaged Draft 2020-12 contract.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal, NoReturn
+from typing import Final, Literal
 
 from pydantic import ValidationError
 
+from .errors import PortfolioRequestError as PortfolioRequestError
 from .models import JsonObject, JsonValue, PortfolioRequest
+from .numeric import _CANONICAL_CURRENCIES, _reject
 
 CONTRACT_PATH: Final = Path(__file__).resolve().parent.parent / "paper_trade_step-v2.0.json"
-_CANONICAL_CURRENCIES: Final = {"cn_a": "CNY", "hk": "HKD", "us": "USD"}
 _LEGACY_FIELDS: Final = (
     "market",
     "account_state",
@@ -30,27 +30,6 @@ _LEGACY_FIELDS: Final = (
     "session",
     "fee_model",
 )
-
-
-@dataclass(frozen=True, slots=True)
-class PortfolioRequestError(ValueError):
-    """One stable, structured pt-v2.0 boundary rejection."""
-
-    reason: str
-    path: str
-    bucket_id: str | None = None
-    detail: str = ""
-
-    @property
-    def code(self) -> str:
-        return "INVALID_REQUEST"
-
-    def __str__(self) -> str:
-        return f"{self.code}:{self.reason}:{self.path}"
-
-
-def _reject(reason: str, path: str, bucket_id: str | None = None) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id)
 
 
 def _object(value: JsonValue) -> JsonObject | None:
@@ -72,14 +51,14 @@ def _check_bucket_currency(bucket: JsonObject, path: str) -> None:
     currency = bucket.get("currency")
     if isinstance(market, str) and market in _CANONICAL_CURRENCIES:
         if currency != _CANONICAL_CURRENCIES[market]:
-            _reject("invalid_bucket_currency", f"{path}.currency", identity)
+            _reject("invalid_bucket_currency", f"{path}.currency", bucket_id=identity)
     fee_model = _object(bucket.get("fee_model"))
     fee_currency = fee_model.get("currency") if fee_model is not None else None
     if fee_currency is not None:
         if market == "hk" and fee_currency != "HKD":
-            _reject("non_hkd_hk_counter", f"{path}.fee_model.currency", identity)
+            _reject("non_hkd_hk_counter", f"{path}.fee_model.currency", bucket_id=identity)
         if fee_currency != currency:
-            _reject("invalid_fee_currency", f"{path}.fee_model.currency", identity)
+            _reject("invalid_fee_currency", f"{path}.fee_model.currency", bucket_id=identity)
     positions = _items(bucket.get("positions")) or []
     for index, raw_position in enumerate(positions):
         position = _object(raw_position)
@@ -94,9 +73,9 @@ def _check_counter_currency(row: JsonObject, bucket: JsonObject, path: str) -> N
     market = bucket.get("market")
     currency = row.get("currency")
     if market == "hk" and currency != "HKD":
-        _reject("non_hkd_hk_counter", f"{path}.currency", identity)
+        _reject("non_hkd_hk_counter", f"{path}.currency", bucket_id=identity)
     if currency != bucket.get("currency"):
-        _reject("instrument_currency_mismatch", f"{path}.currency", identity)
+        _reject("instrument_currency_mismatch", f"{path}.currency", bucket_id=identity)
 
 
 def _check_plan_counters(payload: JsonObject, field: str, buckets: dict[str, JsonObject]) -> None:
@@ -194,7 +173,7 @@ def _check_semantics(request: PortfolioRequest) -> None:
         session_markets.add(session.market)
     for bucket in request.portfolio_state.buckets:
         if bucket.market not in session_markets:
-            _reject("missing_session", "sessions", bucket.bucket_id)
+            _reject("missing_session", "sessions", bucket_id=bucket.bucket_id)
     rates = {}
     for index, snapshot in enumerate(request.fx_snapshots):
         if snapshot.rate_id in rates:
@@ -206,20 +185,20 @@ def _check_semantics(request: PortfolioRequest) -> None:
                 ),
                 None,
             )
-            _reject("duplicate_fx_rate", f"fx_snapshots[{index}].rate_id", bucket_id)
+            _reject("duplicate_fx_rate", f"fx_snapshots[{index}].rate_id", bucket_id=bucket_id)
         rates[snapshot.rate_id] = snapshot
     for index, conversion in enumerate(request.fx_conversions):
         snapshot = rates.get(conversion.rate_id)
         if snapshot is None:
-            _reject("unknown_fx_rate", f"fx_conversions[{index}].rate_id", conversion.from_bucket_id)
+            _reject("unknown_fx_rate", f"fx_conversions[{index}].rate_id", bucket_id=conversion.from_bucket_id)
         source = buckets.get(conversion.from_bucket_id)
         target = buckets.get(conversion.to_bucket_id)
         if source is None:
-            _reject("unknown_bucket", f"fx_conversions[{index}].from_bucket_id", conversion.from_bucket_id)
+            _reject("unknown_bucket", f"fx_conversions[{index}].from_bucket_id", bucket_id=conversion.from_bucket_id)
         if target is None:
-            _reject("unknown_bucket", f"fx_conversions[{index}].to_bucket_id", conversion.to_bucket_id)
+            _reject("unknown_bucket", f"fx_conversions[{index}].to_bucket_id", bucket_id=conversion.to_bucket_id)
         if snapshot.from_currency != source.currency or snapshot.to_currency != target.currency:
-            _reject("fx_pair_mismatch", f"fx_conversions[{index}].rate_id", conversion.from_bucket_id)
+            _reject("fx_pair_mismatch", f"fx_conversions[{index}].rate_id", bucket_id=conversion.from_bucket_id)
 
 
 def parse_portfolio_request(payload: JsonValue) -> PortfolioRequest:

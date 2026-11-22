@@ -8,8 +8,8 @@ from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation, localcontext
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final, Mapping, NoReturn
 
+from .errors import PortfolioRequestError
 from .models import Currency, FeeModel, JsonObject, JsonValue, Market, PortfolioBucket
-from .schema import PortfolioRequestError
 
 if TYPE_CHECKING:
     from ..rules import MarketRules
@@ -34,8 +34,12 @@ PRICE_SPEC: Final = DecimalSpec(scale=6, minimum=Decimal(0), minimum_inclusive=F
 WEIGHT_SPEC: Final = DecimalSpec(scale=12, minimum=Decimal(0), maximum=Decimal(1))
 FX_RATE_SPEC: Final = DecimalSpec(scale=12, minimum=Decimal(0), minimum_inclusive=False)
 MAX_JSON_INTEGER: Final = (1 << 53) - 1
+_EXACT_PRECISION: Final = 60
 
-_CANONICAL_CURRENCIES: Final = {"cn_a": "CNY", "hk": "HKD", "us": "USD"}
+_CANONICAL_CURRENCIES: Final[dict[str, Currency]] = {"cn_a": "CNY", "hk": "HKD", "us": "USD"}
+_MARKET_BY_CURRENCY: Final[dict[Currency, Market]] = {
+    currency: market for market, currency in _CANONICAL_CURRENCIES.items()
+}
 _FEE_MONEY_SPEC: Final = DecimalSpec(scale=2)
 _FEE_PER_SHARE_SPEC: Final = DecimalSpec(scale=6)
 _FEE_RATE_SPEC: Final = DecimalSpec(scale=12, maximum=Decimal(1))
@@ -70,19 +74,31 @@ _DEFAULT_FEE_PARAMETERS: Final = {
 }
 
 
-def _reject(reason: str, path: str, detail: str = "") -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, detail=detail)
+def _reject(
+    reason: str,
+    path: str,
+    *,
+    bucket_id: str | None = None,
+    detail: str = "",
+) -> NoReturn:
+    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id, detail=detail)
+
+
+def _exact_product(amount: Decimal, rate: Decimal) -> Decimal:
+    with localcontext() as context:
+        context.prec = _EXACT_PRECISION
+        return amount * rate
 
 
 def _check_spec(spec: DecimalSpec, path: str) -> None:
     if not 0 <= spec.scale <= _MAX_SCALE:
-        _reject("invalid_numeric_spec", path, "scale is outside the supported range")
+        _reject("invalid_numeric_spec", path, detail="scale is outside the supported range")
     if (
         spec.minimum is not None
         and spec.maximum is not None
         and spec.minimum > spec.maximum
     ):
-        _reject("invalid_numeric_spec", path, "minimum exceeds maximum")
+        _reject("invalid_numeric_spec", path, detail="minimum exceeds maximum")
 
 
 def _below_minimum(value: Decimal, spec: DecimalSpec) -> bool:
@@ -96,7 +112,7 @@ def _below_minimum(value: Decimal, spec: DecimalSpec) -> bool:
 def _quantize_and_check(value: Decimal, spec: DecimalSpec, path: str) -> Decimal:
     _check_spec(spec, path)
     if not value.is_finite():
-        _reject("invalid_decimal", path, "value must be finite")
+        _reject("invalid_decimal", path, detail="value must be finite")
     if value.is_zero() and value.is_signed():
         _reject("negative_zero", path)
     if _below_minimum(value, spec) or (
@@ -109,20 +125,20 @@ def _quantize_and_check(value: Decimal, spec: DecimalSpec, path: str) -> Decimal
             quantum = Decimal(1).scaleb(-spec.scale)
             quantized = value.quantize(quantum, rounding=ROUND_HALF_EVEN)
     except InvalidOperation:
-        _reject("decimal_out_of_range", path, "value cannot be represented at this scale")
+        _reject("decimal_out_of_range", path, detail="value cannot be represented at this scale")
     if quantized.is_zero() and quantized.is_signed():
-        _reject("negative_zero", path, "rounding would produce negative zero")
+        _reject("negative_zero", path, detail="rounding would produce negative zero")
     if _below_minimum(quantized, spec) or (
         spec.maximum is not None and quantized > spec.maximum
     ):
-        _reject("decimal_out_of_range", path, "rounded value is out of range")
+        _reject("decimal_out_of_range", path, detail="rounded value is out of range")
     return quantized
 
 
 def parse_decimal(value: JsonValue, spec: DecimalSpec, path: str = "$") -> Decimal:
     """Parse a JSON fixed-point string without float or exponent coercion."""
     if not isinstance(value, str) or _DECIMAL_PATTERN.fullmatch(value) is None:
-        _reject("invalid_decimal", path, "expected a canonical fixed-point string")
+        _reject("invalid_decimal", path, detail="expected a canonical fixed-point string")
     candidate = Decimal(value)
     if candidate.is_zero() and value.startswith("-"):
         _reject("negative_zero", path)
@@ -132,7 +148,7 @@ def parse_decimal(value: JsonValue, spec: DecimalSpec, path: str = "$") -> Decim
 def canonical_decimal(value: Decimal, spec: DecimalSpec, path: str = "$") -> str:
     """Render a finite Decimal as a scale-stable JSON/JCS-safe string."""
     if not isinstance(value, Decimal):
-        _reject("invalid_decimal", path, "internal value must be Decimal")
+        _reject("invalid_decimal", path, detail="internal value must be Decimal")
     quantized = _quantize_and_check(value, spec, path)
     return format(quantized, f".{spec.scale}f")
 
@@ -160,7 +176,7 @@ def parse_fx_rate(value: JsonValue, path: str = "fx_rate") -> Decimal:
 def parse_quantity(value: JsonValue, path: str = "quantity", allow_zero: bool = False) -> int:
     """Parse a whole-share quantity inside the exact JSON integer range."""
     if type(value) is not int:
-        _reject("invalid_quantity", path, "expected an integer, not a bool, float or string")
+        _reject("invalid_quantity", path, detail="expected an integer, not a bool, float or string")
     minimum = 0 if allow_zero else 1
     if not minimum <= value <= MAX_JSON_INTEGER:
         _reject("quantity_out_of_range", path)

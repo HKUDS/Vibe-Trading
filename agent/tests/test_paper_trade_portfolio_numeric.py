@@ -8,8 +8,25 @@ from pathlib import Path
 
 import pytest
 
-from src.tools.paper_trade.portfolio import numeric
+from src.tools.paper_trade.portfolio import errors, fx, ledger, numeric, schema
 from src.tools.paper_trade.portfolio.models import Currency, FeeModel, JsonValue, Market, PortfolioBucket
+
+
+def test_consolidated_error_and_helpers_are_single_source_objects() -> None:
+    # Given the foundation modules that historically duplicated these definitions.
+    # When / Then the rejection type is one shared class object everywhere.
+    assert errors.PortfolioRequestError is numeric.PortfolioRequestError
+    assert schema.PortfolioRequestError is numeric.PortfolioRequestError
+
+    # And every runtime helper resolves to the single canonical numeric definition.
+    assert schema._reject is numeric._reject
+    assert fx._reject is numeric._reject
+    assert ledger._reject is numeric._reject
+    assert fx._exact_product is numeric._exact_product
+    assert ledger._exact_product is numeric._exact_product
+    assert fx._EXACT_PRECISION == ledger._EXACT_PRECISION == numeric._EXACT_PRECISION == 60
+    assert schema._CANONICAL_CURRENCIES is numeric._CANONICAL_CURRENCIES
+    assert ledger._CANONICAL_CURRENCIES is numeric._CANONICAL_CURRENCIES
 
 
 @pytest.mark.parametrize(

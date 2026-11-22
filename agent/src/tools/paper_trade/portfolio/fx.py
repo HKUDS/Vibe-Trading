@@ -13,11 +13,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from types import MappingProxyType
-from typing import Final, Literal, Mapping, NoReturn, Sequence, TypeAlias
+from typing import Literal, Mapping, Sequence, TypeAlias
 
 from .models import Currency, FxSnapshot, PortfolioRequest
-from .numeric import MONEY_SPEC, canonical_decimal, parse_fx_rate, parse_money
-from .schema import PortfolioRequestError
+from .numeric import (MONEY_SPEC, _EXACT_PRECISION, _exact_product, _reject,
+                      canonical_decimal, parse_fx_rate, parse_money)
 
 __all__ = [
     "ConversionStage",
@@ -34,23 +34,6 @@ __all__ = [
 
 ConversionStage: TypeAlias = Literal["pre_fill", "post_fill"]
 DecimalLike: TypeAlias = Decimal | str
-_EXACT_PRECISION: Final = 60
-
-
-def _reject(
-    reason: str,
-    path: str,
-    *,
-    bucket_id: str | None = None,
-    detail: str = "",
-) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id, detail=detail)
-
-
-def _exact_product(amount: Decimal, rate: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return amount * rate
 
 
 def _quantize_money(value: Decimal, path: str) -> Decimal:

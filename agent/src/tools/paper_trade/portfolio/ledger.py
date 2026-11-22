@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext
 from types import MappingProxyType
-from typing import Final, Literal, Mapping, NoReturn, Sequence, TypeAlias
+from typing import Literal, Mapping, Sequence, TypeAlias
 
 from .fx import (
     FxConversionEvent,
@@ -27,6 +27,10 @@ from .numeric import (
     FX_RATE_SPEC,
     MONEY_SPEC,
     PRICE_SPEC,
+    _CANONICAL_CURRENCIES,
+    _EXACT_PRECISION,
+    _exact_product,
+    _reject,
     canonical_decimal,
     parse_fx_rate,
     parse_money,
@@ -51,22 +55,6 @@ __all__ = [
 
 ConversionStage: TypeAlias = Literal["pre_fill", "post_fill"]
 DecimalLike: TypeAlias = Decimal | str
-_EXACT_PRECISION: Final = 60
-_CANONICAL_CURRENCIES: Final[dict[str, Currency]] = {
-    "cn_a": "CNY",
-    "hk": "HKD",
-    "us": "USD",
-}
-
-
-def _reject(
-    reason: str,
-    path: str,
-    *,
-    bucket_id: str | None = None,
-    detail: str = "",
-) -> NoReturn:
-    raise PortfolioRequestError(reason=reason, path=path, bucket_id=bucket_id, detail=detail)
 
 
 def _typed_decimal(value: DecimalLike, parser, spec, path: str) -> Decimal:
@@ -98,12 +86,6 @@ def _exact_decimal(value: Decimal, path: str) -> Decimal:
     if value.is_zero() and value.is_signed():
         _reject("negative_zero", path)
     return value
-
-
-def _exact_product(amount: Decimal, rate: Decimal) -> Decimal:
-    with localcontext() as context:
-        context.prec = _EXACT_PRECISION
-        return amount * rate
 
 
 def _quantize_money(value: Decimal, path: str) -> Decimal:
