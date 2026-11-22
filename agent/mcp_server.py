@@ -109,7 +109,29 @@ class _ToolPolicyMiddleware(Middleware):
         name = context.message.name
         if name.startswith(_deny_prefixes()):
             raise ToolError(f"{name} is disabled by the active tool policy")
-        return await call_next(context)
+        from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
+
+        try:
+            result = await call_next(context)
+        except Exception as exc:
+            safe_error = redact_tool_result(str(exc), preserve_format=True)
+            if safe_error != str(exc):
+                raise ToolError(safe_error) from None
+            raise
+        # FastMCP exposes a string return twice, as text and in a JSON envelope.
+        content = [
+            block.model_copy(update={"text": redact_tool_result(block.text, preserve_format=True)})
+            if block.type == "text" else block
+            for block in result.content
+        ]
+        structured = redact_payload(result.structured_content, sink=RESULT_SINK)
+        if isinstance(structured, dict) and isinstance(structured.get("result"), str):
+            structured["result"] = redact_tool_result(structured["result"], preserve_format=True)
+        return result.model_copy(update={
+            "content": content,
+            "structured_content": structured,
+            "meta": redact_payload(result.meta, sink=RESULT_SINK),
+        })
 
 
 mcp.add_middleware(_ToolPolicyMiddleware())

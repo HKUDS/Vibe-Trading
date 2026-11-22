@@ -12,6 +12,7 @@ registry for a recording fake, so nothing reaches SEC / Polymarket / arXiv.
 from __future__ import annotations
 
 import asyncio
+import json
 import importlib
 import sys
 from pathlib import Path
@@ -368,3 +369,20 @@ def test_mirrored_call_params_filter() -> None:
         "a": "x",
         "b": 0,
     }
+
+
+def test_wire_tool_result_scrubs_both_mcp_representations(monkeypatch):
+    from fastmcp import Client
+
+    mod = _import_mcp_server()
+    recorder = _RecordingRegistry()
+    monkeypatch.setattr(recorder, "execute", lambda *_: '{"api_key":"fixture-private","count":3}')
+    monkeypatch.setattr(mod, "_registry", recorder)
+
+    async def call():
+        async with Client(mod.mcp) as client:
+            return await client.call_tool("research_papers", {"mode": "search", "query": "test"})
+
+    result = asyncio.run(call())
+    for text in (result.content[0].text, result.structured_content["result"]):
+        assert json.loads(text) == {"api_key": "[redacted]", "count": 3}
