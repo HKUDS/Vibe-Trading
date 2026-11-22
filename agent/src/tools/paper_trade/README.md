@@ -521,13 +521,18 @@ its existing envelope (`received_state_hash` where computable).
   currency for you.
 - **HK counters must be HKD.** A non-HKD HK bucket, position, target, order or
   fee counter is rejected; other markets use their one canonical currency.
-- **cn_a price bands are board heuristics.** The portfolio branch runs each
-  cn_a bucket through the legacy daily engine without a limits-table client,
-  so bands come from the frozen board-ratio heuristic on the prior close
-  (main board 10%, ChiNext/STAR 20%, BSE 30%), not from the ClickHouse limit
-  table the single-market path consults. ST names are not detected here and
-  keep their board's non-ST band; callers needing exchange-published limits
-  or the ST 5% band should use the single-market path.
+- **cn_a price bands reuse the single-market limits/ST seam.** Each cn_a
+  bucket runs through the legacy daily engine with the same
+  connector-conditional limits client as the single-market path. When the
+  shared ClickHouse connector is available, bands are table-first: the
+  `stk_limit` row for the symbol-day when present, otherwise the board-ratio
+  heuristic on the prior close, with the `stk_st_daily` flag narrowing a
+  main-board ST name to ±5%. Without a reachable connector (including the
+  offline default), the frozen board-ratio heuristic applies on the prior
+  close (main board 10%, ChiNext/STAR 20%, BSE 30%) and no ST status is
+  detected. The limit provenance tokens (`limits:stk_limit`,
+  `st:stk_st_daily`, `limits:heuristic`) are recorded engine-internally on
+  `MatchOutcome`; they are not part of the pt-v2.0 document.
 
 ## JoinQuant parity
 

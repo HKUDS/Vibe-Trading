@@ -86,6 +86,13 @@ buckets, conversions, plan order ids, fills, NAV, exposures and attribution.
 Neither branch fetches a market price, verifies a broker fill or recomputes
 hashes without their raw inputs; those limits are published in `not_verified`.
 
+For cn_a buckets, price limits use the same connector-conditional seam as
+single-market steps: with the shared ClickHouse connector available, `stk_limit`
+rows are authoritative and `stk_st_daily` narrows a main-board ST name to ±5% on
+the heuristic fallback; without it, the frozen board-ratio heuristic applies
+with no ST detection. Limit provenance stays engine-internal and is not part of
+the pt-v2.0 document.
+
 `web_search` tries its existing Sogou and Bing China fallbacks when ddgs returns
 no results or fails. Set `VIBE_TRADING_SEARCH_BING_FALLBACK=0` to disable both.
 This chain returns an empty result only when its enabled sources finish without
