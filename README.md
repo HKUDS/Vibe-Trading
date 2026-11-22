@@ -47,6 +47,13 @@
 </p>
 
 <p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/stargazers/technology-finance.png">
+    <img src="assets/stargazers/carousel.gif" width="900" alt="Starred by people from 203 organizations across technology, finance, academia, consulting, research, and open source. Affiliations are self-reported and stars are personal."/>
+  </picture>
+</p>
+
+<p align="center">
   <a href="https://vibetrading.wiki/">Website</a> &nbsp;&middot;&nbsp;
   <a href="https://vibetrading.wiki/docs/">Docs</a> &nbsp;&middot;&nbsp;
   <a href="#-news">News</a> &nbsp;&middot;&nbsp;
