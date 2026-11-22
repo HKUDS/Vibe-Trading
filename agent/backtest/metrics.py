@@ -13,6 +13,13 @@ import pandas as pd
 
 from backtest.models import FillRecord, TradeRecord
 
+# Return dispersion at or below this is float-error dust, not signal. It is the
+# same practical-zero threshold the options engine already uses to declare a
+# Sharpe ratio undefined; reusing it keeps the sentinel consistent across
+# surfaces and tells a constant-return path (std ~1e-16) from a genuinely
+# low-volatility one.
+_DEGENERATE_DISPERSION_ATOL = 1e-12
+
 # ─── Annualisation factor mapping ───
 
 # mootdx (A-share) and futu (HK + A-share) are equity sources, so they mirror
@@ -724,10 +731,17 @@ def calc_metrics(
     # ``Series.std()`` uses ddof=1, so a single-observation return series
     # (e.g. a one-bar backtest) yields NaN and poisons the Sharpe ratio.
     # Guard the small sample before calculating volatility.
+    port_mean = float(port_ret.mean())
     vol = float(port_ret.std()) if len(port_ret) > 1 and returns_finite else 0.0
+    # A one-bar series (n<2) or a constant-return path has no dispersion to
+    # annualise; its std is zero, or float-error dust (~1e-16). Dividing by
+    # that with the old ``vol + 1e-10`` guard reported a ~1.6-billion Sharpe
+    # instead of the undefined sentinel. Only a denominator that is genuinely
+    # non-zero earns a ratio; degenerate dispersion reports 0.0.
+    dispersion_defined = vol > _DEGENERATE_DISPERSION_ATOL
     sharpe = (
-        float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
-        if returns_finite
+        float(port_mean / vol * np.sqrt(bpy))
+        if returns_finite and dispersion_defined
         else 0.0
     )
     if not np.isfinite(sharpe):
@@ -785,12 +799,16 @@ def calc_metrics(
         excess = total_ret - bench_return
         aligned_bench = bench_ret.reindex(port_ret.index).fillna(0.0)
         active_ret = port_ret - aligned_bench
+        active_mean = float(active_ret.mean())
         # Same ddof=1 small-sample guard as ``vol`` so the
         # information ratio stays finite for a single-observation series.
         active_std = float(active_ret.std()) if len(active_ret) > 1 and returns_finite else 0.0
+        # Mirror Sharpe's degenerate-dispersion sentinel: a constant active
+        # return path has nothing to annualise, so do not fabricate a ratio.
+        active_dispersion_defined = active_std > _DEGENERATE_DISPERSION_ATOL
         ir = (
-            float(active_ret.mean() / (active_std + 1e-10) * np.sqrt(bpy))
-            if returns_finite
+            float(active_mean / active_std * np.sqrt(bpy))
+            if returns_finite and active_dispersion_defined
             else 0.0
         )
         if not np.isfinite(ir):

@@ -47,6 +47,10 @@ Sharpe or return, with input-order tie breaking. The selection and plan are
 written and hashed before testing. Both the supplied data map and trial-local snapshot files are truncated
 before the strategy runs, so neither supplies later prices to a training trial. Prior prices remain
 available for indicator warmup while execution begins at the evaluated window.
+The source run's manifested equity dates define the evaluation calendar. Training covers
+`train_bars` of that calendar, with earlier prices available for indicators. Every training
+candidate and test fold must return equity for exactly its planned dates. Legacy runs without
+a manifested equity artifact can use the price calendar when they declare no warm-up boundary.
 
 Every test starts flat and pays the engine's entry and liquidation costs.
 OOS returns are compounded across test windows, including each first bar.

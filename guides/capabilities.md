@@ -313,8 +313,13 @@ The turnover-aware optimizer measures allocation changes in signed position
 space: reversing a 50% long to a 50% short contributes 0.5 turnover, including
 both the close and the reopen. Its penalty and recorded allocation turnover
 include these reversals; execution-derived turnover remains a separate metric.
-Local data date ranges include the entire UTC end day, including subsecond
-timestamps; bars at the following midnight are excluded before aggregation.
+Local data date ranges include the entire end day. The default
+`timestamp_basis: utc` uses UTC timestamps, including subsecond timestamps.
+For a source with one bar per exchange session and dates written in the
+exchange timezone, set `timestamp_basis: session_date` on that source in
+`~/.vibe-trading/data-bridge/config.yaml`. For example, a daily bar labeled
+`2024-03-11 00:00:00+08:00` belongs to March 11 in this mode. Use a local date
+column when the database already returns timestamps converted to UTC.
 
 The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
 `BNB/USD`, `SOL/USD`, `ADA/USD`, and `DOGE/USD` as crypto. Fiat pairs such as

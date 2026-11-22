@@ -148,6 +148,8 @@ export function classifyAssetClass(symbol: string): AssetClass {
   if (upper.endsWith("-PERP")) return "crypto";
   const hyphen = upper.lastIndexOf("-");
   if (hyphen >= 0 && CRYPTO_QUOTE_SUFFIXES.has(upper.slice(hyphen + 1))) return "crypto";
+  if (/^(BTC|ETH|BNB|SOL|ADA|DOGE)\/USD$/.test(upper)) return "crypto";
+  if (/^[A-Z]{3}\/[A-Z]{3}$/.test(upper)) return "forex";
   const slash = upper.lastIndexOf("/");
   if (slash >= 0 && CRYPTO_QUOTE_SUFFIXES.has(upper.slice(slash + 1))) return "crypto";
 

@@ -33,6 +33,47 @@ const result: OptionsPayoffResponse = {
   limitations: ["European model"],
 };
 
+const comparedRequest: OptionsPayoffRequest = {
+  ...request,
+  label: "Base",
+  alternatives: [
+    { label: "Alt A", legs: request.legs },
+    { label: "Broken", legs: request.legs },
+  ],
+};
+
+const comparedResult: OptionsPayoffResponse = {
+  ...result,
+  alternatives: [
+    {
+      label: "Alt A",
+      status: "ok",
+      expiry_curve: { spot: [80, 120], pnl: [-400, 400] },
+      scenario_grid: { iv_values: [0.2], spot: [80, 120], pnl: [[-410, 390]] },
+    },
+    { label: "Broken", status: "error", error: "bad leg" },
+  ],
+  comparisons: [
+    {
+      left_label: "Alt A",
+      right_label: "Base",
+      status: "ok",
+      metrics: {
+        max_profit_return: {
+          left_decimal: 0.4,
+          right_decimal: 0.3,
+          relation: "higher",
+          difference_percentage_points: 10,
+        },
+        max_loss_return: { status: "unavailable", reason: "Unbounded payoff" },
+      },
+    },
+    { left_label: "Broken", right_label: "Base", status: "unavailable", reason: "bad leg" },
+  ],
+};
+
+const header = "series,iv,spot,pnl,strategy,right_label,metric,left_decimal,right_decimal,relation,difference_percentage_points,status,reason";
+
 describe("options analysis export", () => {
   it("binds the exact request and full result in a deterministic JSON document", async () => {
     const { buildOptionsAnalysisJson, OPTIONS_ANALYSIS_FORMAT } = await import("../optionsExport");
@@ -57,15 +98,15 @@ describe("options analysis export", () => {
     const csv = buildOptionsScenarioCsv(result);
     const lines = csv.trimEnd().split("\n");
 
-    expect(lines[0]).toBe("﻿series,iv,spot,pnl");
+    expect(lines[0]).toBe(`﻿${header}`);
     expect(lines).toHaveLength(7);
-    expect(lines.slice(1)).toEqual([
-      "expiry,,80,-500",
-      "expiry,,120,300",
-      "scenario,0.2,80,-450",
-      "scenario,0.2,120,350",
-      "scenario,0.4,80,-500",
-      "scenario,0.4,120,250",
+    expect(lines.slice(1).map((line) => line.split(","))).toEqual([
+      ["expiry", "", "80", "-500", "", "", "", "", "", "", "", "", ""],
+      ["expiry", "", "120", "300", "", "", "", "", "", "", "", "", ""],
+      ["scenario", "0.2", "80", "-450", "", "", "", "", "", "", "", "", ""],
+      ["scenario", "0.2", "120", "350", "", "", "", "", "", "", "", "", ""],
+      ["scenario", "0.4", "80", "-500", "", "", "", "", "", "", "", "", ""],
+      ["scenario", "0.4", "120", "250", "", "", "", "", "", "", "", "", ""],
     ]);
   });
 
@@ -79,14 +120,54 @@ describe("options analysis export", () => {
     expect(buildOptionsScenarioCsv(expiryOnly).trimEnd().split("\n")).toHaveLength(3);
   });
 
-  it("refuses ragged grids instead of exporting a misleading CSV", async () => {
+  it("keeps alternatives, their grids, and every comparison outcome in the CSV", async () => {
+    const { buildOptionsScenarioCsv } = await import("../optionsExport");
+
+    const lines = buildOptionsScenarioCsv(comparedResult, comparedRequest).trimEnd().split("\n");
+
+    expect(lines).toHaveLength(15);
+    const rows = lines.slice(1).map((line) => line.split(","));
+    expect(rows).toContainEqual(["expiry", "", "80", "-500", "Base", "", "", "", "", "", "", "", ""]);
+    expect(rows).toContainEqual(["alternative_expiry", "", "80", "-400", "Alt A", "", "", "", "", "", "", "", ""]);
+    expect(rows).toContainEqual(["alternative_scenario", "0.2", "120", "390", "Alt A", "", "", "", "", "", "", "", ""]);
+    expect(rows).toContainEqual(["alternative_error", "", "", "", "Broken", "", "", "", "", "", "", "error", "bad leg"]);
+    expect(rows).toContainEqual(["comparison", "", "", "", "Alt A", "Base", "max_profit_return", "0.4", "0.3", "higher", "10", "ok", ""]);
+    expect(rows).toContainEqual(["comparison", "", "", "", "Alt A", "Base", "max_loss_return", "", "", "", "", "unavailable", "Unbounded payoff"]);
+    expect(rows).toContainEqual(["comparison", "", "", "", "Broken", "Base", "", "", "", "", "", "unavailable", "bad leg"]);
+  });
+
+  it("quotes labels and reasons without allowing spreadsheet formulas", async () => {
+    const { buildOptionsScenarioCsv } = await import("../optionsExport");
+    const hostile: OptionsPayoffResponse = {
+      ...result,
+      alternatives: [{ label: "=SUM(1,2)\n\"Bad\"", status: "error", error: "@bad, \"leg\"" }],
+    };
+
+    const csv = buildOptionsScenarioCsv(hostile, { ...request, label: "+Base" });
+
+    expect(csv).toContain("'+Base");
+    expect(csv).toContain("\"'=SUM(1,2)\n\"\"Bad\"\"\"");
+    expect(csv).toContain("\"'@bad, \"\"leg\"\"\"");
+  });
+
+  it("refuses ragged primary or alternative grids", async () => {
     const { buildOptionsScenarioCsv } = await import("../optionsExport");
     const malformed: OptionsPayoffResponse = {
       ...result,
       scenario_grid: { iv_values: [0.2, 0.4], spot: [80, 120], pnl: [[1, 2]] },
     };
+    const malformedAlternative: OptionsPayoffResponse = {
+      ...result,
+      alternatives: [{
+        label: "Alt A",
+        status: "ok",
+        expiry_curve: { spot: [80, 120], pnl: [1] },
+        scenario_grid: { iv_values: [], spot: [], pnl: [] },
+      }],
+    };
 
     expect(() => buildOptionsScenarioCsv(malformed)).toThrow("scenario grid");
+    expect(() => buildOptionsScenarioCsv(malformedAlternative)).toThrow("expiry curve");
   });
 
   it("refuses non-finite values and mismatched expiry arrays", async () => {
@@ -100,5 +181,9 @@ describe("options analysis export", () => {
       ...result,
       expiry_curve: { spot: [80, 120], pnl: [0, Number.POSITIVE_INFINITY] },
     })).toThrow("finite");
+    expect(() => buildOptionsScenarioCsv(result, {
+      ...request,
+      entry_spot: Number.NaN,
+    })).toThrow("request");
   });
 });

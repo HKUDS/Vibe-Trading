@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shutil
@@ -983,7 +984,12 @@ class SignalChannel(BaseChannel):
                 try:
                     source_path = self._signal_attachments_dir() / attachment_id
                     if source_path.exists():
-                        dest_path = media_dir / f"signal_{safe_filename(filename)}"
+                        # Separate attachment IDs without lengthening the
+                        # filename component or relying on sanitized IDs.
+                        attachment_key = hashlib.sha256(attachment_id.encode("utf-8")).hexdigest()
+                        directory = media_dir / attachment_key
+                        directory.mkdir(exist_ok=True)
+                        dest_path = directory / (safe_filename(filename) or "attachment")
                         shutil.copy2(source_path, dest_path)
                         media_paths.append(str(dest_path))
                         media_type = content_type.split("/")[0] if "/" in content_type else "file"

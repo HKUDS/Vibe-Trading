@@ -2877,13 +2877,19 @@ def cmd_swarm_show(run_id: str) -> None:
 
 def cmd_swarm_cancel(run_id: str) -> None:
     """Cancel a swarm run."""
-    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.runtime import SwarmRuntime, cancel_indexed_run
     from src.swarm.store import SwarmStore
 
     store = SwarmStore(base_dir=SWARM_DIR)
     runtime = SwarmRuntime(store=store)
 
-    if runtime.cancel_run(run_id):
+    # A run this process's own SwarmRuntime started is cancelled directly.
+    # One an agent tool call started that kept running in the background
+    # after its wait budget elapsed (src/tools/swarm_tool.py) is only
+    # reachable through the process-wide active-run index -- a fresh
+    # SwarmRuntime instance never saw it start. Mirrors the fallback
+    # src/api/swarm_routes.py's cancel endpoint already uses.
+    if runtime.cancel_run(run_id) or cancel_indexed_run(run_id):
         console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")
     else:
         console.print(f"[red]Run {run_id} not found or already finished[/red]")
@@ -2912,7 +2918,9 @@ def cmd_sessions() -> None:
     table.add_column("Updated", width=20)
 
     for s in sessions:
-        messages = store.get_messages(s.session_id)
+        # The default limit=100 is for building chat history, not counting;
+        # this column is the total message count, so it needs every message.
+        messages = store.get_messages(s.session_id, limit=None)
         sc = "green" if s.status.value == "active" else "dim"
         table.add_row(
             s.session_id,

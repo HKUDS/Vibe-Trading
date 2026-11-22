@@ -66,6 +66,10 @@
 
 ## 📰 뉴스
 
+- **2026-11-22** 🛠️ **백테스트 정확도 개선과 옵션 분석 내보내기 확대** — 리서치 랩의 워크포워드 분석은 기존 평가 날짜에만 점수를 매기고 이전 봉은 지표 워밍업에 사용합니다. 외부 벤치마크 가격이 음수가 되어도 자산 곡선과 보고 수익률이 일치합니다. 암호화폐 무기한 선물의 장중 펀딩비는 UTC 00:00, 08:00, 16:00에 정산됩니다. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  옵션 분석 CSV에 저장된 대안과 비교 결과가 포함됩니다. 로컬 일봉 데이터는 `timestamp_basis: session_date`를 설정해 거래소의 거래일을 유지할 수 있습니다. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  예약 전송은 최신 작업 상태를 보존하고 Signal은 이름이 같은 첨부 파일을 따로 저장합니다. 작업 복구는 Windows x64와 ARM64의 네이티브 테스트를 통과했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
 - **2026-11-20** 📈 **미국 주식 종목 코드와 텐센트 일봉 이력** — 이스트머니와 야후에서 버크셔 해서웨이 B주를 검색하면 모두 `BRK-B.US`로 표시됩니다. 이스트머니 시세를 가져오기 전에 종목 코드를 대조해 `BW-A.US`와 `BWA.US`를 구분합니다. 텐센트 일봉은 `2023-1-5`처럼 날짜를 입력해도 모든 페이지를 가져옵니다. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   전략 비교에서 최대 낙폭 −10%를 −30%보다 높게 평가합니다. 백테스트는 `allow_nonpositive_prices: true`를 명시한 경우에만 음수 가격을 유지합니다. CLI에서 이전 메시지를 불러와 대화를 이어갈 수 있습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
