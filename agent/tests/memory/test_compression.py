@@ -189,6 +189,55 @@ class TestApplyCompression:
         # Archived content should be the original
         assert archive_path.read_text(encoding="utf-8") == _LONG_CONTENT
 
+    def test_apply_compression_keeps_the_raw_backup_through_a_second_pass(
+        self, tmp_path: Path
+    ) -> None:
+        """raw -> daily -> digest must not overwrite the raw original's backup."""
+        pipeline = CompressionPipeline(tmp_path)
+        entry_path = _make_entry_file(tmp_path / "note.md", content=_LONG_CONTENT)
+
+        daily = pipeline.apply_compression(
+            entry_path, _LONG_CONTENT, ("bitcoin",), LEVEL_DAILY
+        )
+        assert daily is not None
+        entry_path.write_text(daily, encoding="utf-8")
+        digest = pipeline.apply_compression(
+            entry_path, daily, ("bitcoin",), LEVEL_DIGEST
+        )
+        assert digest is not None
+
+        assert (tmp_path / "archive" / "note.md").read_text(
+            encoding="utf-8"
+        ) == _LONG_CONTENT
+        backups = sorted(
+            p.read_text(encoding="utf-8") for p in (tmp_path / "archive").glob("*.md")
+        )
+        assert backups == sorted([_LONG_CONTENT, daily])
+
+    def test_apply_compression_does_not_overwrite_another_entrys_backup(
+        self, tmp_path: Path
+    ) -> None:
+        """user/note.md and project/note.md share a basename under the hierarchy."""
+        pipeline = CompressionPipeline(tmp_path)
+        user = _make_entry_file(tmp_path / "user" / "note.md", content=_LONG_CONTENT)
+        project_body = _LONG_CONTENT.replace("Bitcoin", "Ethereum")
+        project = _make_entry_file(
+            tmp_path / "project" / "note.md", content=project_body
+        )
+
+        assert (
+            pipeline.apply_compression(user, _LONG_CONTENT, (), LEVEL_DAILY) is not None
+        )
+        assert (
+            pipeline.apply_compression(project, project_body, (), LEVEL_DAILY)
+            is not None
+        )
+
+        backups = sorted(
+            p.read_text(encoding="utf-8") for p in (tmp_path / "archive").glob("*.md")
+        )
+        assert backups == sorted([_LONG_CONTENT, project_body])
+
     def test_apply_compression_daily_output(self, tmp_path: Path) -> None:
         """apply_compression with daily target returns compressed string."""
         pipeline = CompressionPipeline(tmp_path)
