@@ -49,17 +49,19 @@ class TestAttachmentFilenameCollision:
         assert Path(media_paths[0]).read_bytes() == b"FIRST-PHOTO-CONTENT"
         assert Path(media_paths[1]).read_bytes() == b"SECOND-PHOTO-CONTENT"
 
+    @pytest.mark.parametrize("filename", ["image.jpg", "photo" * 48 + ".jpg"])
     def test_single_attachment_still_downloads_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filename: str
     ) -> None:
         channel, attachments_dir = _make_channel(tmp_path, monkeypatch)
-        (attachments_dir / "att-id-1").write_bytes(b"ONLY-PHOTO")
+        attachment_id = "signal-attachment-0123456789"
+        (attachments_dir / attachment_id).write_bytes(b"ONLY-PHOTO")
 
         content, media_paths = channel._assemble_inbound_content(
             sender_name="Alice",
             sender_number="+15559876543",
             message_text="one photo",
-            attachments=[{"id": "att-id-1", "filename": "image.jpg", "contentType": "image/jpeg"}],
+            attachments=[{"id": attachment_id, "filename": filename, "contentType": "image/jpeg"}],
             mentions=[],
             is_group_message=False,
             chat_id="+15559876543",
@@ -67,4 +69,5 @@ class TestAttachmentFilenameCollision:
 
         assert len(media_paths) == 1
         assert Path(media_paths[0]).read_bytes() == b"ONLY-PHOTO"
+        assert Path(media_paths[0]).name == filename
         assert "[image:" in content
