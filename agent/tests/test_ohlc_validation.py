@@ -45,6 +45,44 @@ def test_validate_ohlc_raise_strategy() -> None:
         validate_ohlc(frame, strategy="raise")
 
 
+@pytest.mark.parametrize("allow_negative", [False, True])
+@pytest.mark.parametrize(
+    "prices",
+    [
+        (10.0, float("inf"), 9.0, 10.5),
+        (float("inf"), float("inf"), 9.0, float("inf")),
+        (-10.0, -9.0, float("-inf"), -10.5),
+    ],
+)
+def test_infinite_prices_obey_validation_strategy(
+    prices: tuple[float, float, float, float], allow_negative: bool,
+) -> None:
+    frame = _frame([(10, 11, 9, 10.5, 100), (*prices, 100)])
+    cleaned = validate_ohlc(frame, allow_nonpositive_prices=allow_negative)
+    assert cleaned.index.tolist() == [frame.index[0]]
+    with pytest.raises(ValueError):
+        validate_ohlc(frame, strategy="raise", allow_nonpositive_prices=allow_negative)
+    assert validate_ohlc(
+        frame, strategy="warn", allow_nonpositive_prices=allow_negative,
+    ).equals(frame)
+
+
+def test_local_csv_drops_infinite_high(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "infinite.csv"
+    path.write_text(
+        "date,open,high,low,close,volume\n"
+        "2026-01-01,10,11,9,10.5,100\n"
+        "2026-01-02,10,inf,9,10.5,100\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        local_loader, "_load_config",
+        lambda: {"sources": [{"symbol": "TEST", "type": "csv", "path": str(path)}]},
+    )
+    frame = local_loader.DataLoader().fetch(["TEST"], "2026-01-01", "2026-01-02")["TEST"]
+    assert frame.index.tolist() == [pd.Timestamp("2026-01-01")]
+
+
 def test_validate_ohlc_warn_strategy_keeps_rows(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
