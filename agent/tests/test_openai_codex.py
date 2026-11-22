@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.providers import llm as llm_mod
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 from src.providers.openai_codex import (
     DEFAULT_CODEX_URL,
     CodexAuthenticationError,

@@ -15,7 +15,7 @@ transport; the live endpoint is the reporter's to confirm.
 """
 
 from __future__ import annotations
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import responses as responses_adapter
 
 import json
 from typing import Any, Iterator
@@ -23,7 +23,8 @@ from typing import Any, Iterator
 import httpx
 import pytest
 
-from src.providers.llm import ChatOpenAIWithReasoning, _is_responses_required_error
+from src.providers.adapters.openai import ChatOpenAIWithReasoning
+from src.providers.adapters.responses import _is_responses_required_error
 
 pytestmark = pytest.mark.skipif(
     ChatOpenAIWithReasoning is None, reason="langchain-openai is not installed"
@@ -52,9 +53,9 @@ _TOOL = {
 @pytest.fixture(autouse=True)
 def _forget_healed_models() -> Iterator[None]:
     """The memory is process-wide; no test may inherit another's entry."""
-    _provider_adapters._RESPONSES_REQUIRED.clear()
+    responses_adapter._RESPONSES_REQUIRED.clear()
     yield
-    _provider_adapters._RESPONSES_REQUIRED.clear()
+    responses_adapter._RESPONSES_REQUIRED.clear()
 
 
 def _refusal(model: str) -> httpx.Response:
@@ -212,7 +213,7 @@ def test_a_refusal_naming_responses_is_retried_there_with_the_tools() -> None:
     assert sent["tools"] == [{"type": "function", **_TOOL["function"]}]
     assert "messages" not in sent and sent["input"], "the Responses request uses `input`"
     assert "reasoning_effort" not in sent, "no effort was configured; none is invented"
-    assert any(key[-1] == "gpt-5.6-terra" for key in _provider_adapters._RESPONSES_REQUIRED)
+    assert any(key[-1] == "gpt-5.6-terra" for key in responses_adapter._RESPONSES_REQUIRED)
 
 
 def test_the_model_is_remembered_so_the_next_call_skips_the_refusal() -> None:
@@ -263,7 +264,7 @@ def test_a_model_whose_chat_endpoint_accepts_tools_is_left_alone() -> None:
         assert llm.invoke("hi").content == "ok"
 
     assert endpoint.paths == ["/v1/chat/completions"]
-    assert _provider_adapters._RESPONSES_REQUIRED == set()
+    assert responses_adapter._RESPONSES_REQUIRED == set()
 
 
 def test_an_unrelated_400_is_raised_untouched_and_nothing_is_remembered() -> None:
@@ -286,7 +287,7 @@ def test_an_unrelated_400_is_raised_untouched_and_nothing_is_remembered() -> Non
             llm.invoke("hi")
 
     assert endpoint.paths == ["/v1/chat/completions"], "a gateway's unknown-field error is not rerouted"
-    assert _provider_adapters._RESPONSES_REQUIRED == set()
+    assert responses_adapter._RESPONSES_REQUIRED == set()
 
 
 def test_a_refusal_on_the_responses_route_itself_is_not_retried_forever() -> None:
@@ -309,7 +310,7 @@ def test_an_explicit_responses_route_is_never_rerouted() -> None:
             llm.bind_tools([_TOOL]).invoke("hi")
 
     assert endpoint.paths == ["/v1/responses"]
-    assert _provider_adapters._RESPONSES_REQUIRED == set()
+    assert responses_adapter._RESPONSES_REQUIRED == set()
 
 
 @pytest.mark.parametrize(

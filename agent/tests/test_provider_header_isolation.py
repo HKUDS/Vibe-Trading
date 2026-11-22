@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import openai as openai_adapter
 from src.providers import settings as _provider_configuration
 
 import asyncio
@@ -14,7 +14,9 @@ import httpx
 import pytest
 
 from src.config.accessor import reset_env_config
-from src.providers.llm import ChatOpenAIWithReasoning, build_llm, provider_diagnostics
+from src.providers.adapters.openai import ChatOpenAIWithReasoning
+from src.providers.llm import build_llm
+from src.providers.diagnostics import provider_diagnostics
 
 
 def _stream_response(text: str) -> httpx.Response:
@@ -147,7 +149,7 @@ def test_build_passes_openrouter_credentials_explicitly() -> None:
     try:
         with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
-                with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+                with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                     build_llm()
     finally:
         reset_env_config()
@@ -279,7 +281,7 @@ def test_stream_usage_rejection_self_heals_and_is_remembered() -> None:
         )
 
     model = "gpt-usage-reject-test"
-    _provider_adapters._STREAM_USAGE_UNSUPPORTED.clear()
+    openai_adapter._STREAM_USAGE_UNSUPPORTED.clear()
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         llm = ChatOpenAIWithReasoning(
             model=model,
@@ -301,14 +303,14 @@ def test_stream_usage_rejection_self_heals_and_is_remembered() -> None:
     assert '"stream_options"' in calls[0]
     assert '"stream_options"' not in calls[1]
     assert '"stream_options"' not in calls[2]
-    _provider_adapters._STREAM_USAGE_UNSUPPORTED.clear()
+    openai_adapter._STREAM_USAGE_UNSUPPORTED.clear()
 
 
 def test_stream_usage_unsupported_error_detection() -> None:
 
-    assert _provider_adapters._is_stream_usage_unsupported_error(ValueError("Unknown parameter: 'stream_options' is unsupported"))
-    assert _provider_adapters._is_stream_usage_unsupported_error(
+    assert openai_adapter._is_stream_usage_unsupported_error(ValueError("Unknown parameter: 'stream_options' is unsupported"))
+    assert openai_adapter._is_stream_usage_unsupported_error(
         ValueError("include_usage is not a valid field for this endpoint")
     )
-    assert not _provider_adapters._is_stream_usage_unsupported_error(ValueError("model overloaded, retry later"))
-    assert not _provider_adapters._is_stream_usage_unsupported_error(ValueError("temperature is unsupported"))
+    assert not openai_adapter._is_stream_usage_unsupported_error(ValueError("model overloaded, retry later"))
+    assert not openai_adapter._is_stream_usage_unsupported_error(ValueError("temperature is unsupported"))

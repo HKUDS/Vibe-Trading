@@ -20,7 +20,7 @@ from src.channelsui.mcp_presets_api import normalize_mcp_preset_mentions
 from src.channelsui.transcription_ws import webui_transcription_event
 from src.product.goals import goal_state_ws_blob
 from src.session.models import Message, Session
-from src.session.service import SessionBusyError
+from src.session.models import SessionBusyError
 from src.session.webui_turns import (
     clear_websocket_turn_started,
     mark_websocket_turn_started,

@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from src.tools.redaction import redact_text
 from src.session.runtime import SessionRuntime, TurnRecorder
-from src.session.service import STOPPED_MARKER
+from src.session.attempts import STOPPED_MARKER
 from src.session.store import SessionStore
 
 logger = logging.getLogger(__name__)

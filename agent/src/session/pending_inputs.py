@@ -160,6 +160,10 @@ class PendingInputQueue:
         with self._lock(session_id):
             return self._read(session_id)
 
+    def public_items(self, session_id: str) -> list[dict[str, Any]]:
+        """Return the client view of the durable queue in delivery order."""
+        return [item.public() for item in self.list(session_id)]
+
     def waiting(self, session_id: str) -> List[PendingInput]:
         """Return the inputs no turn has claimed, oldest first.
 

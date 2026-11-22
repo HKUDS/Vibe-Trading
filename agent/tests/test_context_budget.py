@@ -33,7 +33,7 @@ import src.agent.tuning as tuning_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import records_at
 from src.config.accessor import reset_env_config
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 
 #: Real input tokens of the first request of a research run on 2026-09-29
 #: (deepseek-v4-pro llm_usage.json: 47,661) — system prompt plus 107 tool schemas.

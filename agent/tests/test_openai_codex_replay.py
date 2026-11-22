@@ -18,7 +18,7 @@ import pytest
 
 import src.providers.openai_codex as codex_mod
 from src.product.context import ContextBuilder
-from src.providers.chat import ChatLLM
+from src.providers.response import parse_response
 from src.providers.openai_codex import (
     CodexToolCall,
     OpenAICodexLLM,
@@ -84,7 +84,7 @@ def _turn_one():
 
 def _history_after_turn_one() -> list[dict]:
     """Loop messages after turn one ran, built by the loop's own helpers."""
-    response = ChatLLM._parse_response(_turn_one())
+    response = parse_response(_turn_one())
     assistant = ContextBuilder.format_assistant_tool_calls(
         response.tool_calls,
         content=response.content,

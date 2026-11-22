@@ -11,7 +11,8 @@ from src import preflight
 
 def _configure_llm_preflight(monkeypatch) -> None:
     """Install a minimal OpenAI-compatible provider environment for preflight tests."""
-    from src.providers import settings, llm as llm_module
+    from src.providers import settings
+    from src.providers import diagnostics
 
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "gpt-test")
@@ -20,7 +21,7 @@ def _configure_llm_preflight(monkeypatch) -> None:
     monkeypatch.setattr(settings, "_ensure_dotenv", lambda: None)
     monkeypatch.setattr(settings, "_sync_provider_env", lambda: None)
     monkeypatch.setattr(
-        llm_module,
+        diagnostics,
         "provider_diagnostics",
         lambda: {
             "base_url": "https://example.test/v1",
@@ -80,7 +81,8 @@ def test_copilot_preflight_uses_sdk_auth_instead_of_openai_base_url(
 ) -> None:
     """Copilot has no OpenAI base URL because the official SDK owns transport."""
     import src.providers.copilot_auth as copilot_auth
-    from src.providers import settings, llm as llm_module
+    from src.providers import settings
+    from src.providers import diagnostics
 
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "copilot")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "claude-sonnet-5")
@@ -89,7 +91,7 @@ def test_copilot_preflight_uses_sdk_auth_instead_of_openai_base_url(
     monkeypatch.setattr(settings, "_ensure_dotenv", lambda: None)
     monkeypatch.setattr(settings, "_sync_provider_env", lambda: None)
     monkeypatch.setattr(
-        llm_module,
+        diagnostics,
         "provider_diagnostics",
         lambda: {
             "base_url": "https://api.githubcopilot.com",

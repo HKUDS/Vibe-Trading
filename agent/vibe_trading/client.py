@@ -27,7 +27,8 @@ from src.session.runtime_lock import (
     claim_sessions_dir,
     release_sessions_dir,
 )
-from src.session.service import SessionBusyError, SessionService
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 from vibe_trading._mapping import translate
 from vibe_trading.events import TERMINAL_EVENTS, Event, RunResult

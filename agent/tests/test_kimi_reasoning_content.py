@@ -16,8 +16,9 @@ import pytest
 from src.product.context import ContextBuilder
 from src.providers.messages import attach_tool_call_thought_signatures
 from src.kernel.contracts import ToolCallRequest
-from src.providers.chat import ChatLLM, _dedupe_finish_reason
-from src.providers.llm import ChatOpenAIWithReasoning
+from src.providers.response import parse_response
+from src.providers.response import _dedupe_finish_reason
+from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
 
 class TestParseResponseSingleSource:
@@ -31,7 +32,7 @@ class TestParseResponseSingleSource:
             response_metadata={"finish_reason": "stop"},
         )
 
-        response = ChatLLM._parse_response(ai_message)
+        response = parse_response(ai_message)
 
         assert response.reasoning_content == "step-by-step reasoning"
 
@@ -44,7 +45,7 @@ class TestParseResponseSingleSource:
             response_metadata={"finish_reason": "stop"},
         )
 
-        response = ChatLLM._parse_response(ai_message)
+        response = parse_response(ai_message)
 
         assert response.reasoning_content is None
         assert response.content == "hello"
@@ -57,7 +58,7 @@ class TestParseResponseSingleSource:
             response_metadata={"finish_reason": "tool_calls"},
         )
 
-        response = ChatLLM._parse_response(ai_message)
+        response = parse_response(ai_message)
 
         assert response.reasoning_content == "think then call"
         assert response.finish_reason == "tool_calls"
@@ -80,7 +81,7 @@ class TestParseResponseSingleSource:
             response_metadata={"finish_reason": "tool_calls"},
         )
 
-        response = ChatLLM._parse_response(ai_message)
+        response = parse_response(ai_message)
 
         assert response.tool_calls[0].thought_signature == "sig-a"
         assert response.tool_calls[1].thought_signature == "sig-b"
@@ -100,7 +101,7 @@ class TestParseResponseSingleSource:
             response_metadata={"finish_reason": "tool_calls"},
         )
 
-        response = ChatLLM._parse_response(ai_message)
+        response = parse_response(ai_message)
 
         assert response.tool_calls[0].thought_signature == "sig-a"
         assert response.tool_calls[1].thought_signature is None
@@ -279,7 +280,7 @@ class TestChatOpenAIWithReasoningNonStreaming:
         }
 
         result = instance._create_chat_result(response)
-        parsed = ChatLLM._parse_response(result.generations[0].message)
+        parsed = parse_response(result.generations[0].message)
 
         assert parsed.tool_calls[0].thought_signature == "sig-a"
         assert parsed.tool_calls[1].thought_signature is None

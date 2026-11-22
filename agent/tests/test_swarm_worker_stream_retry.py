@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.kernel.contracts import LLMResponse
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
 import src.swarm.worker as worker_mod
 from src.swarm.worker import run_worker

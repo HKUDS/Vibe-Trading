@@ -16,7 +16,7 @@ from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 from src.config.accessor import get_env_config, reset_env_config
-from src.providers.llm import provider_diagnostics
+from src.providers.diagnostics import provider_diagnostics
 from src.product.tool_policy import bash_policy, policy_status
 from src.product import tool_policy
 from tests.module_os_helpers import patch_module_os

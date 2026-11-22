@@ -213,14 +213,14 @@ def test_session_shutdown_stops_new_work_and_reaps_tasks():
 
 
 def test_session_attempt_registers_completion_with_its_owner():
-    from src.session.service import SessionService
+    from src.session.factory import SessionAgentFactory
 
     emitted = []
-    service = SessionService.__new__(SessionService)
-    service.event_bus = SimpleNamespace(
+    factory = SessionAgentFactory.__new__(SessionAgentFactory)
+    factory.event_bus = SimpleNamespace(
         emit=lambda session_id, event_type, data: emitted.append((session_id, event_type, data)),
     )
-    service._publish_background_completion(
+    factory._publish_background_completion(
         "session:s1",
         {
             "task_id": "task-1",
@@ -232,7 +232,7 @@ def test_session_attempt_registers_completion_with_its_owner():
         },
     )
     # A swarm worker's owner is not a session; it must not leak onto a bus.
-    service._publish_background_completion("swarm:run:agent:task", {"task_id": "t"})
+    factory._publish_background_completion("swarm:run:agent:task", {"task_id": "t"})
     assert emitted == [
         (
             "s1",

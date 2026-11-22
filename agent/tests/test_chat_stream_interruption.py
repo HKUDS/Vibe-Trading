@@ -16,7 +16,7 @@ import time
 
 import pytest
 from langchain_core.messages import AIMessageChunk
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 
 class _SilentStream:
     """A stream whose first chunk only arrives when the test releases it."""

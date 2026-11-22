@@ -19,7 +19,7 @@ from typing import Any, Callable
 import pytest
 
 from src.agent.runtime import AgentRuntime
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 
 
 class _StubLLMResponse:

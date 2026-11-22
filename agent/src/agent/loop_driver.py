@@ -10,7 +10,7 @@ from src.agent.tuning import (
 )
 from src.kernel.contracts import LLMResponse, LoopDecision
 from src.product.tool_loading import request_definitions
-from src.providers.chat import reported_model_source
+from src.providers.response import reported_model_source
 from src.providers.content_filter import CONTENT_FILTER_SKIP_MESSAGE, MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS
 from src.providers.messages import attach_tool_call_thought_signatures
 

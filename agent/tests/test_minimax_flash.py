@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from src.providers.discovery import LLMProviderOption, _list_provider_models
 from src.config.accessor import reset_env_config
 from src.providers import llm, settings
+from src.providers import request_guards
 
 FLASH = "MiniMax-M3.1-Flash"
 MODELS = [FLASH, "MiniMax-M3"]
@@ -96,7 +97,7 @@ def requests(monkeypatch):
     )
     monkeypatch.setattr(settings, "_dotenv_loaded", True)
     monkeypatch.setattr(
-        llm, "_build_http_clients", lambda: (sync, async_client)
+        request_guards, "_build_http_clients", lambda: (sync, async_client)
     )
     for key in (
         "OPENAI_BASE_URL",

@@ -10,7 +10,8 @@ import pytest
 
 from src.session.events import EventBus
 from src.session.models import Session
-from src.session.service import SessionBusyError, SessionService
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 from src.session.thread import ThreadLog, replay
 

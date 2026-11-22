@@ -150,7 +150,7 @@ def test_event_loop_shutdown_remains_recoverable(tmp_path: Path, monkeypatch) ->
             await gate.wait()
             return {"status": "success", "content": "too late"}
 
-        monkeypatch.setattr(service, "_run_with_agent", wait_forever)
+        monkeypatch.setattr(service._factory, "run", wait_forever)
         sent = await service.send_message(session.session_id, "keep this")
         await asyncio.sleep(0)
         task = service._active_tasks[session.session_id]

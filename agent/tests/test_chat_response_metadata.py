@@ -8,6 +8,7 @@ from src.agent.runtime import AgentRuntime
 from src.config.accessor import reset_env_config
 from src.kernel.contracts import LLMResponse
 from src.providers.chat import ChatLLM
+from src.providers.response import parse_response
 
 
 def test_parse_response_keeps_provider_reported_model() -> None:
@@ -22,7 +23,7 @@ def test_parse_response_keeps_provider_reported_model() -> None:
         usage_metadata=None,
     )
 
-    response = ChatLLM._parse_response(message)
+    response = parse_response(message)
 
     assert response.response_model == "deepseek-v4-flash-202607"
 

@@ -228,7 +228,7 @@ def test_concurrent_sessions_each_reach_their_own_model(server_settings, monkeyp
         return (httpx.Client(transport=httpx.MockTransport(handler)),
                 httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
-    monkeypatch.setattr("src.providers.llm._build_http_clients", _mock_clients)
+    monkeypatch.setattr("src.providers.request_guards._build_http_clients", _mock_clients)
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: object())
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
@@ -370,7 +370,8 @@ def client(server_settings, tmp_path, monkeypatch):
     import api_server
 
     monkeypatch.setenv("VIBE_TRADING_GOAL_DB_PATH", str(tmp_path / "goals.db"))
-    monkeypatch.setattr(api_server, "_goal_store", None)
+    from src.api import goal_routes
+    monkeypatch.setattr(goal_routes, "_goal_store", None)
     monkeypatch.setattr(api_server, "_session_service", None)
     monkeypatch.setattr(api_server, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(api_server, "RUNS_DIR", tmp_path / "runs")

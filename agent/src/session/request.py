@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from src.kernel import events
 from src.kernel.contracts import LLMResponse, ModelMessage
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 from src.providers.messages import repair_provider_messages
 from src.session.context_budget import is_context_overflow
 

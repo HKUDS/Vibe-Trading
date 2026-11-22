@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import src.agent.tuning as tuning_mod
 from src.kernel.contracts import LLMResponse
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 
 
 class _FlakyLoopLLM:

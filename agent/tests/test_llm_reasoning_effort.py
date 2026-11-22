@@ -18,7 +18,9 @@ Responses API for endpoints that support it.
 
 from __future__ import annotations
 
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import anthropic as anthropic_adapter
+from src.providers.adapters import deepseek as deepseek_adapter
+from src.providers.adapters import openai as openai_adapter
 from src.providers import settings as _provider_configuration
 
 import importlib.util
@@ -33,7 +35,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
-import src.providers.llm as llm_mod
+from src.providers.diagnostics import provider_diagnostics
 from src.providers.llm import build_llm, uses_responses_api
 
 
@@ -107,7 +109,7 @@ def _capture_kwargs(env: dict[str, str]) -> dict[str, Any]:
             captured.update(kwargs)
 
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
     return captured
 
@@ -132,7 +134,7 @@ def test_uses_responses_api_matches_provider_route(
     native_available: bool,
     expected: bool,
 ) -> None:
-    monkeypatch.setattr(_provider_adapters, "_native_deepseek_adapter_available", lambda: native_available)
+    monkeypatch.setattr(deepseek_adapter, "_native_deepseek_adapter_available", lambda: native_available)
 
     monkeypatch.setenv("LANGCHAIN_MAX_TOKENS", "-1")
     if adapter is not None:
@@ -411,7 +413,7 @@ class TestMoonshotKimiK31Scoping:
 
         def diagnostics(model: str) -> dict[str, Any]:
             with patch.dict(os.environ, self._env(LANGCHAIN_MODEL_NAME=model), clear=True):
-                return llm_mod.provider_diagnostics()
+                return provider_diagnostics()
 
         k31 = diagnostics("kimi-k3.1-pro")
         k2 = diagnostics("kimi-k2-0905-preview")
@@ -452,7 +454,7 @@ class TestAnthropicNativeProvider:
                 captured.update(kwargs)
 
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(_provider_adapters, "_make_temperature_safe_anthropic", lambda _: _FakeChatAnthropic):
+            with patch.object(anthropic_adapter, "_make_temperature_safe_anthropic", lambda _: _FakeChatAnthropic):
                 build_llm()
         return captured
 
@@ -547,9 +549,9 @@ class TestAnthropicNativeProvider:
         old_module = SimpleNamespace(ChatAnthropic=_OldChatAnthropic)
 
         with patch.dict(os.environ, self._env(LANGCHAIN_REASONING_EFFORT="high"), clear=True):
-            with patch.object(_provider_adapters, "import_module", lambda _: old_module):
+            with patch.object(anthropic_adapter, "import_module", lambda _: old_module):
                 with patch.object(
-                    _provider_adapters,
+                    anthropic_adapter,
                     "_make_temperature_safe_anthropic",
                     lambda _: _OldChatAnthropic,
                 ):
@@ -611,11 +613,11 @@ class TestRequestPayload:
 
     def _payload(self, effort: str | None, *, model: str = "gpt-5.6-sol") -> dict[str, Any]:
         """Serialize a one-message chat-completions request with the effort kwarg."""
-        if llm_mod.ChatOpenAIWithReasoning is None:
+        if openai_adapter.ChatOpenAIWithReasoning is None:
             pytest.skip("langchain-openai is not installed")
         from langchain_core.messages import HumanMessage
 
-        instance = llm_mod.ChatOpenAIWithReasoning(
+        instance = openai_adapter.ChatOpenAIWithReasoning(
             model=model,
             api_key="sk-test",
             reasoning_effort=effort,
@@ -720,11 +722,11 @@ class TestResponsesAPI:
         assert kwargs["reasoning"] is None
 
     def test_responses_payload_does_not_assume_chat_messages(self) -> None:
-        if llm_mod.ChatOpenAIWithReasoning is None:
+        if openai_adapter.ChatOpenAIWithReasoning is None:
             pytest.skip("langchain-openai is not installed")
         from langchain_core.messages import HumanMessage
 
-        instance = llm_mod.ChatOpenAIWithReasoning(
+        instance = openai_adapter.ChatOpenAIWithReasoning(
             model="arbitrary-reasoning-model",
             api_key="sk-test",
             use_responses_api=True,
@@ -737,7 +739,7 @@ class TestResponsesAPI:
         assert payload["reasoning"] == {"effort": "high"}
 
     def test_responses_transport_sends_reasoning_to_the_responses_path(self) -> None:
-        if llm_mod.ChatOpenAIWithReasoning is None:
+        if openai_adapter.ChatOpenAIWithReasoning is None:
             pytest.skip("langchain-openai is not installed")
         import httpx
 
@@ -767,7 +769,7 @@ class TestResponsesAPI:
             )
 
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            llm = llm_mod.ChatOpenAIWithReasoning(
+            llm = openai_adapter.ChatOpenAIWithReasoning(
                 model="reasoning-model",
                 api_key="sk-test",
                 base_url="https://gateway.invalid/v1",
@@ -782,7 +784,7 @@ class TestResponsesAPI:
         assert seen["body"]["reasoning"] == {"effort": "max"}
 
     def test_chat_transport_sends_reasoning_effort_to_chat_completions(self) -> None:
-        if llm_mod.ChatOpenAIWithReasoning is None:
+        if openai_adapter.ChatOpenAIWithReasoning is None:
             pytest.skip("langchain-openai is not installed")
         import httpx
 
@@ -809,7 +811,7 @@ class TestResponsesAPI:
             )
 
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            llm = llm_mod.ChatOpenAIWithReasoning(
+            llm = openai_adapter.ChatOpenAIWithReasoning(
                 model="reasoning-model",
                 api_key="sk-test",
                 base_url="https://gateway.invalid/v1",

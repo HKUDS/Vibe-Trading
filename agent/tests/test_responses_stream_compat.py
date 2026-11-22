@@ -9,7 +9,7 @@ from typing import Any, Iterator
 import pytest
 from langchain_core.messages import HumanMessage
 
-from src.providers.llm import ChatOpenAIWithReasoning
+from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
 
 class _MappingResponses:

@@ -14,7 +14,9 @@ from src.session.migration import migrate_session
 from src.session.thread import ThreadLog, replay
 import tempfile
 import json
-from src.session.service import STOPPED_MARKER, SessionBusyError, SessionService
+from src.session.attempts import STOPPED_MARKER, format_result_message
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 
 
@@ -36,7 +38,7 @@ def _service(tmp_path: Path, monkeypatch) -> SessionService:
 
 
 def _stub_agent(service: SessionService, monkeypatch, result: dict, *, gate=None):
-    """Replace _run_with_agent with a stub returning ``result``.
+    """Replace the session agent factory run method with a stub returning ``result``.
 
     Args:
         service: Service under test.
@@ -52,7 +54,7 @@ def _stub_agent(service: SessionService, monkeypatch, result: dict, *, gate=None
             await gate.wait()
         return dict(result)
 
-    monkeypatch.setattr(service, "_run_with_agent", _fake)
+    monkeypatch.setattr(service._factory, "run", _fake)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +124,7 @@ def test_claim_is_released_when_the_agent_raises(tmp_path, monkeypatch):
             del attempt, messages, kwargs
             raise RuntimeError("agent exploded")
 
-        monkeypatch.setattr(service, "_run_with_agent", _explode)
+        monkeypatch.setattr(service._factory, "run", _explode)
 
         await service.send_message(session.session_id, "one")
         for _ in range(100):
@@ -242,7 +244,7 @@ def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeyp
                           content='{"status":"ok"}', status="ok", artifact=report)
             return {"status": "success", "content": "Report saved."}
 
-        monkeypatch.setattr(service, "_run_with_agent", _fake)
+        monkeypatch.setattr(service._factory, "run", _fake)
         events = []
         service.event_bus.add_listener(lambda event: events.append((event.event_type, event.data)))
         await service.send_message(session.session_id, "create report")
@@ -262,7 +264,7 @@ def test_empty_successful_answer_says_so():
     """An empty answer must not be dressed up as a finished strategy run."""
     attempt = Attempt(session_id="s" * 12, prompt="p")
     attempt.mark_completed(summary="")
-    message = SessionService._format_result_message(attempt)
+    message = format_result_message(attempt)
     assert "without producing any text output" in message
     assert "Strategy execution completed" not in message
 

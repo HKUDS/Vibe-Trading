@@ -48,7 +48,7 @@ def test_sending_a_message_keeps_updated_at_aware_and_sessions_in_order(
     async def _fake_run(*args, **kwargs):
         return {"status": "success", "content": "done"}
 
-    monkeypatch.setattr(service, "_run_with_agent", _fake_run)
+    monkeypatch.setattr(service._factory, "run", _fake_run)
     older = service.create_session(title="older")
 
     async def _send() -> None:

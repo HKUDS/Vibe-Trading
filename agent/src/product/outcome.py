@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.kernel.contracts import LLMRuntimeSnapshot
-from src.providers.chat import reported_model_source
+from src.providers.response import reported_model_source
 from src.providers.content_filter import (
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
     compute_content_filter_warnings,

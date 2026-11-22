@@ -222,3 +222,68 @@ def attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: lis
             attach(raw_tool_call, index)
 
     return message
+
+
+def _tool_call_thought_signature_maps(ai_message: Any) -> tuple[dict[str, str], dict[int, str]]:
+    """Return Gemini thought signatures captured by ``ChatOpenAIWithReasoning``."""
+    by_id: dict[str, str] = {}
+    by_index: dict[int, str] = {}
+    additional_kwargs = getattr(ai_message, "additional_kwargs", {})
+    entries = additional_kwargs.get("tool_call_thought_signatures", [])
+
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return by_id, by_index
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        signature = entry.get("thought_signature")
+        if not signature:
+            continue
+        if entry.get("id"):
+            by_id[str(entry["id"])] = signature
+        index = entry.get("index")
+        if isinstance(index, int):
+            by_index[index] = signature
+    return by_id, by_index
+
+
+def _extract_tool_call_extra_content(raw_tool_call: Any) -> dict[str, Any]:
+    """Extract provider-specific tool-call metadata LangChain would drop."""
+    if not isinstance(raw_tool_call, dict):
+        return {}
+
+    extra_content: dict[str, Any] = {}
+    raw_extra = raw_tool_call.get("extra_content")
+    if isinstance(raw_extra, dict):
+        extra_content.update(raw_extra)
+        google_extra = raw_extra.get("google")
+        if isinstance(google_extra, dict):
+            signature = google_extra.get("thought_signature") or google_extra.get(
+                "thoughtSignature"
+            )
+            if signature:
+                extra_content["thought_signature"] = signature
+
+    function = raw_tool_call.get("function")
+    if isinstance(function, dict):
+        function_extra = function.get("extra_content")
+        if isinstance(function_extra, dict):
+            extra_content.update(function_extra)
+        if function.get("thought_signature"):
+            extra_content["thought_signature"] = function["thought_signature"]
+
+    if raw_tool_call.get("thought_signature"):
+        extra_content["thought_signature"] = raw_tool_call["thought_signature"]
+
+    return extra_content
+
+
+def _merge_tool_call_extra_content(*raw_tool_calls: Any) -> dict[str, Any]:
+    """Merge provider metadata from standardized and raw tool-call shapes."""
+    extra_content: dict[str, Any] = {}
+    for raw_tool_call in raw_tool_calls:
+        extra_content.update(_extract_tool_call_extra_content(raw_tool_call))
+    return extra_content

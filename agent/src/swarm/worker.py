@@ -23,7 +23,8 @@ from src.agent.tools import BaseTool, ToolRegistry
 from src.product.result_artifacts import deliver_tool_result
 from src.config.schema import AgentConfig
 from src.kernel.contracts import LLMResponse
-from src.providers.chat import ChatLLM, ProviderStreamError
+from src.providers.chat import ChatLLM
+from src.providers.response import ProviderStreamError
 from src.providers.messages import repair_provider_messages
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
@@ -209,7 +210,7 @@ def _measure_usage(
     """Return full token usage for a single LLM call, real if available.
 
     Prefers the provider-reported counts attached to the response by
-    :func:`ChatLLM._parse_response` (``usage_metadata``), normalized through
+    :func:`src.providers.response.parse_response` (``usage_metadata``), normalized through
     :func:`src.product.usage._normalize_llm_usage` — the exact same
     normalization the main agent loop applies behind ``llm_usage.json``, so
     the swarm never grows a second cache-token accounting rule. Falls back to a

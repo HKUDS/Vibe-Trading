@@ -46,7 +46,8 @@ from src.product.tool_replay import ToolReplay
 from src.product.usage import UsageLedger, _new_llm_usage_summary
 from src.product.verification import _verification_ledger
 from src.product.write_directives import WriteTargetState
-from src.providers.chat import ChatLLM, ProviderStreamError, reported_model_source
+from src.providers.chat import ChatLLM
+from src.providers.response import ProviderStreamError, reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.session.compaction import ContextCompactor
 from src.session.request import SessionRequest

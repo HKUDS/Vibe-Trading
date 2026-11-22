@@ -31,7 +31,7 @@ class CheckResult:
 def _check_llm_provider() -> CheckResult:
     """Verify LLM provider connectivity."""
     from src.providers.settings import _ensure_dotenv, _sync_provider_env
-    from src.providers.llm import provider_diagnostics
+    from src.providers.diagnostics import provider_diagnostics
 
     _ensure_dotenv()
     # The EnvConfig singleton may have been cached before _ensure_dotenv()

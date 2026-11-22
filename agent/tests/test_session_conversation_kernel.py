@@ -25,7 +25,8 @@ from src.product.identity.ledger import IdentityLedger
 from src.product.tool_loading import DeferredToolRegistry
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus
-from src.session.service import STOPPED_MARKER, SessionService
+from src.session.attempts import STOPPED_MARKER
+from src.session.service import SessionService
 from src.session.store import SessionStore
 from src.session.thread import project_turn, STOPPED_TURN_NOTES
 from src.tools.read_file_tool import ReadFileTool
@@ -730,7 +731,7 @@ def test_later_turn_reads_an_earlier_turns_offloaded_tool_result(tmp_path, monke
 def test_second_turn_request_body_repeats_the_first_turn_byte_for_byte(tmp_path, monkeypatch):
     """Captured with httpx.MockTransport through the real OpenAI-compatible adapter."""
     httpx = pytest.importorskip("httpx")
-    from src.providers.llm import ChatOpenAIWithReasoning
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
     bodies: list[bytes] = []
 

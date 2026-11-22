@@ -141,7 +141,7 @@ def test_agent_repairs_before_next_provider_request_only(tmp_path: Path, monkeyp
 def test_retry_repairs_again_from_canonical_messages(tmp_path: Path, monkeypatch) -> None:
     """A failed provider attempt can mutate its copy without poisoning the retry."""
     from src.kernel.contracts import LLMResponse
-    from src.providers.chat import ProviderStreamError
+    from src.providers.response import ProviderStreamError
 
     history = [
         {"role": "assistant", "content": "", "tool_calls": [

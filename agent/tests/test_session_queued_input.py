@@ -20,7 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
-from src.api.sessions_routes import MAX_MESSAGE_CHARS
+from src.session.input_rules import MAX_MESSAGE_CHARS
 from src.agent.tools import BaseTool, ToolRegistry
 from src.session.events import EventBus, SSEEvent
 from src.session.pending_inputs import (
@@ -28,7 +28,8 @@ from src.session.pending_inputs import (
     PENDING_INPUTS_FILENAME,
     PendingInputQueue,
 )
-from src.session.service import SessionBusyError, SessionService
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 
 

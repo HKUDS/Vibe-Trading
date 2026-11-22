@@ -158,7 +158,7 @@ def _load_full_proposal(proposal_id: str) -> common.Optional[common.Dict[str, co
 def _mandate_proposal_from_tool_result(data: common.Dict[str, common.Any]) -> common.Optional[common.Dict[str, common.Any]]:
     """Recover a full ``mandate.proposal`` payload from a propose-tool result.
 
-    Detection mirrors api_server's ``_mandate_proposal_frame_from_tool_result``:
+    Detection mirrors the session SSE reader's ``_mandate_proposal_frame_from_tool_result``:
     the event must be a successful ``tool_result`` for ``propose_mandate_profiles``
     whose preview carries a ``proposal_id``. The full proposal is then reloaded
     from disk (the preview is truncated).

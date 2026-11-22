@@ -61,7 +61,7 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
         }
     ]
 
-    async def _run_with_agent(attempt, *args, **kwargs):
+    async def run_agent(attempt, *args, **kwargs):
         del args, kwargs
         # The display trail is projected from the turn's thread items.
         thread = ThreadLog(
@@ -78,7 +78,7 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
         thread.append("assistant", attempt.attempt_id, content="AAPL is trading near 195.", phase="final")
         return {"status": "success", "content": "AAPL is trading near 195."}
 
-    monkeypatch.setattr(service, "_run_with_agent", _run_with_agent)
+    monkeypatch.setattr(service._factory, "run", run_agent)
     asyncio.run(service._run_attempt(session, attempt))
 
     monkeypatch.setattr(api_server, "_get_session_service", lambda: service)
@@ -131,7 +131,7 @@ def test_unfinished_attempt_keeps_its_tool_trail(
          "call_id": "call-2", "timestamp": 1_785_342_400_000, "preview": '{"status": "error"}'},
     ]
 
-    async def _run_with_agent(attempt, *args, **kwargs):
+    async def run_agent(attempt, *args, **kwargs):
         del args, kwargs
         thread = ThreadLog(
             service.store.thread_path(attempt.session_id), clock=lambda: 1_785_342_400.0
@@ -150,7 +150,7 @@ def test_unfinished_attempt_keeps_its_tool_trail(
                       name="get_financial_statements", content='{"status": "error"}', status="error")
         return {"status": run_status, "reason": "no_progress: stopped"}
 
-    monkeypatch.setattr(service, "_run_with_agent", _run_with_agent)
+    monkeypatch.setattr(service._factory, "run", run_agent)
     asyncio.run(service._run_attempt(session, attempt))
 
     stored = service.store.get_messages(session.session_id)[-1]
@@ -164,7 +164,7 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
 ) -> None:
     """Results finishing out of order land on their own call, through the real plumbing.
 
-    The loop writes the turn through the recorder ``_run_with_agent`` hands it;
+    The loop writes the turn through the recorder the session agent factory hands it;
     the reply's trail is projected from those items when the turn ends.
     """
 

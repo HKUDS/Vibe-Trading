@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, convert_to_messages
 from src.product.context import ContextBuilder
 from src.providers.messages import attach_tool_call_thought_signatures
 from src.kernel.contracts import ToolCallRequest
-from src.providers.chat import ChatLLM
+from src.providers.response import parse_response
 
 
 def _raw_tool_call(
@@ -100,7 +100,7 @@ def test_in_memory_ai_message_path_preserves_thought_signature() -> None:
         },
     )
 
-    response = ChatLLM._parse_response(ai_message)
+    response = parse_response(ai_message)
     replay = ContextBuilder.format_assistant_tool_calls(response.tool_calls, content="")
 
     assert response.tool_calls[0].extra_content["thought_signature"] == "sig-from-ai-message"

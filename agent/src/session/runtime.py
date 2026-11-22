@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -562,3 +563,26 @@ class SessionRuntime:
             self.thread.append(item_type, turn_id, **payload)
         except (OSError, ThreadItemError) as exc:
             logger.warning("Could not record %s for turn %s: %s", item_type, turn_id, exc)
+
+
+class SessionRuntimes:
+    """Own this service's per-conversation runtimes, shared by maintenance and attempts."""
+
+    def __init__(self, thread_log: Callable[[str], ThreadLog]) -> None:
+        self._thread_log = thread_log
+        self._sessions: dict[str, SessionRuntime] = {}
+        self._lock = threading.Lock()
+
+    def get(self, session_id: str) -> SessionRuntime:
+        """Rebuild a conversation from its thread on first use."""
+        with self._lock:
+            runtime = self._sessions.get(session_id)
+            if runtime is None:
+                runtime = SessionRuntime(self._thread_log(session_id), session_id)
+                self._sessions[session_id] = runtime
+            return runtime
+
+    def discard(self, session_id: str) -> None:
+        """Release the cached runtime after its session has been deleted."""
+        with self._lock:
+            self._sessions.pop(session_id, None)
