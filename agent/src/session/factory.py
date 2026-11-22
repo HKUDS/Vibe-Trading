@@ -263,3 +263,20 @@ def load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
         except (TypeError, ValueError):
             continue
     return metrics or None
+
+
+def compact_recorded_history(llm, runtime: SessionRuntime, recorder, messages: list, run_dir: Path, focus: str) -> None:
+    """Bind manual compaction to the same product policies as a conversation turn."""
+    from src.agent.runtime import AgentRuntime
+    from src.product.resources.memory import WorkspaceMemory
+    from src.agent.tools import ToolRegistry
+
+    agent = AgentRuntime(
+        registry=ToolRegistry(),
+        llm=llm,
+        memory=WorkspaceMemory(session_workspace=str(runtime.workspace_path)),
+        thread_recorder=recorder,
+    )
+    agent.memory.run_dir = str(run_dir)
+    agent._conversation.turn_messages = messages
+    agent._context_compactor.auto_compact(messages, run_dir, recorder, focus, 0)

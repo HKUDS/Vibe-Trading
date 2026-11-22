@@ -117,3 +117,28 @@ def test_replay_strips_foreign_provider_reasoning_state_after_a_model_switch(tmp
     assert switched[-1]["content"] == "answer"
     assert same[-1]["reasoning_content"] == "private thought"
     assert same[-1]["provider_items"] == [{"signature": "a"}]
+
+
+def test_manual_compaction_closes_resources_when_setup_fails(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+    from src.session.runtime import TurnRecorder
+
+    service = _service(tmp_path)
+    session = service.create_session("compact")
+    _turn(service.store.thread_log(session.session_id), "turn-1", "hello", identity=[])
+    Path(service.runs_dir).mkdir(parents=True, exist_ok=True)
+    (Path(service.runs_dir) / "compactions").touch()
+    llm = SimpleNamespace(aclose=AsyncMock(), runtime_snapshot=None)
+    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda config: llm)
+    closed = []
+    original_close = TurnRecorder.close
+
+    def record_close(recorder):
+        closed.append(recorder)
+        original_close(recorder)
+
+    monkeypatch.setattr(TurnRecorder, "close", record_close)
+    with pytest.raises(OSError):
+        asyncio.run(service.compact_session(session.session_id))
+    llm.aclose.assert_awaited_once()
+    assert len(closed) == 1

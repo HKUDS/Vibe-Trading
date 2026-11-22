@@ -6,6 +6,7 @@ import asyncio
 import copy
 import uuid
 from collections.abc import Callable
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 from src.session.models import Session, SessionBusyError
@@ -55,57 +56,37 @@ def fork_completed_turn(
 
 async def compact_history(
     session: Session, focus: str, *, runtime_for: Callable[[str], SessionRuntime], runs_dir: Path,
+    compact: Callable,
 ):
     """Run manual compaction through a recorder with the session's selected model."""
-    from src.agent.runtime import AgentRuntime
-    from src.product.resources.memory import WorkspaceMemory
-    from src.agent.tools import ToolRegistry
     from src.session.model_selection import chat_llm_for_session
     from src.session.runtime import TurnRecorder
 
     llm = chat_llm_for_session(session.config)
-    compact_id = f"compact-{uuid.uuid4().hex[:12]}"
-    runtime = runtime_for(session.session_id)
-    snapshot = getattr(llm, "runtime_snapshot", None)
-    provider = getattr(snapshot, "provider", None)
-    model = getattr(snapshot, "configured_model", None)
-    history, history_seqs, user_history = runtime.replay_history(provider=provider, model=model)
-    if not history:
-        await llm.aclose()
-        raise ValueError("Session has no conversation history to compact")
-    recorder = TurnRecorder(
-        runtime,
-        compact_id,
-        history,
-        history_seqs,
-        user_history,
-        provider=provider,
-        model=model,
-    )
-    run_dir = runs_dir / "compactions" / compact_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    trace = recorder
-    messages = [{"role": "system", "content": ""}, *history]
-    agent = AgentRuntime(
-        registry=ToolRegistry(),
-        llm=llm,
-        memory=WorkspaceMemory(session_workspace=str(runtime.workspace_path)),
-        thread_recorder=recorder,
-    )
-    agent.memory.run_dir = str(run_dir)
-    agent._conversation.turn_messages = messages
-    try:
-        await asyncio.to_thread(
-            agent._context_compactor.auto_compact,
-            messages,
-            run_dir,
-            trace,
-            focus.strip()[:2000],
-            0,
+    async with AsyncExitStack() as resources:
+        resources.push_async_callback(llm.aclose)
+        compact_id = f"compact-{uuid.uuid4().hex[:12]}"
+        runtime = runtime_for(session.session_id)
+        snapshot = getattr(llm, "runtime_snapshot", None)
+        provider = getattr(snapshot, "provider", None)
+        model = getattr(snapshot, "configured_model", None)
+        history, history_seqs, user_history = runtime.replay_history(provider=provider, model=model)
+        if not history:
+            raise ValueError("Session has no conversation history to compact")
+        recorder = TurnRecorder(
+            runtime,
+            compact_id,
+            history,
+            history_seqs,
+            user_history,
+            provider=provider,
+            model=model,
         )
-    finally:
-        recorder.close()
-        await llm.aclose()
+        resources.callback(recorder.close)
+        run_dir = runs_dir / "compactions" / compact_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        messages = [{"role": "system", "content": ""}, *history]
+        await asyncio.to_thread(compact, llm, runtime, recorder, messages, run_dir, focus.strip()[:2000])
     compacted = next(
         (
             item for item in reversed(runtime.thread.read())

@@ -24,7 +24,7 @@ from src.kernel import events as vocabulary
 from src.session.attempts import AttemptRunner
 from src.session.event_projection import ThreadEvents
 from src.session.events import EventBus
-from src.session.factory import SessionAgentFactory
+from src.session.factory import SessionAgentFactory, compact_recorded_history
 from src.session.maintenance import compact_history, fork_completed_turn
 from src.session.models import (
     Attempt,
@@ -281,6 +281,7 @@ class SessionService:
             )
         compacted = await compact_history(
             session, focus, runtime_for=self.runtime, runs_dir=Path(self.runs_dir),
+            compact=compact_recorded_history,
         )
         self.thread_events.sync(session_id)
         self.event_bus.emit(
