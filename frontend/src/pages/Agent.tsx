@@ -67,8 +67,7 @@ import {
   mergeSwarmRunUsage,
   stopSwarmRun,
 } from "@/lib/swarmStatus";
-import { buildLegacyTranscript } from "@/lib/legacySession";
-import { readThread, rowsBeforeThread } from "@/pages/agentHydration";
+import { readThread } from "@/pages/agentHydration";
 
 import { groupMessages, type MsgGroup } from "@/pages/agentTranscript";
 
@@ -530,119 +529,66 @@ export function Agent() {
   const loadSessionMessages = useCallback(async (sid: string, gen: number): Promise<boolean> => {
     setHistoryError(null);
     try {
-      // The thread is the conversation. The stored rows still carry each
-      // turn's run, runtime and failure facts, and all of a session's history
-      // from before the thread log existed. When the thread cannot be read
-      // the session renders from its rows alone.
-      const [thread, msgs, pending] = await Promise.all([
-        readThread((after, limit) => api.getSessionThread(sid, { after, limit })).catch(() => null),
-        api.getSessionMessages(sid),
-        (async () => api.listPendingInputs(sid))().catch(() => null),
+      const [thread, pending] = await Promise.all([
+        readThread((after, limit) => api.getSessionThread(sid, { after, limit })),
+        api.listPendingInputs(sid).catch(() => null),
       ]);
       if (genRef.current !== gen) return false;
-      const threadTurns = new Set((thread?.items ?? []).map((item) => item.turn_id));
-      const legacyRows = threadTurns.size > 0 ? rowsBeforeThread(msgs, threadTurns) : msgs;
-      // The legacy fallback reads one stored projection and resolves its run
-      // cards before building the transcript.
       const previewIds = new Set<string>();
-      for (const m of msgs) {
-        const meta = m.metadata as Record<string, unknown> | undefined;
-        if (m.role !== "user" && typeof meta?.run_id === "string") previewIds.add(meta.run_id);
+      for (const item of thread.items) {
+        if (item.type !== "turn_end") continue;
+        const runId = item.display?.run_id || runIdFromDir(item.run_dir);
+        if (runId) previewIds.add(runId);
       }
-      const previewEntries = await Promise.all([...previewIds].map(async (runId) => [runId, await api.getRunPreview(runId).catch(() => null)] as const));
+      const previewEntries = await Promise.all(
+        [...previewIds].map(async (runId) => [runId, await api.getRunPreview(runId).catch(() => null)] as const),
+      );
       const previews = new Map(previewEntries);
       let latestRuntimeIdentity: RuntimeIdentity | null = null;
-      for (const m of msgs) {
-        const meta = m.metadata as Record<string, unknown> | undefined;
-        if (
-          m.role === "assistant"
-          && (
-            typeof meta?.provider === "string"
-            || typeof meta?.model === "string"
-            || typeof meta?.reasoning_effort === "string"
-          )
-        ) {
+      for (const item of thread.items) {
+        if (item.type === "turn_start" && (item.provider || item.model)) {
           latestRuntimeIdentity = {
             sessionId: sid,
-            provider: typeof meta?.provider === "string" ? meta.provider : undefined,
-            model: typeof meta?.model === "string" ? meta.model : undefined,
-            reasoningEffort: typeof meta?.reasoning_effort === "string"
-              ? meta.reasoning_effort
-              : undefined,
+            provider: item.provider || undefined,
+            model: item.model || undefined,
           };
         }
       }
-      // Run card, reply text and start of each thread turn, from its reply row.
+      for (const item of thread.items) {
+        if (item.type === "turn_end" && item.display?.reasoning_effort !== undefined && latestRuntimeIdentity) {
+          latestRuntimeIdentity.reasoningEffort = item.display.reasoning_effort;
+        }
+      }
       const historyMeta: Record<string, TurnMeta> = {};
-      for (const m of msgs) {
-        const turnId = m.linked_attempt_id;
-        if (m.role !== "assistant" || !turnId || !threadTurns.has(turnId)) continue;
-        const meta = (m.metadata ?? {}) as Record<string, unknown>;
-        const turnMeta: TurnMeta = { content: m.content };
-        const runId = typeof meta.run_id === "string" && meta.run_id ? meta.run_id : undefined;
+      for (const item of thread.items) {
+        if (item.type !== "turn_end") continue;
+        const runId = item.display?.run_id || runIdFromDir(item.run_dir);
+        const turnMeta: TurnMeta = { content: item.summary || undefined };
         if (runId) {
           turnMeta.runId = runId;
-          const metrics = meta.metrics as Record<string, number> | undefined;
-          turnMeta.card = hasStoredMetrics(metrics)
-            ? { metrics }
-            : runCardFields(previews.get(runId) ?? null);
+          turnMeta.card = hasStoredMetrics(item.display?.metrics)
+            ? { metrics: item.display!.metrics } : runCardFields(previews.get(runId) ?? null);
+          if (turnMeta.card && !turnMeta.card.equityCurve) turnMeta.card.equityCurve = [];
         }
-        const startedAtSec = typeof meta.started_at === "number" ? meta.started_at : NaN;
-        if (Number.isFinite(startedAtSec) && startedAtSec > 0) turnMeta.startedAt = startedAtSec * 1000;
-        historyMeta[turnId] = turnMeta;
+        const start = thread.items.find((candidate) => candidate.type === "turn_start" && candidate.turn_id === item.turn_id);
+        if (start?.ts) turnMeta.startedAt = start.ts * 1000;
+        historyMeta[item.turn_id] = turnMeta;
       }
-      const agentMsgs = buildLegacyTranscript(legacyRows, {
-        displayPrompt: toDisplayPrompt,
-        previews,
-      });
       if (genRef.current !== gen) return false;
-      // A background session's SSE stream disconnects the moment you navigate
-      // away (doDisconnect() in the session-switch effect), so the
-      // session_completed event that would normally clear streamingSessionId
-      // never arrives -- the sidebar's "thinking" spinner for that session
-      // sticks around for the rest of the tab's life, even long after the
-      // turn actually finished. Reopening the session re-fetches its
-      // committed history right here; if the newest stored message is
-      // already the assistant's reply, the turn is done, so release the
-      // stale marker instead of leaving it dangling.
-      if (
-        act().streamingSessionId === sid
-        && msgs.length > 0
-        && msgs[msgs.length - 1].role === "assistant"
-      ) {
-        act().clearStreamingSession(sid);
-      }
-      act().loadHistory(agentMsgs);
-      if (thread) {
-        useAgentStore.setState((state) => {
-          const turnMeta = { ...historyMeta };
-          // What this page learned live (a stop, a timeout) outranks the read.
-          for (const [turnId, live] of Object.entries(state.turnMeta)) {
-            turnMeta[turnId] = { ...turnMeta[turnId], ...live };
-          }
-          return { turnMeta };
-        });
-        act().updateThread((view) => mergeThreadPage(view, thread, Date.now()));
-      }
+      useAgentStore.setState((state) => {
+        const turnMeta = { ...historyMeta };
+        for (const [turnId, live] of Object.entries(state.turnMeta)) {
+          turnMeta[turnId] = { ...turnMeta[turnId], ...live };
+        }
+        return { turnMeta };
+      });
+      act().updateThread((view) => mergeThreadPage(view, thread, Date.now()));
       if (pending) {
         act().updateThread((view) => withPendingInputs(view, pending.items ?? []));
       }
-      // The live activity is carried across a same-session re-mount so its
-      // clock survives, but if the attempt finished while we were away its
-      // committed reply is now in history: the durable row above supersedes
-      // the live one, which would otherwise sit at "Working" until the safety
-      // timeout fired.
+      if (act().streamingSessionId === sid && thread.items[thread.items.length - 1]?.type === "turn_end") act().clearStreamingSession(sid);
       const liveActivity = act().activity;
-      if (
-        liveActivity
-        && (
-          msgs.some((message) => (
-            message.role === "assistant"
-            && message.linked_attempt_id === liveActivity.attemptId
-          ))
-          || endedTurns(act().thread).has(liveActivity.attemptId)
-        )
-      ) {
+      if (liveActivity && endedTurns(act().thread).has(liveActivity.attemptId)) {
         useAgentStore.setState({ activity: null, toolCalls: [] });
         if (act().status === "streaming") act().setStatus("idle");
       }

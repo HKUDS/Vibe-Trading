@@ -10,13 +10,18 @@ const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
   getRunPreview: vi.fn(),
-  getSessionMessages: vi.fn(),
+  getRunPine: vi.fn().mockResolvedValue({}),
+  getSessionThread: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
 }));
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return { ...actual, api: apiMock };
+  const { threadFixture } = await import("./threadFixture");
+  return { ...actual, api: { ...apiMock,
+    getSessionThread: async (sid: string) => threadFixture(await apiMock.getSessionThread(sid)),
+    listPendingInputs: async () => ({ items: [] }),
+  } };
 });
 
 const sseMock = vi.hoisted(() => ({
@@ -57,13 +62,13 @@ describe("Agent history run previews", () => {
   beforeEach(() => {
     useAgentStore.getState().reset();
     apiMock.getGoal.mockResolvedValue(null);
-    apiMock.getLLMSettings.mockResolvedValue({ sse_timeout_seconds: 90 });
+    apiMock.getLLMSettings.mockResolvedValue({ sse_timeout_seconds: 90, providers: [] });
     apiMock.getRunPreview.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
   });
 
   it("cards only report-worthy or unknown runs and asks once per run", async () => {
-    apiMock.getSessionMessages.mockResolvedValue([
+    apiMock.getSessionThread.mockResolvedValue([
       assistant("m1", "run-chat", 1),
       assistant("m2", "run-backtest", 2),
       assistant("m3", "run-backtest", 3),
@@ -93,7 +98,7 @@ describe("Agent history run previews", () => {
   });
 
   it("requests every preview before any of them answers", async () => {
-    apiMock.getSessionMessages.mockResolvedValue([
+    apiMock.getSessionThread.mockResolvedValue([
       assistant("m1", "run-a", 1),
       assistant("m2", "run-b", 2),
       assistant("m3", "run-c", 3),

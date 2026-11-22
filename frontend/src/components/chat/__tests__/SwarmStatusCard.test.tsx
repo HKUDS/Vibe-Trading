@@ -184,10 +184,10 @@ describe("SwarmStatusCard", () => {
       timestamp: "2026-06-07T12:00:00Z",
     });
     const called = applySwarmEvent(started, {
-      type: "tool_call",
+      type: "item.started",
       agent_id: "analyst",
       task_id: "t1",
-      data: { tool: "read_file", iteration: 0 },
+      data: { kind: "tool.started", item: { type: "tool_result", name: "read_file" }, iteration: 0 },
       timestamp: "2026-06-07T12:00:01Z",
     });
     const done = applySwarmEvent(called, {

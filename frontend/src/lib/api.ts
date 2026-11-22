@@ -2492,6 +2492,8 @@ export interface ThreadDisplayItem {
   /** compaction */
   summary?: string | null;
   replaces_through_seq?: number;
+  /** Display-only facts retained by session migration. */
+  display?: { run_id?: string; metrics?: Record<string, number>; started_at?: number; reasoning_effort?: string };
   /** turn_end */
   usage?: Record<string, unknown> | null;
   error?: string | null;
