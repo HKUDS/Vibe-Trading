@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -174,6 +175,19 @@ class TestEstimateRetention:
 
 
 class TestApplyCompression:
+    def test_concurrent_backups_with_the_same_name_keep_both_originals(
+        self, tmp_path: Path,
+    ) -> None:
+        pipeline = CompressionPipeline(tmp_path)
+        user = _make_entry_file(tmp_path / "user" / "note.md", "user original")
+        project = _make_entry_file(tmp_path / "project" / "note.md", "project original")
+        with ThreadPoolExecutor(2) as pool:
+            backups = list(pool.map(pipeline.archive_original, [user, project]))
+        assert len(set(backups)) == 2
+        for source, backup in zip([user, project], backups, strict=True):
+            assert backup is not None
+            assert backup.read_bytes() == source.read_bytes()
+
     def test_apply_compression_archives_original(self, tmp_path: Path) -> None:
         """Original backed up to archive/ directory."""
         pipeline = CompressionPipeline(tmp_path)

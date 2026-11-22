@@ -13,6 +13,7 @@ import math
 import os
 import re
 import shutil
+import tempfile
 import time
 from collections import Counter
 from pathlib import Path
@@ -157,30 +158,34 @@ def extract_key_sentences(
     return " ".join(selected)
 
 
-def free_archive_path(archive_dir: Path, name: str) -> Path:
-    """Return a path in *archive_dir* for *name* that no earlier backup uses.
-
-    The archive is archive-only and never deleted, so a backup must not
-    replace an older one with the same filename: the raw original when an
-    entry is compressed a second time, or another category's entry under
-    ``VT_MEMORY_HIERARCHY`` (``user/x.md`` and ``project/x.md``). The first
-    backup keeps ``name``; later ones get ``<stem>.1<suffix>``,
-    ``<stem>.2<suffix>``, and so on.
+def copy_to_archive(entry_path: Path, archive_dir: Path) -> Path:
+    """Publish a complete backup at the first unused name in the archive.
 
     Args:
-        archive_dir: The ``archive/`` directory.
-        name: The entry's filename.
+        entry_path: Original memory file.
+        archive_dir: Directory for archived versions.
 
     Returns:
-        ``archive_dir / name`` if free, else the first free numbered variant.
+        The backup path, with a numbered suffix when a backup already exists.
+
+    Raises:
+        OSError: If the backup cannot be created.
     """
-    candidate = archive_dir / name
-    stem, suffix = Path(name).stem, Path(name).suffix
-    counter = 1
-    while candidate.exists():
-        candidate = archive_dir / f"{stem}.{counter}{suffix}"
-        counter += 1
-    return candidate
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=archive_dir, prefix=".backup-") as staging:
+        staged = Path(staging) / entry_path.name
+        shutil.copy2(entry_path, staged)
+        candidate = archive_dir / entry_path.name
+        counter = 1
+        while True:
+            try:
+                # Publish the completed file without overwriting a name
+                # claimed by another process between backup and publication.
+                os.link(staged, candidate)
+                return candidate
+            except FileExistsError:
+                candidate = archive_dir / f"{entry_path.stem}.{counter}{entry_path.suffix}"
+                counter += 1
 
 
 # ─── CompressionPipeline ─────────────────────────────────────────────────────
@@ -287,33 +292,18 @@ class CompressionPipeline:
     def archive_original(self, entry_path: Path) -> Optional[Path]:
         """Backup original file to archive/ before compression.
 
-        Returns archive path or None on failure. Creates archive/ dir
-        on demand. Uses atomic copy (write tmp + rename) for safety.
+        Returns archive path or None on failure. Creates archive/ on demand.
         """
         if not entry_path.exists():
             logger.warning("Cannot archive non-existent file: %s", entry_path)
             return None
 
-        tmp_path: Optional[Path] = None
         try:
-            self._archive_dir.mkdir(parents=True, exist_ok=True)
-            archive_path = free_archive_path(self._archive_dir, entry_path.name)
-            tmp_path = archive_path.with_suffix(archive_path.suffix + ".tmp")
-
-            # Atomic copy: write to tmp then rename
-            shutil.copy2(str(entry_path), str(tmp_path))
-            os.replace(str(tmp_path), str(archive_path))
-
+            archive_path = copy_to_archive(entry_path, self._archive_dir)
             logger.debug("Archived %s -> %s", entry_path.name, archive_path)
             return archive_path
         except OSError as exc:
             logger.error("Archive failed for %s: %s", entry_path, exc)
-            # Clean up tmp file if it exists
-            if tmp_path is not None and tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
             return None
 
     def apply_compression(
