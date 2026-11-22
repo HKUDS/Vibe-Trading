@@ -226,6 +226,7 @@ jobs:
           agent/tests/test_background_host_lifecycle.py::test_completion_callback_keeps_originating_attempt
           agent/tests/test_background_store_recovery.py::TestRecoveryIsConservative
           agent/tests/test_background_store_recovery.py::test_cancel_intent_is_persisted_before_reaping
+          agent/tests/test_process_liveness.py::test_running_and_exited_processes_are_told_apart
           -q
 
   desktop-electron-windows:
