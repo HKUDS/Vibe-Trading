@@ -1,4 +1,4 @@
-"""Task 16 gate: the Agent-facing ``paper_trade_step`` schema is one ``oneOf``.
+"""The Agent-facing ``paper_trade_step`` schema is one ``oneOf``.
 
 The tool publishes two structurally disjoint request branches:
 

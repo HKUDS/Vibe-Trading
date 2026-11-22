@@ -65,7 +65,7 @@ _PORTFOLIO_ONLY_FIELDS = (
 
 #: The legacy single-market request keeps this exact required list.  The
 #: portfolio branch below must never inherit it: its own envelope carries the
-#: pt-v2.0 required fields instead (GAP-8).
+#: pt-v2.0 required fields instead.
 _LEGACY_REQUIRED = (
     "account_id",
     "market",

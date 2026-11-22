@@ -1,8 +1,8 @@
 {
-  "$comment": "INTERNAL pt-v2.0 cross-market portfolio contract. This file defines the future discriminated wire surface only; it does not register portfolio mode in the legacy Agent, MCP, REST, or CLI paths. Public decimal values are canonical fixed-point strings, quantities are integers, FX entries are direct pairs, and exactly one of orders or target_weights is required. Legacy pt-v1.1/v1.2/v1.3 files are independent and unchanged.",
+  "$comment": "pt-v2.0 cross-market portfolio contract. This contract is the registered wire surface for paper_trade_step portfolio mode across the Agent, MCP, REST, and CLI paths. Public decimal values are canonical fixed-point strings, quantities are integers, FX entries are direct pairs, and exactly one of orders or target_weights is required. Legacy pt-v1.1/v1.2/v1.3 files are independent and unchanged.",
   "contract": "paper_trade_step",
   "version": "pt-v2.0",
-  "status": "internal",
+  "status": "registered",
   "schemas": {
     "request": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

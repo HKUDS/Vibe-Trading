@@ -1,4 +1,4 @@
-"""Task 15 gate — default-single pre-parse dispatch and pt-v2.0 routing.
+"""Default-single pre-parse dispatch and pt-v2.0 routing.
 
 The public ``run_paper_trade_step`` entry owns a tiny raw-payload gate before
 the legacy ``parse_request``: an omitted or explicit ``mode="single"`` payload

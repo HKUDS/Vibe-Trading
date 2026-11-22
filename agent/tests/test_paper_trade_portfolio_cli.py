@@ -1,4 +1,4 @@
-"""Task 18 gate — ``vibe-trading paper step`` parity with REST and the Agent.
+"""``vibe-trading paper step`` parity with REST and the Agent.
 
 The CLI keeps exactly the existing ``paper`` command surface and forwards the
 caller-owned JSON file to the same ``run_paper_trade_step`` entry as the Agent

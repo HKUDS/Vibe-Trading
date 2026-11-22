@@ -1,4 +1,4 @@
-"""Task 18 gate — same-name REST step parity with the Agent core and CLI.
+"""Same-name REST step parity with the Agent core and CLI.
 
 ``POST /api/paper-trade/step`` and ``vibe-trading paper step`` are the only
 public surfaces and both forward the caller's raw dict to the same

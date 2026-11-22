@@ -1,4 +1,4 @@
-"""Task 17 gate: one MCP ``paper_trade_step`` with branch-aware arguments.
+"""One MCP ``paper_trade_step`` with branch-aware arguments.
 
 The hand-written wrapper is replaced by a specialized ``FunctionTool`` that
 publishes ``PaperTradeStepTool.parameters`` (the legacy/portfolio ``oneOf``)
@@ -39,8 +39,8 @@ AGENT_DIR = REPO_ROOT / "agent"
 if str(AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(AGENT_DIR))
 
-# Baseline before task 17: replacing the hand-written wrapper with a mirrored
-# registration must not add or remove a tool.
+# Baseline before the branch-aware wrapper: replacing the hand-written wrapper
+# with a mirrored registration must not add or remove a tool.
 EXPECTED_MCP_TOOL_COUNT = 85
 
 _DAY = "2026-11-13"
@@ -576,7 +576,7 @@ def test_stdio_list_and_both_calls_without_live_data() -> None:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "clientInfo": {"name": "task-17", "version": "1"},
+                    "clientInfo": {"name": "mcp-smoke-client", "version": "1"},
                 },
             },
         )
