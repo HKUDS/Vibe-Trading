@@ -1,11 +1,4 @@
-"""Pin the re-export contract of the tool-results extraction (issue #1624).
-
-``loop.py`` used to define these helpers inline; they now live in
-``src.agent.tool_results`` and are re-exported by ``loop.py`` so every
-existing ``from src.agent.loop import ...`` keeps resolving. These tests
-fail if the two modules ever drift apart, e.g. someone deletes a re-export
-or redefines a helper in ``loop.py`` instead of moving it.
-"""
+"""Pin tool-result ownership after removal of loop compatibility exports."""
 
 import pytest
 
@@ -31,8 +24,9 @@ MOVED_FUNCTIONS = [
 
 
 @pytest.mark.parametrize("name", MOVED_CONSTANTS + MOVED_FUNCTIONS)
-def test_loop_reexports_moved_name(name):
-    assert getattr(loop, name) is getattr(tool_results, name)
+def test_moved_name_is_owned_without_a_loop_compatibility_export(name):
+    assert getattr(tool_results, name) is not None
+    assert name not in vars(loop)
 
 
 def test_moved_surface_is_complete():

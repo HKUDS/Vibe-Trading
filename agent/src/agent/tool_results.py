@@ -6,8 +6,7 @@ helpers that judge a finished tool call: success/failure classification of a
 JSON result envelope, detection of provider tool-call DSL left in final text,
 the user-message target-file scan, ``run_dir`` normalization, and the
 replace-not-merge archive of a successful detached backtest into the active
-run. ``loop.py`` re-exports every moved name, so existing imports keep
-working.
+run. Callers import these helpers from this owning module.
 
 Behavior is unchanged: every function body, docstring, and comment moved
 byte-for-byte; only the leading indentation of the module changed.

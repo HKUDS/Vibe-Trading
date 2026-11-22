@@ -90,13 +90,14 @@ def test_catalog_only_provider_reaches_settings_and_real_sdk(tmp_path, provider_
         from unittest.mock import patch
         from src.providers import registry
         registry.CATALOG_PATH = Path(sys.argv[1])
-        from cli import _legacy, onboard
+        from cli import onboard
+        from cli.commands import common, setup_memory
         from src.providers.chat import ChatLLM
         from src.providers.settings import SettingsStore, secret_names
         assert onboard.PROVIDERS[-1].key == "catalog-test"
-        with patch.object(_legacy.IntPrompt, "ask", return_value=len(_legacy._PROVIDER_CHOICES)), \
-             patch.object(_legacy.Prompt, "ask", side_effect=["cli-secret", sys.argv[2], "cli-model", ""]):
-            assert _legacy.cmd_init() == 0
+        with patch.object(common.IntPrompt, "ask", return_value=len(common._PROVIDER_CHOICES)), \
+             patch.object(common.Prompt, "ask", side_effect=["cli-secret", sys.argv[2], "cli-model", ""]):
+            assert setup_memory.cmd_init() == 0
         with closing(ChatLLM()) as old:
             import api_server
             from fastapi.testclient import TestClient
