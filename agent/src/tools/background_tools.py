@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 from src.agent.tools import BaseTool
 from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
+from src.tools.redaction import redact_text
 from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
 
 WORKDIR = Path(__file__).resolve().parents[2]
@@ -150,7 +151,7 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return ((stdout or "") + (stderr or "")).strip()[:_MAX_OUTPUT_CHARS]
+    return redact_text(((stdout or "") + (stderr or "")).strip())[:_MAX_OUTPUT_CHARS]
 
 
 class BackgroundManager:
@@ -303,6 +304,7 @@ class BackgroundManager:
                     ensure_ascii=False,
                 )
 
+        command_preview = redact_text(command)
         task_id = uuid.uuid4().hex[:8]
         started_at = time.monotonic()
         with self._lock:
@@ -311,7 +313,7 @@ class BackgroundManager:
             self.tasks[task_id] = {
                 "status": "running",
                 "result": None,
-                "command": command,
+                "command": command_preview,
                 "exit_code": None,
                 "process": None,
                 "cancel_requested": False,
@@ -325,7 +327,7 @@ class BackgroundManager:
                 _LIVE_TASK_IDS.add(task_id)
         self._persist(task_id)
         threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
-        return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command[:80]}"})
+        return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command_preview[:80]}"})
 
     def _execute(self, task_id: str, command: str) -> None:
         exit_code: int | None = None
@@ -368,7 +370,7 @@ class BackgroundManager:
                     exit_code = process.returncode
                     status = "timeout"
         except Exception as e:
-            output, status = str(e), "error"
+            output, status = redact_text(e)[:_MAX_OUTPUT_CHARS], "error"
             if process is not None:
                 # Do not publish a terminal cancellation before its root is reaped.
                 _terminate_process_tree(process)
@@ -399,7 +401,7 @@ class BackgroundManager:
                 )
             payload = {
                 "task_id": task_id, "status": status,
-                "command": command[:80], "result": (output or "")[:500],
+                "command": task["command"][:80], "result": (output or "")[:500],
                 "exit_code": exit_code,
             }
             self._notifications.append((task["owner_id"], payload))

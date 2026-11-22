@@ -653,3 +653,24 @@ def test_historical_failure_stays_redacted_on_session_reads(tmp_path, monkeypatc
     path.write_text(json.dumps({**attempt.to_dict(), "status": "failed", "error": reason}))
     assert service.store.get_attempt(session.session_id, tid).error == "provider rejected api_key=[redacted]"
     assert thread.path.read_bytes() == original
+
+
+def test_new_and_historical_tool_results_are_safe_at_the_thread_boundary(tmp_path, monkeypatch):
+    _, session, thread = _seed_session(tmp_path, monkeypatch)
+    tid = "12aabbccdd34"
+    fields = dict(tool_call_id="c1", name="lookup", status="ok",
+                  content='{"stdout":"ok","api_key":"fixture-private-value"}',
+                  images=[{"alt": "api_key=fixture-private-value"}])
+    item = thread.append("tool_result", tid, **fields)
+    assert "fixture-private-value" not in thread.path.read_text()
+    assert json.loads(item.get("content")) == {"stdout": "ok", "api_key": "[redacted]"}
+    with thread.path.open("a", encoding="utf-8") as out:
+        out.write(json.dumps({"seq": item.seq + 1, "type": "tool_result",
+                              "ts": 1, "turn_id": tid, **fields}) + "\n")
+    original = thread.path.read_bytes()
+    client = TestClient(api_server.app, client=("127.0.0.1", 50000))
+    response = client.get(f"/sessions/{session.session_id}/thread")
+    assert response.status_code == 200
+    assert "fixture-private-value" not in response.text
+    assert json.loads(thread.read()[-1].get("content"))["stdout"] == "ok"
+    assert thread.path.read_bytes() == original

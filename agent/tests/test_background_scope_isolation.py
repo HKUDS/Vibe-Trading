@@ -301,3 +301,12 @@ class TestScopeContract:
         assert first.scope.owner_id.startswith("isolated:")
         assert second.scope.owner_id.startswith("isolated:")
         assert BackgroundScope(owner_id="explicit") != first.scope
+
+
+def test_background_completion_redacts_before_preview_and_delivery():
+    manager = BackgroundManager()
+    task_id = _run_to_completion(manager, _echo_command("ok api_key=fixture-private-value"))
+    [notice] = manager.drain_notifications()
+    assert notice["result"] == "ok api_key=[redacted]"
+    for view in (notice, manager.check(task_id), manager.check()):
+        assert "fixture-private-value" not in str(view)

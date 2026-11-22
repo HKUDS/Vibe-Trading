@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Mapping, Optional
 
-from src.tools.redaction import redact_text
+from src.tools.redaction import RESULT_SINK, redact_payload, redact_text, redact_tool_result
 
 ASSISTANT_PHASES = frozenset({"commentary", "final"})
 TOOL_RESULT_STATUSES = frozenset({"ok", "error"})
@@ -217,9 +217,12 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
     if item_type == "user" and result.get("input_id") is None:
         # Preserve the legacy user-item shape. Queued inputs carry a real id.
         result.pop("input_id", None)
-    if item_type == "tool_result" and result.get("images") is None:
-        # Preserve the legacy tool-result shape when no image artifacts exist.
-        result.pop("images", None)
+    if item_type == "tool_result":
+        result["content"] = redact_tool_result(result["content"])
+        for key in ("images", "artifact"):
+            result[key] = redact_payload(result[key], sink=RESULT_SINK)
+        if result["images"] is None:
+            result.pop("images")
     if item_type == "assistant":
         # Older thread records did not identify the provider/model. Keep their
         # on-disk shape stable while new responses record both fields.
