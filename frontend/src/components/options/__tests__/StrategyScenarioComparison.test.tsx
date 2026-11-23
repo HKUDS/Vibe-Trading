@@ -32,7 +32,11 @@ function output(body: OptionsStrategyCompareRequest): OptionsStrategyCompareResp
     status: "ok",
     comparison: { baseline_index: body.baseline_index ?? 0, baseline_name: baselineName },
     strategies: [],
-    expiry_curve: { spot: [100, 110], pnl: {}, delta_to_baseline: {} },
+    expiry_curve: {
+      spot: [100, 110],
+      pnl: Object.fromEntries(names.map((name, index) => [name, [index * 10, index * 10 + 1]])),
+      delta_to_baseline: { [targetName]: [5, 6] },
+    },
     scenario_grid: {
       iv_values: [0.3],
       spot: [100, 110],
@@ -132,4 +136,44 @@ it("shows a bounded error and retries the same comparison", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
   await waitFor(() => expect(screen.getByTestId("scenario-delta")).toHaveTextContent("5,6"));
   expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(2);
+});
+
+it("exports only the accepted comparison snapshot with its reversed pair labels", async () => {
+  let resolveSecond!: (value: OptionsStrategyCompareResponse) => void;
+  vi.mocked(api.compareOptionsStrategies)
+    .mockImplementationOnce(async (body) => output(body))
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+  const blobs: Blob[] = [];
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: vi.fn((blob: Blob) => { blobs.push(blob); return "blob:comparison"; }),
+  });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+  render(<StrategyScenarioComparison request={request} />);
+  openComparison();
+  await screen.findByTestId("comparison-export");
+  fireEvent.change(screen.getByLabelText("Base"), { target: { value: "2" } });
+  await waitFor(() => expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(2));
+  expect(screen.queryByTestId("comparison-export")).not.toBeInTheDocument();
+
+  const secondBody = vi.mocked(api.compareOptionsStrategies).mock.calls[1][0];
+  resolveSecond(output(secondBody));
+  const exportArea = await screen.findByTestId("comparison-export");
+  fireEvent.click(within(exportArea).getByRole("button", { name: /export json/i }));
+
+  await waitFor(() => expect(blobs).toHaveLength(1));
+  const document = JSON.parse(await blobs[0].text());
+  expect(document.format).toBe("vibe-options-strategy-comparison-v1");
+  expect(document.request).toEqual(secondBody);
+  expect(document.result).toEqual(output(secondBody));
+  expect(document.source_request).toEqual(request);
+  expect(document.pair).toEqual({
+    baseline_label: "Strategy 2",
+    target_label: "Strategy 1",
+    target_key: "strategy-1",
+  });
+  expect(click).toHaveBeenCalledTimes(1);
+  click.mockRestore();
 });

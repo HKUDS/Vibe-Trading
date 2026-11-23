@@ -7,9 +7,22 @@ import type {
   OptionsStrategyCompareResponse,
 } from "@/lib/options";
 import { OptionsScenarioMatrix } from "@/components/charts/OptionsScenarioMatrix";
+import {
+  buildOptionsStrategyComparisonCsv,
+  buildOptionsStrategyComparisonJson,
+} from "@/lib/optionsComparisonExport";
 
 const COMPARE_SPOT_LIMIT = 201;
 const comparisonKey = (index: number) => `strategy-${index}`;
+
+interface CompletedComparison {
+  request: OptionsStrategyCompareRequest;
+  result: OptionsStrategyCompareResponse;
+  sourceRequest: OptionsPayoffRequest;
+  baselineLabel: string;
+  targetLabel: string;
+  targetKey: string;
+}
 
 export function StrategyScenarioComparison({ request }: { request: OptionsPayoffRequest }) {
   if (!request.alternatives?.length) return null;
@@ -22,7 +35,7 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
   const [baselineIndex, setBaselineIndex] = useState(0);
   const [targetIndex, setTargetIndex] = useState(1);
   const [retry, setRetry] = useState(0);
-  const [result, setResult] = useState<OptionsStrategyCompareResponse | null>(null);
+  const [completed, setCompleted] = useState<CompletedComparison | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
@@ -66,12 +79,21 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
     if (!open) return;
     const gen = ++generation.current;
     const controller = new AbortController();
-    setResult(null);
+    setCompleted(null);
     setError(null);
     setLoading(true);
     api.compareOptionsStrategies(compareRequest, controller.signal)
       .then((response) => {
-        if (generation.current === gen && currentSignature.current === signature) setResult(response);
+        if (generation.current === gen && currentSignature.current === signature) {
+          setCompleted({
+            request: compareRequest,
+            result: response,
+            sourceRequest: request,
+            baselineLabel: strategies[baseline].name,
+            targetLabel: strategies[target].name,
+            targetKey: comparisonKey(target),
+          });
+        }
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted && generation.current === gen) {
@@ -89,11 +111,40 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, signature, retry]);
 
-  const baselineName = strategies[baseline].name;
-  const targetName = strategies[target].name;
+  const completedSnapshot = completed && JSON.stringify(completed.request) === signature ? completed : null;
+  const result = completedSnapshot?.result ?? null;
+  const baselineName = completedSnapshot?.baselineLabel ?? strategies[baseline].name;
+  const targetName = completedSnapshot?.targetLabel ?? strategies[target].name;
   const grid = result?.scenario_grid;
-  const rawGrid = grid?.pnl[comparisonKey(target)];
-  const deltaGrid = grid?.delta_to_baseline[comparisonKey(target)];
+  const rawGrid = grid?.pnl[completedSnapshot?.targetKey ?? comparisonKey(target)];
+  const deltaGrid = grid?.delta_to_baseline[completedSnapshot?.targetKey ?? comparisonKey(target)];
+
+  const exportComparison = (format: "json" | "csv") => {
+    if (!completedSnapshot) return;
+    try {
+      const context = {
+        source_request: completedSnapshot.sourceRequest,
+        baseline_label: completedSnapshot.baselineLabel,
+        target_label: completedSnapshot.targetLabel,
+        target_key: completedSnapshot.targetKey,
+      };
+      const json = format === "json";
+      const content = json
+        ? buildOptionsStrategyComparisonJson(completedSnapshot.request, completedSnapshot.result, context)
+        : buildOptionsStrategyComparisonCsv(completedSnapshot.request, completedSnapshot.result, context);
+      const blob = new Blob([content], { type: json ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `options-strategy-comparison.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("options.errorGeneric"));
+    }
+  };
 
   return (
     <section className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
@@ -141,16 +192,26 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
             </div>
           )}
           {result && grid && rawGrid && deltaGrid && (
-            <div className="grid gap-4 xl:grid-cols-2">
-              <div data-testid="scenario-raw">
-                <h3 className="mb-2 text-sm font-medium">{t("options.scenario.pnl")}: {targetName}</h3>
-                <OptionsScenarioMatrix grid={{ iv_values: grid.iv_values, spot: grid.spot, pnl: rawGrid }} />
+            <>
+              <div data-testid="comparison-export" className="mb-3 flex gap-2">
+                <button type="button" className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => exportComparison("json")}>
+                  {t("options.exportJson")}
+                </button>
+                <button type="button" className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => exportComparison("csv")}>
+                  {t("options.exportCsv")}
+                </button>
               </div>
-              <div data-testid="scenario-delta">
-                <h3 className="mb-2 text-sm font-medium">{t("options.comparison.deltaGrid")}: {targetName} − {baselineName}</h3>
-                <OptionsScenarioMatrix grid={{ iv_values: grid.iv_values, spot: grid.spot, pnl: deltaGrid }} />
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div data-testid="scenario-raw">
+                  <h3 className="mb-2 text-sm font-medium">{t("options.scenario.pnl")}: {targetName}</h3>
+                  <OptionsScenarioMatrix grid={{ iv_values: grid.iv_values, spot: grid.spot, pnl: rawGrid }} />
+                </div>
+                <div data-testid="scenario-delta">
+                  <h3 className="mb-2 text-sm font-medium">{t("options.comparison.deltaGrid")}: {targetName} − {baselineName}</h3>
+                  <OptionsScenarioMatrix grid={{ iv_values: grid.iv_values, spot: grid.spot, pnl: deltaGrid }} />
+                </div>
               </div>
-            </div>
+            </>
           )}
           {result && result.limitations.length > 0 && (
             <ul className="mt-3 list-disc ps-5 text-xs text-muted-foreground">
