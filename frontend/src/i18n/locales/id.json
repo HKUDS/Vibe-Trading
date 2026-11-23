@@ -1146,6 +1146,7 @@
         "ca_equity": "Saham Kanada",
         "taiwan_equity": "Saham Taiwan",
         "vietnam_equity": "Saham Vietnam",
+        "europe_equity": "Saham Eropa",
         "ar_equity": "Saham Argentina",
         "br_equity": "Saham Brasil",
         "uk_equity": "Saham Inggris",
@@ -1487,6 +1488,7 @@
         "uk_equity": "Saham Inggris",
         "taiwan_equity": "Saham Taiwan",
         "vietnam_equity": "Saham Vietnam",
+        "europe_equity": "Saham Eropa",
         "other": "Lainnya"
       }
     },

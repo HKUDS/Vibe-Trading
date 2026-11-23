@@ -61,6 +61,11 @@ _SINGLE_CURRENCY_VENUES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "ARS"),
     (re.compile(r"^[A-Z0-9]+\.SA$", re.I), "BRL"),
     (re.compile(r"^[A-Z0-9&.\-]+\.(?:TO|V)$", re.I), "CAD"),
+    # Euronext, Xetra, SIX and Borsa Italiana also list ETF lines in USD/GBP
+    # beside the home-currency line; only the home line enters the pool.
+    (re.compile(r"^[A-Z0-9&.\-]+\.(?:DE|PA|AS|MI)$", re.I), "EUR"),
+    (re.compile(r"^[A-Z0-9&.\-]+\.SW$", re.I), "CHF"),
+    (re.compile(r"^[A-Z0-9&.\-]+\.WA$", re.I), "PLN"),
 )
 
 

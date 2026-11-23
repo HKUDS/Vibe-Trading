@@ -1146,6 +1146,7 @@
         "ca_equity": "Ações do Canadá",
         "taiwan_equity": "Ações de Taiwan",
         "vietnam_equity": "Ações do Vietnã",
+        "europe_equity": "Ações europeias",
         "ar_equity": "Ações da Argentina",
         "br_equity": "Ações do Brasil (B3)",
         "uk_equity": "Ações do Reino Unido",
@@ -1487,6 +1488,7 @@
         "uk_equity": "Ações do Reino Unido",
         "taiwan_equity": "Ações de Taiwan",
         "vietnam_equity": "Ações do Vietnã",
+        "europe_equity": "Ações europeias",
         "other": "Outro"
       }
     },

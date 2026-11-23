@@ -1140,6 +1140,7 @@
         "ca_equity": "加拿大股票",
         "taiwan_equity": "台湾股票",
         "vietnam_equity": "越南股票",
+        "europe_equity": "欧洲股票",
         "ar_equity": "阿根廷股票",
         "br_equity": "巴西股票",
         "uk_equity": "英国股票",
@@ -1481,6 +1482,7 @@
         "uk_equity": "英股",
         "taiwan_equity": "台湾股票",
         "vietnam_equity": "越股",
+        "europe_equity": "欧洲股票",
         "other": "其他"
       }
     },
