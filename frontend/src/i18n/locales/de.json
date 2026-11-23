@@ -1146,6 +1146,7 @@
         "ca_equity": "Kanada-Aktien",
         "taiwan_equity": "Taiwanesische Aktien",
         "vietnam_equity": "Vietnam-Aktien",
+        "europe_equity": "Europäische Aktien",
         "ar_equity": "Argentinien-Aktien",
         "br_equity": "Brasilien-Aktien",
         "uk_equity": "UK-Aktien",
@@ -1487,6 +1488,7 @@
         "uk_equity": "UK-Aktien",
         "taiwan_equity": "Taiwanesische Aktien",
         "vietnam_equity": "Vietnam-Aktien",
+        "europe_equity": "Europäische Aktien",
         "other": "Sonstige"
       }
     },
