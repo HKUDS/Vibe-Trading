@@ -1,5 +1,6 @@
+import i18n from "@/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Mock } from "vitest";
 import type { RunData } from "@/lib/api";
 import { PositionsTab } from "../PositionsTab";
@@ -119,8 +120,36 @@ describe("PositionsTab", () => {
     }) as typeof echarts.init);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    cleanup();
+    await i18n.changeLanguage("en");
     vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ["en", "Taiwan Equities"], ["zh-CN", "台湾股票"],
+    ["ja", "台湾株"], ["ko", "대만 주식"],
+    ["ar", "الأسهم التايوانية"], ["fa", "سهام تایوان"],
+    ["es", "Acciones de Taiwán"], ["de", "Taiwanesische Aktien"],
+    ["pt-BR", "Ações de Taiwan"], ["id", "Saham Taiwan"],
+    ["tr", "Tayvan Hisseleri"],
+  ])("renders both Taiwan venues with the translated chart labels in %s", async (language, label) => {
+    await i18n.changeLanguage(language);
+    render(<PositionsTab run={makeRun([
+      { timestamp: "2024-01-01", "2330.TW": "0.6", "6488.TWO": "0.4" },
+    ])} />);
+
+    // Inspect the real component's chart output, not just its label dictionary.
+    await waitFor(() => expect(barCategoryAxes()).toContainEqual([label]));
+    const slices = charts.flatMap((chart) => chart.setOption.mock.calls.flatMap(([option]) =>
+      (option.series ?? []).filter((series: { type: string }) => series.type === "pie")
+        .flatMap((series: { data: Array<{ name: string; assetClassLabel: string }> }) => series.data),
+    ));
+    expect(slices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "2330.TW", assetClassLabel: label }),
+      expect.objectContaining({ name: "6488.TWO", assetClassLabel: label }),
+    ]));
+    expect(screen.queryByRole("button", { name: i18n.t("runDetail.positions.resolveIndustries") })).not.toBeInTheDocument();
   });
 
   const multiSymbolRows = [

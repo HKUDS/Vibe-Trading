@@ -156,6 +156,45 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     assert prepare_handoff(tmp_path, risk, risk_dir) == note
 
 
+@pytest.mark.parametrize("locale_codec", ["gbk", "cp1252"])
+def test_handoff_reads_utf8_evidence_under_a_non_utf8_locale(tmp_path, monkeypatch, locale_codec):
+    # Windows without UTF-8 mode decodes a read that names no encoding with the
+    # ANSI code page, while the worker writes every artifact as UTF-8.
+    from src.swarm.worker import _persist_messages
+
+    read_text = Path.read_text
+
+    def read_with_locale(self, encoding=None, errors=None, **kwargs):
+        return read_text(self, encoding or locale_codec, errors, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_with_locale)
+    store = TaskStore(tmp_path)
+    source_task = SwarmTask(id="bull", agent_id="bull", prompt_template="research")
+    risk = SwarmTask(id="risk", agent_id="risk", prompt_template="risk", input_from={"bull": "bull"})
+    pm = SwarmTask(id="pm", agent_id="pm", prompt_template="decision", input_from={"risk": "risk"})
+    for task in (source_task, risk, pm):
+        store.save_task(task)
+    source = agent_artifact_dir(tmp_path, "bull", "bull")
+    source.mkdir(parents=True)
+    raw = json.dumps({"600519.SH": [{"trade_date": "2026-11-12", "name": "贵州茅台", "close": 1500.0}]},
+                     ensure_ascii=False)
+    receipt = persist_calculation_result(raw, source)
+    _persist_messages(source, [
+        {"role": "assistant", "content": "先看行情", "tool_calls": [{"id": "q1", "function": {
+            "name": "get_market_data", "arguments": '{"codes":["600519.SH"]}'}}]},
+        {"role": "tool", "tool_call_id": "q1", "content": receipt}])
+    # Direct (messages.json + tool result) and transitive (upstream index) reads.
+    for task in (risk, pm):
+        task_dir = agent_artifact_dir(tmp_path, task.agent_id, task.id)
+        prepare_handoff(tmp_path, task, task_dir)
+        index = json.loads((task_dir / "upstream/index.json").read_text(encoding="utf-8"))
+        assert index["unavailable"] == []
+        [entry] = index["observations"]
+        assert entry["source_task"] == "bull"
+        copied = json.loads((task_dir / entry["path"]).read_text(encoding="utf-8"))
+        assert copied["600519.SH"][0]["name"] == "贵州茅台"
+
+
 def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path):
     from src.agent.result_artifacts import deliver_tool_result
     from src.agent.tools import ToolRegistry

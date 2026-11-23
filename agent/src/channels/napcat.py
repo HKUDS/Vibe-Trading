@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import random
 import time
@@ -14,7 +15,6 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import aiohttp
-import logging; logger = logging.getLogger(__name__)
 from pydantic import Field
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect
@@ -26,6 +26,8 @@ from src.channels.utils import get_media_dir
 from pydantic import BaseModel
 from src.channels.utils import validate_url_target
 from src.channels.utils import safe_filename
+
+logger = logging.getLogger(__name__)
 
 _DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=60)
 _ACTION_TIMEOUT = 20.0
@@ -536,7 +538,7 @@ class NapcatChannel(BaseChannel):
                     url,
                 )
                 return None
-        except (TypeError, KeyError):
+        except (TypeError, KeyError, ValueError, OverflowError):
             pass
 
         try:

@@ -47,8 +47,10 @@ buy_sm_amount_rate | float | Y | 今日小单净流入占比（%）
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 #获取单日全部股票数据
 df = pro.moneyflow_dc(trade_date='20241011')

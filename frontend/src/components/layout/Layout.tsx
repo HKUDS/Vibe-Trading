@@ -4,13 +4,12 @@ import { Link, Outlet, useLocation, useSearchParams } from "react-router";
 import { Check, ChevronDown, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
-import { api, type SessionItem } from "@/lib/api";
 import { safeGet, safeSet } from "@/lib/storage";
 import { useAgentStore } from "@/stores/agent";
+import { useSessionsStore } from "@/stores/sessions";
 import { BrandMark } from "@/components/common/BrandMark";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
-import i18n from "@/i18n";
 import { toast } from "sonner";
 import { SidebarNavigation } from "./SidebarNavigation";
 import { PageHelp } from "./PageHelp";
@@ -24,10 +23,11 @@ export function Layout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { dark, toggle } = useDarkMode();
-  const [sessions, setSessions] = useState<SessionItem[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [sessionsError, setSessionsError] = useState<string | null>(null);
-  const sessionsLoadGeneration = useRef(0);
+  const sessions = useSessionsStore(s => s.sessions);
+  const sessionsPhase = useSessionsStore(s => s.phase);
+  const sessionsError = useSessionsStore(s => s.error);
+  const refreshSessions = useSessionsStore(s => s.refresh);
+  const sessionsLoading = sessionsPhase !== "settled";
   const pendingSessionActions = useRef(new Set<string>());
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
@@ -72,39 +72,26 @@ export function Layout() {
     return () => window.removeEventListener("storage", syncSidebarPreference);
   }, []);
 
-  const loadSessions = useCallback(() => {
-    const generation = ++sessionsLoadGeneration.current;
-    setSessionsLoading(true);
-    api.listSessions()
-      .then((list) => {
-        if (generation !== sessionsLoadGeneration.current) return;
-        setSessions(Array.isArray(list) ? list : []);
-        setSessionsError(null);
-      })
-      .catch((error: unknown) => {
-        if (generation === sessionsLoadGeneration.current) {
-          setSessionsError(error instanceof Error ? error.message : i18n.t("settings.unknownError"));
-        }
-      })
-      .finally(() => {
-        if (generation === sessionsLoadGeneration.current) setSessionsLoading(false);
-      });
-  }, []);
+  const loadSessions = useCallback(() => { void refreshSessions(); }, [refreshSessions]);
 
-  // Load sessions on mount. Also refresh when navigating TO /agent or when
-  // the active session changes (covers new session creation from Agent).
   const isAgentPage = pathname === "/" || pathname.startsWith("/agent");
+  const previousRoute = useRef<{ isAgentPage: boolean; sessionId: string | null } | null>(null);
   useEffect(() => {
-    loadSessions();
-    return () => { sessionsLoadGeneration.current += 1; };
+    const previous = previousRoute.current;
+    previousRoute.current = { isAgentPage, sessionId: activeSessionId };
+    // The initial list also covers a direct link to a session. Later route
+    // changes fetch only for a different page or an unlisted session.
+    if (previous?.isAgentPage !== isAgentPage || (
+      activeSessionId && previous?.sessionId !== activeSessionId
+      && !useSessionsStore.getState().has(activeSessionId)
+    )) {
+      loadSessions();
+    }
   }, [isAgentPage, activeSessionId, loadSessions]);
 
-  // Re-list after out-of-band title changes (e.g. LLM auto-titling on the
-  // first completed exchange).
   useEffect(() => {
-    const refresh = () => loadSessions();
-    window.addEventListener("vibe:sessions-refresh", refresh);
-    return () => window.removeEventListener("vibe:sessions-refresh", refresh);
+    window.addEventListener("focus", loadSessions);
+    return () => window.removeEventListener("focus", loadSessions);
   }, [loadSessions]);
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -115,8 +102,7 @@ export function Layout() {
     if (pendingSessionActions.current.has(sid)) return;
     pendingSessionActions.current.add(sid);
     try {
-      await api.deleteSession(sid);
-      setSessions((prev) => prev.filter((s) => s.session_id !== sid));
+      await useSessionsStore.getState().remove(sid);
       setDeleteTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("settings.unknownError"));
@@ -131,8 +117,7 @@ export function Layout() {
     pendingSessionActions.current.add(sid);
     const title = renameValue.trim();
     try {
-      await api.renameSession(sid, title);
-      setSessions((prev) => prev.map((s) => s.session_id === sid ? { ...s, title } : s));
+      await useSessionsStore.getState().rename(sid, title);
       setRenameTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("settings.unknownError"));
@@ -222,7 +207,7 @@ export function Layout() {
             )}
 
             <div className="px-2 pb-2 space-y-0.5 overflow-auto flex-1">
-              {sessionsLoading ? (
+              {sessionsPhase === "initial" ? (
                 <div className="space-y-1.5 px-2 py-1">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-7 rounded-md bg-muted/50 animate-pulse" />

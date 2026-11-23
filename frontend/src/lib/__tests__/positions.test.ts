@@ -118,6 +118,12 @@ describe("classifyAssetClass parity with backend rules", () => {
     ["HGLG11.SA", "br_equity"],
     ["VOD.L", "uk_equity"],
     ["VIC.VN", "vietnam_equity"],
+    ["SAP.DE", "europe_equity"],
+    ["MC.PA", "europe_equity"],
+    ["ASML.AS", "europe_equity"],
+    ["ENI.MI", "europe_equity"],
+    ["NESN.SW", "europe_equity"],
+    ["PKO.WA", "europe_equity"],
     ["005930.KS", "kr_equity"],
     ["035720.KQ", "kr_equity"],
     ["RELIANCE.NS", "india_equity"],
@@ -128,6 +134,9 @@ describe("classifyAssetClass parity with backend rules", () => {
     ["ETH/USDT", "crypto"],
     ["BTC-USDT-PERP", "crypto"],
     ["EURUSD", "forex"],
+    ["EUR/USD", "forex"],
+    ["XAU/USD", "forex"],
+    ["BTC/USD", "crypto"],
     ["USDCNH", "forex"],
     ["XAUUSD.FX", "forex"],
     ["IF2406.CFFEX", "futures"],
@@ -267,5 +276,17 @@ describe("downsampleDates", () => {
     const result = downsampleDates(dates);
     expect(result).toEqual(dates);
     expect(result).not.toBe(dates);
+  });
+});
+
+// Taiwan exchange suffixes share one market, including letter-ending ETF codes.
+describe("Taiwan asset classification", () => {
+  it.each(["2330.TW", "6488.TWO", "00400A.TW", " 2330.tw ", "6488.two"])(
+    "classifies %s as Taiwan equity", (symbol) => {
+      expect(classifyAssetClass(symbol)).toBe("taiwan_equity");
+    },
+  );
+  it.each(["2330.TWX", "6488.TWOX", "2330"])("does not overmatch %s", (symbol) => {
+    expect(classifyAssetClass(symbol)).toBe("other");
   });
 });

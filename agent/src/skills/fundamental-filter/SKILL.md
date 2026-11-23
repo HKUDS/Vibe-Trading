@@ -15,8 +15,8 @@ Filter stocks using fundamental financial data (PE/PB/ROE, etc.) to build value 
 |--------|-----------|--------|------------------|
 | A-shares | tushare `daily_basic` | `extra_fields` in config.json | pe, pb, pe_ttm, ps_ttm, dv_ttm, total_mv, circ_mv, roe |
 | A-shares | Tushare statements | `fundamental_fields` in config.json | income, balancesheet, cashflow, fina_indicator fields |
-| US stocks | yfinance `Ticker.info` | Direct API call | trailingPE, forwardPE, priceToBook, returnOnEquity, marketCap, dividendYield |
-| HK stocks | yfinance `Ticker.info` | Direct API call | trailingPE, priceToBook, returnOnEquity, marketCap |
+| US stocks | yfinance `Ticker.info` | Gateway-backed snapshot | trailingPE, forwardPE, priceToBook, returnOnEquity, marketCap, dividendYield |
+| HK stocks | yfinance `Ticker.info` | Gateway-backed snapshot | trailingPE, priceToBook, returnOnEquity, marketCap |
 
 ## Signal Logic
 
@@ -101,13 +101,13 @@ passes = (
 For HK/US stocks, fundamental data is not available as daily time-series via the backtest loader. Instead, use `yfinance` Ticker info for point-in-time screening:
 
 ```python
-import yfinance as yf
+from src.data_gateway.skill_sources import yahoo_ticker
 
 def screen_us_stocks(tickers, criteria):
     """Screen US/HK stocks by fundamental criteria."""
     passed = []
     for symbol in tickers:
-        info = yf.Ticker(symbol).info
+        info = yahoo_ticker(symbol).info
         pe = info.get("trailingPE")
         pb = info.get("priceToBook")
         roe = info.get("returnOnEquity")  # Decimal (e.g., 0.25 = 25%)

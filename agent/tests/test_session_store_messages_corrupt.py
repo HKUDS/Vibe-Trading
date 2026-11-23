@@ -70,3 +70,20 @@ def test_get_messages_skips_unexpected_keys_and_keeps_siblings(tmp_path: Path) -
 
     contents = [m.content for m in store.get_messages(sid)]
     assert contents == ["keep-before", "keep-after"]
+
+
+def test_full_and_bounded_reads_count_only_valid_messages(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    sid = "limit-regression"
+    path = _seed(store, sid)
+    with path.open("a", encoding="utf-8") as log:
+        for i in range(100):
+            log.write(json.dumps({"session_id": sid, "role": "user", "content": str(i)}) + "\n")
+        log.write("null\n")
+
+    expected = [str(i) for i in range(100)]
+    assert [m.content for m in store.get_messages(sid, None)] == ["keep-before", *expected]
+    assert [m.content for m in store.get_messages(sid)] == expected
+    assert [m.content for m in store.get_messages(sid, 1)] == ["99"]
+    assert store.get_messages(sid, 0) == []
+    assert store.get_messages(sid, -1) == []

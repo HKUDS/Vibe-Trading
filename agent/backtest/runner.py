@@ -19,7 +19,7 @@ import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
@@ -37,6 +37,7 @@ from backtest.loaders.registry import (
 )
 from backtest.loaders.base import (
     NoAvailableSourceError,
+    ohlc_price_policy,
     resample_bars,
     source_interval,
     validate_ohlc,
@@ -55,6 +56,9 @@ from backtest.engines._market_hooks import (  # noqa: F401  (re-exported)
     strip_local_prefix,
 )
 from backtest.rebalance_mask import RebalanceMask, validate_rebalance_mask
+
+if TYPE_CHECKING:
+    from backtest.frozen import FrozenBenchmarkInput
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +95,7 @@ class BacktestConfigSchema(BaseModel):
     interval: str = "1D"
     engine: str = "daily"
     position_adjustment: Literal["hold", "rebalance"] = "hold"
+    allow_nonpositive_prices: bool = Field(default=False, strict=True)
     intentional_signal_delay_bars: int = Field(default=0, ge=0, strict=True)
     rebalance_mask: RebalanceMask = None
     # Under "rebalance", a resize executes only once the held weight has
@@ -134,6 +139,12 @@ class BacktestConfigSchema(BaseModel):
         # under yfinance -- and the run still succeeded. A bare six-digit code
         # and Yahoo's ``.SS`` Shanghai spelling are mainland listings that no
         # routing rule names; the loaders and the benchmark resolve both.
+        if any(matched_market(c.strip()) == "jp_equity" for c in v):
+            raise ValueError("Japan market data is supported, but Japanese backtest execution rules are not implemented")
+        if any(matched_market(c.strip()) == "europe_equity" for c in v):
+            raise ValueError(
+                "European market data is supported, but European backtest execution rules are not implemented"
+            )
         unrecognised = [
             c for c in v
             if matched_market(c.strip()) is None
@@ -231,7 +242,17 @@ class BacktestConfigSchema(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def start_before_end(self) -> "BacktestConfigSchema":
+    def validate_run_configuration(self) -> "BacktestConfigSchema":
+        if self.engine == "daily" and source_interval(self.interval) != "1D":
+            restricted = [
+                code for code in self.codes
+                if matched_market(code.strip()) in {"kr_equity", "taiwan_equity", "vietnam_equity"}
+            ]
+            if restricted:
+                raise ValueError(
+                    f"intraday backtests are unsupported for {', '.join(restricted)}. "
+                    "Their execution rules use a daily price reference. Use interval='1D'."
+                )
         if self.rebalance_mask is not None and self.position_adjustment != "rebalance":
             raise ValueError(
                 "rebalance_mask requires position_adjustment='rebalance'"
@@ -885,6 +906,8 @@ _MARKET_TO_SOURCE = {
     "br_equity": "yahoo",
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
+    "taiwan_equity": "yahoo",
+    "europe_equity": "yahoo",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1590,16 +1613,15 @@ def main(run_dir: Path) -> None:
     # aligned with the data consumed by the engine. A source that prohibits
     # fallback keeps its own loader behind the snapshot: a declared benchmark
     # is usually outside ``codes``, but must still come from that same source.
-    if config.get("frozen_data_manifest"):
-        loader = _AutoLoader(data_map, name="local")
-    elif is_no_network_fallback_source(source):
-        loader = _AutoLoader(
-            data_map,
-            inner=loader,
-            name=str(getattr(loader, "name", None) or source),
-        )
-    else:
-        loader = _AutoLoader(data_map)
+    if not config.get("frozen_data_manifest"):
+        if is_no_network_fallback_source(source):
+            loader = _AutoLoader(
+                data_map,
+                inner=loader,
+                name=str(getattr(loader, "name", None) or source),
+            )
+        else:
+            loader = _AutoLoader(data_map)
 
     if engine_type == "options":
         from backtest.engines.options_portfolio import run_options_backtest
@@ -1799,6 +1821,13 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     # Detect dominant market type from codes
     markets = {_detect_market(c) for c in codes} if codes else set()
 
+    if "jp_equity" in markets:
+        raise ValueError("Japanese backtest execution rules are not implemented; market data is available")
+    if "europe_equity" in markets:
+        raise ValueError(
+            "European backtest execution rules are not implemented; market data is available"
+        )
+
     # The Hong Kong pool books in HKD. HKEX numbers its RMB and USD counters
     # in their own code ranges, and no source in the hk_equity chain but Yahoo
     # declares a currency, so the code decides before any engine prices them.
@@ -1852,6 +1881,12 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
         return VietnamEquityEngine(config)
+    # Taiwan equity routing — same reason as India, Korea and Vietnam: its
+    # effective source (``yahoo``) has no Wave-1 branch and would fall through
+    # to the default.
+    if "taiwan_equity" in markets:
+        from backtest.engines.taiwan_equity import TaiwanEquityEngine
+        return TaiwanEquityEngine(config)
     # Brazil (B3) routing — same reason as India: ``yahoo`` has no Wave-1
     # branch and would otherwise fall through to the crypto default.
     if "br_equity" in markets:
@@ -1947,17 +1982,18 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             instead of the symbol-pattern guess (``_group_codes_by_source``
             names the *head* of each chain, which lies whenever that head is an
             optional package that is not installed).
-        interval: Bar interval string.
+        interval: Requested bar interval, before conversion to a loader interval.
 
     Returns:
-        Merged ``code -> DataFrame`` map, keyed by bare symbol: a ``local:``
-        code is served only by the local loader and keyed without the prefix.
+        Merged ``code -> DataFrame`` map of usable bars, keyed by bare symbol:
+        a ``local:`` code is served only by the local loader.
     """
     merged = {}
     served_by: set[str] = set()
     caliber_stamps: dict[str, tuple[str, str]] = {}
     start_date = config.get("start_date", "")
     end_date = config.get("end_date", "")
+    fetch_interval = source_interval(interval)
 
     # A ``local:`` code names the user's own dataset. It is served by the local
     # loader or not at all: routing it by market would send ``local:AAPL.US``
@@ -1968,7 +2004,10 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         # Bridge raises here with its own hint.
         local_loader = get_loader_cls_with_fallback("local")()
         stripped = [strip_local_prefix(code) for code in local_codes]
-        local_result = local_loader.fetch(stripped, start_date, end_date, interval=interval)
+        local_result = _prepare_data_map(
+            local_loader.fetch(stripped, start_date, end_date, interval=fetch_interval),
+            interval,
+        )
         missing_local = [code for code in local_codes if strip_local_prefix(code) not in local_result]
         if missing_local:
             raise NoAvailableSourceError(
@@ -2002,19 +2041,18 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             start_date,
             end_date,
             fields=fields,
-            interval=interval,
+            interval=fetch_interval,
         )
-        market_result = _restore_original_codes(
-            result, market_codes, normalized_codes
-        )
+        restored = _restore_original_codes(result, market_codes, normalized_codes)
+        market_result = _prepare_data_map(restored, interval)
         if market_result:
             served_by.add(src_name)
             for code in market_result:
                 caliber_stamps[code] = (src_name, frame_caliber(market_result[code], src_name, market, code))
         missing = [code for code in market_codes if code not in market_result]
 
-        # Retry only missing symbols so a partial primary response does not
-        # silently shrink the requested universe or refetch successful data.
+        # Retry only symbols without usable bars. A returned key alone does
+        # not serve the symbol if validation or resampling removes every bar.
         for fb_name in FALLBACK_CHAINS.get(market, []):
             if not missing:
                 break
@@ -2025,9 +2063,10 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 continue
             fb_codes = _normalize_codes(missing, fb_name)
             fallback_result = fb_loader.fetch(
-                fb_codes, start_date, end_date, interval=interval
+                fb_codes, start_date, end_date, interval=fetch_interval
             )
-            mapped = _restore_original_codes(fallback_result, missing, fb_codes)
+            restored = _restore_original_codes(fallback_result, missing, fb_codes)
+            mapped = _prepare_data_map(restored, interval)
             if mapped:
                 market_result.update(mapped)
                 missing = [code for code in missing if code not in mapped]
@@ -2040,7 +2079,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 )
 
         if missing:
-            served = sorted(set(merged) - set(missing))
+            served = sorted(set(merged) | set(market_result))
             raise NoAvailableSourceError(
                 f"incomplete data for {market}; missing symbols: {missing}; "
                 f"served symbols: {served}"
@@ -2074,20 +2113,24 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     """
     config = copy.deepcopy(config)
     if config.get("frozen_data_manifest"):
-        from backtest.frozen import load_frozen_frames
+        from backtest.frozen import load_frozen_benchmark, load_frozen_frames
 
-        frames, manifest = load_frozen_frames(config["frozen_data_manifest"], config)
+        manifest_path = config["frozen_data_manifest"]
+        frames, manifest = load_frozen_frames(manifest_path, config)
+        reference = load_frozen_benchmark(manifest_path, manifest, config)
         return DataFetchResult(
             frames, list(frames), config.get("source", "auto"),
-            _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),
-            manifest.get("caliber_warning"),
+            _AutoLoader(frames, name="local", benchmark_input=reference),
+            manifest.get("sources", [config.get("source", "auto")]), manifest.get("caliber_warning"),
         )
+    with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
+        return _fetch_source_data_map(config)
+
+
+def _fetch_source_data_map(config: dict) -> DataFetchResult:
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
-    # Weekly and monthly bars are built from daily ones after the fetch, so
-    # every loader below is asked for daily bars (#1479).
     requested_interval = str(config.get("interval") or "1D")
-    interval = source_interval(requested_interval)
 
     # ``local:`` picks the loader; the instrument is the bare symbol. Everything
     # downstream (engine, signals, artifacts, run card) sees the bare symbol, so
@@ -2104,7 +2147,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
 
     caliber_stamps: dict[str, tuple[str, str]] = {}
     if source == "auto":
-        data_map = _fetch_auto(codes, config, interval)
+        data_map = _fetch_auto(codes, config, requested_interval)
         codes = bare
         loader: Any = _AutoLoader(data_map)
         # Prefer the loaders that actually served rows; the symbol-pattern guess
@@ -2115,6 +2158,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             str(name) for name in recorded or [] if str(name).strip()
         ] or sorted(_group_codes_by_source(codes))
     else:
+        fetch_interval = source_interval(requested_interval)
         codes = _normalize_codes(codes, source)
         primary_source = source
         loader = _get_loader(source)()
@@ -2130,12 +2174,15 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 source,
                 served_by,
             )
-        data_map = loader.fetch(
-            codes,
-            config.get("start_date", ""),
-            config.get("end_date", ""),
-            fields=config.get("extra_fields") or None,
-            interval=interval,
+        data_map = _prepare_data_map(
+            loader.fetch(
+                codes,
+                config.get("start_date", ""),
+                config.get("end_date", ""),
+                fields=config.get("extra_fields") or None,
+                interval=fetch_interval,
+            ),
+            requested_interval,
         )
         # The local loader keys ``local:AAPL.US`` by ``AAPL.US``. Compare and
         # continue with the bare symbol, or a served symbol is counted as
@@ -2191,11 +2238,12 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                         fallback_codes,
                         config.get("start_date", ""),
                         config.get("end_date", ""),
-                        interval=interval,
+                        interval=fetch_interval,
                     )
-                    mapped = _restore_original_codes(
+                    restored = _restore_original_codes(
                         fallback_result, market_missing, fallback_codes
                     )
+                    mapped = _prepare_data_map(restored, requested_interval)
                     if mapped:
                         data_map.update(mapped)
                         market_missing = [code for code in market_missing if code not in mapped]
@@ -2223,13 +2271,6 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 f"served symbols: {sorted(data_map)}"
             )
 
-    data_map = {
-        code: resample_bars(frame, requested_interval)
-        for code, frame in _sanitize_data_map(data_map).items()
-    }
-    caliber_stamps = {
-        code: stamp for code, stamp in caliber_stamps.items() if code in data_map
-    }
     # Both warnings can apply at once (a tencent+baostock basket mixes calibers
     # *and* serves an additive one), and each says something the other does not,
     # so they are reported together rather than one shadowing the other.
@@ -2256,23 +2297,18 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     )
 
 
+def _prepare_data_map(data_map: dict, interval: str) -> dict:
+    """Return the symbols that have bars left at the requested interval."""
+    prepared = {}
+    for code, frame in _sanitize_data_map(data_map).items():
+        bars = resample_bars(frame, interval)
+        if not bars.empty:
+            prepared[code] = bars
+    return prepared
+
+
 def _sanitize_data_map(data_map: dict) -> dict:
-    """Drop structurally-invalid OHLC bars from every fetched frame.
-
-    Each loader only drops NaN rows, so a bar that violates the OHLC
-    invariants (``high < low``, a non-positive price, or a high/low that fails
-    to bracket open/close) can still reach the backtest and surface as NaN/inf
-    metrics. Applying :func:`validate_ohlc` here — the single point every
-    fetched map converges through — guards every source uniformly (``auto``,
-    single-source, runtime fallback, and any future loader), so the per-loader
-    checks no longer have to be added one at a time.
-
-    Args:
-        data_map: ``code -> DataFrame`` map as returned by a loader fetch.
-
-    Returns:
-        The same mapping with each frame's invalid bars removed.
-    """
+    """Apply the same OHLC validation to all strategy and benchmark feeds."""
     return {code: validate_ohlc(frame) for code, frame in data_map.items()}
 
 
@@ -2289,6 +2325,8 @@ class _AutoLoader:
         data_map: dict,
         inner: Any = None,
         name: str | None = None,
+        *,
+        benchmark_input: "FrozenBenchmarkInput | None" = None,
     ) -> None:
         """Wrap a fetched snapshot.
 
@@ -2298,9 +2336,11 @@ class _AutoLoader:
                 the snapshot does not hold. ``None`` serves the snapshot alone.
             name: Source name of ``inner``. When ``None`` the adapter exposes no
                 ``name``: a bare snapshot does not stand for any one source.
+            benchmark_input: Optional separate reference, never returned by fetch.
         """
         self._data = data_map
         self._inner = inner
+        self.benchmark_input = benchmark_input
         if name is not None:
             self.name = name
 

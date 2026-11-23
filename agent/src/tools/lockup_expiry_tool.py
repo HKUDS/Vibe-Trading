@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from backtest.loaders import eastmoney_client
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -336,6 +337,7 @@ class LockupExpiryTool(BaseTool):
     }
     repeatable = True
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Execute the lockup-expiry query and return a JSON envelope."""
         return get_lockup_expiry(

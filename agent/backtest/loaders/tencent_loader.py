@@ -1,6 +1,6 @@
 """Tencent Finance loader: free, no-auth A-share / HK data via HTTP API.
 
-Uses Tencent's ifzq.gtimg.cn API which is not blocked by eastmoney's CDN.
+Uses Tencent's ifzq.gtimg.cn API; availability depends on the local network.
 Covers: A-shares (SH/SZ) and HK equities.  No API token required.
 
 API format:
@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Dict, List, Optional
 import ssl
+import urllib.error
 import urllib.request
 
 import certifi
@@ -24,6 +25,7 @@ from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
+from backtest.loaders.acquisition import remaining_timeout, source_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,8 @@ _RAW_BASE_URL = "https://web.ifzq.gtimg.cn/appstock/app/kline/kline"
 # clamp is honoured).  Multi-year windows therefore paginate BACKWARD: see
 # `_fetch_one`.
 _PAGE_SIZE = 500
+# Earlier cached windows may contain only the newest page for non-ISO bounds.
+_CACHE_REVISION = "iso-pagination-v1"
 # 12 pages * 500 bars = 6000 bars ≈ 24 trading years; a hard cap also guards
 # against pathological loop behavior if the API ever stops advancing.
 _MAX_PAGES = 12
@@ -96,8 +100,13 @@ class DataLoader:
             )
             return {}
 
+        self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
+            until = source_deadline.get()
+            if until is not None and time.monotonic() >= until:
+                self.fetch_errors[code] = "request_deadline"
+                continue
             try:
                 df = cached_loader_fetch(
                     source=self.name,
@@ -106,6 +115,7 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
+                    source_revision=_CACHE_REVISION,
                     fetch=lambda code=code: self._fetch_one(code, start_date, end_date),
                 )
                 if df is not None and not df.empty and _is_a_share(code) and not _is_etf_listed(code):
@@ -121,6 +131,7 @@ class DataLoader:
                             start_date=start_date,
                             end_date=end_date,
                             fields=["raw"],
+                            source_revision=_CACHE_REVISION,
                             fetch=lambda code=code: self._fetch_one(
                                 code, start_date, end_date, forward_adjusted=False
                             ),
@@ -142,6 +153,9 @@ class DataLoader:
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:
+                from .base import acquisition_error_kind
+
+                self.fetch_errors[code] = acquisition_error_kind(exc)
                 logger.warning("tencent failed for %s: %s", code, exc)
         return result
 
@@ -176,8 +190,9 @@ class DataLoader:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://web.ifzq.gtimg.cn/",
         })
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
+        with urllib.request.urlopen(req, timeout=remaining_timeout(15), context=_SSL_CONTEXT) as resp:
             raw = resp.read().decode("utf-8")
+        remaining_timeout(15)
 
         data = json.loads(raw)
         # Response: {"code":0,"data":{"sh601595":{"day":[["2026-06-01","21.32",...], ...]}}}
@@ -247,6 +262,14 @@ class DataLoader:
         A window this loader cannot serve in full raises instead of returning a
         quietly short series, matching the other bounded-window loaders.
         """
+        # Normalize the window bounds to zero-padded ISO before any URL build or
+        # cursor comparison. A caller may pass a pandas-parseable but non-ISO
+        # date (e.g. "2023-1-5"); the pagination stop test compares the cursor
+        # as a string, and a lexicographic "<" against "2023-1-5" would decide a
+        # "2023-05-11" cursor had already reached the window start, silently
+        # truncating the series to its most recent page.
+        start_date = pd.Timestamp(start_date).strftime("%Y-%m-%d")
+        end_date = pd.Timestamp(end_date).strftime("%Y-%m-%d")
         chunks: List[pd.DataFrame] = []
         cursor_end = end_date
         seen_ends: set[str] = set()
@@ -262,20 +285,29 @@ class DataLoader:
             page: Optional[pd.DataFrame] = None
             last_error: Optional[Exception] = None
             for attempt in range(_PAGE_RETRIES):
+                remaining_timeout(15)
                 try:
                     page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                     last_error = None
                     break
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     last_error = exc
+                    # Retrying an unchanged rejected request cannot repair its
+                    # permissions or a WAF/unsupported-endpoint response. Leave
+                    # the caller's deadline available for a compatible source.
+                    if isinstance(exc, urllib.error.HTTPError) and (
+                        400 <= exc.code < 500 and exc.code not in {408, 429}
+                        or exc.code in {501, 505}
+                    ):
+                        break
                     if attempt < _PAGE_RETRIES - 1:
-                        time.sleep(_PAGE_BACKOFF * (2 ** attempt))
+                        time.sleep(remaining_timeout(_PAGE_BACKOFF * (2 ** attempt)))
             if last_error is not None:
                 # Partial pages already collected would read as a complete
                 # history downstream; a failed page is an error, not a series.
                 raise ValueError(
                     f"incomplete tencent history: {code} page ending at "
-                    f"{cursor_end} failed after {_PAGE_RETRIES} attempts: "
+                    f"{cursor_end} failed after {attempt + 1} attempts: "
                     f"{last_error}"
                 ) from last_error
 
@@ -286,7 +318,8 @@ class DataLoader:
                 # history, or a throttled reply. One re-request decides — a
                 # transient glitch returns data, a genuine boundary stays
                 # empty and terminates the walk.
-                time.sleep(_PAGE_BACKOFF)
+                time.sleep(remaining_timeout(_PAGE_BACKOFF))
+                remaining_timeout(15)
                 try:
                     page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                 except Exception as exc:  # noqa: BLE001 - transient network jitter

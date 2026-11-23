@@ -181,6 +181,7 @@ def render_pdf_reportlab(
     shadow_pnl = sections["shadow_pnl"]
     real_pnl = sections["real_pnl"]
     delta_pnl = sections["delta_pnl"]
+    comparison_available = sections["comparison_available"]
 
     def market_label(code: str) -> str:
         return market_labels.get(code, code)
@@ -193,14 +194,22 @@ def render_pdf_reportlab(
     story.append(para(f"{profile.shadow_id} | {profile.created_at}", muted))
     story.append(Spacer(1, 3 * mm))
     story.append(para("Delta PnL", muted))
-    if delta_pnl is not None:
+    if comparison_available:
         story.append(Paragraph(_colored(delta_pnl, _signed(delta_pnl)), big))
         story.append(para(f"Shadow {shadow_pnl:.2f} | Real {real_pnl:.2f}", muted))
-    else:
+    elif shadow_pnl is None:
         story.append(
             para(
                 "unavailable - the shadow backtest produced no usable metrics, "
                 "so no comparison is shown",
+                muted,
+            )
+        )
+    else:
+        story.append(
+            para(
+                "unavailable - no usable journal was available, so your real "
+                "PnL is unknown and no comparison is shown",
                 muted,
             )
         )
@@ -300,58 +309,79 @@ def render_pdf_reportlab(
 
     # 5. Delta attribution
     story.append(Paragraph("5. You vs Shadow - Delta Attribution", h2))
-    if shadow_pnl is not None:
+    if comparison_available:
         lede = (
             f"Shadow PnL {_colored(shadow_pnl, _signed(shadow_pnl))}, "
             f"your real PnL {_colored(real_pnl, _signed(real_pnl))}, "
             f"delta {_colored(delta_pnl, _signed(delta_pnl))}."
         )
         story.append(Paragraph(lede, body))
-    else:
+        img = chart_image("attribution_waterfall")
+        if img is not None:
+            story.append(img)
+
+        def attr_row(label: str, value: float) -> list[Any]:
+            return [label, Paragraph(_colored(value, _signed(value)), cell)]
+
         story.append(
-            para(
-                "The shadow backtest did not produce usable metrics, so Shadow PnL, "
-                "delta, and the attribution below are not computed for this run.",
+            make_table(
+                [],
+                [
+                    attr_row("Noise trades", attribution.noise_trades_pnl),
+                    attr_row("Early exit (winners)", attribution.early_exit_pnl),
+                    attr_row("Late exit (losers)", attribution.late_exit_pnl),
+                    attr_row("Overtrading", attribution.overtrading_pnl),
+                    attr_row(
+                        "Missed signals (residual)",
+                        attribution.missed_signals_pnl,
+                    ),
+                ],
+                widths=[0.5, 0.5],
+            )
+        )
+        if attribution.excluded_currencies:
+            excluded = ", ".join(
+                f"{count} in {currency}"
+                for currency, count in attribution.excluded_currencies.items()
+            )
+            story.append(
+                para(
+                    "Real PnL above covers the shadow pool's settlement currency only. "
+                    "There is no FX translation layer, so roundtrips settling elsewhere "
+                    f"are excluded rather than summed against it: {excluded}.",
+                    muted,
+                )
+            )
+    elif shadow_pnl is not None:
+        story.append(
+            Paragraph(
+                f"The shadow PnL is {_colored(shadow_pnl, _signed(shadow_pnl))}, "
+                "but no usable journal was available (none supplied, unreadable, "
+                "or no closed roundtrips), so your real PnL, delta, and attribution "
+                "were not computed for this run.",
                 muted,
             )
         )
-    img = chart_image("attribution_waterfall")
-    if img is not None:
-        story.append(img)
-
-    def attr_row(label: str, value: float) -> list[Any]:
-        return [label, Paragraph(_colored(value, _signed(value)), cell)]
-
-    story.append(
-        make_table(
-            [],
-            [
-                attr_row("Noise trades", attribution.noise_trades_pnl),
-                attr_row("Early exit (winners)", attribution.early_exit_pnl),
-                attr_row("Late exit (losers)", attribution.late_exit_pnl),
-                attr_row("Overtrading", attribution.overtrading_pnl),
-                attr_row("Missed signals (residual)", attribution.missed_signals_pnl),
-            ],
-            widths=[0.5, 0.5],
-        )
-    )
-    if attribution.excluded_currencies:
-        excluded = ", ".join(
-            f"{count} in {currency}"
-            for currency, count in attribution.excluded_currencies.items()
-        )
+    else:
         story.append(
             para(
-                "Real PnL above covers the shadow pool's settlement currency only. "
-                "There is no FX translation layer, so roundtrips settling elsewhere "
-                f"are excluded rather than summed against it: {excluded}.",
+                "The shadow backtest did not produce usable metrics, so shadow PnL, "
+                "real PnL, delta, and attribution were not computed for this run.",
                 muted,
             )
         )
 
     # 6. Counterfactual top 5
     story.append(Paragraph("6. Counterfactual Top 5", h2))
-    if attribution.counterfactual_trades:
+    if not comparison_available:
+        story.append(
+            para(
+                "Counterfactual trades were not computed for this run, so there is "
+                "no rule-adherence conclusion to report.",
+                muted,
+            )
+        )
+    elif attribution.counterfactual_trades:
         cf_rows = [
             [
                 str(i),

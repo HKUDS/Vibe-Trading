@@ -27,6 +27,8 @@ export TUSHARE_TOKEN=your_token
 - 根据接口文档，使用python代码获取数据。（如**股票列表**接口）
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
 import os
 import tushare as ts
 
@@ -34,7 +36,7 @@ import tushare as ts
 token = os.getenv('TUSHARE_TOKEN') or ts.get_token()
 
 # 初始化pro接口实例
-pro = ts.pro_api(token)
+pro = tushare_client(token)
 
 # 查询数据接口（*股票列表*），获取上市交易的股票列表
 df = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')

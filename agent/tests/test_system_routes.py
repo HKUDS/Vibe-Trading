@@ -281,3 +281,14 @@ def test_update_check_failure_is_not_up_to_date(local_client, monkeypatch):
     response = local_client.get("/api/system/update")
     assert response.status_code == 503
     assert "private" not in response.text
+
+
+@pytest.mark.parametrize("payload", [None, [], {"info": None}, {"info": {"version": 99}}])
+def test_update_rejects_malformed_upstream_payload(local_client, monkeypatch, payload):
+    from src import update
+
+    response = httpx.Response(200, json=payload, request=httpx.Request("GET", update.PYPI_JSON_URL))
+    monkeypatch.setattr(update.requests, "get", lambda *a, **k: response)
+    result = local_client.get("/api/system/update")
+    assert result.status_code == 503
+    assert result.json() == {"detail": "Could not check for updates. Try again later."}

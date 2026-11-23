@@ -43,8 +43,10 @@ adj_factor | float | Y | 复权因子
 **接口使用**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 df = pro.fund_adj(ts_code='513100.SH', start_date='20190101', end_date='20190926')
 

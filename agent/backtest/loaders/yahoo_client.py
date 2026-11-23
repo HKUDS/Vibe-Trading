@@ -20,6 +20,8 @@ Symbol convention (Vibe-Trading -> Yahoo):
     ``.TO``/``.V`` suffix verbatim)
   * Vietnam ``VIC.VN`` -> unchanged (Yahoo carries the ``.VN`` suffix
     verbatim; HOSE listings only)
+  * Taiwan ``2330.TW`` / ``6488.TWO`` -> unchanged (Yahoo carries the
+    ``.TW``/``.TWO`` suffix verbatim)
   * Anything else is passed through unchanged (e.g. ``BTC-USD``, ``^GSPC``).
 
 This module is provider-specific glue only; it returns plain Python
@@ -84,6 +86,8 @@ def map_symbol(symbol: str) -> str:
     """
     cleaned = symbol.strip()
     upper = cleaned.upper()
+    if upper.endswith(".SH") and len(upper) == 9 and upper[:6].isdigit():
+        return upper[:6] + ".SS"
     if upper.endswith(".US"):
         # US class shares are hyphenated on Yahoo (BRK-B): the dot form
         # returns an empty chart (live-verified), so map BRK.B.US -> BRK-B.

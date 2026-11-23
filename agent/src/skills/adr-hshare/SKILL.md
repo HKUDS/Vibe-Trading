@@ -159,19 +159,19 @@ else:
 ## Data Access
 
 ```python
-import yfinance as yf
+from src.data_gateway.skill_sources import yahoo_download
 
 # Fetch ADR and HK prices simultaneously
-baba_adr = yf.download("BABA", start="2025-01-01", end="2026-03-30", progress=False)
-baba_hk = yf.download("9988.HK", start="2025-01-01", end="2026-03-30", progress=False)
+baba_adr = yahoo_download("BABA", start="2025-01-01", end="2026-03-30", progress=False)
+baba_hk = yahoo_download("9988.HK", start="2025-01-01", end="2026-03-30", progress=False)
 
 # For A+H pairs
-petrochina_a = yf.download("601857.SS", start="2025-01-01", end="2026-03-30", progress=False)
-petrochina_h = yf.download("0857.HK", start="2025-01-01", end="2026-03-30", progress=False)
+petrochina_a = yahoo_download("601857.SS", start="2025-01-01", end="2026-03-30", progress=False)
+petrochina_h = yahoo_download("0857.HK", start="2025-01-01", end="2026-03-30", progress=False)
 
 # FX rates for premium calculation
-cny = yf.download("CNY=X", start="2025-01-01", end="2026-03-30", progress=False)  # USD/CNY
-hkd = yf.download("HKD=X", start="2025-01-01", end="2026-03-30", progress=False)  # USD/HKD
+cny = yahoo_download("CNY=X", start="2025-01-01", end="2026-03-30", progress=False)  # USD/CNY
+hkd = yahoo_download("HKD=X", start="2025-01-01", end="2026-03-30", progress=False)  # USD/HKD
 
 # AH Premium Index (HSAHP)
 # Not directly on yfinance; use Hang Seng website or Tushare

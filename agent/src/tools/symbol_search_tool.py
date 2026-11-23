@@ -30,6 +30,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from backtest.loaders import eastmoney_client, sec_edgar_client, yahoo_client
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.market_data import FIAT_CODES, canonical_fx_pair
 
@@ -155,6 +156,7 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "US": "us",
     "NS": "in",
     "BO": "in",
+    "T": "jp",
     "KS": "kr",
     "KQ": "kr",
     "TO": "ca",
@@ -163,6 +165,14 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "SA": "br",
     "L": "uk",
     "VN": "vn",
+    "TW": "tw",
+    "TWO": "tw",
+    "DE": "europe",
+    "PA": "europe",
+    "AS": "europe",
+    "MI": "europe",
+    "SW": "europe",
+    "WA": "europe",
 }
 
 # Quote types Yahoo lists under a plain US ticker (``QQQ``, ``SPY``, ``VFIAX``).
@@ -238,6 +248,11 @@ class SymbolSearchTool(BaseTool):
                     "English both accepted."
                 ),
             },
+            "refresh": {
+                "type": "boolean",
+                "description": "Use the gateway-backed resolver instead of reusing a settled session identity; use for listing/issuer verification or additional metadata. Normal gateway cache/freshness policy still applies.",
+                "default": False,
+            },
             "limit": {
                 "type": "integer",
                 "description": (
@@ -250,7 +265,9 @@ class SymbolSearchTool(BaseTool):
         "required": ["query"],
     }
     repeatable = True
+    reuse_session_identity = True
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Fan out across providers and return a merged candidate envelope.
 
@@ -271,6 +288,11 @@ class SymbolSearchTool(BaseTool):
             return _error("'query' is required and must be a non-empty string")
 
         limit = _clamp_limit(kwargs.get("limit", _DEFAULT_LIMIT))
+        # .US is our venue suffix, not a Yahoo/Eastmoney search spelling.
+        # Keep the asserted identity in the result, and require an observed
+        # exact match after converting the provider query (never invent a hit).
+        explicit_us = query.upper() if re.fullmatch(r"[A-Z][A-Z0-9&.\-]{0,19}\.US", query, re.I) else None
+        provider_query = explicit_us[:-3].replace(".", "-") if explicit_us else query
 
         candidates: List[Dict[str, Any]] = []
         sources: Dict[str, str] = {}
@@ -302,7 +324,8 @@ class SymbolSearchTool(BaseTool):
                 sources[public_source] = public_status or "ok"
                 candidates.extend(public_hits)
 
-        em_hits, sources["eastmoney"] = _search_eastmoney(query)
+        em_query = provider_query.replace("-", "_") if explicit_us else provider_query
+        em_hits, sources["eastmoney"] = _search_eastmoney(em_query)
         candidates.extend(em_hits)
 
         # An explicit FX pair searches Yahoo by its canonical ``XXXYYY=X``
@@ -311,7 +334,7 @@ class SymbolSearchTool(BaseTool):
         # Yahoo (the earlier "GBP/USD -> 0 candidates" failure) never turns a
         # canonical pair into nothing.
         fx_pair = _canonical_fx_pair(query)
-        yh_hits, sources["yahoo"] = _search_yahoo(fx_pair or query)
+        yh_hits, sources["yahoo"] = _search_yahoo(fx_pair or provider_query)
         candidates.extend(yh_hits)
         if fx_pair is not None:
             pair_no_x = fx_pair[:-2]
@@ -384,6 +407,13 @@ class SymbolSearchTool(BaseTool):
                 c
                 for c in candidates
                 if _is_canadian_symbol(str(c.get("symbol") or ""))
+            ]
+
+        if explicit_us is not None:
+            spellings = {explicit_us, f"{provider_query}.US"}
+            candidates = [
+                {**candidate, "symbol": explicit_us} for candidate in candidates
+                if str(candidate.get("symbol") or "").upper() in spellings
             ]
 
         merged = _merge_candidates(candidates)
@@ -749,6 +779,8 @@ def _eastmoney_candidate(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     code = str(row.get("Code") or "").strip()
     if isinstance(quote_id, str) and "." in quote_id:
         market, _, qid_code = quote_id.partition(".")
+        if _EASTMONEY_SUFFIX_BY_MARKET.get(market) == "US" and code and code.upper() != qid_code.strip().upper():
+            return None
         code = code or qid_code.strip()
     else:
         market = str(row.get("MktNum") or "").strip()
@@ -792,6 +824,8 @@ def _format_symbol(code: str, suffix: str) -> Optional[str]:
         return None
     if suffix == "HK":
         return f"{code.zfill(5)}.HK"
+    if suffix == "US":
+        code = code.replace("_", "-")  # Eastmoney BRK_B and Yahoo BRK-B name one listing.
     return f"{code}.{suffix}"
 
 
@@ -909,7 +943,6 @@ def _from_yahoo_symbol(raw_symbol: str, quote: Dict[str, Any]) -> tuple[str, str
     if (
         quote_type in _US_LISTED_QUOTE_TYPES
         and "." not in raw_symbol
-        and "-" not in raw_symbol
         and (not exchange or exchange in _US_YAHOO_EXCHANGES)
     ):
         # ETFs and mutual funds are US listings just like equities: Yahoo

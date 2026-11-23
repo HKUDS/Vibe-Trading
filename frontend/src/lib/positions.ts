@@ -12,8 +12,11 @@ export type AssetClass =
   | "ar_equity"
   | "br_equity"
   | "uk_equity"
+  | "taiwan_equity"
   | "vietnam_equity"
+  | "europe_equity"
   | "kr_equity"
+  | "jp_equity"
   | "india_equity"
   | "crypto"
   | "futures"
@@ -49,7 +52,16 @@ const EQUITY_SUFFIX_MAP: Record<string, AssetClass> = {
   BA: "ar_equity",
   SA: "br_equity",
   L: "uk_equity",
+  TW: "taiwan_equity",
+  TWO: "taiwan_equity",
   VN: "vietnam_equity",
+  DE: "europe_equity",
+  PA: "europe_equity",
+  AS: "europe_equity",
+  MI: "europe_equity",
+  SW: "europe_equity",
+  WA: "europe_equity",
+  T: "jp_equity",
   KS: "kr_equity",
   KQ: "kr_equity",
   NS: "india_equity",
@@ -143,6 +155,8 @@ export function classifyAssetClass(symbol: string): AssetClass {
   if (upper.endsWith("-PERP")) return "crypto";
   const hyphen = upper.lastIndexOf("-");
   if (hyphen >= 0 && CRYPTO_QUOTE_SUFFIXES.has(upper.slice(hyphen + 1))) return "crypto";
+  if (/^(BTC|ETH|BNB|SOL|ADA|DOGE)\/USD$/.test(upper)) return "crypto";
+  if (/^[A-Z]{3}\/[A-Z]{3}$/.test(upper)) return "forex";
   const slash = upper.lastIndexOf("/");
   if (slash >= 0 && CRYPTO_QUOTE_SUFFIXES.has(upper.slice(slash + 1))) return "crypto";
 

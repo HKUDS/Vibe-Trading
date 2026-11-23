@@ -23,6 +23,9 @@ Source facts (verified against api.wallex.ir live probes, 2026-08-26):
 
 from __future__ import annotations
 
+from src.data_gateway.reads import availability_probe
+from backtest.loaders.acquisition import remaining_timeout
+
 import logging
 import time
 from typing import Dict, List, Optional
@@ -98,6 +101,7 @@ class DataLoader:
         """No credentials required for public candles."""
         pass
 
+    @availability_probe
     def is_available(self) -> bool:
         """Probe the public endpoint with a short 1D request."""
         try:
@@ -110,7 +114,7 @@ class DataLoader:
                     "from": now - 2 * 86400,
                     "to": now,
                 },
-                timeout=_WALLEX_PROBE_TIMEOUT_S,
+                timeout=remaining_timeout(_WALLEX_PROBE_TIMEOUT_S),
             )
             if resp.status_code != 200:
                 logger.warning("Wallex probe HTTP %s", resp.status_code)

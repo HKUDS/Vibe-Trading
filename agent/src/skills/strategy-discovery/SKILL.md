@@ -12,7 +12,7 @@ Strategy Discovery is the single entry point for two questions: **what strategie
 
 It supersedes the earlier closed-registry attempt. That design attached boolean scenario tags (works in bear markets: yes/no) to a curated list. This skill replaces tags with **per-regime evidence rows**: every claim that a strategy works in a regime must come from a computed, reproducible backtest stored as evidence, never from curation or inference.
 
-The three query tools are read-only: they never register, mutate, or delete strategies. To add or change strategies, use the `strategy-dev-manager` and `alpha-zoo` workflows — Strategy Discovery only reports what those workflows have produced. The fourth tool, `refresh_strategy_evidence`, writes only the disposable cache: it rebuilds ONLY the disposable evidence cache from local backtest run artifacts (see Populating & Refreshing Evidence and Composition Guarantee).
+The three query tools are read-only: they never register, mutate, or delete strategies. To add or change strategies, use the `strategy-dev-manager` and `alpha-zoo` workflows — Strategy Discovery only reports what those workflows have produced. The fifth tool, `refresh_strategy_evidence`, writes only the disposable cache, while `adapt_strategy` writes a new SDM child and run binding (see Description-driven adaptation).
 
 ## When to Use
 
@@ -22,6 +22,7 @@ Decision tree for routing user requests:
 - User asks **which strategy fits a regime or threshold** ("what works in bear markets?", "anything with Sharpe above 1?") → `query_strategies(regime=..., min_sharpe=..., ...)`
 - User asks for **the evidence behind one specific strategy** → `get_strategy_evidence(strategy_id=..., regime=...)`
 - User asks to **populate or refresh the evidence cache** ("turn my backtest runs into evidence", "the evidence is stale, refresh it") → `refresh_strategy_evidence(manifest_path=...)` — this rebuilds the disposable cache from run artifacts; it is NOT strategy creation or registration
+- User asks to **adapt a registered strategy** to a new universe, name, or sizing while keeping its signal fixed → `adapt_strategy(...)`, then load `strategy-generate`, write and backtest the child in the bound `run_dir`, and call `refresh_strategy_evidence(..., scope="strategies")`
 - User asks to **create, backtest, or register** a strategy → this is NOT this skill; route to `strategy-generate` / `strategy-dev-manager` / `alpha-zoo`
 
 The access path is the three read tools (`list_strategies`, `query_strategies`, `get_strategy_evidence`) plus one cache-refresh tool (`refresh_strategy_evidence`), available through the agent registry and the MCP server under the same names. CLI: `vibe-trading strategy-evidence refresh --manifest <path> [--scope strategies]` runs the same refresh as the tool. `vibe-trading strategy-evidence adapt --strategy-id sdm:<id> --name <child> --universe <description> --config <json-path>` prepares an adaptation; queries stay with the agent tools. Do not invent flags or subcommands beyond that.
@@ -67,7 +68,7 @@ Returns the per-regime evidence rows: trade count, coverage window, Sharpe, cost
 
 ### refresh_strategy_evidence
 
-Rebuild the disposable evidence cache from local backtest run artifacts. This is the surface's only write; it touches only the facade-owned cache (see Composition Guarantee).
+Rebuild the disposable evidence cache from local backtest run artifacts. This writes only the facade-owned cache; `adapt_strategy` is the other write. `scope=all` (the default) replaces the whole cache. `scope=strategies` replaces only successfully refreshed named strategies and should be used after adaptation (see Composition Guarantee).
 
 | Parameter | Type | Default | Meaning |
 |-----------|------|---------|---------|

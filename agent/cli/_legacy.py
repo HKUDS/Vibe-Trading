@@ -2877,13 +2877,23 @@ def cmd_swarm_show(run_id: str) -> None:
 
 def cmd_swarm_cancel(run_id: str) -> None:
     """Cancel a swarm run."""
-    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.runtime import SwarmRuntime, cancel_indexed_run
     from src.swarm.store import SwarmStore
 
     store = SwarmStore(base_dir=SWARM_DIR)
     runtime = SwarmRuntime(store=store)
 
-    if runtime.cancel_run(run_id):
+    # A run this process's own SwarmRuntime started is cancelled directly.
+    # One an agent tool call started that kept running in the background
+    # after its wait budget elapsed (src/tools/swarm_tool.py) is only
+    # reachable through the process-wide active-run index -- a fresh
+    # SwarmRuntime instance never saw it start. Mirrors the fallback
+    # src/api/swarm_routes.py's cancel endpoint already uses.
+    # Neither reaches a run owned by a *different* process: the index is
+    # process-local. A separate `--swarm-cancel` process therefore falls
+    # back to a durable marker in the run dir (store.request_cancel);
+    # the owning runtime polls for it between layers.
+    if runtime.cancel_run(run_id) or cancel_indexed_run(run_id) or store.request_cancel(run_id):
         console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")
     else:
         console.print(f"[red]Run {run_id} not found or already finished[/red]")
@@ -2912,7 +2922,9 @@ def cmd_sessions() -> None:
     table.add_column("Updated", width=20)
 
     for s in sessions:
-        messages = store.get_messages(s.session_id)
+        # The default limit=100 is for building chat history, not counting;
+        # this column is the total message count, so it needs every message.
+        messages = store.get_messages(s.session_id, limit=None)
         sc = "green" if s.status.value == "active" else "dim"
         table.add_row(
             s.session_id,
@@ -5525,6 +5537,9 @@ def _build_parser() -> argparse.ArgumentParser:
     data_parser = subparsers.add_parser("data", help="Show research data partner settings")
     data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
     data_subparsers.add_parser("status", help="Show selected Gildata features")
+    from src.data_gateway.__main__ import add_history_parser, add_scan_parser
+    add_history_parser(data_subparsers)
+    add_scan_parser(data_subparsers)
     channels_parser = subparsers.add_parser("channels", help="Manage IM channel adapters")
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
     channels_status = channels_subparsers.add_parser("status", help="Show IM channel status")
@@ -6447,6 +6462,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "channels":
         return _coerce_exit_code(_dispatch_channels(args))
     if args.command == "data":
+        if args.data_command == "scan":
+            from src.data_gateway.__main__ import run_scan
+            return run_scan(args)
+        if args.data_command == "history":
+            from src.data_gateway.__main__ import run_history
+            try:
+                run_history(args)
+                return 0
+            except SystemExit as exc:
+                return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE_ERROR
         return _coerce_exit_code(_dispatch_data(args))
     if args.command == "run":
         return _handle_prompt_command(

@@ -4,6 +4,7 @@ import asyncio
 import json
 import mimetypes
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -735,6 +736,20 @@ class DingTalkChannel(BaseChannel):
         except Exception:
             self.logger.exception("Error publishing message")
 
+    @staticmethod
+    def _write_unique_file(download_dir: Path, stem: str, ext: str, data: bytes) -> Path:
+        """Write ``data`` under a name guaranteed not to collide with a sibling.
+
+        Exclusive creation (not a same-named overwrite) is what actually
+        prevents one download from clobbering an earlier one from the same
+        sender -- time plus a truncated filename is not unique on its own.
+        """
+        with tempfile.NamedTemporaryFile(
+            dir=download_dir, prefix=f"{stem[:32] or 'file'}_", suffix=ext, delete=False
+        ) as out:
+            out.write(data)
+            return Path(out.name)
+
     async def _download_dingtalk_file(
         self,
         download_code: str,
@@ -779,8 +794,13 @@ class DingTalkChannel(BaseChannel):
             # the whole intended path) would write outside download_dir.
             download_dir = get_media_dir("dingtalk") / sender_id
             download_dir.mkdir(parents=True, exist_ok=True)
-            file_path = download_dir / safe_filename(filename)
-            await asyncio.to_thread(file_path.write_bytes, file_resp.content)
+            safe_name = safe_filename(filename)
+            stem, ext = os.path.splitext(safe_name)
+            # Picture messages all arrive with the same literal "image.jpg",
+            # and even a distinct attachment name can repeat across messages.
+            # Exclusive creation (not a same-named write) keeps one image
+            # from silently overwriting an earlier one from the same sender.
+            file_path = await asyncio.to_thread(self._write_unique_file, download_dir, stem, ext, file_resp.content)
             self.logger.info("file saved: %s", file_path)
             return str(file_path)
         except Exception:

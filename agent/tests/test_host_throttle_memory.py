@@ -115,3 +115,39 @@ def test_many_unique_buckets_do_not_grow_unboundedly() -> None:
 
     assert len(throttle._last) == 1
     assert "new-host" in throttle._last
+
+
+def test_deadline_rejects_local_wait_without_reserving_another_slot(monkeypatch):
+    import pytest
+    from backtest.loaders.acquisition import source_deadline, SourceAdmissionTimeout
+    from backtest.loaders.base import acquisition_error_kind
+    from backtest.loaders import _http
+
+    monkeypatch.setattr(_http.time, "monotonic", lambda: 100.0)
+    gate = _http.HostThrottle()
+    gate._last["test"] = (101.0, 0.6)
+    token = source_deadline.set(100.5)
+    try:
+        with pytest.raises(SourceAdmissionTimeout) as error:
+            gate.wait("test", 0.6)
+        assert acquisition_error_kind(error.value) == "source_busy"
+        assert gate._last["test"] == (101.0, 0.6)
+    finally:
+        source_deadline.reset(token)
+
+
+def test_http_socket_timeout_uses_remaining_acquisition_budget(monkeypatch):
+    from types import SimpleNamespace
+    from backtest.loaders import _http
+    from backtest.loaders.acquisition import source_deadline
+
+    calls = []
+    monkeypatch.setattr(_http, "_THROTTLE", SimpleNamespace(wait=lambda *args: None))
+    monkeypatch.setattr(_http, "_session_for", lambda key: SimpleNamespace(get=lambda *args, **kwargs: calls.append(kwargs)))
+    monkeypatch.setattr(_http.time, "monotonic", lambda: 100.0)
+    token = source_deadline.set(100.5)
+    try:
+        _http.throttled_get("https://example.test", host_key="test", min_interval=0.6, timeout=15)
+        assert 0.44 < calls[0]["timeout"] < 0.46
+    finally:
+        source_deadline.reset(token)

@@ -117,6 +117,7 @@ from backtest.loaders.sec_edgar_client import get_submissions
 # shared client rather than restated: one contact string, one rate limit, one
 # place to change them. Both are stable module-level helpers.
 from backtest.loaders.sec_edgar_client import _min_interval, _pad_cik, _user_agent
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools._arguments import boolean_argument
 from src.config.accessor import get_env_config
@@ -1824,6 +1825,7 @@ class InstitutionalHoldingsTool(BaseTool):
         "required": [],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Dispatch to the requested 13F mode and return a JSON envelope.
 

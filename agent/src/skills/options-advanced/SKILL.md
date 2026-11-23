@@ -33,6 +33,31 @@ Three-dimensional structure: strike × expiry × implied volatility.
 
 Interpolation uses stable log-strike differences, so changing the positive spot scale alone does not change the grid. Results must have finite IV and total variance; a total variance outside the floating-point range (including a positive value rounding to zero) is rejected explicitly rather than returned as NaN, infinity, or a fabricated zero.
 
+**Observed-slice diagnostics**: `volatility.diagnose_iv_surface` uses the original observations, spot, continuously compounded risk-free rate and dividend yield to reconstruct European call model prices. It checks adjacent-strike vertical spread bounds and correctly weighted butterfly convexity within each expiry. It does not compare expiries, inspect interpolated points, repair the grid, or certify an arbitrage-free surface. Unlike the grid interpolation, these model prices depend on spot.
+
+For example, the following synthetic IVs produce one vertical-spread violation:
+
+```json
+{
+  "action": "call",
+  "module": "volatility",
+  "function": "diagnose_iv_surface",
+  "kwargs": {
+    "observations": [
+      {"strike": 90, "time_to_expiry": 1, "implied_volatility": 0.1},
+      {"strike": 100, "time_to_expiry": 1, "implied_volatility": 0.9}
+    ],
+    "spot": 100,
+    "risk_free_rate": 0.03,
+    "dividend_yield": 0.01
+  }
+}
+```
+
+Call this with `quantlib_call`; the HTTP equivalent is `POST /options/volatility-surface/diagnostics` with the `kwargs` object as the request body. The Web UI uses the same observed rows, with rates entered as percentages. HTTP inputs must be finite JSON numbers; booleans, numeric strings and extra fields, including output-grid parameters, are rejected.
+
+Read `checked` and each entry in `slices` before interpreting an empty `findings` list. Two strikes allow a spread check; three allow a butterfly check. Numerically unpriceable slices are `unavailable`, never clean checks. Price residuals, bounds and tolerances use price units, not percentages. The report counts all checks and findings for up to 400 observations but returns only the first 20 findings, not the most severe 20. An empty result is not a full-surface validation. Reconstructed prices are not executable quotes: bid/ask spreads, fees and liquidity are outside the model.
+
 **SABR model parameters**:
 ```
 α (alpha): initial volatility level, around 0.2-0.5

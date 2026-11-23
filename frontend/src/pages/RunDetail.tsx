@@ -46,6 +46,7 @@ import { CandlestickChart } from "@/components/charts/CandlestickChart";
 import { EquityChart } from "@/components/charts/EquityChart";
 import { MonthlyReturnsHeatmap } from "@/components/charts/MonthlyReturnsHeatmap";
 import { TopDrawdownsPanel } from "@/components/charts/TopDrawdownsPanel";
+import { RiskDrawdownPanel } from "@/components/charts/RiskDrawdownPanel";
 import { MetricsCard } from "@/components/chat/MetricsCard";
 import { ValidationPanel } from "@/components/charts/ValidationPanel";
 import { Skeleton, SkeletonMetrics, SkeletonChart } from "@/components/common/Skeleton";
@@ -658,6 +659,7 @@ function StudioTab({ xray, notes }: { xray?: RiskXRayPayload; notes?: RebalanceN
               </table>
             </div>
           )}
+          <RiskDrawdownPanel episodes={drawdown.episodes} />
           {(xray.warnings || []).length > 0 && (
             <p className="mt-2 text-xs text-warning">{(xray.warnings || []).join("; ")}</p>
           )}

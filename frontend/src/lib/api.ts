@@ -4,9 +4,12 @@ import type {
   OptionsChainResponse,
   OptionsPayoffRequest,
   OptionsPayoffResponse,
+  OptionsStrategyCompareRequest,
+  OptionsStrategyCompareResponse,
   VolatilitySurfaceRequest,
   VolatilitySurfaceResponse,
 } from "@/lib/options";
+import type { SurfaceDiagnosticsRequest, SurfaceDiagnosticsResponse } from "@/lib/surfaceDiagnostics";
 
 const BASE = "";
 const configuredTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
@@ -589,6 +592,13 @@ export interface LabJob {
   result?: LabResult; error?: string; request?: Record<string, unknown>;
 }
 
+export interface ScanJob { id: string; state: string; total: number; completed: number; failed: number; remaining: number; retries: number; last_error: string | null }
+export interface HistoryStorage { quota_bytes: number; retention_days: number; used_bytes: number; reserved_bytes: number; path: string }
+export interface HistorySpec { codes: string[]; start_date: string; end_date: string; interval: string; source?: string }
+export interface HistoryJob { auto_resume?: number; retry_at?: number; retry_count?: number; sources?: string[]; id: string; state: string; pinned: number; error: string | null; spec?: HistorySpec; rows?: number; completed_chunks?: number; total_chunks?: number }
+export interface GatewayCapabilities { history_datasets: { markets: string[]; intervals: string[]; sources: Array<{ source: string; markets: string[]; intervals: string[] | null; requires_auth: boolean }> } }
+export interface HistoryPlan { routes?: Record<string, { market: string; candidates: string[] }>; chunks: number; estimated_max_rows: number; estimated_uncompressed_bytes: number; storage: HistoryStorage }
+
 export interface SoftwareUpdate {
   current_version: string;
   latest_version: string | null;
@@ -598,11 +608,28 @@ export interface SoftwareUpdate {
 }
 
 export const api = {
+  dataScans: () => request<ScanJob[]>("/data/scans"),
+  createDataScan: (spec: HistorySpec) => request<ScanJob>("/data/scans", { method: "POST", body: JSON.stringify(spec) }),
+  cancelDataScan: (id: string) => request<ScanJob>(`/data/scans/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+  dataCapabilities: () => request<GatewayCapabilities>("/data/capabilities"),
+  historyStorage: () => request<HistoryStorage>("/data/history/storage"),
+  saveHistoryStorage: (quota_bytes: number, retention_days: number) => request<HistoryStorage>("/data/history/storage", { method: "PUT", body: JSON.stringify({ quota_bytes, retention_days }) }),
+  historyJobs: () => request<HistoryJob[]>("/data/history/jobs"),
+  historyJob: (id: string) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}`),
+  planHistory: (spec: HistorySpec) => request<HistoryPlan>("/data/history/plan", { method: "POST", body: JSON.stringify(spec) }),
+  createHistory: (spec: HistorySpec) => request<HistoryJob>("/data/history/jobs", { method: "POST", body: JSON.stringify(spec) }),
+  historyAction: (id: string, action: "resume" | "cancel") => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
+  pinHistory: (id: string, pinned: boolean) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/pin?pinned=${pinned}`, { method: "PUT" }),
+  deleteHistory: (id: string) => request(`/data/history/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pruneHistory: () => request<HistoryStorage>("/data/history/prune", { method: "POST" }),
+
   checkForUpdates: () => request<SoftwareUpdate>("/api/system/update"),
   getResearchLabCatalog: () => request<LabCatalog>("/api/research-lab/catalog"),
   startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
     request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),
   getResearchLabJob: (id: string) => request<LabJob>(`/api/research-lab/jobs/${encodeURIComponent(id)}`),
+  downloadResearchLabOosEquity: (id: string): Promise<Blob> =>
+    performRequest(`/api/research-lab/jobs/${encodeURIComponent(id)}/report?format=oos_equity_csv`, { headers: authHeaders() }, (response) => response.blob()),
   getPixelOffice: () => request<OfficeSnapshot>("/api/pixel-office"),
   updatePixelOffice: (action: "create" | "assign" | "complete" | "rank", arguments_: Record<string, unknown>) =>
     request<OfficeSnapshot>("/api/pixel-office/actions", { method: "POST", body: JSON.stringify({ action, arguments: arguments_ }) }),
@@ -882,16 +909,29 @@ export const api = {
       body: JSON.stringify(body),
       signal,
     }),
+  compareOptionsStrategies: (body: OptionsStrategyCompareRequest, signal?: AbortSignal) =>
+    request<OptionsStrategyCompareResponse>("/options/strategy-compare", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
   computeVolatilitySurface: (body: VolatilitySurfaceRequest, signal?: AbortSignal) =>
     request<VolatilitySurfaceResponse>("/options/volatility-surface", {
       method: "POST",
       body: JSON.stringify(body),
       signal,
     }),
-  getOptionsChain: (ticker: string, expiration?: number) => {
+  diagnoseVolatilitySurface: (body: SurfaceDiagnosticsRequest, signal?: AbortSignal) =>
+    request<SurfaceDiagnosticsResponse>("/options/volatility-surface/diagnostics", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  getOptionsChain: (ticker: string, expiration?: number, nearSpotCount?: number) => {
     const q = new URLSearchParams();
     q.set("ticker", ticker);
     if (expiration !== undefined) q.set("expiration", String(expiration));
+    if (nearSpotCount !== undefined) q.set("near_spot_count", String(nearSpotCount));
     return request<OptionsChainResponse>(`/options/chain?${q.toString()}`);
   },
 
@@ -1451,6 +1491,24 @@ export interface ValidationData {
   };
 }
 
+export interface RiskDrawdownPeriod {
+  peak: string | null;
+  trough: string | null;
+  recovery: string | null;
+  depth: number;
+  duration_bars: number;
+}
+
+export type RiskDrawdownEpisodes = {
+  basis: "constant_weight_model";
+  duration_unit: "bars";
+  recovery_rtol: number;
+  limit: number;
+} & (
+  | { available: true; reason: null; total: number; items: RiskDrawdownPeriod[]; current: RiskDrawdownPeriod | null }
+  | { available: false; reason: "missing_return_observations" | "empty_path" | "non_finite_wealth" | "non_positive_wealth"; total: null; items: []; current: null }
+);
+
 export interface RiskXRayPayload {
   inputs?: {
     symbols?: string[];
@@ -1462,7 +1520,7 @@ export interface RiskXRayPayload {
   };
   concentration?: { hhi?: number; effective_n?: number; top_weight?: number };
   volatility?: { annualized_vol?: number };
-  drawdown?: { max_drawdown?: number };
+  drawdown?: { max_drawdown?: number; episodes?: RiskDrawdownEpisodes };
   tail_risk?: Record<string, unknown>;
   diversification?: Record<string, unknown>;
   correlation?: Record<string, unknown>;
@@ -1667,11 +1725,14 @@ export type SectorAssetClass =
   | "hk_equity"
   | "india_equity"
   | "kr_equity"
+  | "jp_equity"
   | "ca_equity"
   | "ar_equity"
   | "br_equity"
   | "uk_equity"
+  | "taiwan_equity"
   | "vietnam_equity"
+  | "europe_equity"
   | "index"
   | "crypto"
   | "futures"

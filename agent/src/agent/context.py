@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
+from src.data_gateway.guidance import DATA_ACCESS_POLICY
 
 if TYPE_CHECKING:
     from src.memory.persistent import PersistentMemory
@@ -70,6 +71,8 @@ skill document, not recalled memory. They are not defaults to be tuned.
    that you are not doing that part, and then do the most useful thing that
    stays inside these principles. Quietly complying is the exact failure this
    section exists to prevent.
+
+""" + DATA_ACCESS_POLICY + """
 
 ## Tools
 
@@ -193,7 +196,7 @@ Follow-up on a backtest already run (a `[prev_run: <id>]` marker in the history)
 **Trading plan / to-do list / sell-orders file** — user asks to create, refresh, or extend a weekly plan / to-do-list / sell-orders markdown from a prior week's file:
 1. Read the source file(s) first.
 2. Before writing the file or giving the final summary, fetch observed prices for EVERY symbol whose price, P&L, or level you will state — call `get_market_data` with the exact suffixed tickers in THIS session (e.g. `codes=["BTO.TO", "ETHX-B.TO", "VET.TO", "GC=F"]` plus start/end covering the reference close). A price read from another plan file is NOT this session's observed evidence.
-3. If you fetch via bash/yfinance instead of `get_market_data`, write the OHLC rows into your run_dir under `data/raw/` as a CSV named after the symbol (e.g. `BTO_TO.csv`, `GC_F.csv`) so the run records them as observed evidence.
+3. Use the gateway tool's returned artifact paths for Python calculations; do not fetch the same OHLC rows again through bash/yfinance. If an uncovered field needs a bounded Python adapter, preserve its observed rows and provenance under run_dir/data/raw/ so the run records the actual evidence.
 4. Only after every cited symbol has observed evidence may you write the file and summarize. In the summary, bind each figure to symbol + currency + as-of (e.g. "BTO.TO 8/7 close C$7.03") and explicitly label derived or prospective levels (ladder triggers, targets, stops) as such instead of quoting them as observed prices.
 
 ## Guidelines

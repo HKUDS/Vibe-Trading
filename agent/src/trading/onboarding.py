@@ -62,6 +62,21 @@ _BUILTIN: dict[str, ConnectorOnboarding] = {
             "portfolio aggregation and all orders are unavailable."
         ),
     ),
+    "openalgo": ConnectorOnboarding(
+        auth_type="api_key",
+        credential_fields=(
+            _field("host_url", "OpenAlgo Host URL", secret=False),
+            _field("api_key", "OpenAlgo API Key"),
+        ),
+        dependency="httpx",
+        install_command="pip install keyring",
+        test_operation="positions.read",
+        setup_hint=(
+            "Use the API key from your OpenAlgo server's API Key page and its base URL "
+            "(http only on loopback, otherwise https). Reads report whether OpenAlgo answered "
+            "from analyzer (sandbox) or live mode; portfolio aggregation and all orders are unavailable."
+        ),
+    ),
     "alpaca": ConnectorOnboarding(
         auth_type="api_key",
         credential_fields=(

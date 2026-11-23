@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -29,6 +29,7 @@ from src.swarm.models import (
     SwarmAgentSpec,
     SwarmRun,
     SwarmTask,
+    WorkerResult,
 )
 from src.tools.swarm_tool import SwarmTool
 
@@ -122,32 +123,54 @@ def test_execute_returns_cancelled_without_waiting_for_the_poll(tmp_path, monkey
     assert rt.active_run_ids("sess-1") == []
 
 
-def test_execute_does_not_cancel_on_budget_exhaustion(tmp_path, monkeypatch):
-    """Guard the old behaviour: a timed-out wait must leave the run alive."""
+@pytest.mark.parametrize("finish_before_wait", [False, True])
+def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_before_wait):
     monkeypatch.setattr(store_mod, "swarm_runs_root", lambda: tmp_path)
-    monkeypatch.setattr(swarm_tool, "_POLL_INTERVAL_SECONDS", 0.01)
-    monkeypatch.setattr(swarm_tool, "_max_wait_seconds", lambda: 0)
-
-    run = _running_run("r-timeout")
-    store = store_mod.SwarmStore(base_dir=tmp_path)
-    store.create_run(run)
-
-    monkeypatch.setattr(rt.SwarmRuntime, "start_run", lambda self, p, v, **kw: run)
-
-    def boom(self, run_id):  # pragma: no cover - must never be reached
-        raise AssertionError("budget exhaustion must not cancel the run")
-
-    monkeypatch.setattr(rt.SwarmRuntime, "cancel_run", boom)
+    monkeypatch.setattr("src.config.load_swarm_agent_config", lambda: None)
+    monkeypatch.setattr(rt, "_ensure_dotenv", lambda: None)
+    monkeypatch.setattr(rt.SwarmRuntime, "_prefetch_grounding_data", lambda *_: None)
     monkeypatch.setattr(swarm_tool, "_resolve_preset", lambda prompt, name: ("demo", None))
     monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: ({}, None))
 
-    tool = SwarmTool(session_id="sess-2", cancel_event=threading.Event())
-    payload = json.loads(tool.execute(prompt="analyse NVDA"))
+    run = _running_run("r-timeout")
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: run)
+    layer_started = threading.Event()
+    finish_layer = threading.Event()
+    threads = []
 
-    assert payload["status"] == "running"
-    assert payload["wait_budget_exhausted"] is True
-    # Still indexed: the user may stop it after the tool returned.
-    assert rt.active_run_ids("sess-2") == ["r-timeout"]
+    def execute_layer(self, **kwargs):
+        threads.append(threading.current_thread())
+        layer_started.set()
+        assert finish_layer.wait(timeout=10)
+        return {"t1": WorkerResult(status="completed", summary="Done")}
+
+    def wait_budget():
+        assert layer_started.wait(timeout=5)
+        if finish_before_wait:
+            finish_layer.set()
+            threads[0].join(timeout=5)
+            assert not threads[0].is_alive()
+        return 0
+
+    monkeypatch.setattr(rt.SwarmRuntime, "_execute_layer", execute_layer)
+    monkeypatch.setattr(swarm_tool, "_max_wait_seconds", wait_budget)
+
+    tool = SwarmTool(session_id="sess-2", cancel_event=threading.Event())
+    try:
+        payload = json.loads(tool.execute(prompt="test local run"))
+        assert payload["status"] == ("completed" if finish_before_wait else "running")
+        assert payload["wait_budget_exhausted"] is True
+        assert rt.active_run_ids("sess-2") == ([] if finish_before_wait else [run.id])
+    finally:
+        finish_layer.set()
+        for thread in threads:
+            thread.join(timeout=5)
+
+    assert not threads[0].is_alive()
+    saved_run = store_mod.SwarmStore(base_dir=tmp_path).load_run(run.id)
+    assert saved_run is not None
+    assert saved_run.status == RunStatus.completed
+    assert rt.active_run_ids("sess-2") == []
 
 
 # ---------------------------------------------------------------------------

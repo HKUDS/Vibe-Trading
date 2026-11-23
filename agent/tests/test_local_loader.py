@@ -20,6 +20,39 @@ def _configure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sources: list[di
     monkeypatch.setattr(local_loader, "_CONFIG_PATH", config_path)
 
 
+@pytest.mark.parametrize("file_type", ["csv", "parquet"])
+def test_session_date_selects_the_exchange_day_and_uses_a_separate_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, file_type: str,
+) -> None:
+    from backtest.loaders import base
+
+    monkeypatch.setattr(base, "loader_cache_enabled", lambda: True)
+    monkeypatch.setattr(base, "loader_cache_root", lambda: tmp_path / "cache")
+    path = tmp_path / f"bars.{file_type}"
+    index = pd.date_range("2024-03-11", periods=2, tz="Asia/Shanghai")
+    bars = pd.DataFrame(
+        {"open": [10, 20], "high": [12, 22], "low": [9, 19], "close": [11, 21]},
+        index=index,
+    )
+    if file_type == "csv":
+        bars.to_csv(path, index_label="date")
+    else:
+        pytest.importorskip("pyarrow")
+        bars.to_parquet(path)
+    source = {"symbol": "TEST", "type": file_type, "path": str(path)}
+
+    def fetch(**options: str) -> pd.DataFrame:
+        _configure(monkeypatch, tmp_path, [{**source, **options}])
+        return local_loader.DataLoader().fetch(["TEST"], "2024-03-11", "2024-03-11")["TEST"]
+
+    assert fetch()["close"].tolist() == [21]
+    session = fetch(timestamp_basis="session_date")
+    assert session.index.tolist() == [pd.Timestamp("2024-03-11")]
+    assert session["close"].tolist() == [11]
+    assert len(list((tmp_path / "cache").rglob("*.parquet"))) == 2
+    assert fetch()["close"].tolist() == [21]
+
+
 def test_local_loader_fetches_csv_with_local_prefix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -352,3 +385,35 @@ def test_parquet_explicit_date_column_wins_over_datetime_index(
     assert result is not None
     assert result.index.tolist() == list(pd.date_range("2026-02-01", periods=2))
     assert columns["date"] == "date"  # the caller's mapping is never mutated
+
+
+def test_parquet_datetime_index_can_share_name_with_unused_column(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("pyarrow")
+    dates = pd.date_range("2026-01-01", periods=2, name="timestamp")
+    frame = pd.DataFrame(
+        {
+            "timestamp": [1, 2],
+            "open": [10.0, 11.0],
+            "high": [12.0, 13.0],
+            "low": [9.0, 10.0],
+            "close": [11.0, 12.0],
+        },
+        index=dates,
+    )
+    path = tmp_path / "bars.parquet"
+    frame.to_parquet(path, engine="pyarrow")
+    _configure(
+        monkeypatch,
+        tmp_path,
+        [{"symbol": "AAA.US", "type": "parquet", "path": str(path)}],
+    )
+
+    bars = local_loader.DataLoader().fetch(
+        ["AAA.US"], "2026-01-01", "2026-01-02"
+    )["AAA.US"]
+
+    assert_loader_contract(bars, context="local parquet index")
+    pd.testing.assert_index_equal(bars.index, dates.rename("trade_date"))
+    assert bars["close"].tolist() == [11.0, 12.0]

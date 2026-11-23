@@ -188,12 +188,12 @@ class SignalEngine:
 
 
 if __name__ == "__main__":
-    import requests
+    from src.data_gateway.reads import public_http_get
 
     BASE_URL = "https://www.okx.com/api/v5"
 
     # 获取 BTC 日线数据
-    resp = requests.get(f"{BASE_URL}/market/candles", params={
+    resp = public_http_get(f"{BASE_URL}/market/candles", params={
         "instId": "BTC-USDT", "bar": "1D", "limit": "300"
     })
     candles = resp.json()["data"]

@@ -220,6 +220,7 @@ def _normalize_frame(frame: pd.DataFrame, requested_interval: str) -> pd.DataFra
     normalized = normalized.apply(pd.to_numeric, errors="coerce")
 
     index = pd.DatetimeIndex(pd.to_datetime(normalized.index))
+    source_timezone = str(index.tz) if index.tz is not None else None
     if getattr(index, "tz", None) is not None:
         index = index.tz_localize(None)
     normalized.index = index
@@ -247,6 +248,11 @@ def _normalize_frame(frame: pd.DataFrame, requested_interval: str) -> pd.DataFra
         normalized = normalized.dropna(subset=["open", "high", "low", "close"])
         normalized.index.name = "trade_date"
 
+    if source_timezone:
+        normalized.attrs["timezone"] = source_timezone
+    normalized.attrs["timestamp_basis"] = (
+        "bar_open" if requested_interval in {"1m", "5m", "15m", "30m", "1H", "1h", "4H", "4h"} else "session_date"
+    )
     return normalized
 
 
@@ -256,8 +262,9 @@ class DataLoader:
 
     name = "yfinance"
     markets = {
-        "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
-        "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "crypto",
+        "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
+        "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "taiwan_equity", "crypto",
+        "europe_equity",
     }
     # yfinance volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00

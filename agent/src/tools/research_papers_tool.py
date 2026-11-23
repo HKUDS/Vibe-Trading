@@ -71,6 +71,7 @@ from typing import Any, NamedTuple
 from xml.etree import ElementTree
 
 from backtest.loaders._http import resolve_min_interval, throttled_get
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 
@@ -1554,6 +1555,7 @@ class ResearchPapersTool(BaseTool):
         "required": ["mode"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Search papers or read specific ids and emit factor briefs.
 

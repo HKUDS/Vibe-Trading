@@ -99,6 +99,7 @@ from defusedxml import ElementTree as DefusedET
 from backtest.loaders import sec_edgar_client
 from backtest.loaders._http import resolve_min_interval, throttled_get
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools._result_paging import fit_records
 
@@ -1803,6 +1804,7 @@ class EtfHoldingsTool(BaseTool):
         "required": ["mode"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Route to the requested mode and market, returning a JSON envelope.
 

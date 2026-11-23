@@ -525,10 +525,17 @@ A股：沪深300ETF 510300 / 中证500ETF 510500
 ### 7.1 用 Tushare 获取 ETF 数据
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 import tushare as ts
 import pandas as pd
 
-def get_etf_list(pro: ts.pro_api) -> pd.DataFrame:
+from src.data_gateway.reads import managed_reader
+
+@managed_reader
+def get_etf_list(pro) -> pd.DataFrame:
     """
     获取全市场ETF列表。
 
@@ -542,7 +549,10 @@ def get_etf_list(pro: ts.pro_api) -> pd.DataFrame:
     return df[['ts_code', 'name', 'management', 'found_date', 'issue_date']]
 
 
-def get_etf_nav(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+from src.data_gateway.reads import managed_reader
+
+@managed_reader
+def get_etf_nav(pro, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     获取ETF净值数据（IOPV）。
 
@@ -559,7 +569,10 @@ def get_etf_nav(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str) -
     return df.sort_values('end_date').reset_index(drop=True)
 
 
-def get_etf_daily(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+from src.data_gateway.reads import managed_reader
+
+@managed_reader
+def get_etf_daily(pro, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     获取ETF场内日行情（市价）。
 
@@ -576,7 +589,10 @@ def get_etf_daily(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str)
     return df.sort_values('trade_date').reset_index(drop=True)
 
 
-def get_index_daily(pro: ts.pro_api, index_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+from src.data_gateway.reads import managed_reader
+
+@managed_reader
+def get_index_daily(pro, index_code: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     获取基准指数日行情（用于计算跟踪误差）。
 
@@ -674,6 +690,10 @@ def compare_etfs_same_index(
 ### 7.3 折溢价率监控
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 def calc_premium_discount(
     market_price: float,
     iopv: float
@@ -707,6 +727,9 @@ def calc_premium_discount(
     }
 
 
+from src.data_gateway.reads import managed_reader
+
+@managed_reader
 def monitor_qdii_premium(pro, qdii_codes: list[str], date: str) -> pd.DataFrame:
     """
     监控QDII ETF溢价率（溢价过高时发出预警）。

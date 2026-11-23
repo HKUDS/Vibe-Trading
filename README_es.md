@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2611.24845"><b>📄 Leer el informe técnico</b>&nbsp; <img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
+</p>
+
+<p align="center">
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading&amp;type=trending" height="55" alt="Star History: GitHub Trending"/></a>
   <a href="https://trendshift.io/repositories/25527"><img src="https://trendshift.io/api/badge/trendshift/repositories/25527/daily" height="55" alt="Trendshift: daily ranking"/></a>
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading" height="55" alt="Star History: global star ranking"/></a>
@@ -23,6 +27,11 @@
   <a href="https://github.com/search?q=topic%3Abacktesting&amp;type=repositories&amp;s=stars&amp;o=desc">#1 Backtesting</a> &nbsp;·&nbsp;
   <a href="https://github.com/search?q=topic%3Aalgorithmic-trading&amp;type=repositories&amp;s=stars&amp;o=desc">#3 Trading algorítmico</a> &nbsp;·&nbsp;
   <a href="https://github.com/search?q=topic%3Aquantitative-finance&amp;type=repositories&amp;s=stars&amp;o=desc">#4 Finanzas cuantitativas</a>
+</p>
+
+<p align="center">
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
 </p>
 
 <p align="center">
@@ -57,6 +66,34 @@
 
 ## 📰 Noticias
 
+- **2026-11-23** 🛠️ **Investigación reproducible y mayor cobertura de mercados** — Research Lab conserva los precios originales del índice de referencia externo para repetir ejecuciones congeladas y exporta a CSV la curva de capital fuera de muestra de la validación walk-forward. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
+  Options Lab compara dos estrategias guardadas en una misma cuadrícula de precio al contado y volatilidad implícita. La búsqueda de símbolos y las consultas de cotizaciones ya incluyen acciones y ETF de seis mercados europeos cubiertos por Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
+  OpenAlgo permite consultar cuentas y posiciones en modo de solo lectura. Desde la CLI se puede cancelar una ejecución de Swarm en segundo plano desde otro proceso. **Disponible en `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
+
+- **2026-11-22** 🛠️ **Correcciones de backtesting y exportaciones más completas en Options Lab** — Los estudios walk-forward de Research Lab puntúan solo las fechas de evaluación originales y conservan los datos anteriores para inicializar los indicadores. La curva de valor del índice de referencia externo coincide con el rendimiento informado incluso si hay precios negativos. La financiación intradía de los perpetuos de criptomonedas se liquida a las 00:00, 08:00 y 16:00 UTC. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  Los CSV de Options Lab incluyen las alternativas guardadas y sus comparaciones. Las fuentes diarias locales pueden usar `timestamp_basis: session_date` para conservar la fecha de negociación de la bolsa. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  Las entregas programadas respetan el estado más reciente de cada trabajo y Signal guarda por separado los archivos adjuntos con el mismo nombre. La recuperación de trabajos superó las pruebas nativas en Windows x64 y ARM64. **En `main`, para la próxima versión de pip.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
+- **2026-11-20** 📈 **Clases de acciones estadounidenses e histórico de Tencent** — Eastmoney y Yahoo identifican las acciones de clase B de Berkshire como `BRK-B.US`. Antes de cargar los precios de Eastmoney se comprueba el símbolo para distinguir valores como `BW-A.US` y `BWA.US`. Las consultas diarias a Tencent con fechas como `2023-1-5` recuperan todas las páginas. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
+  La comparación de estrategias valora mejor una caída máxima del −10% que una del −30%. Los backtests conservan precios negativos solo con `allow_nonpositive_prices: true`. La CLI permite retomar un chat con su historial. **Disponible en `main` para la próxima versión de pip.**
+
+- **2026-11-19** 📄 **Publicación del informe técnico** — El informe explica cómo Vibe-Trading vincula los resultados con sus fuentes de datos y registros de ejecución, conserva el historial de revisiones y limita las operaciones reales al alcance autorizado por el usuario. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
+
+- **2026-11-18** 📈 **Backtests de acciones taiwanesas y correcciones de los límites de precio** — Usa barras diarias de Yahoo Finance para probar estrategias en acciones de las bolsas de Taiwán (`.TW`) y Taipéi (`.TWO`). Los motores de Corea, Taiwán y Vietnam comprueban los límites diarios con el precio simulado de ejecución, incluido el deslizamiento adicional. Las solicitudes de backtest intradía para estos mercados se rechazan antes de consultar los datos. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
+  Al cambiar entre sesiones que ya aparecen en la barra lateral se reutiliza la lista. La habilidad integrada de AKShare admite los nombres de las interfaces actuales y anteriores. Las pruebas de regresión cubren nombres de adjuntos, el orden de búsqueda de la configuración y la vista previa y el reensamblado de datos de mercado en MCP. **Disponible en `main` para la próxima versión de pip.**
+
+<details>
+<summary>Noticias anteriores</summary>
+
+- **2026-11-17** 📊 **Detalle del riesgo de cartera y análisis de opciones reutilizable** — Risk X-Ray añade períodos de drawdown observados y contribuciones con signo a la volatilidad por posición. Options Lab exporta instantáneas calculadas como JSON y cuadrículas de escenarios como CSV, y diagnostica cortes de IV observados con límites de cobertura explícitos; no certifica una superficie libre de arbitraje. Las herramientas Agent/MCP comparan estrategias con nombre sobre cuadrículas comunes de precio e IV.
+  Se corrigen los metadatos de actualización inválidos y los fallos de verificación de la actualización, el descubrimiento de modelos en modo directo, los nombres de adjuntos, el tratamiento de precios ausentes y las respuestas obsoletas de la lista de sesiones. **En `main`, para la próxima versión de pip.**
+
+- **2026-11-16** 🛠️ **Informes, búsqueda de memoria y mensajería más fiables** — Shadow Account muestra las pérdidas y ganancias no medidas como no disponibles, en lugar de cero, incluso en las exportaciones HTML/PDF en caché. La búsqueda de memoria repara índices antiguos y los fallos parciales del OCR de PDF se señalan como calidad degradada.
+  Se corrigen el emparejamiento de Signal y la pérdida de texto en Napcat ante metadatos de imagen incorrectos. Los reintentos de temperatura de Anthropic se limitan al error de validación correspondiente y se admiten las API históricas nuevas y antiguas de AKShare. Véase [CHANGELOG](CHANGELOG.md). **En `main`, para la próxima versión de pip.**
+
+- **2026-11-15** 📡 **Pasarela de datos de mercado unificada y CSV listos para usar** — Las barras históricas y las instantáneas de opciones de EE. UU. comparten una [pasarela local](agent/src/data_gateway/README.md) con fuentes alternativas, caché compartida y concurrencia limitada. Las respuestas conservan la fuente, la moneda y el ajuste de precios, e indican la cobertura y la antigüedad de los datos.
+  Las consultas de mercado del Agent entregan CSV junto con JSON. Para las solicitudes compatibles que indican instrumentos y un único intervalo explícito `YYYY-MM-DD`, el sistema limita las fechas antes de obtener los datos. El historial de inicialización para los cálculos se solicita por separado; se mantienen los períodos retrospectivos de los indicadores y backtests existentes. **En `main`, para la próxima versión de pip.**
+
 - **2026-11-14** 🔌 **Pasarela LLM unificada y comprobación de versiones** — Agent, CLI, API y Swarm comparten un catálogo y una capa de configuración para los proveedores de modelos. La configuración de cada cliente permanece aislada, los adaptadores nativos respetan el proxy explícito y las redirecciones a otro origen se bloquean antes de reenviar credenciales o el cuerpo de la solicitud.
   Consulta nuevas versiones desde los ajustes Web. Desktop incorpora soporte para actualizaciones firmadas con verificación y recuperación; su distribución requiere configurar la fuente de actualizaciones y los certificados del editor. **En `main`, para la próxima versión de pip.**
 
@@ -65,9 +102,6 @@
 
 - **2026-11-12** 🛠️ **Correcciones en tiempos de ejecución, cifras e investigación** — La cuenta sombra usa el capital inicial solicitado; las respuestas de los workers truncadas por el límite de tokens ya no se consideran completas. El PM del comité puede sintetizar informes previos válidos sin volver a consultar los datos. El adaptador nativo de Anthropic usa por defecto 16.384 tokens de salida, configurables.
   Las estrategias generadas rechazan los desplazamientos adicionales detectados en las señales de salida salvo que se declaren intencionales; se conservan los períodos retrospectivos de los indicadores. Grounding admite distintas notaciones de magnitud y declaraciones de valores observados precisos sin relajar la verificación de evidencia. Los backtests de SPY/GLD coinciden con una contabilidad independiente en las 206/140 ejecuciones y en la rentabilidad total. **Aún no publicado.**
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-11-11** 🧾 **Ejecuciones parciales en trading simulado y conciliación independiente** — Activa límites de volumen por orden, ejecuciones parciales y estados de las órdenes en las simulaciones de acciones A de China con velas de cinco minutos ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). La nueva herramienta Agent/MCP `paper_trade_reconcile` permite conciliar de forma independiente las comisiones, el efectivo, las posiciones y los cálculos del valor neto de los activos a partir de las ejecuciones devueltas ([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   Se procesan correctamente los formatos admitidos de encabezados porcentuales repartidos en varias líneas y las citas explícitas de enteros de documentos, conservando sus etiquetas originales ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). También se corrigen las entradas del benchmark estricto de factores ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) y se evita devolver una respuesta anterior cuando un turno de conversación por un canal agota su tiempo de espera ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
@@ -178,7 +212,7 @@ También puedes elegir una fuente. Instala `vibe-trading-ai[ashare]` para consul
 |---|---|
 | Alpha Zoo | Evalúa señales de Qlib, Alpha101, GTJA y las bibliotecas académica y fundamental. Compara coeficientes de información por horizonte y valida en ventanas sucesivas. |
 | Motores de backtesting | Modela límites de precio de acciones A, financiación cripto y márgenes de futuros. Comparte capital entre mercados y revisa cada ejecución. |
-| Laboratorio de opciones | Construye spreads pata a pata. Compara el pago al vencimiento con las griegas y varía el precio al contado y la volatilidad implícita. |
+| Laboratorio de opciones | Construye spreads pata a pata. Compara el pago al vencimiento con las griegas y varía el precio al contado y la volatilidad implícita. Exporta la solicitud y el resultado exactos del análisis como JSON o toda la cuadrícula de vencimiento y escenarios como CSV. La herramienta `options_strategy_compare` del agente/MCP compara hasta cuatro estrategias en una misma cuadrícula de precio al contado/IV y muestra el P&L relativo a la estrategia base. |
 | Riesgo de cartera | Analiza caídas, VaR y pérdida esperada en la cola. Separa asignación y selección con la atribución de Brinson y observa cambios en la correlación. |
 | Seguimiento de estrategias | Registra una estrategia con su evidencia y sigue la evolución del ratio de Sharpe o del coeficiente de información del factor. |
 
@@ -222,6 +256,7 @@ Lectura indica un perfil de solo lectura. Simulación usa el entorno de pruebas 
 | mstock | ✓ | — | — |
 | mt5 | ✓ | ✓ | ✓ |
 | okx | ✓ | ✓ | ✓ |
+| openalgo | ✓ | — | — |
 | robinhood | ✓ | — | ✓ |
 | scalable | ✓ | — | — |
 | shoonya | ✓ | ✓ | — |
@@ -364,6 +399,22 @@ Vibe-Trading forma parte del ecosistema de agentes de **[HKUDS](https://github.c
 | Simulación | Las cuentas diarias conservan efectivo, ejecuciones y valor liquidativo entre sesiones. Una simulación aparte reproduce una sesión de acciones A en pasos de cinco minutos. | Ejecución opcional limitada por la cuota del volumen negociado ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), borrador). |
 | Investigación | Las fichas guardan métricas y evidencia del backtest. Las investigaciones fechadas conservan su historial de revisiones y se pueden buscar. | Datos financieros estructurados en las investigaciones guardadas ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), en revisión). |
 | Opciones | Pagos multipata, griegas y escenarios de precio al contado × IV. | Cuadrícula interactiva de volatilidad implícita en `/options`. |
+
+## Cita
+
+Si usas Vibe-Trading en tu investigación, cita el informe técnico.
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## Cómo contribuir
 

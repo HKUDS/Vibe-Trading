@@ -80,6 +80,8 @@ vibe-trading --continue <run_id> "refine the strategy"
 vibe-trading --upload report.pdf
 ```
 
+A Swarm layer timeout fails overdue tasks without cancelling the whole run. Later runnable layers can use the work that finished. Workers stop starting new work at their next cancellation check; a call already in progress may still finish.
+
 ```bash
 vibe-trading alpha list --zoo gtja191 --limit 10
 vibe-trading alpha show gtja191_171
@@ -357,3 +359,10 @@ Posting `{}` schedules a template on its own suggested cadence with its declared
 entry points for frozen-input cost scenarios, training-only parameter selection
 and OOS/holdout execution, source/history audits and offline task replays.
 Run `vibe-trading research-lab --help` or open `/research-lab`.
+
+### Large historical datasets
+
+`vibe-trading data history --help` exposes plan/create/run/status/rows, storage
+quota and retention, pin/unpin, cancel, delete and prune. The same service backs
+`/data/history/*`, the `history_data` Agent/MCP tool, and Settings → Historical
+data storage. See [gateway limits and source coverage](../agent/src/data_gateway/README.md#persistent-minute-datasets).

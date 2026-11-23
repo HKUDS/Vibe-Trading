@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2611.24845"><b>📄 기술 보고서 읽기</b>&nbsp; <img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
+</p>
+
+<p align="center">
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading&amp;type=trending" height="55" alt="Star History: GitHub Trending"/></a>
   <a href="https://trendshift.io/repositories/25527"><img src="https://trendshift.io/api/badge/trendshift/repositories/25527/daily" height="55" alt="Trendshift: daily ranking"/></a>
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading" height="55" alt="Star History: global star ranking"/></a>
@@ -23,6 +27,11 @@
   <a href="https://github.com/search?q=topic%3Abacktesting&amp;type=repositories&amp;s=stars&amp;o=desc">#1 백테스트</a> &nbsp;·&nbsp;
   <a href="https://github.com/search?q=topic%3Aalgorithmic-trading&amp;type=repositories&amp;s=stars&amp;o=desc">#3 알고리즘 거래</a> &nbsp;·&nbsp;
   <a href="https://github.com/search?q=topic%3Aquantitative-finance&amp;type=repositories&amp;s=stars&amp;o=desc">#4 계량금융</a>
+</p>
+
+<p align="center">
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
 </p>
 
 <p align="center">
@@ -57,6 +66,34 @@
 
 ## 📰 뉴스
 
+- **2026-11-23** 🛠️ **재현 가능한 리서치와 시장 데이터 확대** — 리서치 랩은 고정된 연구 실행을 재현할 때 원래 외부 벤치마크 가격을 사용하며, 워크포워드 표본 외 자산 곡선을 CSV로 내보낼 수 있습니다. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
+  옵션 랩에서는 저장된 두 전략을 동일한 기초자산 가격과 내재변동성 격자에서 비교할 수 있습니다. Yahoo Finance가 제공하는 유럽 6개 시장의 주식과 ETF를 검색하고 시세를 조회할 수 있습니다. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
+  OpenAlgo는 계좌와 보유 포지션을 읽기 전용으로 제공합니다. CLI에서 별도 프로세스로 백그라운드 Swarm 실행을 취소할 수 있습니다. **`main`에 반영되었습니다.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
+
+- **2026-11-22** 🛠️ **백테스트 정확도 개선과 옵션 분석 내보내기 확대** — 리서치 랩의 워크포워드 분석은 기존 평가 날짜에만 점수를 매기고 이전 봉은 지표 워밍업에 사용합니다. 외부 벤치마크 가격이 음수가 되어도 자산 곡선과 보고 수익률이 일치합니다. 암호화폐 무기한 선물의 장중 펀딩비는 UTC 00:00, 08:00, 16:00에 정산됩니다. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  옵션 분석 CSV에 저장된 대안과 비교 결과가 포함됩니다. 로컬 일봉 데이터는 `timestamp_basis: session_date`를 설정해 거래소의 거래일을 유지할 수 있습니다. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  예약 전송은 최신 작업 상태를 보존하고 Signal은 이름이 같은 첨부 파일을 따로 저장합니다. 작업 복구는 Windows x64와 ARM64의 네이티브 테스트를 통과했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
+- **2026-11-20** 📈 **미국 주식 종목 코드와 텐센트 일봉 이력** — 이스트머니와 야후에서 버크셔 해서웨이 B주를 검색하면 모두 `BRK-B.US`로 표시됩니다. 이스트머니 시세를 가져오기 전에 종목 코드를 대조해 `BW-A.US`와 `BWA.US`를 구분합니다. 텐센트 일봉은 `2023-1-5`처럼 날짜를 입력해도 모든 페이지를 가져옵니다. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
+  전략 비교에서 최대 낙폭 −10%를 −30%보다 높게 평가합니다. 백테스트는 `allow_nonpositive_prices: true`를 명시한 경우에만 음수 가격을 유지합니다. CLI에서 이전 메시지를 불러와 대화를 이어갈 수 있습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-19** 📄 **기술 보고서 공개** — 이 보고서는 Vibe-Trading이 결과를 원본 데이터와 실행 기록에 연결하고, 연구의 수정 이력을 보존하며, 실거래를 사용자가 승인한 범위로 제한하는 방식을 설명합니다. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
+
+- **2026-11-18** 📈 **대만 주식 백테스트와 가격제한폭 검사 수정** — Yahoo Finance 일봉으로 대만증권거래소(`.TW`)와 타이베이거래소(`.TWO`) 주식을 백테스트할 수 있습니다. 한국·대만·베트남 주식 백테스트는 추가 슬리피지를 반영한 모의 체결가로 일일 가격제한폭을 검사합니다. 이 시장의 장중 백테스트 요청은 데이터 조회 전에 거부합니다. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
+  목록에 있는 세션 사이를 전환할 때 사이드바 목록을 재사용합니다. 내장 AKShare 스킬은 이전 및 최신 엔드포인트 이름을 지원합니다. 첨부 파일명, 설정 검색 순서, MCP 시장 데이터 미리보기와 분할 파일 재조립을 회귀 테스트로 검증합니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+<details>
+<summary>이전 뉴스</summary>
+
+- **2026-11-17** 📊 **포트폴리오 위험 상세와 재사용 가능한 옵션 분석** — Risk X-Ray에 관측 낙폭 구간과 보유 종목별 부호 있는 변동성 기여도를 추가했습니다. Options Lab은 계산된 스냅샷을 JSON으로, 시나리오 격자를 CSV로 내보내며 관측 IV 구간 진단의 검사 범위와 한계를 명시합니다. 무차익 곡면을 인증하지는 않습니다. Agent/MCP 도구로 동일한 가격·IV 격자에서 이름을 지정한 여러 전략을 비교할 수 있습니다.
+  잘못된 업데이트 메타데이터와 업그레이드 검증 실패 처리, 직접 연결 모드의 모델 검색, 첨부 파일명, 누락된 가격 처리 및 오래된 세션 목록 응답을 수정했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-16** 🛠️ **보고서·메모리 검색·메시지 처리 수정** — Shadow Account 보고서는 측정되지 않은 손익을 0 대신 이용 불가로 표시하며, 캐시된 HTML/PDF 내보내기에서도 이를 유지합니다. 메모리 검색의 기존 인덱스를 복구하고 PDF OCR이 일부 실패하면 품질 저하를 명시합니다.
+  Signal 페어링과 잘못된 이미지 메타데이터로 인한 Napcat 텍스트 누락을 수정했습니다. Anthropic 온도 설정 재시도는 해당 검증 오류에만 적용하며, AKShare의 신·구 과거 시세 API를 지원합니다. [CHANGELOG](CHANGELOG.md) 참조. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-15** 📡 **통합 시장 데이터 게이트웨이와 바로 쓸 수 있는 CSV** — 과거 가격 데이터와 미국 옵션 스냅샷이 데이터 소스 대체, 공유 캐시, 동시 실행 수 제한을 갖춘 [로컬 데이터 게이트웨이](agent/src/data_gateway/README.md)를 사용합니다. 출처, 통화, 가격 조정 방식을 보존하고 데이터 범위와 최신성을 명시합니다.
+  Agent가 시장 데이터를 조회하면 JSON과 CSV를 함께 제공합니다. 종목과 하나의 명시적 `YYYY-MM-DD` 날짜 범위를 지정한 지원 요청은 데이터를 가져오기 전에 런타임에서 날짜를 제한합니다. 계산에 필요한 워밍업 데이터는 별도로 지정하며, 기존 지표와 백테스트의 과거 참조 기간은 유지됩니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
 - **2026-11-14** 🔌 **통합 LLM 게이트웨이와 버전 확인** — Agent, CLI, API, Swarm의 모델 공급자를 하나의 목록과 설정 계층으로 통합했습니다. 클라이언트별 설정을 격리하고, 네이티브 어댑터가 명시적 프록시 설정을 따르도록 했습니다. 인증 정보나 요청 본문이 전달되기 전에 다른 출처로의 리디렉션을 차단합니다.
   Web 설정에서 새 버전을 확인할 수 있습니다. Desktop에는 서명된 업데이트의 검증 및 복구 지원을 추가했으며, 배포하려면 업데이트 피드와 게시자 인증서를 설정해야 합니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
@@ -65,9 +102,6 @@
 
 - **2026-11-12** 🛠️ **백테스트 시점, 보고서 수치와 연구 완료 판정 수정** — 섀도 계좌가 지정한 초기 자본을 사용하고, 출력 토큰 한도로 잘린 워커 응답을 완료로 처리하지 않습니다. 위원회 PM은 유효한 상위 보고서를 바탕으로 데이터를 다시 가져오지 않고 종합할 수 있습니다. 네이티브 Anthropic 어댑터의 기본 출력 예산은 변경 가능한 16,384 토큰입니다.
   생성 전략의 출력 목표에서 추가 시프트가 감지되면 의도한 지연이라고 명시해야 실행할 수 있으며, 지표의 lookback은 계속 허용됩니다. Grounding은 증거 검증을 유지하면서 금액 단위의 여러 표기와 정확한 관측값 선언을 지원합니다. 실제 SPY／GLD 백테스트의 206／140건 체결과 총수익률이 독립 장부 계산과 일치했습니다. **아직 출시되지 않았습니다.**
-
-<details>
-<summary>이전 뉴스</summary>
 
 - **2026-11-11** 🧾 **모의거래 부분 체결과 독립적인 원장 대사** — 중국 A주 5분봉 모의거래에서 주문별 거래량 한도, 부분 체결, 주문 상태 출력을 선택적으로 활성화할 수 있습니다([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). 새로운 `paper_trade_reconcile` Agent/MCP 도구는 반환된 체결 기록을 바탕으로 수수료, 현금, 보유 포지션, 순자산가치(NAV) 계산을 독립적으로 대사합니다([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   지원되는 여러 줄 백분율 헤더와 원문의 레이블을 유지하는 문서 내 정수의 명시적 인용을 올바르게 처리합니다([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). 엄격한 팩터 벤치마크의 입력도 수정하고([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)), 채널 대화에서 응답 대기 시간이 초과되었을 때 이전 답변을 반환하지 않도록 했습니다([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
@@ -178,7 +212,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 |---|---|
 | Alpha Zoo | Qlib, Alpha101, GTJA, 학술 및 펀더멘털 신호의 기간별 정보계수를 비교하고 워크포워드 검증을 수행합니다. |
 | 백테스트 엔진 | A주 가격제한, 가상자산 펀딩비, 선물 증거금을 반영합니다. 여러 시장이 자금을 공유하며 개별 체결을 확인할 수 있습니다. |
-| 옵션 랩 | 레그별로 스프레드를 구성해 만기 손익, 그릭스, 현물 가격과 내재변동성 변화의 영향을 비교합니다. |
+| 옵션 랩 | 레그별로 스프레드를 구성해 만기 손익, 그릭스, 현물 가격과 내재변동성 변화의 영향을 비교합니다. 정확한 분석 요청과 결과를 JSON으로, 전체 만기 및 시나리오 그리드를 CSV로 남길 수 있습니다. `options_strategy_compare` agent/MCP 도구는 동일한 현물/IV 그리드에서 최대 4개 전략을 비교하고 기준 전략 대비 손익을 보여줍니다. |
 | 포트폴리오 위험 | 낙폭, VaR, 기대손실을 살펴보고 Brinson 분석으로 자산 배분과 종목 선택 효과를 나눕니다. 상관관계 변화도 확인합니다. |
 | 전략 추적 | 근거와 함께 전략을 등록하고 새 결과에 따른 샤프 비율이나 팩터 정보계수를 추적합니다. |
 
@@ -222,6 +256,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | mstock | ✓ | — | — |
 | mt5 | ✓ | ✓ | ✓ |
 | okx | ✓ | ✓ | ✓ |
+| openalgo | ✓ | — | — |
 | robinhood | ✓ | — | ✓ |
 | scalable | ✓ | — | — |
 | shoonya | ✓ | ✓ | — |
@@ -364,6 +399,22 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** agent ecosystem의 일부�
 | 모의 거래 | 일별 현금, 체결, 순자산을 세션 간 보존합니다. 별도의 모의 환경에서 A주 거래일을 5분 단위로 재생합니다. | 선택형 거래량 비율 체결([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), 초안). |
 | 리서치 | 실행 카드에 백테스트 지표와 근거를 기록합니다. 날짜별 연구 기록은 개정 이력을 보존하며 검색할 수 있습니다. | 연구 기록의 구조화된 재무 데이터([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), 검토 중). |
 | 옵션 랩 | 다중 레그 손익과 그릭스, 현물 × IV 시나리오를 봅니다. | `/options`에서 대화형 변동성 곡면 그리드를 제공합니다. |
+
+## 인용
+
+연구에 Vibe-Trading을 사용했다면 이 기술 보고서를 인용해 주세요.
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## 기여하기
 

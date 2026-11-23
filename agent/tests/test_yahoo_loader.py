@@ -77,7 +77,7 @@ class TestSymbolGating:
         assert _is_supported("bbd-b.to") is True
 
     def test_rejects_others(self):
-        assert _is_supported("601398.SH") is False
+        assert _is_supported("900901.SH") is False
         assert _is_supported("BTC-USDT") is False
         assert _is_supported("") is False
 
@@ -289,7 +289,7 @@ class TestFetch:
         with patch(
             "backtest.loaders.yahoo_loader.yahoo_client.get_chart"
         ) as mock_chart:
-            out = DataLoader().fetch(["601398.SH"], "2024-01-01", "2024-01-31")
+            out = DataLoader().fetch(["900901.SH"], "2024-01-01", "2024-01-31")
         assert out == {}
         mock_chart.assert_not_called()
 
@@ -315,6 +315,8 @@ class TestFetch:
         assert frame.attrs == {
             "quote_currency": "GBP",
             "currency_conversion": "GBp→GBP (÷100)",
+            "timestamp_basis": "session_date",
+            "timezone": "UTC",
         }
         assert mock_chart.call_args.args[0] == "VOD.L"
 
@@ -331,6 +333,8 @@ class TestFetch:
         assert frame.attrs == {
             "quote_currency": "GBP",
             "currency_conversion": "none",
+            "timestamp_basis": "session_date",
+            "timezone": "UTC",
         }
 
     def test_usd_quoted_lse_line_is_omitted(self):
@@ -369,7 +373,7 @@ class TestFetch:
         assert _is_supported("BARC.L")
         # Irish ISE is out of scope; .IL must not be claimed.
         assert not _is_supported("DCC.IL")
-        assert not _is_supported("601398.SH")
+        assert not _is_supported("200002.SZ")
         good_rows = [_row("2024-01-02", 10, 11, 9, 10.5, 1000)]
 
         def fake_chart(symbol, **_kwargs):
@@ -410,8 +414,9 @@ class TestLoaderMetadata:
         loader = DataLoader()
         assert loader.name == "yahoo"
         assert loader.markets == {
-            "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
-            "vietnam_equity", "uk_equity", "ar_equity", "br_equity",
+            "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
+            "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share", "taiwan_equity",
+            "europe_equity",
         }
         assert loader.requires_auth is False
         assert loader.is_available() is True
@@ -440,3 +445,24 @@ def test_fetch_admits_a_line_only_in_its_markets_currency(
     assert (symbol in out) is admitted
     if admitted:
         assert out[symbol].attrs["quote_currency"] == declared
+
+
+@pytest.mark.parametrize("symbol", ["601398.SH", "601398.SS", "000001.SZ", "688001.SH", "300750.SZ"])
+@pytest.mark.parametrize("currency", ["CNY", "USD", ""])
+def test_mainland_currency_and_original_identity(symbol, currency):
+    rows = [_row("2024-01-02", 4.1, 4.3, 4.0, 4.2, 1000)]
+    with patch("backtest.loaders.yahoo_loader.yahoo_client.get_chart", return_value=(rows, currency)):
+        out = DataLoader().fetch([symbol], "2024-01-01", "2024-01-31")
+    assert (symbol in out) is (currency == "CNY")
+    if out:
+        assert out[symbol].attrs["quote_currency"] == "CNY"
+        assert DataLoader.volume_units["a_share"] == "shares"
+
+
+def test_intraday_normalization_declares_utc_bar_open():
+    frame = _rows_to_frame(
+        [_intraday_stamped_row("2026-11-12", 10, 11, 9, 10, 100)],
+        "2026-11-12", "2026-11-12", interval="1m",
+    )
+    assert frame.index[0] == pd.Timestamp("2026-11-12 14:30")
+    assert frame.attrs == {"timezone": "UTC", "timestamp_basis": "bar_open"}

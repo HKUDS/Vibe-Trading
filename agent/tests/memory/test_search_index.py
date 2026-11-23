@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,76 @@ class TestRemoveEntry:
             idx.remove_entry("rem001")
             results = idx.search("temporary")
             assert results == []
+        finally:
+            idx.close()
+
+
+class TestReindexEntry:
+    """Re-indexing an existing id (compression, edits) must replace its terms.
+
+    ``memories_fts`` is an external-content FTS5 table kept in sync by
+    triggers. ``INSERT OR REPLACE`` deletes the old row without firing the
+    delete trigger (SQLite fires it only with ``recursive_triggers``), so the
+    old row's terms stayed in the index under a rowid that later rows reuse.
+    """
+
+    @staticmethod
+    def _fts_integrity_ok(idx: MemorySearchIndex) -> bool:
+        conn = idx._get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO memories_fts(memories_fts, rank) VALUES ('integrity-check', 1)"
+            )
+        except sqlite3.DatabaseError:
+            return False
+        return True
+
+    def test_reindex_drops_the_old_terms(self, tmp_path: Path) -> None:
+        idx = MemorySearchIndex(db_path=tmp_path / "reindex.db")
+        try:
+            idx.index_entry(
+                "aaa111", "NVDA note", "d", "", "original body mentions copper futures"
+            )
+            idx.index_entry(
+                "aaa111", "NVDA note", "d", "", "compressed digest about gold"
+            )
+
+            assert [m.entry_id for m in idx.search("gold")] == ["aaa111"]
+            assert idx.search("copper") == []
+            assert self._fts_integrity_ok(idx)
+        finally:
+            idx.close()
+
+    def test_old_terms_do_not_match_a_later_entry(self, tmp_path: Path) -> None:
+        idx = MemorySearchIndex(db_path=tmp_path / "rowid_reuse.db")
+        try:
+            idx.index_entry("aaa111", "A", "d", "", "copper futures carry")
+            idx.index_entry("aaa111", "A", "d", "", "gold digest")
+            idx.remove_entry("aaa111")
+            idx.index_entry("bbb222", "B", "d", "", "bond ladder notes")
+
+            assert idx.search("copper") == []
+            assert [m.entry_id for m in idx.search("bond")] == ["bbb222"]
+            assert self._fts_integrity_ok(idx)
+        finally:
+            idx.close()
+
+    def test_rebuild_all_with_a_repeated_id_keeps_the_last_body(
+        self, tmp_path: Path
+    ) -> None:
+        idx = MemorySearchIndex(db_path=tmp_path / "rebuild_dup.db")
+        try:
+            count = idx.rebuild_all(
+                [
+                    ("aaa111", "A", "d", "", "copper futures carry"),
+                    ("aaa111", "A", "d", "", "gold digest"),
+                ]
+            )
+
+            assert count == 2
+            assert idx.search("copper") == []
+            assert [m.entry_id for m in idx.search("gold")] == ["aaa111"]
+            assert self._fts_integrity_ok(idx)
         finally:
             idx.close()
 

@@ -176,9 +176,9 @@ def _check_llm_provider() -> CheckResult:
 def _check_okx() -> CheckResult:
     """Check OKX public API reachability."""
     try:
-        import requests
+        from src.data_gateway.reads import public_http_get
 
-        resp = requests.get(
+        resp = public_http_get(
             "https://www.okx.com/api/v5/market/candles",
             params={"instId": "BTC-USDT", "bar": "1D", "limit": "1"},
             timeout=10,
@@ -214,11 +214,10 @@ def _check_yfinance() -> CheckResult:
         )
 
     try:
-        import yfinance as yf
+        from src.data_gateway.skill_sources import yahoo_ticker
 
-        ticker = yf.Ticker("AAPL")
-        info = ticker.fast_info
-        if hasattr(info, "last_price") and info.last_price:
+        info = yahoo_ticker("AAPL").fast_info
+        if info.get("lastPrice") or info.get("last_price"):
             return CheckResult(name="yfinance", status="ready", message="reachable", impact="")
         return CheckResult(name="yfinance", status="ready", message="reachable (no price data)", impact="")
     except Exception as exc:

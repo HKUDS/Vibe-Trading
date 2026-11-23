@@ -200,3 +200,18 @@ def _reset_env_config():
     os.environ.clear()
     os.environ.update(saved_environ)
     reset_env_config()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_gateway(tmp_path, monkeypatch):
+    """Keep each test's source patches and snapshots out of other tests."""
+    import src.data_gateway as gateway_module
+
+    prior = gateway_module._instance
+    monkeypatch.setattr(gateway_module, "_instance", None)
+    monkeypatch.setenv("VIBE_GATEWAY_CACHE_DIR", str(tmp_path / "gateway-cache"))
+    yield
+    instance = gateway_module._instance
+    if instance is not None and instance is not prior:
+        instance.close()
+        atexit.unregister(instance.close)

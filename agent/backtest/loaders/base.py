@@ -17,12 +17,31 @@ import os
 import re
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Callable, Protocol, TypeVar, runtime_checkable
+from typing import Callable, Iterator, Protocol, TypeVar, runtime_checkable
 
 import pandas as pd
 
+from .acquisition import SourceAdmissionTimeout, source_background as source_background, source_deadline as source_deadline
+
 logger = logging.getLogger(__name__)
+
+
+
+def acquisition_error_kind(exc: Exception) -> str:
+    """Classify transport failures without retaining exception tracebacks or bodies."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, SourceAdmissionTimeout):
+            return "source_busy"
+        if isinstance(exc, (OSError, TimeoutError)):
+            return "network_failure"
+        exc = exc.__cause__ or exc.__context__
+    return "fetch_failed"
+
 
 
 # The supported LSE contract settles in GBP. Yahoo may declare an individual
@@ -38,9 +57,15 @@ _UK_EQUITY_PATTERN = re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I)
 # CAD and DLR-U.TO in USD. Yahoo declares each, and every priced source in
 # these markets' chains is Yahoo or yfinance, so the declared currency decides.
 _SINGLE_CURRENCY_VENUES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "JPY"),
     (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "ARS"),
     (re.compile(r"^[A-Z0-9]+\.SA$", re.I), "BRL"),
     (re.compile(r"^[A-Z0-9&.\-]+\.(?:TO|V)$", re.I), "CAD"),
+    # Euronext, Xetra, SIX and Borsa Italiana also list ETF lines in USD/GBP
+    # beside the home-currency line; only the home line enters the pool.
+    (re.compile(r"^[A-Z0-9&.\-]+\.(?:DE|PA|AS|MI)$", re.I), "EUR"),
+    (re.compile(r"^[A-Z0-9&.\-]+\.SW$", re.I), "CHF"),
+    (re.compile(r"^[A-Z0-9&.\-]+\.WA$", re.I), "PLN"),
 )
 
 
@@ -188,11 +213,31 @@ def validate_date_range(start_date: str, end_date: str) -> None:
         raise ValueError(f"start_date ({start_date}) > end_date ({end_date})")
 
 
+_ALLOW_NEGATIVE_OHLC = ContextVar("allow_negative_ohlc", default=False)
+
+
+class _InheritOhlcPolicy:
+    """Marker for validation calls that omit the price policy."""
+
+
+_INHERIT_OHLC_POLICY = _InheritOhlcPolicy()
+
+
+@contextmanager
+def ohlc_price_policy(allow_nonpositive_prices: bool) -> Iterator[None]:
+    """Keep loader normalization and cache identity on the same price policy."""
+    token = _ALLOW_NEGATIVE_OHLC.set(allow_nonpositive_prices is True)
+    try:
+        yield
+    finally:
+        _ALLOW_NEGATIVE_OHLC.reset(token)
+
+
 def validate_ohlc(
     frame: pd.DataFrame,
     *,
     strategy: str = "drop",
-    allow_nonpositive_prices: bool = False,
+    allow_nonpositive_prices: bool | None | _InheritOhlcPolicy = _INHERIT_OHLC_POLICY,
 ) -> pd.DataFrame:
     """Drop, flag, or reject bars that violate OHLC invariants.
 
@@ -219,8 +264,9 @@ def validate_ohlc(
         strategy: ``"drop"`` (remove offending rows, default), ``"warn"``
             (log and keep), or ``"raise"`` (raise on any violation).
         allow_nonpositive_prices: when ``True``, keep bars with negative
-            prices and reject only exact zeros; when ``False`` (default,
-            unchanged behavior) reject any price ``<= 0``.
+            prices and reject exact zeros. ``False`` or ``None`` rejects any
+            price ``<= 0``. When omitted, use the current loader policy
+            (strict by default).
 
     Returns:
         The frame with invalid rows removed (``"drop"``) or unchanged
@@ -238,7 +284,12 @@ def validate_ohlc(
     structural = (
         (high < low) | (high < open_) | (high < close) | (low > open_) | (low > close)
     )
-    if allow_nonpositive_prices:
+    allow_negative = (
+        _ALLOW_NEGATIVE_OHLC.get()
+        if allow_nonpositive_prices is _INHERIT_OHLC_POLICY
+        else allow_nonpositive_prices is True
+    )
+    if allow_negative:
         nonpositive = (open_ == 0) | (high == 0) | (low == 0) | (close == 0)
     else:
         nonpositive = (open_ <= 0) | (high <= 0) | (low <= 0) | (close <= 0)
@@ -689,7 +740,7 @@ def _loader_cache_payload(
     end_date: str,
     fields: list[str] | tuple[str, ...] | None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "version": _LOADER_CACHE_VERSION,
         "source": str(source),
         "symbol": str(symbol),
@@ -698,6 +749,10 @@ def _loader_cache_payload(
         "end_date": _normalize_cache_date(end_date),
         "fields": [str(field) for field in (fields or ())],
     }
+    if _ALLOW_NEGATIVE_OHLC.get():
+        # Strict cache entries may already have dropped the signed bars.
+        payload["allow_nonpositive_prices"] = True
+    return payload
 
 
 def _normalize_cache_date(value: str) -> str:

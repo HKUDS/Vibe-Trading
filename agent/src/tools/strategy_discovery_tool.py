@@ -744,7 +744,7 @@ class AdaptStrategyTool(BaseTool):
             "strategy_id": {"type": "string", "description": "Parent sdm: id from list_strategies."},
             "name": {"type": "string"},
             "universe": {"type": "string", "description": "Target universe description."},
-            "config": {"type": "object", "description": "Backtest config with explicit codes, start_date and end_date; no guessed costs or data inputs."},
+            "config": {"type": "object", "description": "Backtest config with explicit codes, source, start_date and end_date; no guessed costs or data inputs."},
             "position_sizing": {"type": "string", "description": "Optional new sizing description; omit to preserve parent's."},
         },
         "required": ["strategy_id", "name", "universe", "config"],
