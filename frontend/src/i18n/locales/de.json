@@ -2787,6 +2787,7 @@
     "failed": "Fehlgeschlagen",
     "report": "Forschungsbericht",
     "download": "JSON herunterladen",
+    "downloadOosCsv": "CSV zur Kapitalentwicklung außerhalb der Stichprobe",
     "scenario": "Szenario",
     "return": "Rendite",
     "drawdown": "Drawdown",

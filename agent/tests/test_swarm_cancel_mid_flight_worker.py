@@ -73,6 +73,43 @@ def test_cancel_mid_flight_worker_stops_promptly(tmp_path, monkeypatch):
     )
 
 
+def test_cross_process_cancel_request_stops_in_flight_worker(tmp_path, monkeypatch):
+    """Regression for #2306 (remainder): a cancel request left in the run dir
+    by a foreign process (SwarmStore.request_cancel, as a separate
+    `--swarm-cancel` process does) must stop an in-flight worker, not just a
+    run waiting between layers. The request is written through a second
+    SwarmStore instance on the same directory -- the closest a unit test gets
+    to a second process -- while the worker only polls the cancel signal it
+    was given, exactly like a real worker.
+    """
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+
+    def slow_worker(agent_spec, task, **kwargs):
+        cancel_event = kwargs["cancel_event"]
+        worker_started.set()
+        while not release_worker.wait(0.01):
+            if cancel_event.is_set():
+                return WorkerResult(status="cancelled", summary="cancelled")
+        return WorkerResult(status="completed", summary="released by test")
+
+    monkeypatch.setattr(rt, "run_worker", slow_worker)
+    store, runtime, run = _make_run(tmp_path)
+    thread = threading.Thread(target=runtime._execute_run, args=(run, threading.Event()))
+    thread.start()
+    try:
+        assert worker_started.wait(5), "worker never started"
+        assert SwarmStore(base_dir=tmp_path).request_cancel(run.id)
+        thread.join(timeout=5)
+        assert not thread.is_alive(), "cancel request did not stop the in-flight worker"
+    finally:
+        release_worker.set()
+        thread.join(timeout=5)
+
+    assert store.load_run(run.id).status == RunStatus.cancelled
+    assert TaskStore(store.run_dir(run.id)).load_task("t1").status == TaskStatus.cancelled
+
+
 def test_run_worker_receives_cancel_event_kwarg(tmp_path, monkeypatch):
     """The retry wrapper must actually forward cancel_event to run_worker,
     not just accept it."""

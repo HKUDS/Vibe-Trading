@@ -2787,6 +2787,7 @@
     "failed": "Failed",
     "report": "Research report",
     "download": "Download JSON",
+    "downloadOosCsv": "OOS CSV",
     "scenario": "Scenario",
     "return": "Return",
     "drawdown": "Drawdown",

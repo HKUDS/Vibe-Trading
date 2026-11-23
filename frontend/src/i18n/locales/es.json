@@ -2787,6 +2787,7 @@
     "failed": "Falló",
     "report": "Informe de investigación",
     "download": "Descargar JSON",
+    "downloadOosCsv": "CSV de patrimonio fuera de muestra",
     "scenario": "Escenario",
     "return": "Rentabilidad",
     "drawdown": "Caída máxima",

@@ -16,6 +16,14 @@ Run a backtest first, then select its saved run. Its run-card manifest must
 still match the strategy and every exported OHLCV snapshot. A changed or
 missing file is refused; rerun that backtest to create a new baseline.
 
+Market-engine backtests also save the opening and closing prices of the external
+benchmark they used. Research Lab replays those prices separately from the
+portfolio. It selects the saved bars in each trial window without rebuilding
+weekly or monthly bars. A trial with a declared external benchmark fails if its evaluation window does
+not contain enough matching benchmark bars. Older runs without the reference file still replay
+locally, but cannot verify the original external benchmark. Rerun the baseline
+to capture it. The cost report records the benchmark used by each trial.
+
 ```bash
 vibe-trading research-lab costs RUN_ID --fee-multipliers 1 2 3 --slippage-bps 0 5 --json
 ```
@@ -117,6 +125,7 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 - `POST /api/research-lab/jobs`: `{ "action": "cost_sensitivity|walk_forward|factor_audit|replay", "request": {...} }`.
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.
+- `GET /api/research-lab/jobs/{id}/report?format=oos_equity_csv`: the exact per-bar `return` and compounded `equity` produced by a completed walk-forward job. This is validation OOS only and excludes the separately reported holdout. Other job kinds return 422 instead of a generic file download. The Web report offers the same artifact as **OOS CSV** alongside the unchanged JSON download.
 
 All routes use application authentication; submission uses settings-write
 protection. The API admits two simultaneous workers. Saved jobs live under the

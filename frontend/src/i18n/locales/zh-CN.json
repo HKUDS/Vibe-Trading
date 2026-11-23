@@ -2787,6 +2787,7 @@
     "failed": "失败",
     "report": "研究报告",
     "download": "下载 JSON",
+    "downloadOosCsv": "样本外权益 CSV",
     "scenario": "情景",
     "return": "收益率",
     "drawdown": "回撤",
