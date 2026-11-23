@@ -24,7 +24,7 @@ from pathlib import Path
 
 from src.config.accessor import get_env_config
 
-from src.swarm.models import SwarmEvent, SwarmRun
+from src.swarm.models import RunStatus, SwarmEvent, SwarmRun
 from src.tools.redaction import redact_internal_paths
 
 
@@ -84,6 +84,16 @@ def swarm_runs_root() -> Path:
 _TRANSIENT_WINERRORS = (5, 32)  # ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION
 _REPLACE_ATTEMPTS = 6
 _REPLACE_BACKOFF = (0.025, 0.05, 0.1, 0.2, 0.4)  # seconds; len == attempts - 1
+
+# Marker a foreign process leaves in a run directory to ask the owning
+# process to stop the run. The active-run index (src/swarm/runtime.py) is
+# process-local, so a separate `--swarm-cancel` process cannot reach it;
+# this file is the only channel between the two processes. The owning
+# runtime polls for it between layers (and in-flight workers see it through
+# _LayerStop), setting its in-memory cancel event when it appears, so a
+# cross-process request follows the same cooperative cancellation contract
+# as an in-process one.
+CANCEL_REQUESTED_FILENAME = "cancel.requested"
 
 
 def _is_transient_windows_error(exc: OSError) -> bool:
@@ -220,6 +230,47 @@ class SwarmStore:
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         self._atomic_write(rd / "run.json", run.model_dump_json(indent=2))
+
+    def request_cancel(self, run_id: str) -> bool:
+        """Ask the process owning ``run_id`` to stop it; return True if asked.
+
+        Writes the cancel-requested marker into the run directory when the
+        run exists and is still ``running``. The marker is deliberately not
+        a field in ``run.json``: a read-modify-write of that file from a
+        foreign process could clobber the owner's concurrent snapshot, while
+        creating one small file is atomic and idempotent. Returns False for
+        an unknown, malformed, or already-terminal run id — callers report
+        those as "not found or already finished".
+        """
+        try:
+            run_dir = self.run_dir(run_id)
+            run = self.load_run(run_id)
+        except (OSError, ValueError):
+            return False
+        if run is None or run.status != RunStatus.running:
+            return False
+        marker = run_dir / CANCEL_REQUESTED_FILENAME
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return True  # already requested; asking again changes nothing
+        except OSError:
+            return False
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(datetime.now(timezone.utc).isoformat() + "\n")
+        return True
+
+    def cancel_requested(self, run_id: str) -> bool:
+        """True when another process left a cancel request for ``run_id``.
+
+        A single stat call, so the owning runtime can poll it between layers
+        without measurable cost. Never raises: a missing run directory or an
+        unreadable marker means "no request".
+        """
+        try:
+            return (self.run_dir(run_id) / CANCEL_REQUESTED_FILENAME).exists()
+        except (OSError, ValueError):
+            return False
 
     def list_runs(self, limit: int = 50) -> list[SwarmRun]:
         """List all runs sorted by created_at descending.
