@@ -62,7 +62,7 @@ def test_legacy_swarm_runs_kept_in_run_root_allowlist() -> None:
     """Un-migrated legacy swarm runs must stay reachable, like legacy runs/uploads."""
     from src.tools.path_utils import _agent_root, _default_run_roots
 
-    roots = [p.resolve() for p in _default_run_roots()]
+    roots = [p.resolve() for p in _default_run_roots(FileRoots.from_config(get_env_config().api))]
 
     assert (_agent_root() / ".swarm" / "runs").resolve() in roots
 
@@ -100,7 +100,7 @@ def test_shadow_account_dirs_live_under_runtime_root(
     shadow_run = runs_dir("shadow_test")
     assert shadow_run == root / "shadow_runs" / "shadow_test"
     assert shadow_run.parent.resolve() in {
-        candidate.resolve() for candidate in _default_run_roots()
+        candidate.resolve() for candidate in _default_run_roots(FileRoots.from_config(get_env_config().api))
     }
 
 
@@ -179,9 +179,10 @@ def test_upload_handle_resolves_to_runtime_uploads_dir(
     root = tmp_path / "state-root"
     monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
 
-    assert _import_candidate("uploads/report.pdf") == root / "uploads" / "report.pdf"
+    roots = FileRoots.from_config(get_env_config().api)
+    assert _import_candidate("uploads/report.pdf", roots=roots) == root / "uploads" / "report.pdf"
     assert (
-        _import_candidate("agent/uploads/report.pdf")
+        _import_candidate("agent/uploads/report.pdf", roots=roots)
         == root / "uploads" / "report.pdf"
     )
 

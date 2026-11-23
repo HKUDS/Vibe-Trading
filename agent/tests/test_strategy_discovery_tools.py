@@ -20,7 +20,9 @@ import json
 
 import pytest
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
+from src.config.accessor import get_env_config
+from src.tools.path_utils import FileRoots
 
 try:
     from src.tools import strategy_discovery_tool as sdt
@@ -119,7 +121,11 @@ def _instantiate_tools() -> dict:
         f"expected exactly {len(EXPECTED_NAMES)} BaseTool classes in strategy_discovery_tool, found "
         f"{[c.__name__ for c in classes]}"
     )
-    tools = {cls().name: cls() for cls in classes}
+    roots = FileRoots.from_config(get_env_config().api)
+    tools = {
+        cls.name: cls(roots=roots) if issubclass(cls, FileBoundTool) else cls()
+        for cls in classes
+    }
     assert (
         set(tools) == EXPECTED_NAMES
     ), f"tool .name attributes must be {sorted(EXPECTED_NAMES)}, got {sorted(tools)}"

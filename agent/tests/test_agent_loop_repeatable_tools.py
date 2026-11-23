@@ -75,14 +75,15 @@ def test_repeatable_query_executes_again_with_different_arguments(
 ) -> None:
     """A successful query must not suppress the next iteration's symbol."""
     calls: list[dict[str, object]] = []
-    tool = tool_cls()
+    policy = ToolPolicy.from_config(get_env_config())
+    tool = tool_cls(roots=policy.file_roots) if tool_cls is MarketDataTool else tool_cls()
 
     def _execute(**kwargs: object) -> str:
         calls.append(kwargs)
         return json.dumps({"status": "ok"})
 
     monkeypatch.setattr(tool, "execute", _execute)
-    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry = ToolRegistry(policy=policy)
     registry.register(tool)
     agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=2)
 

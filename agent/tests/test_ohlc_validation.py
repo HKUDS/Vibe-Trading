@@ -258,7 +258,11 @@ def test_public_market_read_stays_strict_during_signed_backtest(tmp_path, monkey
     try:
         monkeypatch.setitem(local_loader._READERS, "csv", overlapping_read)
         with ThreadPoolExecutor(max_workers=1) as pool:
-            signed = pool.submit(fetch_data_map, {**config, "allow_nonpositive_prices": True})
+            signed = pool.submit(
+                fetch_data_map,
+                {**config, "allow_nonpositive_prices": True},
+                roots=FileRoots.from_config(get_env_config().api),
+            )
             public = fetch_market_data(**config, as_frames=True)
             assert signed.result(timeout=10).data_map["POWER.US"]["close"].tolist() == [11, -12]
             assert public["POWER.US"]["close"].tolist() == [11]

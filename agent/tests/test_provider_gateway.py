@@ -96,13 +96,15 @@ def test_catalog_only_provider_reaches_settings_and_real_sdk(tmp_path, provider_
         registry.CATALOG_PATH = Path(sys.argv[1])
         from cli import onboard
         from cli.commands import common, setup_memory
+        from src.config.accessor import get_env_config
+        from src.product.tool_policy import ToolPolicy
         from src.providers.chat import ChatLLM
         from src.providers.settings import SettingsStore, secret_names
         assert onboard.PROVIDERS[-1].key == "catalog-test"
         with patch.object(common.IntPrompt, "ask", return_value=len(common._PROVIDER_CHOICES)), \
              patch.object(common.Prompt, "ask", side_effect=["cli-secret", sys.argv[2], "cli-model", ""]):
             assert setup_memory.cmd_init() == 0
-        with closing(ChatLLM()) as old:
+        with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()))) as old:
             import api_server
             from fastapi.testclient import TestClient
             with TestClient(api_server.app, client=("127.0.0.1", 50000)) as api:
@@ -114,7 +116,7 @@ def test_catalog_only_provider_reaches_settings_and_real_sdk(tmp_path, provider_
                 })
                 assert response.status_code == 200, response.text
                 assert "api-secret" not in response.text and "cli-secret" not in response.text
-                with closing(ChatLLM()) as new:
+                with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()))) as new:
                     assert new.chat([{"role": "user", "content": "hello"}]).content == "api-model"
                 assert old.chat([{"role": "user", "content": "hello"}]).content == "cli-model"
                 os.environ["VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS"] = "1"

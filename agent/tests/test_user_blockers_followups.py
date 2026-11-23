@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.tools.path_utils import FileRoots
 from src.config.accessor import get_env_config
+from src.config.env_schema import EnvConfig
 
 
 import json
@@ -162,14 +163,15 @@ def test_pdf_write_authenticated_download_and_im_delivery_share_real_file(tmp_pa
 
 def test_pdf_render_failure_preserves_existing_file_and_reports_error(tmp_path, monkeypatch):
     from src.tools import pdf_report
-    monkeypatch.setattr("src.tools.write_file_tool.allowed_write_roots", lambda: [tmp_path])
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(tmp_path))
     target = tmp_path / "report.pdf"
     target.write_bytes(b"previous version")
     def fail(*args):
         raise RuntimeError("render failed")
     monkeypatch.setattr(pdf_report, "render_markdown_pdf", fail)
-    result = json.loads(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=str(target), content="# A report"))
+    result = json.loads(WriteFileTool(roots=FileRoots.from_config(EnvConfig().api)).execute(path=str(target), content="# A report"))
     assert result["status"] == "error"
+    assert "render failed" in result["error"]
     assert target.read_bytes() == b"previous version"
 
 

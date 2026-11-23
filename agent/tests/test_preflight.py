@@ -23,7 +23,7 @@ def _configure_llm_preflight(monkeypatch) -> None:
     monkeypatch.setattr(
         diagnostics,
         "provider_diagnostics",
-        lambda: {
+        lambda *, policy: {
             "base_url": "https://example.test/v1",
             "timeout_seconds": 120,
             "max_retries": 2,
@@ -93,7 +93,7 @@ def test_copilot_preflight_uses_sdk_auth_instead_of_openai_base_url(
     monkeypatch.setattr(
         diagnostics,
         "provider_diagnostics",
-        lambda: {
+        lambda *, policy: {
             "base_url": "https://api.githubcopilot.com",
             "timeout_seconds": 120,
             "max_retries": 2,

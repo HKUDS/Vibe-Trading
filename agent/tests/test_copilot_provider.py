@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from src.tools.path_utils import FileRoots
-from src.config.accessor import get_env_config
 
 
 import asyncio
@@ -381,7 +379,7 @@ def test_message_conversion_keeps_system_and_tool_history() -> None:
             {"role": "system", "content": "Be concise."},
             {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]},
             {"role": "tool", "tool_call_id": "call_1", "content": "123"},
-        ], roots=FileRoots.from_config(get_env_config().api)
+        ],
     )
 
     assert system == "Be concise."

@@ -132,8 +132,9 @@ def test_execute_keeps_runtime_run_valid_after_home_is_sandboxed(
     entry = _probe_entry(
         tmp_path,
         "import sys\n"
-        "from src.tools.path_utils import safe_run_dir\n"
-        "print(safe_run_dir(sys.argv[1]))\n",
+        "from src.config.accessor import get_env_config\n"
+        "from src.tools.path_utils import FileRoots, safe_run_dir\n"
+        "print(safe_run_dir(sys.argv[1], roots=FileRoots.from_config(get_env_config().api)))\n",
     )
     agent_root = Path(runner_mod.__file__).resolve().parents[2]
 

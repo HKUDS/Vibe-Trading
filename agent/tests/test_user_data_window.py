@@ -135,7 +135,7 @@ def test_technical_indicator_lookback_is_not_clipped(runtime,monkeypatch):
 
 def test_mcp_forwards_explicit_warmup(monkeypatch):
     import mcp_server
-    registry=Mock()
+    registry = Mock(policy=ToolPolicy.from_config(get_env_config()))
     monkeypatch.setattr(mcp_server,'_get_registry',lambda:registry)
     fn=getattr(mcp_server.get_market_data,'fn',None) or getattr(mcp_server.get_market_data,'__wrapped__',mcp_server.get_market_data)
     fn(codes=['AAPL.US'],start_date='2026-11-12',end_date='2026-11-13',warmup_start_date='2026-11-10')
