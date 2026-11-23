@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import type { OptionsLabParams, OptionsPayoffResponse } from "@/lib/options";
 import { clearAnalysisState } from "@/hooks/useAnalysisState";
 import { OptionsLab } from "../OptionsLab";
-vi.mock("@/lib/api", () => ({ api: { analyzeOptionsPayoff: vi.fn() } }));
+vi.mock("@/lib/api", () => ({ api: { analyzeOptionsPayoff: vi.fn(), compareOptionsStrategies: vi.fn() } }));
 vi.mock("@/components/options/StrategyBuilder", () => ({ StrategyBuilder: ({ params, onParamsChange }: { params: OptionsLabParams; onParamsChange: (p: OptionsLabParams) => void }) => <button onClick={() => onParamsChange({ ...params, entry_spot: params.entry_spot + 10 })}>Edit spot</button> }));
 vi.mock("@/components/options/OptionsChainTable", () => ({ OptionsChainTable: () => <div>chain loaded</div> }));
 vi.mock("@/components/options/GreeksCards", () => ({ GreeksCards: () => null }));
@@ -86,4 +86,19 @@ it("passes backend alternative curves into the shared payoff chart", async () =>
   });
   render(<OptionsLab />); await tick();
   expect(screen.getByTestId("comparison-curves")).toHaveTextContent("Strategy 1");
+});
+
+it("keeps scenario comparison on the completed request while the builder changes", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue(output);
+  vi.mocked(api.compareOptionsStrategies).mockReturnValue(new Promise(() => {}));
+  render(<OptionsLab />); await tick();
+  fireEvent.click(screen.getByText("Save legs for comparison")); await tick();
+  fireEvent.click(screen.getByRole("button", { name: /Spot x IV Scenario Matrix/ }));
+  await act(async () => {});
+  expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.compareOptionsStrategies).mock.calls[0][0].entry_spot).toBe(100);
+
+  fireEvent.click(screen.getByText("Edit spot")); await tick();
+  expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(api.compareOptionsStrategies).mock.calls[1][0].entry_spot).toBe(110);
 });

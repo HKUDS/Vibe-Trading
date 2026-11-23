@@ -1768,7 +1768,10 @@
       "entry_cost_return": "Coste de entrada / nominal de acciones",
       "higher": "Mayor",
       "lower": "Menor",
-      "equal": "Igual"
+      "equal": "Igual",
+      "scenarioBasis": "Ambas estrategias usan la solicitud completada y una cuadrícula compartida de precio × volatilidad. La diferencia es estrategia menos base, solo descriptiva.",
+      "deltaGrid": "Diferencia de P&L",
+      "gridCapped": "Las cuadrículas comparativas usan como máximo {{count}} puntos de precio."
     }
   },
   "alphaZoo": {

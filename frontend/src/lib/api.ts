@@ -4,6 +4,8 @@ import type {
   OptionsChainResponse,
   OptionsPayoffRequest,
   OptionsPayoffResponse,
+  OptionsStrategyCompareRequest,
+  OptionsStrategyCompareResponse,
   VolatilitySurfaceRequest,
   VolatilitySurfaceResponse,
 } from "@/lib/options";
@@ -903,6 +905,12 @@ export const api = {
   // Options Lab
   analyzeOptionsPayoff: (body: OptionsPayoffRequest, signal?: AbortSignal) =>
     request<OptionsPayoffResponse>("/options/payoff", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  compareOptionsStrategies: (body: OptionsStrategyCompareRequest, signal?: AbortSignal) =>
+    request<OptionsStrategyCompareResponse>("/options/strategy-compare", {
       method: "POST",
       body: JSON.stringify(body),
       signal,

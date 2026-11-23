@@ -1768,7 +1768,10 @@
       "entry_cost_return": "Custo de entrada / nocional das ações",
       "higher": "Maior",
       "lower": "Menor",
-      "equal": "Igual"
+      "equal": "Igual",
+      "scenarioBasis": "Ambas as estratégias usam a solicitação concluída e a mesma grade de preço × volatilidade. O delta é estratégia menos base, apenas descritivo.",
+      "deltaGrid": "Diferença de P&L",
+      "gridCapped": "As grades de comparação usam no máximo {{count}} pontos de preço."
     }
   },
   "alphaZoo": {

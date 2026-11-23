@@ -7,6 +7,7 @@ the ``alpha_routes.py`` slice pattern.
 Routes (auth via the caller-supplied ``require_auth`` dependency):
 
 - ``POST /options/payoff``  — multi-leg expiry payoff + spot/IV scenario analysis
+- ``POST /options/strategy-compare`` — shared-grid comparison for two to four strategies
 - ``POST /options/volatility-surface``: observed/interpolated IV grid
 - ``POST /options/volatility-surface/diagnostics``: observed-strike model-price checks
 - ``GET  /options/chain``   — US-listed options chain for one expiration (Yahoo)
@@ -53,6 +54,7 @@ from src.quantlib.options import bs_greeks
 from src.quantlib.volatility import diagnose_iv_surface, implied_volatility_surface
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.options_payoff_tool import OptionsPayoffTool, _coerce_legs
+from src.tools.options_strategy_compare_tool import OptionsStrategyCompareTool
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +124,36 @@ class PayoffRequest(BaseModel):
     spot_max: float | None = Field(None, gt=0)
     spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=_MAX_SPOT_POINTS)
     expiry_spot_values: list[Annotated[float, Field(ge=0, allow_inf_nan=False)]] | None = Field(None, min_length=1, max_length=_MAX_SPOT_POINTS)
+    scenario_iv_values: (
+        list[Annotated[float, Field(gt=0)]] | None
+    ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
+
+
+class StrategyDefinition(BaseModel):
+    """One named strategy in a shared-grid comparison."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=64)
+    legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+
+
+class StrategyCompareRequest(BaseModel):
+    """POST /options/strategy-compare body, mirrored from the accepted tool schema."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    strategies: list[StrategyDefinition] = Field(..., min_length=2, max_length=4)
+    baseline_index: int = Field(0, ge=0, strict=True)
+    entry_spot: float = Field(..., gt=0)
+    expiry_days: float = Field(..., ge=0)
+    risk_free_rate: float = Field(0.05)
+    volatility: float = Field(0.3, gt=0)
+    multiplier: float = Field(1.0, gt=0)
+    commission_rate: float = Field(0.001, ge=0, lt=1)
+    spot_min: float | None = Field(None, ge=0)
+    spot_max: float | None = Field(None, gt=0)
+    spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=201)
     scenario_iv_values: (
         list[Annotated[float, Field(gt=0)]] | None
     ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
@@ -302,6 +334,29 @@ def register_options_routes(
             # surface it verbatim as a client error.
             return JSONResponse(status_code=400, content=envelope)
         envelope["greeks"] = _portfolio_greeks(payload)
+        return envelope
+
+    # -----------------------------------------------------------------------
+    # POST /options/strategy-compare
+    # -----------------------------------------------------------------------
+
+    @app.post("/options/strategy-compare", dependencies=[Depends(require_auth)])
+    async def options_strategy_compare(payload: StrategyCompareRequest) -> Response:
+        """Compare named strategies through the same tool as Agent and MCP."""
+        tool = OptionsStrategyCompareTool()
+        try:
+            raw = await asyncio.to_thread(
+                tool.execute, **payload.model_dump(exclude_none=True)
+            )
+            envelope = json.loads(raw)
+        except Exception:  # noqa: BLE001 — never leak a stack frame to clients
+            logger.exception("options strategy comparison failed")
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "error": "strategy comparison failed"},
+            )
+        if envelope.get("status") != "ok":
+            return JSONResponse(status_code=400, content=envelope)
         return envelope
 
     # -----------------------------------------------------------------------

@@ -1762,7 +1762,10 @@
       "entry_cost_return": "진입 비용 / 주식 명목금액",
       "higher": "높음",
       "lower": "낮음",
-      "equal": "같음"
+      "equal": "같음",
+      "scenarioBasis": "두 전략은 완료된 요청과 동일한 스팟×IV 그리드를 사용합니다. 차이는 전략에서 기준을 뺀 값이며 설명용입니다.",
+      "deltaGrid": "손익 차이",
+      "gridCapped": "비교 그리드는 최대 {{count}}개의 스팟 포인트를 사용합니다."
     }
   },
   "alphaZoo": {
