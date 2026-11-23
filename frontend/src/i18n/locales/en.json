@@ -1146,6 +1146,7 @@
         "ca_equity": "Canada Equities",
         "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam Equities",
+        "europe_equity": "European Equities",
         "ar_equity": "Argentina Equities",
         "br_equity": "Brazil Equities",
         "uk_equity": "UK Equities",
@@ -1487,6 +1488,7 @@
         "uk_equity": "UK equity",
         "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam equity",
+        "europe_equity": "European Equities",
         "other": "Other"
       }
     },

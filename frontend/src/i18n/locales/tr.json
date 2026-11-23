@@ -1104,6 +1104,7 @@
         "ca_equity": "Kanada hisseleri",
         "taiwan_equity": "Tayvan Hisseleri",
         "vietnam_equity": "Vietnam hisseleri",
+        "europe_equity": "Avrupa hisseleri",
         "crypto": "Kripto",
         "futures": "Vadeli işlemler",
         "fund": "Fonlar",
@@ -1420,7 +1421,8 @@
         "br_equity": "Brezilya hisseleri",
         "uk_equity": "Birleşik Krallık hisseleri",
         "taiwan_equity": "Tayvan Hisseleri",
-        "vietnam_equity": "Vietnam hisseleri"
+        "vietnam_equity": "Vietnam hisseleri",
+        "europe_equity": "Avrupa hisseleri"
       }
     },
     "attribution": "Getiri ayrıştırması",
