@@ -644,17 +644,7 @@ class SwarmRuntime:
         resume_from: SwarmRun | None = None,
         record_usage: Callable[[dict], None] | None = None,
     ) -> None:
-        """Core orchestration loop (runs in background thread).
-
-        Steps:
-            1. Update run status to running
-            2. Initialize TaskStore, save all tasks
-            3. Compute topological layers
-            4. For each layer:
-               a. Check cancellation
-               b. Submit all tasks to ThreadPoolExecutor
-               c. Collect results, resolve dependencies, update store
-            5. Update run status to completed/failed
+        """Schedule the DAG by layer in the run’s background thread.
 
         Args:
             run: SwarmRun to execute.
@@ -747,95 +737,36 @@ class SwarmRuntime:
                 for tid, result in layer_results.items():
                     usage.settle(tid, result)
 
-                    if result.status == "completed":
+                    completed = result.status == "completed"
+                    cancelled = result.status == "cancelled"
+                    error = None
+                    update = {
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "summary": result.summary,
+                        "artifacts": result.artifact_paths,
+                        "worker_iterations": result.iterations,
+                    }
+                    if completed:
+                        status = TaskStatus.completed
                         task_summaries[tid] = result.summary
-                        now_iso = datetime.now(timezone.utc).isoformat()
-                        task_store.update_status(
-                            tid,
-                            TaskStatus.completed,
-                            summary=result.summary,
-                            completed_at=now_iso,
-                            artifacts=result.artifact_paths,
-                            worker_iterations=result.iterations,
-                        )
+                    elif cancelled:
+                        status = TaskStatus.cancelled
+                    else:
+                        status = TaskStatus.failed
+                        error = redact_internal_paths(result.error)
+                        update["error"] = error or f"worker did not complete (status={result.status})"
+
+                    task_store.update_status(tid, status, **update)
+                    if completed:
                         resolve_dependencies(run_dir / "tasks", tid)
-                        self._emit_event(
-                            run_id,
-                            self._make_event(
-                                "task_completed",
-                                task_id=tid,
-                                data={
-                                    "status": result.status,
-                                    "iterations": result.iterations,
-                                    "input_tokens": result.input_tokens,
-                                    "output_tokens": result.output_tokens,
-                                    "cache_read_tokens": result.cache_read_tokens,
-                                    "cache_creation_tokens": result.cache_creation_tokens,
-                                    "token_source": result.token_source,
-                                },
-                            ),
-                        )
-                    elif result.status == "cancelled":
-                        # The worker stopped because cancel_run() was
-                        # signalled mid-flight; that is a user stop, not a
-                        # worker error. Persist it as cancelled — the same
-                        # terminal state _cancel_remaining_tasks gives tasks
-                        # that never started — so the dashboard, the run
-                        # summary and a later resume all see one consistent
-                        # story instead of a spurious "worker did not
-                        # complete" failure.
-                        all_succeeded = False
-                        task_store.update_status(
-                            tid,
-                            TaskStatus.cancelled,
-                            summary=result.summary,
-                            completed_at=datetime.now(timezone.utc).isoformat(),
-                            artifacts=result.artifact_paths,
-                            worker_iterations=result.iterations,
-                        )
-                        self._emit_event(
-                            run_id,
-                            self._make_event(
-                                "task_cancelled",
-                                task_id=tid,
-                                data={
-                                    "status": result.status,
-                                    "iterations": result.iterations,
-                                    "input_tokens": result.input_tokens,
-                                    "output_tokens": result.output_tokens,
-                                    "cache_read_tokens": result.cache_read_tokens,
-                                    "cache_creation_tokens": result.cache_creation_tokens,
-                                    "token_source": result.token_source,
-                                },
-                            ),
-                        )
                     else:
                         all_succeeded = False
-                        task_store.update_status(
-                            tid,
-                            TaskStatus.failed,
-                            error=redact_internal_paths(result.error)
-                            or f"worker did not complete (status={result.status})",
-                            completed_at=datetime.now(timezone.utc).isoformat(),
-                            worker_iterations=result.iterations,
-                            summary=result.summary,
-                            artifacts=result.artifact_paths,
-                        )
-                        self._emit_event(
-                            run_id,
-                            self._make_event(
-                                "task_failed",
-                                task_id=tid,
-                                data={
-                                    "error": redact_internal_paths(result.error),
-                                    "input_tokens": result.input_tokens,
-                                    "output_tokens": result.output_tokens,
-                                    "cache_read_tokens": result.cache_read_tokens,
-                                    "cache_creation_tokens": result.cache_creation_tokens,
-                                    "token_source": result.token_source,
-                                },
-                            ),
-                        )
+                    data = ({"error": error} if status == TaskStatus.failed
+                            else {"status": result.status, "iterations": result.iterations})
+                    data.update({name: getattr(result, name) for name in UsageMeasure._fields})
+                    self._emit_event(
+                        run_id, self._make_event(f"task_{status.value}", task_id=tid, data=data),
+                    )
 
                 # Missing/nonterminal dependencies still prevent dispatch.
                 # Retained completed tasks are also absent from layer_results,
@@ -1337,11 +1268,8 @@ class SwarmRuntime:
             WorkerResult from the last attempt.
         """
         max_retries = agent_spec.max_retries
-        cumulative_input_tokens = 0
-        cumulative_output_tokens = 0
-        cumulative_cache_read_tokens = 0
-        cumulative_cache_creation_tokens = 0
-        cumulative_token_source: str | None = None
+        totals = dict.fromkeys(UsageMeasure._fields[:-1], 0)
+        token_source = None
         result: WorkerResult | None = None
 
         def stop_requested() -> bool:
@@ -1351,12 +1279,7 @@ class SwarmRuntime:
             if result is None:
                 return WorkerResult(status="cancelled", summary="")
             return result.model_copy(update={
-                "status": WorkerStatus.cancelled,
-                "input_tokens": cumulative_input_tokens,
-                "output_tokens": cumulative_output_tokens,
-                "cache_read_tokens": cumulative_cache_read_tokens,
-                "cache_creation_tokens": cumulative_cache_creation_tokens,
-                "token_source": cumulative_token_source,
+                **totals, "token_source": token_source, "status": WorkerStatus.cancelled,
             })
 
         successful_reads: dict[tuple[str, str], str] = {}
@@ -1418,38 +1341,14 @@ class SwarmRuntime:
                 **({"record_usage": record_usage} if record_usage is not None else {}),
             )
 
-            cumulative_input_tokens += result.input_tokens
-            cumulative_output_tokens += result.output_tokens
-            cumulative_cache_read_tokens += result.cache_read_tokens
-            cumulative_cache_creation_tokens += result.cache_creation_tokens
-            cumulative_token_source = _merge_token_source(
-                cumulative_token_source, result.token_source
-            )
-
+            for field in totals:
+                totals[field] += getattr(result, field)
+            token_source = _merge_token_source(token_source, result.token_source)
             if result.status != "failed" or result.error == UNKNOWN_TOOL_OUTCOME:
-                # Success (or timeout/token_limit/completed) — no more retries
-                result = result.model_copy(
-                    update={
-                        "input_tokens": cumulative_input_tokens,
-                        "output_tokens": cumulative_output_tokens,
-                        "cache_read_tokens": cumulative_cache_read_tokens,
-                        "cache_creation_tokens": cumulative_cache_creation_tokens,
-                        "token_source": cumulative_token_source,
-                    }
-                )
-                return result
+                break
 
-        # All retries exhausted, return the last failed result with cumulative tokens
         if result is not None:
-            result = result.model_copy(
-                update={
-                    "input_tokens": cumulative_input_tokens,
-                    "output_tokens": cumulative_output_tokens,
-                    "cache_read_tokens": cumulative_cache_read_tokens,
-                    "cache_creation_tokens": cumulative_cache_creation_tokens,
-                    "token_source": cumulative_token_source,
-                }
-            )
+            result = result.model_copy(update={**totals, "token_source": token_source})
         return result  # type: ignore[return-value]
 
     def _cancel_remaining_tasks(
