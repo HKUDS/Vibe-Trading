@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import partial
 from importlib import import_module
 from typing import Any, Dict, List
 
 from src.kernel import contracts
 from src.providers import request_guards
-from src.providers.adapters.common import _default_async_client_is_instance_owned, _endpoint_model
+from src.providers.adapters.common import (
+    _default_async_client_is_instance_owned, _endpoint_model, retry_async_stream, retry_stream,
+)
 from src.providers.request_guards import _guard_provider_redirects
 
 
@@ -118,29 +121,13 @@ def _make_temperature_safe_anthropic(base_cls: type) -> type:
             raise
 
     def _stream(self: Any, *args: Any, **kwargs: Any) -> Any:
-        emitted = False
-        try:
-            for chunk in base_cls._stream(self, *args, **kwargs):
-                emitted = True
-                yield chunk
-        except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-            if not emitted and _remember_and_should_retry(self, exc):
-                yield from base_cls._stream(self, *args, **kwargs)
-            else:
-                raise
+        stream = partial(base_cls._stream, self, *args, **kwargs)
+        yield from retry_stream(stream, partial(_remember_and_should_retry, self))
 
     async def _astream(self: Any, *args: Any, **kwargs: Any) -> Any:
-        emitted = False
-        try:
-            async for chunk in base_cls._astream(self, *args, **kwargs):
-                emitted = True
-                yield chunk
-        except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-            if not emitted and _remember_and_should_retry(self, exc):
-                async for chunk in base_cls._astream(self, *args, **kwargs):
-                    yield chunk
-            else:
-                raise
+        stream = partial(base_cls._astream, self, *args, **kwargs)
+        async for chunk in retry_async_stream(stream, partial(_remember_and_should_retry, self)):
+            yield chunk
 
     safe_cls = type(
         "ChatAnthropicTemperatureSafe",

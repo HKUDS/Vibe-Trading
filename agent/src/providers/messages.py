@@ -75,17 +75,10 @@ def assistant_message(
 
 
 class MessagePairing:
-    """Single pass over thread items that keeps every tool block well-formed.
+    """Keep results next to their assistant call block and fill missing results.
 
-    A tool block is an assistant message with tool calls plus the results that
-    must follow it directly. While a block is open, results for its calls are
-    appended and anything else is held back; the block closes at the next
-    assistant message, turn boundary or end of input, where calls without a
-    result get :data:`INTERRUPTED_RESULT_CONTENT` and the held messages follow.
-    A result for a call outside the open block is dropped.
-
-    Pairing is positional, not by a session-wide id set: providers that derive
-    call ids from a per-response counter reuse them across turns.
+    Other messages wait until the block closes. Pairing is positional because
+    providers may reuse call IDs across responses.
     """
 
     def __init__(
@@ -96,7 +89,7 @@ class MessagePairing:
         self._result_start = 0
         self.messages: list[ModelMessage] = []
         self._pending: dict[str, str] = {}
-        self._answered: set = set()
+        self._answered: set[str] = set()
         self._held: list[ModelMessage] = []
 
     def add(self, message: ModelMessage) -> None:
@@ -106,8 +99,9 @@ class MessagePairing:
             self.close_block()
             self.messages.append(message)
             self._result_start = len(self.messages)
-            for call in message.get("tool_calls", []):
-                self._pending[call["id"]] = call["function"]["name"]
+            self._pending = {
+                call["id"]: call["function"]["name"] for call in message.get("tool_calls", [])
+            }
         elif role == "tool":
             call_id = message.get("tool_call_id")
             if call_id not in self._pending or call_id in self._answered:
@@ -127,10 +121,10 @@ class MessagePairing:
         ]
         position = self._result_start if self._missing_first else len(self.messages)
         self.messages[position:position] = stubs
-        self._pending = {}
-        self._answered = set()
+        self._pending.clear()
+        self._answered.clear()
         self.messages.extend(self._held)
-        self._held = []
+        self._held.clear()
 
 
 def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
