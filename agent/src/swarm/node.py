@@ -596,6 +596,7 @@ def run_node(
     include_shell_tools: bool = False, grounding_block: str = "",
     agent_config: AgentConfig | None = None, cancel_event: _CancellationSignal | None = None,
     record_usage=None, resume: bool = False, *, policy: ToolPolicy,
+    successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
     """Run one child turn and publish its task result."""
     def emit(kind, data=None):
@@ -653,6 +654,7 @@ def run_node(
         )
         model.current_iteration = lambda: child.activity.iteration
         child.invocation.stop_on_unknown = stop.set
+        child.invocation.successful_reads = successful_reads if successful_reads is not None else {}
         child.delivery.preview_limit = 203
         with agent_authored_request():
             result = child.run(prompt, history=history or None)

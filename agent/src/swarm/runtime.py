@@ -1352,6 +1352,7 @@ class SwarmRuntime:
                 "token_source": cumulative_token_source,
             })
 
+        successful_reads: dict[tuple[str, str], str] = {}
         thread_path = node_thread(run_dir, agent_spec.id, task.id)
         # Each task owns its artifact directory, so only retries need to clear it.
         for attempt in range(max_retries + 1):
@@ -1389,6 +1390,7 @@ class SwarmRuntime:
                     if stop_requested():
                         return cancelled_result()
                     clear_agent_artifacts(artifact_dir)
+                    successful_reads.clear()
 
             if stop_requested():
                 return cancelled_result()
@@ -1405,6 +1407,7 @@ class SwarmRuntime:
                 agent_config=self._agent_config,
                 cancel_event=cancel_event,
                 resume=thread_path.is_file(),
+                successful_reads=successful_reads,
                 **({"record_usage": record_usage} if record_usage is not None else {}),
             )
 

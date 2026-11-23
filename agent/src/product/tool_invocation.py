@@ -10,8 +10,17 @@ from typing import Any, Dict
 from src.agent.tuning import _heartbeat_interval_s, _tool_timeout_seconds
 from src.kernel.progress import HeartbeatTimer, _set_emitter
 from src.kernel.tool_runner import wait_for_tool
+from src.product.tool_results import _is_tool_success
 from src.product.resources.hooks import HookManager
 from src.tools.redaction import redact_payload, redact_tool_result
+
+
+def _parse_tool_payload(result: str) -> dict | None:
+    try:
+        value = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 @dataclass(frozen=True)
@@ -77,6 +86,7 @@ class ToolInvocation:
         self.cancelled = cancelled
         self.progress = progress
         self.stop_on_unknown = None
+        self.successful_reads: dict[tuple[str, str], str] | None = None
         self._order_attempts = set()
         self._order_attempt_lock = threading.Lock()
 
@@ -123,6 +133,15 @@ class ToolInvocation:
                                "Check broker state before requesting another action.",
                 }), 0
 
+        cache = self.successful_reads
+        key = self.replay._identical_call_key(tool_name, effective_args) if readonly and cache is not None else None
+        if key is not None and key in cache:
+            cached = cache[key]
+            payload = _parse_tool_payload(cached)
+            if payload is not None:
+                return json.dumps({**payload, "_vibe_repeat": True}, ensure_ascii=False), 0
+            return f"{cached}\n\n[Repeat: prior successful read]", 0
+
         def heartbeat(emit):
             return HeartbeatTimer(tool_name=tool_name, interval=_heartbeat_interval_s(), emit=emit)
 
@@ -135,13 +154,13 @@ class ToolInvocation:
             heartbeat=heartbeat, set_emitter=_set_emitter, post_result=prepared.post_result,
         )
 
-        if self.stop_on_unknown is not None:
-            try:
-                payload = json.loads(result)
-            except (TypeError, ValueError):
-                payload = None
-            if isinstance(payload, dict) and payload.get("outcome") == "unknown":
-                self.stop_on_unknown()
+        if self.stop_on_unknown is not None or key is not None:
+            payload = _parse_tool_payload(result) or {}
+            if payload.get("outcome") == "unknown":
+                if self.stop_on_unknown is not None:
+                    self.stop_on_unknown()
+            elif key is not None and _is_tool_success(result):
+                cache[key] = redact_tool_result(result)
         return result, elapsed_ms
 
     def _is_order_tool(self, tool_name: str) -> bool:

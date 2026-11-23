@@ -197,7 +197,7 @@ class ToolExecution:
 
         for tc in tool_calls:
             # Layer 4: compact tool — mark then defer execution
-            if tc.name == "compact":
+            if tc.name == "compact" and (self.invocation.successful_reads is None or self.env.registry.get(tc.name) is not None):
                 self.delivery.progress.note("compact", "compact")
                 self.delivery._emit_tool_started(tc, {}, iteration)
                 budget = None if _override("TOKEN_THRESHOLD") is not None else self._context_budget(messages)
@@ -289,7 +289,8 @@ class ToolExecution:
                     execution_plan.append((tc, refused))
                     continue
 
-            if self.replay.deliver_cached(tc, tool_def, repeatable, dedup_key, context, messages, trace, iteration, self.delivery):
+            use_shared_cache = self.invocation.successful_reads is None or not self.replay._is_tool_readonly(tc.name)
+            if use_shared_cache and self.replay.deliver_cached(tc, tool_def, repeatable, dedup_key, context, messages, trace, iteration, self.delivery):
                 continue
 
             execution_plan.append((tc, None))
@@ -312,7 +313,7 @@ class ToolExecution:
                 for tc in authorized_segment:
                     tool = self.env.registry.get(tc.name) if len(authorized_segment) > 1 else None
                     plan.append(self._bind(tc, context, messages, trace, iteration,
-                                           parallel=bool(tool and tool.is_readonly)))
+                                           parallel=bool(tool and tool.is_readonly and self.invocation.successful_reads is None)))
                 execute_batch(plan, self._cancel_event.is_set)
             authorized_segment.clear()
 
