@@ -162,6 +162,8 @@ def test_cancel_run_wakes_worker_retry_wait(tmp_path, monkeypatch):
 
 
 def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkeypatch):
+    from src.swarm.worker import UsageMeasure
+
     store, runtime, run = _make_run(tmp_path)
     run.agents[0].max_retries = 1
     run.tasks.extend([
@@ -188,13 +190,14 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
         def __exit__(self, *exc):
             original_lock.release()
 
-    def worker(agent_spec, task, *, cancel_event, event_callback, **kwargs):
+    def worker(agent_spec, task, *, cancel_event, event_callback, record_usage, **kwargs):
         nonlocal overdue_thread
         attempts.append(task.id)
         if task.id == "t1":
             overdue_thread = threading.current_thread()
             event_callback(runtime._make_event("worker_text", task_id=task.id))
             signals[task.id] = cancel_event.is_set()
+            record_usage(UsageMeasure(101, 23, 0, 0, "provider"), {"input_tokens": 101, "output_tokens": 23})
             return WorkerResult(status="failed", summary="late fixture")
         signals[task.id] = cancel_event.is_set()
         return WorkerResult(status="completed", summary=task.id)
@@ -230,7 +233,9 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
     assert "before retrying" in expired_task.error
     assert tasks.load_task("sibling").status == TaskStatus.completed
     assert tasks.load_task("next").status == TaskStatus.completed
-    assert store.load_run(run.id).status == RunStatus.failed
+    persisted = store.load_run(run.id)
+    assert persisted.status == RunStatus.failed
+    assert (persisted.total_input_tokens, persisted.total_output_tokens, persisted.token_source) == (101, 23, "provider")
     assert not parent.is_set() and not signals["next"]
     assert signals["t1"]
     assert attempts.count("t1") == 1

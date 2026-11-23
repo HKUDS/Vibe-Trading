@@ -428,6 +428,7 @@ def run_worker(
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
     cancel_event: _CancellationSignal | None = None,
+    record_usage: Callable[[UsageMeasure, dict], None] | None = None,
     resume: bool = False,
     *,
     policy: ToolPolicy,
@@ -481,6 +482,7 @@ def run_worker(
             grounding_block=grounding_block,
             agent_config=agent_config,
             cancel_event=cancel_event,
+            record_usage=record_usage,
             resume=resume,
             successful_reads=successful_reads,
         )
@@ -514,6 +516,7 @@ def _run_worker_impl(
     llm: ChatLLM,
     policy: ToolPolicy,
     cancel_event: _CancellationSignal | None = None,
+    record_usage: Callable[[UsageMeasure, dict], None] | None = None,
     resume: bool = False,
     successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
@@ -641,6 +644,14 @@ def _run_worker_impl(
         nonlocal total_input_tokens, total_output_tokens
         nonlocal total_cache_read_tokens, total_cache_creation_tokens, token_source
         measured = _measure_usage(messages, response)
+        if record_usage is not None:
+            record_usage(
+                measured,
+                response.usage_metadata if measured.token_source == "provider" else {
+                    "input_tokens": measured.input_tokens,
+                    "output_tokens": measured.output_tokens,
+                },
+            )
         total_input_tokens += measured.input_tokens
         total_output_tokens += measured.output_tokens
         total_cache_read_tokens += measured.cache_read_tokens
@@ -810,13 +821,18 @@ def _run_worker_impl(
                     emit=_on_llm_heartbeat,
                 ):
                     try:
-                        return llm.stream_chat(
+                        received = llm.stream_chat(
                             repair_provider_messages(view.messages),
                             tools=view.tools,
                             timeout=remaining_timeout,
                             on_text_chunk=_on_text_chunk,
                             **stream_kwargs,
                         )
+                        # An interrupted response without usage has no billable
+                        # count to record. Keep usage the provider did report.
+                        if not stop_requested() or _normalize_llm_usage(received.usage_metadata):
+                            account_response(received)
+                        return received
                     except ProviderStreamError as error:
                         usage = getattr(error, "usage_metadata", None)
                         account_response(LLMResponse(usage_metadata=usage))
@@ -892,7 +908,6 @@ def _run_worker_impl(
         # runtime._merge_token_source: one heuristic iteration contaminates the
         # cumulative total, so a partly-estimated sum never reads as billed.
         worker_context.observe(view.messages, view.tools, getattr(response, "usage_metadata", None))
-        account_response(response)
 
         # Track last meaningful assistant content
         if response.content:

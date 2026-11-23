@@ -63,13 +63,13 @@ class GoalBudget:
                 "larger budget."
             )
 
-    def account(self, usage_delta: dict[str, int] | None) -> None:
+    def account(self, usage_delta: dict[str, int] | None) -> bool:
         if not (self.goal_id and self.session_id):
-            return
+            return True
         token_delta = int(usage_delta.get("total_tokens") or 0) if usage_delta else 0
         turn_delta = 0 if self.turn_accounted else 1
         if not (token_delta or turn_delta):
-            return
+            return True
         try:
             self.store.account_usage(
                 session_id=self.session_id,
@@ -85,6 +85,8 @@ class GoalBudget:
                 self.emit("goal.updated", {"goal": snapshot["goal"], "snapshot": snapshot})
         except Exception as exc:  # noqa: BLE001
             logger.debug("Goal usage accounting skipped: %s", exc)
+            return False
+        return True
 
 
 

@@ -42,7 +42,7 @@ from src.product.tool_execution_context import ToolEnvironment
 from src.product.tool_invocation import ToolInvocation
 from src.product.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
 from src.product.tool_replay import ToolReplay
-from src.product.usage import UsageLedger, _new_llm_usage_summary
+from src.product.usage import UsageLedger
 from src.product.verification import _verification_ledger
 from src.product.write_directives import WriteTargetState
 from src.providers.chat import ChatLLM
@@ -167,6 +167,9 @@ class AgentRuntime:
         bind_turn_cancel = getattr(swarm_tool, "bind_turn_cancel", None)
         if callable(bind_turn_cancel):
             bind_turn_cancel(self.activity.cancel)
+        bind_turn_usage = getattr(swarm_tool, "bind_turn_usage", None)
+        if callable(bind_turn_usage):
+            bind_turn_usage(self.usage.capture_swarm_usage)
         spawn_agent = self.registry.get("spawn_agent")
         set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
         if callable(set_usage_callback):
@@ -407,8 +410,9 @@ class AgentRuntime:
                 },
             )
 
-        self.usage.summary = _new_llm_usage_summary(self.llm)
+        self.goals = GoalBudget(self._emit)
         self.goals.start(session_id, active_goal_id)
+        self.usage.begin_turn(self.llm, self.goals)
         mid_turn_nudge_rounds = _mid_turn_nudge_rounds()
 
         # Zombie-run watchdog: fail a run that makes no forward progress
