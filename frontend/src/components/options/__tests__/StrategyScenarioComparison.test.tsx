@@ -68,7 +68,7 @@ it("maps a reversed pair to its original order and baseline without truncating s
   fireEvent.change(baseline, { target: { value: "2" } });
   await waitFor(() => expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(2));
   const sent = vi.mocked(api.compareOptionsStrategies).mock.calls[1][0];
-  expect(sent.strategies.map((strategy) => strategy.name)).toEqual(["Strategy 1", "Strategy 2"]);
+  expect(sent.strategies.map((strategy) => strategy.name)).toEqual(["strategy-1", "strategy-2"]);
   expect(sent.baseline_index).toBe(1);
   expect(sent.entry_spot).toBe(100);
   expect(sent.spot_min).toBe(80);
@@ -92,29 +92,25 @@ it("aborts the previous comparison and ignores its stale grid", async () => {
   expect(firstSignal.aborted).toBe(true);
   const secondBody = vi.mocked(api.compareOptionsStrategies).mock.calls[1][0];
   const stale = output(secondBody);
-  stale.scenario_grid.delta_to_baseline["Strategy 1"] = [[999, 999]];
+  stale.scenario_grid.delta_to_baseline["strategy-1"] = [[999, 999]];
   resolveFirst(stale);
   await waitFor(() => expect(screen.queryByText(/999/)).not.toBeInTheDocument());
   resolveSecond(output(secondBody));
   await waitFor(() => expect(screen.getByTestId("scenario-delta")).toHaveTextContent("5,6"));
 });
 
-it("trims labels to match the backend's normalized grid keys", async () => {
-  vi.mocked(api.compareOptionsStrategies).mockImplementation(async (body) => output({
-    ...body,
-    strategies: body.strategies.map((strategy) => ({ ...strategy, name: strategy.name.trim() })),
-  }));
-  const spaced = {
+it("compares saved strategies with labels longer than the API key limit", async () => {
+  vi.mocked(api.compareOptionsStrategies).mockImplementation(async (body) => output(body));
+  const longLabel = "Long saved strategy name ".repeat(4).trim();
+  render(<StrategyScenarioComparison request={{
     ...request,
-    label: "  Current strategy  ",
-    alternatives: [{ label: "  Strategy 1  ", legs }, { label: "Strategy 2", legs }],
-  };
-  render(<StrategyScenarioComparison request={spaced} />);
+    alternatives: [{ label: longLabel, legs }],
+  }} />);
   openComparison();
-  await waitFor(() => expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(api.compareOptionsStrategies).mock.calls[0][0].strategies.map((strategy) => strategy.name))
-    .toEqual(["Current strategy", "Strategy 1"]);
   await waitFor(() => expect(screen.getByTestId("scenario-delta")).toHaveTextContent("5,6"));
+  expect(screen.getByTestId("scenario-raw")).toHaveTextContent(longLabel);
+  expect(vi.mocked(api.compareOptionsStrategies).mock.calls[0][0].strategies.map((strategy) => strategy.name))
+    .toEqual(["strategy-0", "strategy-1"]);
 });
 
 it("caps only the comparison grid and discloses the lower backend limit", async () => {

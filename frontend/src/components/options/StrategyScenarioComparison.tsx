@@ -9,6 +9,7 @@ import type {
 import { OptionsScenarioMatrix } from "@/components/charts/OptionsScenarioMatrix";
 
 const COMPARE_SPOT_LIMIT = 201;
+const comparisonKey = (index: number) => `strategy-${index}`;
 
 export function StrategyScenarioComparison({ request }: { request: OptionsPayoffRequest }) {
   if (!request.alternatives?.length) return null;
@@ -40,7 +41,10 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
   const compareRequest = useMemo<OptionsStrategyCompareRequest>(() => {
     const order = [baseline, target].sort((a, b) => a - b);
     return {
-      strategies: order.map((index) => strategies[index]),
+      strategies: order.map((index) => ({
+        name: comparisonKey(index),
+        legs: strategies[index].legs,
+      })),
       baseline_index: order.indexOf(baseline),
       entry_spot: request.entry_spot,
       expiry_days: request.expiry_days,
@@ -88,8 +92,8 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
   const baselineName = strategies[baseline].name;
   const targetName = strategies[target].name;
   const grid = result?.scenario_grid;
-  const rawGrid = grid?.pnl[targetName];
-  const deltaGrid = grid?.delta_to_baseline[targetName];
+  const rawGrid = grid?.pnl[comparisonKey(target)];
+  const deltaGrid = grid?.delta_to_baseline[comparisonKey(target)];
 
   return (
     <section className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
