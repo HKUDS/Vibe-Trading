@@ -115,6 +115,79 @@ def test_training_selection_precedes_frozen_oos_and_holdout(saved_run, tmp_path)
     assert (tmp_path / "wf-study/selection-1.json").is_file()
 
 
+def test_walk_forward_api_exports_the_actual_oos_equity_csv(saved_run, tmp_path, monkeypatch):
+    import csv
+    import io
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.api.research_lab_routes import register_research_lab_routes
+    from src.research_lab import service
+
+    monkeypatch.setattr(service, "get_runs_dir", lambda: tmp_path)
+    state = service.run(
+        "walk_forward",
+        {
+            "run_dir": str(saved_run),
+            "train_bars": 15,
+            "test_bars": 5,
+            "holdout_bars": 5,
+            "max_folds": 1,
+            "objective": "total_return",
+            "candidates": [
+                {"name": "long", "parameters": {"direction": 1}},
+                {"name": "short", "parameters": {"direction": -1}},
+            ],
+        },
+    )
+    assert state["status"] == "completed"
+    result = state["result"]
+    artifact = service.job_root(state["id"]) / "oos_equity.csv"
+    expected = artifact.read_bytes()
+    app = FastAPI()
+    register_research_lab_routes(app, lambda: None, lambda: None)
+
+    with TestClient(app) as client:
+        path = f"/api/research-lab/jobs/{state['id']}/report"
+        assert client.get(path).json()["kind"] == "walk_forward"
+        response = client.get(path, params={"format": "oos_equity_csv"})
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        assert "attachment" in response.headers["content-disposition"]
+        assert response.content == expected
+        assert client.get(path, params={"format": "unknown"}).status_code == 422
+
+    rows = list(csv.DictReader(io.StringIO(expected.decode())))
+    assert len(rows) == result["oos_bars"]
+    assert float(rows[-1]["equity"]) == pytest.approx(
+        10000 * (1 + result["oos_total_return"])
+    )
+
+
+def test_csv_export_rejects_a_completed_non_walk_forward_job(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.api.research_lab_routes import register_research_lab_routes
+    from src.research_lab import service
+
+    monkeypatch.setattr(service, "get_runs_dir", lambda: tmp_path)
+    state = service.create_job("factor_audit", {})
+    service._write(
+        service.job_root(state["id"]) / "study.json",
+        {**state, "status": "completed", "result": {"kind": "factor_audit"}},
+    )
+    app = FastAPI()
+    register_research_lab_routes(app, lambda: None, lambda: None)
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/research-lab/jobs/{state['id']}/report",
+            params={"format": "oos_equity_csv"},
+        )
+    assert response.status_code == 422
+
+
 def test_walk_forward_rejects_a_candidate_scored_on_a_different_calendar(
     saved_run, tmp_path, monkeypatch,
 ):
