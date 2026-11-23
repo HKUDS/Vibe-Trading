@@ -640,3 +640,47 @@ def test_frozen_auto_source_uses_only_snapshot_benchmark(tmp_path, monkeypatch):
     )
     assert result["benchmark_kind"] == "external"
     assert result["benchmark_return"] == pytest.approx(0.1)
+
+
+def test_declared_frozen_benchmark_rejects_unusable_evaluation_window(tmp_path):
+    from backtest.engines.global_equity import GlobalEquityEngine
+    from backtest.frozen import FrozenBenchmarkInput
+    from backtest.runner import _AutoLoader
+
+    dates = pd.date_range("2026-01-05", "2026-01-09", freq="D")
+    strategy_prices = np.linspace(20, 24, len(dates))
+    strategy = pd.DataFrame(
+        {
+            "open": strategy_prices,
+            "high": strategy_prices,
+            "low": strategy_prices,
+            "close": strategy_prices,
+            "volume": 10_000,
+        },
+        index=dates,
+    )
+    benchmark_prices = np.linspace(10, 13, len(dates) - 1)
+    benchmark = pd.DataFrame({"open": benchmark_prices, "close": benchmark_prices}, index=dates[:-1])
+
+    class FlatSignal:
+        def generate(self, data_map):
+            return {code: pd.Series(0.0, index=value.index) for code, value in data_map.items()}
+
+    config = {
+        "codes": ["AAPL.US"],
+        "source": "local",
+        "benchmark": "SPY.US",
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-09",
+        "evaluation_start_date": "2026-01-08",
+        "initial_cash": 10_000,
+        "frozen_data_manifest": "sealed-manifest",
+    }
+    loader = _AutoLoader(
+        {"AAPL.US": strategy},
+        name="local",
+        benchmark_input=FrozenBenchmarkInput("SPY.US", benchmark),
+    )
+
+    with pytest.raises(ValueError, match="frozen benchmark.*lacks usable prices in the evaluation window"):
+        GlobalEquityEngine(config).run_backtest(config, loader, FlatSignal(), tmp_path)

@@ -1122,7 +1122,7 @@ class BaseEngine(ABC):
                 if not frozen or reference is not None:
                     benchmark_to_save = result
             elif reference is not None:
-                reason = f"frozen benchmark {ticker!r} lacks usable prices in the evaluation window"
+                raise ValueError(f"frozen benchmark {ticker!r} lacks usable prices in the evaluation window")
             else:
                 reason = f"benchmark {ticker!r} could not be resolved over the evaluation window"
         benchmark_warning = (
