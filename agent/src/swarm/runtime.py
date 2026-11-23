@@ -137,6 +137,10 @@ def _worker_retry_budget_s(max_retries: int) -> float:
 
 
 _LAYER_STOP_POLL_S = 0.05
+_LAYER_DEADLINE_ERROR = "Worker exceeded layer deadline of "
+_UNKNOWN_OUTCOME = (
+    ". Its outcome is unknown. Check task artifacts and any external side effects before retrying."
+)
 
 
 class _LayerStop:
@@ -457,8 +461,15 @@ class SwarmRuntime:
 
         Raises:
             FileNotFoundError: If preset does not exist.
-            ValueError: If DAG validation fails.
+            ValueError: If DAG validation fails or a prior task has an unknown outcome.
         """
+        if resume_from is not None:
+            for task in resume_from.tasks:
+                # The deadline diagnostic is already persisted on historical runs.
+                error = task.error or ""
+                if error.startswith(_LAYER_DEADLINE_ERROR) and error.endswith(_UNKNOWN_OUTCOME):
+                    raise ValueError(f"Cannot resume task {task.id}: {error}")
+
         _ensure_dotenv()
         # Reap any previously running runs whose host process died without
         # finalizing them. Threshold is computed per-run from agent timeouts +
@@ -1232,12 +1243,9 @@ class SwarmRuntime:
                         tid,
                         layer_deadline,
                     )
-                    error = f"Worker exceeded layer deadline of {layer_deadline}s"
+                    error = f"{_LAYER_DEADLINE_ERROR}{layer_deadline}s"
                     if not cancelled_before_start:
-                        error += (
-                            ". Its outcome is unknown. Check task artifacts and any "
-                            "external side effects before retrying."
-                        )
+                        error += _UNKNOWN_OUTCOME
                     results[tid] = WorkerResult(
                         status="timeout",
                         summary="",

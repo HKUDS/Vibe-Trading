@@ -27,6 +27,8 @@ import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 
+import pytest
+
 import src.swarm.runtime as rt
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus, WorkerResult
 from src.swarm.store import SwarmStore
@@ -240,3 +242,10 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
     assert signals["t1"]
     assert attempts.count("t1") == 1
     assert store.read_events(run.id) == before
+
+    resumed = run.model_copy(update={"id": "r-resume", "status": RunStatus.pending})
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: resumed)
+    monkeypatch.setattr(threading.Thread, "start", lambda _: None)
+    with pytest.raises(ValueError, match="outcome is unknown"):
+        runtime.start_run(run.preset_name, {}, resume_from=persisted)
+    assert not store.run_dir(resumed.id).exists()
