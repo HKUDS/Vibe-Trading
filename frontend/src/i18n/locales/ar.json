@@ -2784,6 +2784,7 @@
     "failed": "فشل",
     "report": "تقرير البحث",
     "download": "تنزيل JSON",
+    "downloadOosCsv": "CSV لقيمة المحفظة خارج العينة",
     "scenario": "السيناريو",
     "return": "العائد",
     "drawdown": "التراجع",
