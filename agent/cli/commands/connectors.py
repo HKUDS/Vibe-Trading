@@ -1144,72 +1144,38 @@ def _dispatch_connector(args: common.argparse.Namespace) -> int:
             account=args.account,
             clear=args.clear,
         )
-    if sub == "check":
+    if sub in {"check", "account", "positions", "orders", "quote", "history"}:
         options = {
             "host": args.host,
             "port": args.port,
             "client_id": args.client_id,
             "account": args.account,
         }
-        if args.connection_id is not None:
-            options["connection_id"] = args.connection_id
-        return cmd_connector_check(args.profile, **options)
-    if sub == "account":
-        return cmd_connector_account(
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            **({"connection_id": args.connection_id} if getattr(args, "connection_id", None) else {}),
-        )
-    if sub == "positions":
-        return cmd_connector_positions(
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            **({"connection_id": args.connection_id} if getattr(args, "connection_id", None) else {}),
-        )
-    if sub == "orders":
-        return cmd_connector_orders(
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            include_executions=args.include_executions,
-        )
-    if sub == "quote":
-        return cmd_connector_quote(
-            args.symbol,
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            exchange=args.exchange,
-            currency=args.currency,
-            sec_type=args.sec_type,
-        )
-    if sub == "history":
+        if sub == "check":
+            if args.connection_id is not None:
+                options["connection_id"] = args.connection_id
+            return cmd_connector_check(args.profile, **options)
+        if sub in {"account", "positions"}:
+            if getattr(args, "connection_id", None):
+                options["connection_id"] = args.connection_id
+            handler = cmd_connector_account if sub == "account" else cmd_connector_positions
+            return handler(args.profile, **options)
+        if sub == "orders":
+            return cmd_connector_orders(args.profile, include_executions=args.include_executions, **options)
+
+        options.update(exchange=args.exchange, currency=args.currency, sec_type=args.sec_type)
+        if sub == "quote":
+            return cmd_connector_quote(args.symbol, args.profile, **options)
         return cmd_connector_history(
             args.symbol,
             args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            exchange=args.exchange,
-            currency=args.currency,
-            sec_type=args.sec_type,
             duration=args.duration,
             bar_size=args.bar_size,
             what_to_show=args.what_to_show,
             use_rth=not args.no_rth,
             period=args.period,
             limit=args.bar_limit,
+            **options,
         )
     if sub == "authorize":
         return cmd_connector_authorize(args.profile)
