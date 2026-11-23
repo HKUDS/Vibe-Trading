@@ -249,3 +249,75 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
     with pytest.raises(ValueError, match="outcome is unknown"):
         runtime.start_run(run.preset_name, {}, resume_from=persisted)
     assert not store.run_dir(resumed.id).exists()
+
+
+def test_cli_cancels_active_run_owned_by_another_process(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import sys
+
+    store, runtime, run = _make_run(tmp_path)
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: run)
+    entered = threading.Event()
+    exited = threading.Event()
+    real_execute_run = runtime._execute_run
+
+    def worker(**kwargs):
+        entered.set()
+        stopped = kwargs["cancel_event"].wait(10)
+        return WorkerResult(status="cancelled" if stopped else "completed", summary="")
+
+    def execute_run(*args):
+        try:
+            real_execute_run(*args)
+        finally:
+            exited.set()
+
+    monkeypatch.setattr(rt, "run_worker", worker)
+    monkeypatch.setattr(runtime, "_execute_run", execute_run)
+    # start_run owns record creation.
+    run.id = "r-cli-cancel"
+    runtime.start_run("demo", {})
+    try:
+        assert entered.wait(5)
+        result = subprocess.run(
+            [
+                sys.executable, "-c",
+                "import sys; from pathlib import Path; "
+                "from cli.commands import common, swarm_runtime; "
+                "common.SWARM_DIR = Path(sys.argv[1]); "
+                "sys.exit(swarm_runtime.cmd_swarm_cancel(sys.argv[2]))",
+                str(store.base_dir), run.id,
+            ],
+            env={**os.environ, "PYTHONPATH": str(Path(rt.__file__).resolve().parents[2])},
+            capture_output=True, text=True, timeout=15,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert exited.wait(5)
+        assert store.load_run(run.id).status == RunStatus.cancelled
+        assert not store.request_cancel(run.id)
+    finally:
+        runtime.cancel_run(run.id)
+        assert exited.wait(5)
+
+
+def test_mcp_cancel_swarm_requests_cancellation_by_run_id(tmp_path, monkeypatch):
+    import asyncio
+    import json
+
+    import mcp_server
+    from fastmcp import Client
+
+    store, _, run = _make_run(tmp_path)
+    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+
+    async def request():
+        async with Client(mcp_server.mcp) as client:
+            accepted = await client.call_tool("cancel_swarm", {"run_id": run.id})
+            missing = await client.call_tool("cancel_swarm", {"run_id": "missing"})
+            return json.loads(accepted.content[0].text), json.loads(missing.content[0].text)
+
+    accepted, missing = asyncio.run(request())
+    assert accepted == {"status": "cancel_requested", "run_id": run.id}
+    assert missing["status"] == "error"
+    assert (store.run_dir(run.id) / "cancel.request").is_file()

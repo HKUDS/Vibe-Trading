@@ -3150,6 +3150,17 @@ def _build_run_payload(store, run_id: str, preset_name: str | None, *, timed_out
 
 
 @mcp.tool
+def cancel_swarm(run_id: str) -> str:
+    """Request cooperative cancellation by the run ID returned by run_swarm."""
+    try:
+        if _get_swarm_store().request_cancel(run_id):
+            return json.dumps({"status": "cancel_requested", "run_id": run_id})
+    except ValueError as exc:
+        return json.dumps({"status": "error", "error": str(exc)})
+    return json.dumps({"status": "error", "error": "Run not found or already finished", "run_id": run_id})
+
+
+@mcp.tool
 def get_swarm_status(run_id: str) -> str:
     """Get the current status of a swarm run.
 
