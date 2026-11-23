@@ -365,3 +365,51 @@ def test_resumed_node_replays_evidence_without_restoring_identity_authority(tmp_
     assert not calls
     receipts = [item for item in log.read() if item.type == "tool_result"]
     assert len(receipts) == 1 and receipts[0].get("status") == "error"
+
+
+def test_checkpoint_retry_requires_a_fresh_identity_resolution(tmp_path, monkeypatch):
+    from src.agent.tools import BaseTool, ToolRegistry
+
+    lookups = []
+    market_reads = []
+
+    class Resolver(BaseTool):
+        name = "search_symbol"
+        is_readonly = True
+
+        def execute(self, **kwargs):
+            lookups.append(kwargs["query"])
+            if len(lookups) == 1:
+                return '{"ok":true,"data":{"query":"AAPL","candidates":[{"symbol":"AAPL.US","market":"us"}]}}'
+            return '{"ok":false,"error":"Resolver unavailable"}'
+
+    class MarketRead(BaseTool):
+        name = "market_probe"
+        is_readonly = True
+
+        def execute(self, **kwargs):
+            market_reads.append(kwargs)
+            return '{"status":"ok"}'
+
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(Resolver())
+    registry.register(MarketRead())
+    cached_reads = {}
+    first = Provider([
+        LLMResponse(tool_calls=[ToolCallRequest("lookup-1", "search_symbol", {"query": "AAPL"})]),
+        fail_stream,
+    ])
+    assert run(tmp_path, registry, monkeypatch, first, successful_reads=cached_reads).status == "failed"
+
+    second = Provider([
+        LLMResponse(tool_calls=[
+            ToolCallRequest("lookup-2", "search_symbol", {"query": "AAPL"}),
+            ToolCallRequest("market-read", "market_probe", {"symbol": "AAPL.US"}),
+        ]),
+        LLMResponse(content="A fresh identity lookup was unavailable."),
+    ])
+    result = run(tmp_path, registry, monkeypatch, second, resume=True, successful_reads=cached_reads)
+
+    assert result.status == "completed"
+    assert not market_reads
+    assert lookups == ["AAPL", "AAPL"]

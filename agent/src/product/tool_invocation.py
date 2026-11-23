@@ -139,7 +139,9 @@ class ToolInvocation:
 
         cache = self.successful_reads
         key = None
-        if readonly and cache is not None:
+        # A resolver call can authorize an instrument in the current ledger.
+        # The node cache survives retries, while that ledger starts fresh.
+        if readonly and cache is not None and tool_name != "search_symbol":
             tool = self.env.registry.get(tool_name)
             bind_workspace = getattr(tool, "workspace_arguments", None)
             normalized, refusal = bind_workspace(effective_args) if bind_workspace else (effective_args, None)
