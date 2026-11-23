@@ -1,7 +1,5 @@
 # Hong Kong market layer
 
-Authors: @Jampip, @Joshuaamm7, @james-mulyono, @jaz024, @prs-016.
-
 HK calendar, lot-size and fee extensions for the existing backtest interfaces.
 FX valuation consumes explicitly supplied historical observations; a multicurrency
 cash ledger and executable FX conversion are separate future work.
@@ -32,8 +30,12 @@ dated records with tests. Existing library holidays are retained.
 took effect September 23, 2024: ordinary typhoon/black-rain signals no longer
 imply closure. Do not apply the old weather rule to current sessions. Exceptional
 future closure notices still require an evidenced override. Intraday validation
-and the portfolio execution clock remain distinct: B6 must use the same schedule
-for executable orders as well as data checks.
+and executable fills now use the same sourced schedule. `GlobalEquityEngine`
+and HK dispatch in `CompositeEngine` reject lunch, closed sessions and half-day
+afternoons. Terminal liquidation cannot bypass those boundaries. Daily bars
+carry session dates; intraday timestamps carry bar opens, with naive HK bars
+interpreted in HKT. The engine caches at most two session months. US and India
+execution rules are unchanged.
 
 ## Dated board lots and actual engine duty
 
@@ -50,16 +52,25 @@ Pass `hk_lot_sizes_file` in a run config, using a path visible to the engine:
 {"hk_lot_sizes_file": "backtest/data/hk_board_lots_20261112.csv"}
 ```
 
-The file is mutually exclusive with `hk_lot_sizes`. File-backed sizing requires
-every traded symbol to have a lot and fails on a missing one; it does not assume
-100. Existing in-memory maps keep their prior default unless
-`hk_require_lot_sizes: true` is set. Snapshot provenance appears in engine
+The file is mutually exclusive with `hk_lot_sizes`. A symbol missing from either
+kind of table uses **one share**, emits one warning per symbol, and appears in
+`lot_assumptions`. Set `hk_require_lot_sizes: true` to reject missing entries
+instead. Snapshot provenance appears in engine
 `hk_board_lot_snapshot` diagnostics and sets `historical_lots_verified: false`.
 
 Retrieval date is not an effective-from date. Using this table in 2016–2026
 research is an explicit current-lot assumption, not verified historical lot
 sizes. Future reviews and changes need a fresh dated snapshot. This CSV is not
 an historical constituent-membership database.
+
+The existing workbook-derived CSV has **unverified redistribution permission**.
+The [HKEX website terms](https://www.hkex.com.hk/global/exchange/terms-of-use?sc_lang=en)
+restrict redistribution and automated access without written permission.
+This update preserves the existing local file but does not download, expand,
+re-add or certify its publication rights. Before publishing a new upstream
+revision, the maintainer must clear the existing CSV's rights or omit it and
+use an operator-provided dated table. The runtime CSV reader supports that
+alternative; its source URL and hash are provenance, not a redistribution grant.
 
 `GlobalEquityEngine.calc_commission` now applies whole-HKD ceiling to duty on
 both bought and sold notes. The default is 0.1% from September 1, 2001, 0.13%
@@ -78,6 +89,11 @@ on November 16, 2023 and ceil(20,002×0.001)=HKD21 on November 17, on each side.
 The other existing engine fees and slippage are retained unchanged. This is not
 certification of historical levy schedules, stamp-duty exemptions, short-sale
 eligibility, non-HKD counters or fee aggregation across multiple fills.
+In particular, `hk_levy` and `hk_settlement` are legacy configurable flat rates;
+they are not a certified SFC/AFRC total or dated CCASS fee schedule. HKEX trading
+fees, dated SFC/AFRC schedules and changing settlement minimums/caps are not
+separately modelled by this HK backtest patch. Broker and FX conversion fees
+remain caller assumptions. None of these is a personal income-tax estimate.
 
 Composite commission dispatch now synchronizes its current bar timestamp to
 the market engine. The existing India T+1/price-band routing is unchanged and
@@ -111,6 +127,13 @@ historical FX dataset or infer historical publication times. B4/B5 must reject a
 requested USD metric when no compliant observations are supplied. They also do
 not implement an FX cash ledger, hedge returns, executable FX trading, or the
 multicurrency portfolio mode proposed in B6.
+
+The final-week adapter `load_hkd_fx_observations` now requests daily `HKD=X`
+through `src.market_data.fetch_market_data` with full frames/provenance.
+An explicit caller `availability_policy` maps daily labels to close/publication
+instants; there is no guessed default. `hk_equity_to_usd` validates actual HK
+valuation sessions, loads those observations and uses the existing strictly
+prior FX selection. See [the final-week contract and example](HK_FINAL_K3.md).
 
 ## Local verification
 

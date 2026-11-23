@@ -8,8 +8,10 @@ import pytest
 from backtest.engines.composite import CompositeEngine
 from backtest.engines.global_equity import GlobalEquityEngine
 from backtest.market_layer import (
+    hk_equity_to_usd,
     hk_stamp_duty,
     load_hk_board_lots,
+    load_hkd_fx_observations,
     local_and_usd_returns,
     previous_close_fx,
 )
@@ -166,6 +168,7 @@ def test_actual_engine_lot_rounding_and_bilateral_duty_hand_calculation(
     }
     engine = GlobalEquityEngine(config, market="hk")
     engine._active_symbol = "700.HK"
+    assert engine.round_size(250, 100.01) == 200
     assert engine.round_size(255, 100.01) == 200  # Tencent's dated board lot is 100.
     engine._bar_ts = pd.Timestamp("2023-11-16")
     assert (
@@ -178,11 +181,21 @@ def test_actual_engine_lot_rounding_and_bilateral_duty_hand_calculation(
     assert not engine.hk_lot_snapshot["historical_lots_verified"]
 
 
-def test_lot_file_is_dated_95_name_source_and_missing_lot_fails_closed():
+def test_lot_file_is_dated_95_name_source_and_unknown_lot_warns(caplog):
     lots, meta = load_hk_board_lots(LOTS)
     assert len(lots) == 95 and lots["0005.HK"] == 400
     assert meta["retrieved_at"].startswith("2026-11-12")
     engine = GlobalEquityEngine({"hk_lot_sizes_file": str(LOTS)}, market="hk")
+    engine._active_symbol = "1234.HK"
+    assert engine.round_size(255, 1) == 255
+    assert engine.lot_assumptions == {"1234.HK": 1}
+    assert "default 1-share lot" in caplog.text
+
+
+def test_explicit_strict_lot_policy_still_fails_closed():
+    engine = GlobalEquityEngine(
+        {"hk_lot_sizes_file": str(LOTS), "hk_require_lot_sizes": True}, market="hk"
+    )
     engine._active_symbol = "1234.HK"
     with pytest.raises(ValueError, match="board lot missing"):
         engine.round_size(1000, 1)
@@ -233,3 +246,189 @@ def test_duty_out_of_supported_history_requires_override():
     with pytest.raises(ValueError, match="before 2001"):
         hk_stamp_duty(100, 100.01, "2000-01-05")
     assert hk_stamp_duty(100, 100.01, "2000-01-05", rate_override=0.001125) == 12
+
+
+@pytest.mark.parametrize("composite", [False, True])
+def test_actual_hk_execution_rejects_lunch_and_terminal_lunch_liquidation(composite):
+    config = {"codes": ["0700.HK"], "interval": "1m"}
+    engine = (
+        CompositeEngine(config, config["codes"])
+        if composite
+        else GlobalEquityEngine(config, market="hk")
+    )
+    bar = pd.Series({"open": 100, "close": 100})
+    for stamp, allowed in [
+        ("2026-11-12T03:59:00Z", True),
+        ("2026-11-12T04:00:00Z", False),
+        ("2026-11-12T04:30:00Z", False),
+        ("2026-11-12T05:00:00Z", True),
+        ("2026-11-12T08:00:00Z", False),
+    ]:
+        engine._bar_ts = pd.Timestamp(stamp)
+        assert engine.can_execute("0700.HK", 1, bar) is allowed
+        assert engine.can_liquidate_at_end("0700.HK", pd.Timestamp(stamp)) is allowed
+
+
+@pytest.mark.parametrize(
+    "day,allowed",
+    [
+        ("2026-10-01", False),
+        ("2023-09-08", False),
+        ("2025-09-24", True),
+    ],
+)
+def test_daily_execution_uses_holidays_and_historical_weather(day, allowed):
+    engine = GlobalEquityEngine({}, market="hk")
+    engine._bar_ts = pd.Timestamp(day)
+    assert engine.can_execute("0700.HK", 1, pd.Series(dtype=float)) is allowed
+
+
+@pytest.mark.parametrize("day", ["2026-12-24", "2026-12-31", "2026-02-16"])
+def test_hk_halfday_afternoon_fills_rejected_and_naive_intraday_is_local(day):
+    engine = GlobalEquityEngine({"interval": "1m"}, market="hk")
+    for stamp, allowed in [(f"{day} 11:59", True), (f"{day} 13:01", False)]:
+        engine._bar_ts = pd.Timestamp(stamp)
+        assert engine.can_execute("0700.HK", 1, pd.Series(dtype=float)) is allowed
+
+
+def test_actual_fill_ledger_contains_no_lunch_fills():
+    dates = pd.to_datetime(
+        [
+            "2026-11-12T03:30Z",
+            "2026-11-12T04:30Z",
+            "2026-11-12T05:00Z",
+            "2026-11-12T05:30Z",
+        ]
+    )
+    config = {
+        "initial_cash": 100000,
+        "interval": "1m",
+        "hk_lot_sizes": {"0700.HK": 100},
+    }
+    engine = GlobalEquityEngine(config, market="hk")
+    frame = pd.DataFrame({"open": 100.0, "close": 100.0}, index=dates)
+    targets = pd.DataFrame({"0700.HK": [0.0, 0.5, 0.5, 0.5]}, index=dates)
+    engine._execute_bars(
+        dates,
+        {"0700.HK": frame},
+        frame[["close"]].rename(columns={"close": "0700.HK"}),
+        targets,
+        ["0700.HK"],
+    )
+    assert engine.fill_records
+    assert not any(fill.timestamp == dates[1] for fill in engine.fill_records)
+    assert any(
+        fill.action == "open" and fill.timestamp == dates[2]
+        for fill in engine.fill_records
+    )
+
+
+def fx_daily_policy(label, provenance):
+    """Synthetic fixture: daily close/publication instants known from its source."""
+    assert provenance["source"] == "synthetic"
+    day = pd.Timestamp(label).tz_localize("UTC")
+    return day + pd.Timedelta(hours=22), day + pd.Timedelta(hours=22, minutes=5)
+
+
+def fx_daily_fetcher(**kwargs):
+    assert kwargs["codes"] == ["HKD=X"]
+    assert kwargs["source"] == "yfinance" and kwargs["interval"] == "1D"
+    assert (
+        kwargs["as_frames"] and kwargs["include_provenance"] and kwargs["max_rows"] == 0
+    )
+    return {
+        "HKD=X": pd.DataFrame(
+            {"close": [7.8, 7.9, 8.0]},
+            index=pd.to_datetime(["2026-10-29", "2026-10-30", "2026-11-02"]),
+        ),
+        "_provenance": {
+            "HKD=X": {"source": "synthetic", "timestamp_basis": "session_date"}
+        },
+    }
+
+
+def test_loader_to_hk_session_usd_curve_carries_prior_fx_without_lookahead():
+    values = pd.Series(
+        [780.0, 790.0], index=pd.to_datetime(["2026-10-30T08:00Z", "2026-11-02T08:00Z"])
+    )
+    result = hk_equity_to_usd(
+        values, availability_policy=fx_daily_policy, fetcher=fx_daily_fetcher
+    )
+    assert result["rate"].tolist() == [7.8, 7.9]
+    assert result["value_usd"].tolist() == pytest.approx([100.0, 100.0])
+    assert result["return_usd"].iloc[1] == pytest.approx(0.0)
+    assert result.attrs["units"] == "HKD_per_USD"
+    assert result.attrs["availability_policy"] == "fx_daily_policy"
+    assert result.attrs["publication_times_certified"] is False
+
+
+def test_loader_fx_requires_policy_and_never_backfills_first_missing_rate():
+    with pytest.raises(ValueError, match="explicit publication-time"):
+        load_hkd_fx_observations(
+            "2026-10-29",
+            "2026-11-02",
+            availability_policy=None,
+            fetcher=fx_daily_fetcher,
+        )
+    values = pd.Series([780.0], index=pd.to_datetime(["2026-10-29T08:00Z"]))
+    with pytest.raises(ValueError, match="Missing or stale"):
+        hk_equity_to_usd(
+            values, availability_policy=fx_daily_policy, fetcher=fx_daily_fetcher
+        )
+
+
+def test_fx_loader_cannot_fabricate_a_timestamp_or_accept_missing_data():
+    with pytest.raises(ValueError, match="timezone-aware"):
+        load_hkd_fx_observations(
+            "2026-10-29",
+            "2026-11-02",
+            availability_policy=lambda label, _: (label, label),
+            fetcher=fx_daily_fetcher,
+        )
+    with pytest.raises(ValueError, match="unavailable"):
+        load_hkd_fx_observations(
+            "2026-10-29",
+            "2026-11-02",
+            availability_policy=fx_daily_policy,
+            fetcher=lambda **_: {},
+        )
+
+
+def test_hk_usd_curve_requires_actual_trading_sessions():
+    values = pd.Series([780.0], index=pd.to_datetime(["2026-10-31T08:00Z"]))
+    with pytest.raises(ValueError, match="HK trading sessions"):
+        hk_equity_to_usd(
+            values, availability_policy=fx_daily_policy, fetcher=fx_daily_fetcher
+        )
+
+
+def test_hsi_absence_audit_distinguishes_weather_candidates_from_provider_gaps():
+    from src.data_gateway.hk_sessions import audit_hsi_session_coverage
+
+    frame = pd.DataFrame({"close": [100.0]}, index=pd.to_datetime(["2023-09-04"]))
+    report = audit_hsi_session_coverage(
+        frame, "2023-09-01", "2023-09-05", provenance={"source": "synthetic"}
+    )
+    assert report["unverified_pre_reform_closure_candidates"] == ["2023-09-05"]
+    assert not report["coverage_verified"]
+    # Sep 1 is already a sourced full closure, not a silently inferred data gap.
+    assert "2023-09-01" not in report["unverified_pre_reform_closure_candidates"]
+    report = audit_hsi_session_coverage(
+        frame.iloc[:0], "2025-09-24", "2025-09-24", provenance={"source": "synthetic"}
+    )
+    assert report["post_reform_data_gaps"] == ["2025-09-24"]
+    assert not report["unverified_pre_reform_closure_candidates"]
+
+
+def test_weather_inventory_is_sourced_and_reform_ignores_new_weather_overrides(
+    monkeypatch,
+):
+    from src.data_gateway import hk_sessions
+
+    inventory = hk_sessions.weather_closure_inventory()
+    assert all(row["source"].startswith("https://") for row in inventory)
+    assert {row["session"] for row in inventory} == {"morning", "full"}
+    monkeypatch.setitem(
+        hk_sessions.FULL_CLOSURES, "2025-09-24", "https://example.test/weather"
+    )
+    assert len(schedule("hk_equity", "2025-09-24", "2025-09-24")[2]) == 1

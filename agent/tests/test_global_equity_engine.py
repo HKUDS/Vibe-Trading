@@ -2,7 +2,7 @@
 
 Validates:
   - US: zero commission, fractional shares, low slippage
-  - HK: stamp tax bilateral, 100-share lots, levies
+  - HK: bilateral stamp tax, a configured Tencent 100-share lot, flat fees
   - Canada: whole shares, configurable broker cost, TSX/TSXV tick grid
   - Same-session trading for all three markets
   - Both directions allowed
@@ -14,7 +14,6 @@ import pandas as pd
 import pytest
 
 from backtest.engines.global_equity import GlobalEquityEngine
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -32,9 +31,12 @@ def _us_engine(**overrides) -> GlobalEquityEngine:
 
 
 def _hk_engine(**overrides) -> GlobalEquityEngine:
-    config = {"initial_cash": 1_000_000}
+    config = {"initial_cash": 1_000_000, "hk_lot_sizes": {"0700.HK": 100}}
     config.update(overrides)
-    return GlobalEquityEngine(config, market="hk")
+    engine = GlobalEquityEngine(config, market="hk")
+    engine._active_symbol = "0700.HK"
+    engine._bar_ts = pd.Timestamp("2026-11-12")
+    return engine
 
 
 def _ca_engine(**overrides) -> GlobalEquityEngine:
@@ -143,10 +145,10 @@ class TestCommission:
         comm = engine.calc_commission(size, price, 1, is_open=True)
         # Expected components:
         expected = (
-            notional * engine.hk_commission      # broker ~¥52.5
-            + notional * engine.hk_stamp_tax     # stamp ~¥350
-            + notional * engine.hk_levy          # SFC+FRC ~¥19.8
-            + notional * engine.hk_settlement    # CCASS ~¥7
+            notional * engine.hk_commission  # broker ~¥52.5
+            + notional * engine.hk_stamp_tax  # stamp ~¥350
+            + notional * engine.hk_levy  # legacy configured flat charge
+            + notional * engine.hk_settlement  # legacy configured flat charge
         )
         assert comm == pytest.approx(expected, abs=0.01)
 
@@ -179,7 +181,8 @@ class TestSlippage:
 
     def test_custom_slippage(self) -> None:
         engine = GlobalEquityEngine(
-            {"initial_cash": 500_000, "slippage_us": 0.002}, market="us",
+            {"initial_cash": 500_000, "slippage_us": 0.002},
+            market="us",
         )
         assert engine.apply_slippage(100.0, 1) == pytest.approx(100.2)
 
@@ -193,7 +196,10 @@ class TestSlippage:
         ],
     )
     def test_canada_rounds_against_trader_on_official_tick_grid(
-        self, price: float, direction: int, expected: float,
+        self,
+        price: float,
+        direction: int,
+        expected: float,
     ) -> None:
         engine = _ca_engine(slippage_ca=0.0)
         assert engine.apply_slippage(price, direction) == expected
@@ -224,14 +230,15 @@ class TestMarketParam:
 
 def test_us_ignored_commission_is_refused_and_explicit_slippage_changes_fills():
     import pytest
-    with pytest.raises(ValueError, match='slippage_us'):
-        _us_engine(codes=['SPY.US'], commission=0.0005)
-    engine = _us_engine(codes=['SPY.US'], slippage_us=0.0013)
+
+    with pytest.raises(ValueError, match="slippage_us"):
+        _us_engine(codes=["SPY.US"], commission=0.0005)
+    engine = _us_engine(codes=["SPY.US"], slippage_us=0.0013)
     assert engine._execution_price(100, 1) == pytest.approx(100.13)
     assert engine._execution_price(100, -1) == pytest.approx(99.87)
-    costs = engine._engine_diagnostics()['execution_costs']
-    assert costs['slippage_buy_rate'] == pytest.approx(.0013)
-    assert costs['slippage_sell_rate'] == pytest.approx(.0013)
-    assert costs['commission_rate'] == 0
+    costs = engine._engine_diagnostics()["execution_costs"]
+    assert costs["slippage_buy_rate"] == pytest.approx(0.0013)
+    assert costs["slippage_sell_rate"] == pytest.approx(0.0013)
+    assert costs["commission_rate"] == 0
     # A composite portfolio may apply the generic commission to crypto.
-    _us_engine(codes=['SPY.US', 'BTC-USDT'], commission=.001)
+    _us_engine(codes=["SPY.US", "BTC-USDT"], commission=0.001)

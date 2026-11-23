@@ -1,21 +1,153 @@
-"""Historical FX valuation and dated HK board-lot input, without network calls.
+"""Historical FX valuation, explicit loader acquisition and dated HK lot input.
 
 FX observations are local currency units per USD. `close_at` and `available_at`
 are separate UTC instants: a previous close cannot be used before publication.
-Callers acquire daily USD/HKD (e.g. HKD=X) through the shared market-data layer
-and retain its provenance; this module never treats today's display FX as history.
+Daily USD/HKD acquisition delegates to the shared market-data layer and retains
+its provenance; this module never treats today's display FX as history.
 """
 
 from __future__ import annotations
 
 import csv
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import date, datetime
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+
+def load_hkd_fx_observations(
+    start_date: str,
+    end_date: str,
+    *,
+    availability_policy: Callable[[pd.Timestamp, dict], tuple],
+    fetcher: Callable | None = None,
+) -> pd.DataFrame:
+    """Acquire daily HKD=X through Vibe's loader with an explicit timing policy.
+
+    Args:
+        start_date: First requested daily FX label, inclusive.
+        end_date: Last requested daily FX label, inclusive.
+        availability_policy: Given a source daily label and its provenance,
+            return timezone-aware ``(close_at, available_at)`` instants. The
+            caller must document this policy; date labels alone do not certify
+            historical publication times. No implicit policy is supplied.
+        fetcher: Optional shared market-data callable for offline integration.
+
+    Returns:
+        Positive HKD-per-USD observations with the strict historical FX schema.
+        ``attrs`` retains the loader's provenance and the policy's name.
+
+    Raises:
+        ValueError: The provider is unavailable, timestamps/rates are invalid,
+            or no explicit availability policy was provided.
+    """
+    if not callable(availability_policy):
+        raise ValueError("Daily FX requires an explicit publication-time policy")
+    if pd.Timestamp(start_date) > pd.Timestamp(end_date):
+        raise ValueError("FX start date must not follow its end date")
+    if fetcher is None:
+        from src.market_data import fetch_market_data
+
+        fetcher = fetch_market_data
+    payload = fetcher(
+        codes=["HKD=X"],
+        start_date=start_date,
+        end_date=end_date,
+        source="yfinance",
+        interval="1D",
+        max_rows=0,
+        include_provenance=True,
+        as_frames=True,
+    )
+    if not isinstance(payload, dict):
+        raise ValueError("HKD=X loader response must be an object")
+    frame = payload.get("HKD=X")
+    if not isinstance(frame, pd.DataFrame) or frame.empty or "close" not in frame:
+        raise ValueError("HKD=X daily FX observations are unavailable")
+    labels = pd.DatetimeIndex(frame.index)
+    if labels.hasnans or labels.has_duplicates:
+        raise ValueError("FX daily labels must be valid and unique")
+    source_metadata = payload.get("_provenance", {})
+    if not isinstance(source_metadata, dict):
+        raise ValueError("FX loader provenance must be an object")
+    provenance = source_metadata.get("HKD=X", {})
+    if not isinstance(provenance, dict):
+        raise ValueError("FX loader provenance must be an object")
+    values = pd.to_numeric(frame["close"], errors="raise")
+    if not np.isfinite(values).all() or (values <= 0).any():
+        raise ValueError("FX rates must be finite and positive")
+    rows = []
+    for label, rate in zip(labels, values):
+        close, available = availability_policy(label, dict(provenance))
+        close, available = pd.Timestamp(close), pd.Timestamp(available)
+        if (
+            pd.isna(close)
+            or pd.isna(available)
+            or close.tzinfo is None
+            or available.tzinfo is None
+        ):
+            raise ValueError("FX timing policy must return timezone-aware instants")
+        if available < close:
+            raise ValueError("FX cannot be available before its close")
+        rows.append(
+            {
+                "close_at": close.tz_convert("UTC"),
+                "available_at": available.tz_convert("UTC"),
+                "rate": float(rate),
+            }
+        )
+    observations = pd.DataFrame(rows).sort_values("close_at").reset_index(drop=True)
+    if observations["close_at"].duplicated().any():
+        raise ValueError("FX policy must yield unique close instants")
+    observations.attrs.update(
+        symbol="HKD=X",
+        units="HKD_per_USD",
+        provenance=provenance,
+        availability_policy=getattr(availability_policy, "__name__", "caller_supplied"),
+        publication_times_certified=False,
+    )
+    return observations
+
+
+def hk_equity_to_usd(
+    local_values: pd.Series,
+    *,
+    availability_policy: Callable[[pd.Timestamp, dict], tuple],
+    fetcher: Callable | None = None,
+    max_age: str | pd.Timedelta = "7D",
+) -> pd.DataFrame:
+    """Load daily FX and value an HK-session equity curve without backfilling.
+
+    Local values must use actual, timezone-aware HK session valuation instants.
+    Prior available closes carry forward over holidays/weekends within max_age;
+    missing initial FX is an error. The returned provenance describes the
+    caller's publication-time assumption rather than certifying the dataset.
+    """
+    from src.data_gateway.calendars import schedule
+
+    instants = pd.DatetimeIndex(local_values.index)
+    if instants.empty or instants.tz is None or instants.hasnans:
+        raise ValueError("HK equity valuations must be timezone-aware and nonempty")
+    days = instants.tz_convert("Asia/Hong_Kong").tz_localize(None).normalize()
+    first, last = days.min(), days.max()
+    sessions = schedule("hk_equity", str(first.date()), str(last.date()))[2].index
+    if not days.isin(sessions).all():
+        raise ValueError("HK equity valuations must fall on HK trading sessions")
+    age = pd.Timedelta(max_age)
+    if pd.isna(age) or age <= pd.Timedelta(0):
+        raise ValueError("FX maximum age must be positive")
+    observations = load_hkd_fx_observations(
+        str((first - age).date()),
+        str(last.date()),
+        availability_policy=availability_policy,
+        fetcher=fetcher,
+    )
+    result = local_and_usd_returns(local_values, observations, max_age=age)
+    result.attrs.update(observations.attrs)
+    return result
 
 
 # IRD historical rates, then the 2023-11-17 restoration of 0.1% on EACH note:
@@ -76,7 +208,7 @@ def hk_stamp_duty(
 
 
 def load_hk_board_lots(path: str | Path) -> tuple[dict[str, int], dict]:
-    """Read an explicitly supplied dated HKEX CSV; reject aliases/conflicts/gaps.
+    """Read an explicit dated HKEX CSV; reject alias conflicts or missing metadata.
 
     This input is a current snapshot unless separately evidenced historical
     validity is supplied. Retrieval time is not an effective-from date.

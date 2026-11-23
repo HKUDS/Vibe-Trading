@@ -9,7 +9,7 @@ Market rules:
   HK:
     - T+0, long/short allowed
     - Stamp tax 0.1% bilateral + levies
-    - Board-lot rounding per symbol from ``hk_lot_sizes``; 100 shares otherwise
+    - Board-lot rounding per symbol from ``hk_lot_sizes``; 1 share with a warning otherwise
     - Higher slippage than US
   Canada (TSX / TSX Venture):
     - Same-session round trips and long/short orders supported
@@ -40,7 +40,7 @@ from backtest.engines.base import BaseEngine
 logger = logging.getLogger(__name__)
 
 #: Board lot used for an HK symbol the run has no lot size for.
-_DEFAULT_HK_BOARD_LOT = 100
+_DEFAULT_HK_BOARD_LOT = 1
 
 
 def _hk_lot_key(symbol: Any) -> str:
@@ -65,14 +65,14 @@ class GlobalEquityEngine(BaseEngine):
       - slippage_hk: default 0.001
       - hk_stamp_tax: optional explicit override; otherwise dated statutory duty, whole-HKD ceiling
       - hk_commission: default 0.00015 (万1.5)
-      - hk_levy: default 0.0000565 (SFC + FRC)
-      - hk_settlement: default 0.00002 (CCASS)
+      - hk_levy: legacy flat charge, default 0.0000565; not a certified regulatory total
+      - hk_settlement: legacy flat charge, default 0.00002; not a dated CCASS schedule
       - hk_lot_sizes: ``{symbol: board lot}``. HK board lots are set per
         issuer, so a flat 100 mis-sizes most names. Any HK symbol missing
-        from the table falls back to 100 and is reported in the run metrics
+        from the table falls back to 1 and is reported in the run metrics
         under ``lot_assumptions``, including runs with no table.
       - hk_lot_sizes_file: dated HKEX CSV; mutually exclusive with hk_lot_sizes.
-        File-backed sizing requires every traded symbol; missing lots fail closed.
+        Missing lots warn and use one share unless hk_require_lot_sizes is true.
         Snapshot retrieval time does not prove historical lot validity.
       - hk_require_lot_sizes: require complete coverage for an in-memory lot map.
       - slippage_ca: defaults to slippage_us
@@ -86,8 +86,13 @@ class GlobalEquityEngine(BaseEngine):
     def __init__(self, config: dict, market: str = "us"):
         from backtest.engines._market_hooks import _detect_market
 
-        if (market == "us" and config.get("commission", 0)
-                and all(_detect_market(code) == "us_equity" for code in config.get("codes", []))):
+        if (
+            market == "us"
+            and config.get("commission", 0)
+            and all(
+                _detect_market(code) == "us_equity" for code in config.get("codes", [])
+            )
+        ):
             raise ValueError(
                 "US equities do not apply the generic 'commission' setting. "
                 "Remove it; use 'slippage_us' for per-side execution slippage "
@@ -112,14 +117,17 @@ class GlobalEquityEngine(BaseEngine):
             for k, v in (config.get("hk_lot_sizes") or {}).items()
         }
         self.hk_lot_snapshot = None
+        self._run_interval = str(config.get("interval", "1D"))
+        self._hk_session_months: dict[str, pd.DataFrame] = {}
         self.hk_require_lot_sizes = bool(config.get("hk_require_lot_sizes", False))
         if config.get("hk_lot_sizes_file"):
             from backtest.market_layer import load_hk_board_lots
 
             if config.get("hk_lot_sizes"):
                 raise ValueError("Use hk_lot_sizes or hk_lot_sizes_file, not both")
-            self.hk_lot_sizes, self.hk_lot_snapshot = load_hk_board_lots(config["hk_lot_sizes_file"])
-            self.hk_require_lot_sizes = True
+            self.hk_lot_sizes, self.hk_lot_snapshot = load_hk_board_lots(
+                config["hk_lot_sizes_file"]
+            )
         self.lot_assumptions: dict[str, int] = {}
         # Canada defaults. Commission varies by broker, so the model exposes a
         # rate instead of inventing an exchange-wide charge.
@@ -133,9 +141,72 @@ class GlobalEquityEngine(BaseEngine):
         self.slippage_uk: float = config.get("slippage_uk", self.slippage_us)
         self.uk_stamp_tax: float = config.get("uk_stamp_tax", 0.005)
 
+    def run_backtest(self, config: dict, *args, **kwargs):
+        """Use the actual run interval for HK daily versus intraday timestamps."""
+        self._run_interval = str(config.get("interval", "1D"))
+        self._hk_session_months.clear()
+        return super().run_backtest(config, *args, **kwargs)
+
+    def _hk_execution_allowed(self, timestamp) -> bool:
+        """Check session dates or HK-local intraday opens using a bounded cache.
+
+        Daily/weekly/monthly bars use a session-date label. Intraday timestamps
+        must denote bar opens; naive values are the loader's HK local clock.
+        Aware timestamps are converted to Hong Kong before testing the grid.
+        """
+        from src.data_gateway.calendars import schedule
+
+        if timestamp is None:
+            return False
+        stamp = pd.Timestamp(timestamp)
+        if pd.isna(stamp):
+            return False
+        daily = self._run_interval in {"1D", "1W", "1M"}
+        local = (
+            stamp
+            if daily
+            else (
+                stamp.tz_localize("Asia/Hong_Kong")
+                if stamp.tzinfo is None
+                else stamp.tz_convert("Asia/Hong_Kong")
+            )
+        )
+        day = pd.Timestamp(local.date())
+        month = day.strftime("%Y-%m")
+        if month not in self._hk_session_months:
+            # Keep two months, owned by this engine; do not grow a global
+            # calendar/minute cache during repeated or long backtests.
+            if len(self._hk_session_months) >= 2:
+                self._hk_session_months.pop(next(iter(self._hk_session_months)))
+            first = day.replace(day=1)
+            last = first + pd.offsets.MonthEnd()
+            self._hk_session_months[month] = schedule(
+                "hk_equity", str(first.date()), str(last.date())
+            )[2]
+        frame = self._hk_session_months[month]
+        if day not in frame.index:
+            return False
+        if daily:
+            return True
+        row = frame.loc[day]
+        at = local.tz_convert("UTC")
+        if not row["open"] <= at < row["close"]:
+            return False
+        return bool(
+            pd.isna(row["break_start"])
+            or not (row["break_start"] <= at < row["break_end"])
+        )
+
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
-        """Allow same-session trading in both directions for every market."""
-        return True
+        """Gate HK fills to its session grid; preserve other markets' rules."""
+        if self.market != "hk":
+            return True
+        stamp = self._bar_ts if self._bar_ts is not None else bar.name
+        return self._hk_execution_allowed(stamp)
+
+    def can_liquidate_at_end(self, symbol: str, timestamp: pd.Timestamp) -> bool:
+        """Keep terminal HK liquidation subject to the same session boundaries."""
+        return self.market != "hk" or self._hk_execution_allowed(timestamp)
 
     def _hk_board_lot(self, symbol: str) -> int:
         """Return the board lot for one HK symbol.
@@ -169,21 +240,27 @@ class GlobalEquityEngine(BaseEngine):
     def _engine_diagnostics(self) -> dict[str, Any]:
         """Report effective US costs and HK board-lot assumptions."""
         if self.market == "us":
-            return {"execution_costs": {
-                "market": "us_equity",
-                "slippage_config_key": "slippage_us",
-                "slippage_buy_rate": self._execution_price(1.0, 1) - 1.0,
-                "slippage_sell_rate": 1.0 - self._execution_price(1.0, -1),
-                "commission_rate": self._execution_commission(1.0, 1.0, 1, True),
-            }}
+            return {
+                "execution_costs": {
+                    "market": "us_equity",
+                    "slippage_config_key": "slippage_us",
+                    "slippage_buy_rate": self._execution_price(1.0, 1) - 1.0,
+                    "slippage_sell_rate": 1.0 - self._execution_price(1.0, -1),
+                    "commission_rate": self._execution_commission(1.0, 1.0, 1, True),
+                }
+            }
         if not self.lot_assumptions and not self.hk_lot_snapshot:
             return {}
         return {
-            **({"hk_board_lot_snapshot": self.hk_lot_snapshot} if self.hk_lot_snapshot else {}),
+            **(
+                {"hk_board_lot_snapshot": self.hk_lot_snapshot}
+                if self.hk_lot_snapshot
+                else {}
+            ),
             "lot_assumptions": [
                 {"symbol": symbol, "field": "board_lot", "value": lot}
                 for symbol, lot in sorted(self.lot_assumptions.items())
-            ]
+            ],
         }
 
     def round_size(self, raw_size: float, price: float) -> float:
@@ -205,8 +282,10 @@ class GlobalEquityEngine(BaseEngine):
             return float(math.floor(max(raw_size, 0.0)))
         return round(max(raw_size, 0.0), 2)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
-        """US: zero; HK: stamp tax + levies; Canada: configured broker rate;
+    def calc_commission(
+        self, size: float, price: float, direction: int, is_open: bool
+    ) -> float:
+        """US: zero; HK: dated duty + configured flat fees; Canada: broker rate;
         UK: SDRT on the buyer only.
 
         ``direction`` is the order/position side (1=buy-long/short-cover,
@@ -218,12 +297,17 @@ class GlobalEquityEngine(BaseEngine):
             from backtest.market_layer import hk_stamp_duty
 
             notional = size * price
-            comm = notional * self.hk_commission       # broker commission
+            comm = notional * self.hk_commission  # broker commission
             comm += hk_stamp_duty(
-                size, price, self._bar_ts, rate_override=self._hk_stamp_tax_override,
+                size,
+                price,
+                self._bar_ts,
+                rate_override=self._hk_stamp_tax_override,
             )
-            comm += notional * self.hk_levy            # SFC + FRC levies
-            comm += notional * self.hk_settlement      # CCASS settlement
+            # Legacy configured flat rates are retained. They are not a
+            # verified dated HKEX/SFC/AFRC or settlement fee schedule.
+            comm += notional * self.hk_levy
+            comm += notional * self.hk_settlement
             return comm
         if self.market == "ca":
             return size * price * self.ca_commission
