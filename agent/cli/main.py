@@ -875,52 +875,27 @@ def _clear_halt_from_repl(console: Any) -> None:
 
 
 def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
-    """Run a ``/connector ...`` subcommand from the REPL via the dispatcher.
-
-    ``/connector`` is a thin in-REPL bridge to the ``vibe-trading connector``
-    subcommand group (SPEC.md §9 Decision 1): ``/connector status``,
-    ``/connector start``, ``/connector stop``, ``/connector halt``, etc. It parses the
-    arguments through the same argparse surface as the non-interactive CLI and
-    dispatches to the same privileged handlers — none of which is an agent tool.
-    A bare ``/connector`` defaults to ``status`` so the most common read is one
-    keystroke away.
-
-    Args:
-        console: Rich console for error messages.
-        args: Tokens following ``/connector`` (e.g. ``["status", "robinhood-live-mcp"]``).
-    """
-    from cli.commands.parser import build_parser as _build_parser
+    """Route the REPL connector command through the privileged CLI dispatcher."""
     from cli.commands.connectors import _dispatch_connector
 
-    argv = ["connector", *(args or ["status"])]
-    parser = _build_parser()
+    _run_repl_subcommand(
+        console, "connector", args, _dispatch_connector,
+        "[list|status|start|stop|halt|resume|revoke]",
+    )
+
+
+def _run_repl_subcommand(console: Any, command: str, args: list[str], dispatch: Any, usage: str) -> None:
+    from cli.commands.parser import build_parser
+
     try:
-        parsed = parser.parse_args(argv)
+        parsed = build_parser().parse_args([command, *(args or ["status"])])
     except SystemExit:
-        # argparse already printed usage to stderr; keep the REPL alive.
-        console.print("[dim]Usage: /connector [list|status|start|stop|halt|resume|revoke][/dim]")
+        console.print(f"[dim]Usage: /{command} {usage}[/dim]")
         return
     try:
-        _dispatch_connector(parsed)
-    except Exception as exc:  # noqa: BLE001 — never let a connector command kill the loop
-        console.print(f"[bold red]/connector failed:[/bold red] {exc}")
-
-
-def _run_data_command_from_repl(console: Any, args: list[str]) -> None:
-    """Run a ``/data ...`` subcommand from the REPL via the CLI dispatcher."""
-    from cli.commands.parser import build_parser as _build_parser
-    from cli.commands.data import _dispatch_data
-
-    argv = ["data", *(args or ["status"])]
-    try:
-        parsed = _build_parser().parse_args(argv)
-    except SystemExit:
-        console.print("[dim]Usage: /data [status][/dim]")
-        return
-    try:
-        _dispatch_data(parsed)
+        dispatch(parsed)
     except Exception as exc:  # noqa: BLE001
-        console.print(f"[bold red]/data failed:[/bold red] {exc}")
+        console.print(f"[bold red]/{command} failed:[/bold red] {exc}")
 
 
 def _is_numeric_pick(text: str) -> Optional[int]:
@@ -1379,7 +1354,9 @@ def _interactive_loop(
                 _run_connector_command_from_repl(console, slash_tokens[1:])
                 continue
             if slash_name == "data":
-                _run_data_command_from_repl(console, slash_tokens[1:])
+                from cli.commands.data import _dispatch_data
+
+                _run_repl_subcommand(console, "data", slash_tokens[1:], _dispatch_data, "[status]")
                 continue
             rc = _dispatch_slash(text, ctx)
             if rc == 2:

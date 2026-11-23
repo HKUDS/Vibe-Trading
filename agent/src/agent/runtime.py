@@ -88,27 +88,11 @@ class AgentRuntime:
             event_callback: Event callback (event_type, data).
             max_iterations: Maximum research iterations, plus one text-only answer retry.
             persistent_memory: PersistentMemory for cross-session recall.
-            cancel_event: Optional cancellation flag to share with long-running
-                tools (e.g. ``run_swarm``). The host session owns the event so a
-                user stop reaches both the loop and the tools it is blocked in;
-                ``None`` keeps the loop self-contained (CLI and tests).
-            background_manager: Scoped handle over the background task table.
-                Must be the same handle the registry bound to its background
-                tools, so this loop drains the completions of its own tasks and
-                never another conversation's. Falls back to the handle the
-                registry recorded, and only then to an unowned one.
-            thread_recorder: The conversation's sink for this turn
-                (``src.session.runtime.TurnRecorder``). It receives every item
-                the model sees, carries the identity records and loaded tool
-                names earlier turns left, and brings their offloaded tool
-                results into this run. ``None`` (CLI, tests) records nothing
-                and starts every run fresh, as before.
-            queued_inputs: Source of user messages sent while this turn runs
-                (``src.session.pending_inputs.QueuedInputDelivery``). Its
-                ``deliver()`` records each one in the thread and returns the
-                user messages to append; the loop takes them only after a
-                tool batch finished, before the next model call. ``None``
-                takes none.
+            cancel_event: Host-owned flag shared with long-running tools.
+            background_manager: Scoped handle shared with the registry's tools.
+            thread_recorder: Durable item sink carrying identity, tools and
+                offloaded results across turns. Optional for standalone runs.
+            queued_inputs: User input source drained between tool batches.
             system_prompt: A host-supplied prompt with a fixed tool catalog.
             local_thread_path: A private durable thread for an isolated task.
             pacing_type: Turn delivery policy selected by the caller.
@@ -126,15 +110,11 @@ class AgentRuntime:
         runtime_snapshot = getattr(llm, "runtime_snapshot", None)
         if not isinstance(runtime_snapshot, LLMRuntimeSnapshot):
             runtime_cfg = get_env_config().llm
+            model = getattr(llm, "model_name", None) or runtime_cfg.langchain_model_name
             runtime_snapshot = LLMRuntimeSnapshot(
                 provider=runtime_cfg.langchain_provider.strip().lower() or "openai",
-                configured_model=(
-                    getattr(llm, "model_name", None)
-                    or runtime_cfg.langchain_model_name
-                ).strip(),
-                reasoning_effort=(
-                    runtime_cfg.langchain_reasoning_effort.strip().lower()
-                ),
+                configured_model=model.strip(),
+                reasoning_effort=runtime_cfg.langchain_reasoning_effort.strip().lower(),
             )
         self._llm_runtime = runtime_snapshot
         self.memory = memory or WorkspaceMemory()

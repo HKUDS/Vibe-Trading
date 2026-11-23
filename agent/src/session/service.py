@@ -78,6 +78,7 @@ class SessionService:
             store: Session persistence store.
             event_bus: SSE event bus.
             runs_dir: Root runs directory.
+            policy: Tool policy for session runtimes.
         """
         self.policy = policy
         self.store = store
@@ -372,17 +373,11 @@ class SessionService:
 
         Args:
             session_id: Session ID.
-            content: Message content, already validated by the caller exactly
-                as for any message (a queued one included).
+            content: Message content validated by the caller, including queued inputs.
             role: Message role.
             include_shell_tools: Whether this attempt may use shell tools.
-            queue_if_busy: Accept a user message for a session whose turn is
-                running instead of refusing it. It waits durably and joins the
-                running turn after its current tool batch, or starts the next
-                turn when that turn ends first. While earlier queued messages
-                still wait, a new one goes behind them and the oldest starts
-                the turn. Callers that do not opt in (channels, scheduler,
-                bridges) are refused as before.
+            queue_if_busy: Queue user input durably in send order. It joins the
+                current turn after a tool batch or starts a new turn.
 
         Returns:
             ``message_id`` and ``attempt_id`` for a message that started its
@@ -392,12 +387,9 @@ class SessionService:
 
         Raises:
             ValueError: If the session does not exist.
-            SessionBusyError: If the session already has a run in progress
-                and the caller did not opt in, or the service is shutting
-                down. Callers surface this as HTTP 409; the user can wait for
-                the running attempt or cancel it first.
-            PendingInputLimitError: If the message would be queued but the
-                session already holds the maximum number of waiting messages.
+            SessionBusyError: If queueing is disabled for a busy session or
+                the service is shutting down. HTTP callers surface this as 409.
+            PendingInputLimitError: If the durable queue is full.
         """
         session = self.store.get_session(session_id)
         if not session:
@@ -412,18 +404,14 @@ class SessionService:
             log.append("turn_start", turn_id, prompt="")
             if role == "assistant":
                 log.append("assistant", turn_id, content=content, phase="final")
-                log.append("turn_end", turn_id, status="completed")
             else:
                 log.append("inject", turn_id, role=role, content=content)
-                log.append("turn_end", turn_id, status="completed")
+            log.append("turn_end", turn_id, status="completed")
             self._search_index.index_message(session_id, role, content)
             self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
             return {"message_id": message.message_id}
 
-        # Claim the session before persisting anything. Reserving after the
-        # user message is appended (or relying on _active_loops, which is only
-        # populated once the registry is built) lets two concurrent sends both
-        # store a message and create an attempt.
+        # Claim before persisting so concurrent sends cannot both start attempts.
         try:
             self._reserve_session(session_id)
         except SessionBusyError:
