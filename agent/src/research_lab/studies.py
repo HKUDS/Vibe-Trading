@@ -31,7 +31,10 @@ def cost_sensitivity(request: CostRequest, root: Path, progress: Progress) -> di
             "extra_slippage_bps": scenario.extra_slippage_bps,
         }
         measured = trial(root, f"cost-{index}", settings, manifest)
-        rows.append({**scenario.model_dump(), **measured["metrics"], "run_dir": measured["run_dir"]})
+        row = {**scenario.model_dump(), **measured["metrics"], "run_dir": measured["run_dir"]}
+        if measured.get("benchmark") is not None:
+            row["benchmark"] = measured["benchmark"]
+        rows.append(row)
     brackets = []
     # These are measured sign-change brackets, never interpolated claims of
     # an exact break-even. Position sizes and fills can change with costs.
