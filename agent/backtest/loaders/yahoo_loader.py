@@ -53,7 +53,7 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India/Korea/Canada/Vietnam/UK equities plus Yahoo's own
+    Covers US/HK/India/Korea/Canada/Vietnam/UK/European equities plus Yahoo's own
     futures (``GC=F``), forex (``EURUSD=X``) and index (``^SPX``) symbol
     conventions, which the public chart endpoint serves verbatim (the code is
     used as-is in the request URL, no conversion) (#718). Supported UK ``.L``
@@ -68,7 +68,8 @@ def _is_supported(code: str) -> bool:
     return upper.endswith(
         (
             ".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", ".BA",
-            ".SA", ".L", ".T", ".TW", ".TWO", "=F", "=X",
+            ".SA", ".L", ".T", ".TW", ".TWO", ".DE", ".PA", ".AS", ".MI",
+            ".SW", ".WA", "=F", "=X",
         )
     )
 
@@ -203,6 +204,7 @@ class DataLoader:
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
         "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share", "taiwan_equity",
+        "europe_equity",
     }
     # Yahoo chart volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00

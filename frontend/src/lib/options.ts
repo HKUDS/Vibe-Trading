@@ -126,6 +126,44 @@ export interface OptionsPayoffResponse {
   limitations: string[];
 }
 
+export interface OptionsStrategyDefinition {
+  name: string;
+  legs: OptionLeg[];
+}
+
+export interface OptionsStrategyCompareRequest {
+  strategies: OptionsStrategyDefinition[];
+  baseline_index?: number;
+  entry_spot: number;
+  expiry_days: number;
+  risk_free_rate?: number;
+  volatility?: number;
+  multiplier?: number;
+  commission_rate?: number;
+  spot_min?: number;
+  spot_max?: number;
+  spot_points?: number;
+  scenario_iv_values?: number[];
+}
+
+export interface OptionsStrategyCompareResponse {
+  status: "ok";
+  comparison: { baseline_index: number; baseline_name: string };
+  strategies: Array<{ name: string; summary: OptionsPayoffSummary }>;
+  expiry_curve: {
+    spot: number[];
+    pnl: Record<string, number[]>;
+    delta_to_baseline: Record<string, number[]>;
+  };
+  scenario_grid: {
+    iv_values: number[];
+    spot: number[];
+    pnl: Record<string, number[][]>;
+    delta_to_baseline: Record<string, number[][]>;
+  };
+  limitations: string[];
+}
+
 export interface VolatilityObservation {
   strike: number;
   /** Years. */

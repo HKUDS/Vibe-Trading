@@ -30,6 +30,7 @@ _SAMPLES: dict[str, tuple[str, str, str]] = {
     "uk_equity": ("VOD.L", "VOD.L", "uk"),
     "vietnam_equity": ("VIC.VN", "VIC.VN", "vn"),
     "taiwan_equity": ("2330.TW", "2330.TW", "tw"),
+    "europe_equity": ("SAP.DE", "SAP.DE", "europe"),
 }
 
 # Crypto has a currency row but no listing suffix: its pairs carry the quote.

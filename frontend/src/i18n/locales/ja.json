@@ -1140,6 +1140,7 @@
         "ca_equity": "カナダ株",
         "taiwan_equity": "台湾株",
         "vietnam_equity": "ベトナム株",
+        "europe_equity": "欧州株式",
         "ar_equity": "アルゼンチン株",
         "br_equity": "ブラジル株",
         "uk_equity": "英国株",
@@ -1481,6 +1482,7 @@
         "uk_equity": "英国株",
         "taiwan_equity": "台湾株",
         "vietnam_equity": "ベトナム株",
+        "europe_equity": "欧州株式",
         "other": "その他"
       }
     },
@@ -1760,7 +1762,10 @@
       "entry_cost_return": "参入費用／株式想定元本",
       "higher": "上回る",
       "lower": "下回る",
-      "equal": "同じ"
+      "equal": "同じ",
+      "scenarioBasis": "両方の戦略で完了済みリクエストと共通のスポット×IVグリッドを使用します。差分は戦略マイナス基準で、説明のみを目的とします。",
+      "deltaGrid": "損益差分",
+      "gridCapped": "比較グリッドは最大 {{count}} 個のスポット点を使用します。"
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "失敗",
     "report": "リサーチレポート",
     "download": "JSONをダウンロード",
+    "downloadOosCsv": "アウト・オブ・サンプルの資産推移 CSV",
     "scenario": "シナリオ",
     "return": "リターン",
     "drawdown": "ドローダウン",
