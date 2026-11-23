@@ -4,12 +4,43 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 from src.product.result_artifacts import _write_original, save_result_parts
+from src.session.thread import ThreadLog
 from src.swarm.artifacts import agent_artifact_dir
 from src.tools.path_utils import safe_path
 from src.tools.redaction import redact_tool_result
+
+
+def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str]]:
+    """Yield recorded calls and their results, including from pre-cutover runs."""
+    if thread_path.is_file():
+        calls = {}
+        for item in ThreadLog(thread_path).read():
+            if item.type == "assistant":
+                for call in item.get("tool_calls") or []:
+                    calls[item.turn_id, call["id"]] = call.get("function", {})
+            elif item.type == "tool_result":
+                call_id = item.get("tool_call_id", "")
+                call = calls.pop((item.turn_id, call_id), None)
+                if call is not None and item.get("status") == "ok":
+                    yield call, call_id, item.get("name", "unknown"), item.get("content", "")
+        return
+
+    messages_path = safe_path("messages.json", source)
+    if messages_path.is_file():
+        calls = {}
+        for message in json.loads(messages_path.read_text()):
+            for call in message.get("tool_calls", []):
+                calls[call["id"]] = call.get("function", {})
+            if message.get("role") == "tool":
+                call_id = message.get("tool_call_id", "")
+                yield (
+                    calls.get(call_id, {}), call_id, message.get("name", "unknown"),
+                    message.get("content", ""),
+                )
 
 
 def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[dict, str]]:
@@ -26,18 +57,10 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
                 found.append((entry, raw))
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 errors.append(f"{task_id} inherited observation unavailable: {exc}")
-    messages_path = safe_path("messages.json", source)
-    if not messages_path.is_file():
-        return found
-    calls = {}
-    for message in json.loads(messages_path.read_text()):
-        for call in message.get("tool_calls", []):
-            calls[call["id"]] = call.get("function", {})
-        if message.get("role") != "tool":
-            continue
-        call_id = message.get("tool_call_id", "")
-        call = calls.get(call_id, {})
-        tool = call.get("name", message.get("name", "unknown"))
+    thread_path = safe_path("thread.jsonl", source)
+    canonical = thread_path.is_file()
+    for call, call_id, name, raw in _recorded_results(source, thread_path):
+        tool = call.get("name", name)
         # Methodology/file plumbing is already in the transcript; it is not a
         # fresh observation. This selection never decides whether a task passes.
         if tool in {"load_skill", "read_file", "write_file", "edit_file", "bash"}:
@@ -52,7 +75,6 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
             args = {}
         if tool == "quantlib_call" and args.get("action") != "call":
             continue
-        raw = message.get("content", "")
         if not isinstance(raw, str):
             continue
         try:
@@ -69,7 +91,10 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
                 digest = ref.get("sha256", "")
                 if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
                     raise ValueError("Invalid observation digest")
-                path = safe_path(f"tool-results/{digest}/result.json", source)
+                relative = f"tool-results/{digest}/result.json"
+                path = safe_path(relative, source)
+                if canonical and not path.is_file():
+                    path = safe_path(f"workspace/{relative}", source)
                 raw = path.read_text()
                 if hashlib.sha256(raw.encode()).hexdigest() != digest:
                     raise ValueError("Source observation file changed")
