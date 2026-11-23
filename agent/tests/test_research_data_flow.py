@@ -18,6 +18,7 @@ import pytest
 from backtest.options_payoff import OptionLeg, expiry_payoff, scenario_grid
 from src.product.result_artifacts import persist_calculation_result
 from src.quantlib.risk import fit_gpd_tail
+from src.session.thread import ThreadLog
 from src.swarm.evidence_handoff import prepare_handoff
 from src.swarm.models import SwarmTask
 from src.swarm.task_store import TaskStore
@@ -127,7 +128,8 @@ def test_short_stock_keeps_unbounded_loss_and_default_keeps_naked_call():
         assert result.loss_unbounded
 
 
-def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_path):
+@pytest.mark.parametrize("canonical", [False, True], ids=["legacy", "child-thread"])
+def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_path, canonical):
     store = TaskStore(tmp_path)
     source_task = SwarmTask(id="bull", agent_id="bull", prompt_template="research")
     risk = SwarmTask(id="risk", agent_id="risk", prompt_template="risk", input_from={"bull": "bull"})
@@ -136,14 +138,29 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
         store.save_task(task)
     source = agent_artifact_dir(tmp_path, "bull", "bull")
     source.mkdir(parents=True)
-    raw = json.dumps({"NVDA.US": [{"trade_date": "2026-11-12", "close": 166.19}]})
-    receipt = json.loads(persist_calculation_result(raw, source, roots=FileRoots.from_config(get_env_config().api)))
+    raw = json.dumps({"source": "market fixture", "as_of": "2026-11-12",
+                      "NVDA.US": [{"trade_date": "2026-11-12", "close": 166.19}]})
+    result_root = source / "workspace" if canonical else source
+    result_root.mkdir(exist_ok=True)
+    receipt = json.loads(persist_calculation_result(raw, result_root, roots=FileRoots.from_config(get_env_config().api)))
     # Simulate an unchanged saved log copied from a different run.
     receipt["_result_file"]["path"] = "/old/run/result.json"
-    messages = [{"role": "assistant", "tool_calls": [{"id": "q1", "function": {
-        "name": "get_market_data", "arguments": '{"codes":["NVDA.US"]}'}}]},
-        {"role": "tool", "tool_call_id": "q1", "content": json.dumps(receipt)}]
-    (source / "messages.json").write_text(json.dumps(messages))
+    call = {"id": "q1", "type": "function", "function": {
+        "name": "get_market_data", "arguments": '{"codes":["NVDA.US"],"end_date":"2026-11-12"}'}}
+    if canonical:
+        thread = ThreadLog(source / "thread.jsonl")
+        thread.append("assistant", "first-turn", content="", phase="commentary", tool_calls=[call])
+        thread.append("assistant", "second-turn", content="", phase="commentary", tool_calls=[
+            {**call, "function": {**call["function"], "arguments": '{"codes":["OTHER.US"]}'}},
+        ])
+        thread.append("tool_result", "first-turn", name="get_market_data", tool_call_id="q1",
+                      content=json.dumps(receipt), status="ok")
+        thread.append("tool_result", "second-turn", name="get_market_data", tool_call_id="q1",
+                      content='{"error":"unavailable"}', status="error")
+    else:
+        messages = [{"role": "assistant", "tool_calls": [call]},
+                    {"role": "tool", "tool_call_id": "q1", "content": json.dumps(receipt)}]
+        (source / "messages.json").write_text(json.dumps(messages))
     risk_dir = agent_artifact_dir(tmp_path, "risk", "risk")
     note = prepare_handoff(tmp_path, risk, risk_dir)
     assert "not fresh" in note
@@ -156,7 +173,12 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     entries = json.loads((pm_dir / "upstream/index.json").read_text())["observations"]
     assert len(entries) == 1
     assert entries[0]["source_task"] == "bull"
+    assert entries[0]["tool"] == "get_market_data"
+    assert entries[0]["call_id"] == "q1"
+    assert entries[0]["request"] == {"codes": ["NVDA.US"], "end_date": "2026-11-12"}
     copied = pm_dir / entries[0]["path"]
+    observation = json.loads(copied.read_text())
+    assert (observation["source"], observation["as_of"]) == ("market fixture", "2026-11-12")
     assert hashlib.sha256(copied.read_bytes()).hexdigest() == entries[0]["sha256"]
     assert resolve_data_refs(reference(copied, pointer="/NVDA.US", column="close", select="last"), str(pm_dir), [], roots=FileRoots.from_config(get_env_config().api)) == 166.19
     # Retry is stable; no duplicated evidence or new freshness claim.

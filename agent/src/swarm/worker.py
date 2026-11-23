@@ -405,6 +405,14 @@ def build_worker_prompt(
         f"## Current Date & Time\n\n"
         f"Today is {now.strftime('%A, %B %d, %Y %H:%M UTC')}"
     )
+    # Resume refreshes this turn-specific guidance along with the timestamp.
+    # Keep it outside the checkpoint fingerprint so saved work stays usable.
+    prompt_parts.append(
+        "## Delivery\n\n"
+        "Lead with a short summary of the findings or deliverables, then give supporting detail. "
+        "Reuse evidence already visible in this conversation. Read a saved result page only "
+        "when the visible result lacks a detail needed for the task."
+    )
 
     return "\n\n".join(prompt_parts)
 
