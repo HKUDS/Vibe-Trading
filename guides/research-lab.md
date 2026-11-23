@@ -125,6 +125,7 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 - `POST /api/research-lab/jobs`: `{ "action": "cost_sensitivity|walk_forward|factor_audit|replay", "request": {...} }`.
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.
+- `GET /api/research-lab/jobs/{id}/report?format=oos_equity_csv`: the exact per-bar `return` and compounded `equity` produced by a completed walk-forward job. This is validation OOS only and excludes the separately reported holdout. Other job kinds return 422 instead of a generic file download. The Web report offers the same artifact as **OOS CSV** alongside the unchanged JSON download.
 
 All routes use application authentication; submission uses settings-write
 protection. The API admits two simultaneous workers. Saved jobs live under the
