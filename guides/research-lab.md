@@ -16,6 +16,14 @@ Run a backtest first, then select its saved run. Its run-card manifest must
 still match the strategy and every exported OHLCV snapshot. A changed or
 missing file is refused; rerun that backtest to create a new baseline.
 
+Market-engine backtests also save the opening and closing prices of the external
+benchmark they used. Research Lab replays those prices separately from the
+portfolio. It selects the saved bars in each trial window without rebuilding
+weekly or monthly bars. A trial without enough matching benchmark bars reports
+its equal-weight fallback. Older runs without the reference file still replay
+locally, but cannot verify the original external benchmark. Rerun the baseline
+to capture it. The cost report records the benchmark used by each trial.
+
 ```bash
 vibe-trading research-lab costs RUN_ID --fee-multipliers 1 2 3 --slippage-bps 0 5 --json
 ```
