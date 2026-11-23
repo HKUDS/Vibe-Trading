@@ -1,4 +1,4 @@
-"""Public cn_a limits resolution for portfolio mode (D6-② tool seam, TDD).
+"""Public cn_a limits resolution for portfolio mode (tool seam, TDD).
 
 ``run_paper_trade_step(mode="portfolio")`` must resolve the cn_a limits client
 from the SAME shared ClickHouse connector probe the calendar/bars legs use
