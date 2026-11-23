@@ -66,6 +66,10 @@
 
 ## 📰 Berita
 
+- **2026-11-22** 🛠️ **Perbaikan akurasi backtest dan ekspor Options Lab** — Studi walk-forward di Research Lab hanya menilai tanggal evaluasi awal dan tetap memakai bar sebelumnya untuk pemanasan indikator. Kurva nilai tolok ukur eksternal sesuai dengan imbal hasil yang dilaporkan meski harganya sempat negatif. Pendanaan intrahari untuk kontrak perpetual kripto diselesaikan pukul 00:00, 08:00, dan 16:00 UTC. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  CSV Options Lab menyertakan alternatif tersimpan dan hasil perbandingan. Sumber data harian lokal dapat memakai `timestamp_basis: session_date` untuk mempertahankan tanggal perdagangan bursa. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  Pengiriman terjadwal mempertahankan status tugas terbaru dan Signal menyimpan lampiran bernama sama secara terpisah. Pemulihan tugas lulus uji native Windows x64 dan ARM64. **Sudah tersedia di `main` untuk rilis pip berikutnya.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
 - **2026-11-20** 📈 **Kelas saham AS dan riwayat harga Tencent** — Pencarian di Eastmoney dan Yahoo kini mengenali saham kelas B Berkshire sebagai `BRK-B.US`. Kode saham diperiksa sebelum harga diambil dari Eastmoney agar `BW-A.US` dan `BWA.US` tidak tertukar. Permintaan data harian Tencent dengan tanggal seperti `2023-1-5` kini mengambil semua halaman. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   Perbandingan strategi menilai drawdown −10% lebih baik daripada −30%. Backtest hanya menyertakan harga negatif jika `allow_nonpositive_prices: true` diaktifkan. Percakapan di CLI dapat dilanjutkan beserta riwayat pesannya. **Sudah tersedia di `main` untuk rilis pip berikutnya.**
 

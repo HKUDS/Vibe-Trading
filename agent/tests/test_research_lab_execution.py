@@ -1,5 +1,6 @@
 """Exercise saved inputs -> sandboxed engine -> cost and frozen OOS reports."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -20,19 +21,26 @@ def saved_run(tmp_path, monkeypatch, request):
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **kw: False)
     dates = pd.bdate_range("2026-01-01", periods=35)
-    symbol = getattr(request, "param", "AAPL.US")
-    prices = (
-        np.linspace(10, 10.02, 35)
-        if symbol == "000001.SZ"
-        else np.r_[np.linspace(10, 12, 15), np.linspace(11.8, 9, 20)]
-    )
+    overrides = getattr(request, "param", {})
+    codes = overrides.get("codes", ["local:AAPL.US"])
+    symbol = codes[0].removeprefix("local:")
+    if symbol == "000001.SZ":
+        prices = np.linspace(10, 10.02, 35)
+    else:
+        prices = np.r_[np.linspace(10, 12, 15), np.linspace(11.8, 9, 20)]
     frame = pd.DataFrame(
         {"date": dates, "open": prices, "high": prices * 1.01, "low": prices * 0.99, "close": prices, "volume": 1e8}
     )
-    source = tmp_path / "prices.csv"
-    frame.to_csv(source, index=False)
+    sources = []
+    for i, code in enumerate(codes):
+        source = tmp_path / f"prices-{i}.csv"
+        bars = frame if i == 0 else frame.assign(date=dates - pd.offsets.BDay(3))
+        bars.to_csv(source, index=False)
+        sources.append(
+            {"symbol": code.removeprefix("local:"), "type": "csv", "path": str(source)}
+        )
     bridge = tmp_path / "bridge.json"
-    bridge.write_text(json.dumps({"sources": [{"symbol": symbol, "type": "csv", "path": str(source)}]}))
+    bridge.write_text(json.dumps({"sources": sources}))
     monkeypatch.setattr(local, "_CONFIG_PATH", bridge)
     root = tmp_path / "baseline"
     (root / "code").mkdir(parents=True)
@@ -45,18 +53,20 @@ def saved_run(tmp_path, monkeypatch, request):
         "            stored = pd.read_csv(snapshot, index_col=0, parse_dates=True)\n"
         "            if stored.index.max() > max(df.index.max() for df in data_map.values()):\n"
         "                raise ValueError('trial snapshot leaked future prices')\n"
-        "        return {code:pd.Series(self.direction,index=df.index) for code,df in data_map.items()}\n"
+        f"        frame = data_map[{symbol!r}]\n"
+        f"        return {{{symbol!r}: pd.Series(self.direction, index=frame.index)}}\n"
     )
     (root / "config.json").write_text(
         json.dumps(
             {
-                "codes": ["local:" + symbol],
+                "codes": codes,
                 "source": "local",
                 "start_date": str(dates[0].date()),
                 "end_date": str(dates[-1].date()),
                 "initial_cash": 10000,
                 "slippage": 0,
                 "slippage_us": 0,
+                **overrides,
             }
         )
     )
@@ -105,7 +115,63 @@ def test_training_selection_precedes_frozen_oos_and_holdout(saved_run, tmp_path)
     assert (tmp_path / "wf-study/selection-1.json").is_file()
 
 
-@pytest.mark.parametrize("saved_run", ["000001.SZ"], indirect=True)
+def test_walk_forward_rejects_a_candidate_scored_on_a_different_calendar(
+    saved_run, tmp_path, monkeypatch,
+):
+    from src.research_lab import studies
+
+    evaluated = pd.read_csv(
+        saved_run / "artifacts/equity.csv", index_col=0, parse_dates=True,
+    )
+
+    def trial(root, name, config, manifest, *, parameters):
+        assert "train" in name
+        return {
+            "equity": evaluated.iloc[1:5],
+            "metrics": {"total_return": 0.15},
+            "run_dir": str(root),
+        }
+
+    monkeypatch.setattr(studies, "trial", trial)
+    root = tmp_path / "wf-study"
+    with pytest.raises(ValueError, match="training trial did not evaluate exactly"):
+        walk_forward(
+            WalkForwardRequest(
+                run_dir=str(saved_run), train_bars=5, test_bars=3,
+                objective="total_return", candidates=[{"name": "baseline"}],
+            ),
+            root,
+            lambda value: None,
+        )
+    assert not (root / "selection-1.json").exists()
+
+
+@pytest.mark.parametrize(
+    "saved_run",
+    [{"codes": ["local:AAPL.US", "local:MSFT.US"], "start_date": "2025-12-29"}],
+    indirect=True,
+)
+def test_frozen_study_uses_manifested_scored_dates_without_an_explicit_boundary(
+    saved_run, tmp_path,
+):
+    from src.research_lab.execution import freeze_run
+
+    equity = saved_run / "artifacts/equity.csv"
+    observed = pd.read_csv(equity, index_col=0, parse_dates=True).index
+    unused_prices = pd.read_csv(
+        saved_run / "artifacts/ohlcv_MSFT.US.csv", index_col=0, parse_dates=True,
+    )
+    assert unused_prices.index[0] < observed[0]
+    _, manifest, calendar, _ = freeze_run(
+        saved_run, tmp_path / "study", use_evaluation_calendar=True,
+    )
+    assert calendar.equals(observed)
+    assert json.loads(manifest.read_text())["source_equity_sha256"] == (
+        hashlib.sha256(equity.read_bytes()).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("saved_run", [{"codes": ["local:000001.SZ"]}], indirect=True)
 @pytest.mark.parametrize("enrichment", ["fundamentals", "events"])
 def test_frozen_backtest_keeps_saved_enrichment(saved_run, tmp_path, monkeypatch, enrichment):
     from types import SimpleNamespace
@@ -165,6 +231,134 @@ def test_frozen_backtest_keeps_saved_enrichment(saved_run, tmp_path, monkeypatch
     pd.testing.assert_frame_equal(pd.read_csv(replay / "artifacts/equity.csv"), expected_equity)
 
 
+@pytest.mark.parametrize(
+    "saved_run",
+    [
+        pytest.param({"warmup_bars": 10}, id="bar-count"),
+        pytest.param({"evaluation_start_date": "2026-01-15"}, id="start-date"),
+        pytest.param(
+            {
+                "warmup_bars": 10,
+                "codes": ["local:AAPL.US", "local:MSFT.US"],
+                "start_date": "2025-12-29",
+            },
+            id="extra-history-for-unused-symbol",
+        ),
+    ],
+    indirect=True,
+)
+def test_walk_forward_keeps_source_warmup_out_of_training_and_test(saved_run, tmp_path):
+    def calendar(path):
+        return pd.read_csv(path, index_col=0, parse_dates=True).index
+
+    prices = calendar(saved_run / "artifacts/ohlcv_AAPL.US.csv")
+    evaluated = calendar(saved_run / "artifacts/equity.csv")
+    assert evaluated.equals(prices[10:])
+    result = walk_forward(
+        WalkForwardRequest(
+            run_dir=str(saved_run),
+            train_bars=5,
+            test_bars=3,
+            holdout_bars=3,
+            max_folds=1,
+            objective="total_return",
+            candidates=[{"name": "baseline"}],
+        ),
+        tmp_path / "wf-study",
+        lambda value: None,
+    )
+    fold = result["folds"][0]
+    train = Path(fold["training"][0]["run_dir"])
+    test = Path(fold["test"]["run_dir"])
+    assert calendar(train / "artifacts/equity.csv").equals(evaluated[:5])
+    assert calendar(test / "artifacts/equity.csv").equals(evaluated[5:8])
+    assert calendar(
+        Path(result["holdout"]["test"]["run_dir"]) / "artifacts/equity.csv"
+    ).equals(evaluated[-3:])
+    train_prices = prices[prices <= evaluated[4]]
+    test_prices = prices[prices <= evaluated[7]]
+    assert calendar(train / "snapshot/frame-0.csv").equals(train_prices)
+    assert calendar(train / "artifacts/ohlcv_AAPL.US.csv").equals(train_prices)
+    assert calendar(test / "snapshot/frame-0.csv").equals(test_prices)
+
+
+@pytest.mark.parametrize("saved_run", [{"warmup_bars": 30}], indirect=True)
+def test_walk_forward_does_not_count_warmup_toward_minimum_bars(saved_run, tmp_path):
+    with pytest.raises(ValueError, match="too few bars"):
+        walk_forward(
+            WalkForwardRequest(
+                run_dir=str(saved_run),
+                train_bars=5,
+                test_bars=3,
+                objective="total_return",
+                candidates=[{"name": "baseline"}],
+            ),
+            tmp_path / "wf-study",
+            lambda value: None,
+        )
+
+
+@pytest.mark.parametrize("saved_run", [{"warmup_bars": 10}], indirect=True)
+def test_walk_forward_rejects_a_changed_source_evaluation_artifact(saved_run, tmp_path):
+    equity = saved_run / "artifacts/equity.csv"
+    equity.write_bytes(equity.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="source equity changed"):
+        walk_forward(
+            WalkForwardRequest(
+                run_dir=str(saved_run),
+                train_bars=5,
+                test_bars=3,
+                objective="total_return",
+                candidates=[{"name": "baseline"}],
+            ),
+            tmp_path / "wf-study",
+            lambda value: None,
+        )
+    assert not (tmp_path / "wf-study/trials").exists()
+
+
+@pytest.mark.parametrize("saved_run", [{}, {"warmup_bars": 10}], indirect=True)
+def test_rolling_fit_uses_only_its_own_evaluation_window(saved_run, tmp_path):
+    evaluated = pd.read_csv(saved_run / "artifacts/equity.csv", index_col=0, parse_dates=True).index
+    result = walk_forward(
+        WalkForwardRequest(
+            run_dir=str(saved_run),
+            training="rolling",
+            train_bars=5,
+            test_bars=3,
+            holdout_bars=3,
+            max_folds=2,
+            objective="total_return",
+            candidates=[{"name": "baseline"}],
+        ),
+        tmp_path / "rolling-study",
+        lambda value: None,
+    )
+    expected = (evaluated[:5], evaluated[3:8], evaluated[-8:-3])
+    for fold, window in zip([*result["folds"], result["holdout"]], expected, strict=True):
+        train = Path(fold["training"][0]["run_dir"])
+        actual = pd.read_csv(train / "artifacts/equity.csv", index_col=0, parse_dates=True).index
+        assert actual.equals(window)
+
+
+@pytest.mark.parametrize("saved_run", [{"warmup_bars": 0}], indirect=True)
+def test_cost_replay_does_not_require_a_saved_equity_calendar(saved_run, tmp_path):
+    card_path = saved_run / "run_card.json"
+    card = json.loads(card_path.read_text())
+    card["artifacts"] = [entry for entry in card["artifacts"] if entry["path"] != "artifacts/equity.csv"]
+    card_path.write_text(json.dumps(card))
+
+    result = cost_sensitivity(
+        CostRequest(run_dir=str(saved_run), scenarios=[{"name": "base"}]),
+        tmp_path / "cost-study",
+        lambda value: None,
+    )
+    row, = result["rows"]
+    replay = pd.read_csv(Path(row["run_dir"]) / "artifacts/equity.csv", index_col=0)
+    source = pd.read_csv(saved_run / "artifacts/equity.csv", index_col=0)
+    assert replay.index.equals(source.index)
+
+
 def test_modified_source_prices_are_not_relabelled_as_frozen(saved_run, tmp_path):
     prices = saved_run / "artifacts/ohlcv_AAPL.US.csv"
     prices.write_text(prices.read_text().replace("10.0", "10.1"))
@@ -176,7 +370,7 @@ def test_modified_source_prices_are_not_relabelled_as_frozen(saved_run, tmp_path
         )
 
 
-@pytest.mark.parametrize("saved_run", ["000001.SZ"], indirect=True)
+@pytest.mark.parametrize("saved_run", [{"codes": ["local:000001.SZ"]}], indirect=True)
 def test_fee_multiplier_reexecutes_minimum_fees_tax_and_measured_break_even(saved_run, tmp_path):
     result = cost_sensitivity(
         CostRequest(

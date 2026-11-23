@@ -13,6 +13,7 @@ from typing import Any
 from src.config.paths import get_runs_dir
 from src.research_lab.execution import constructor_defaults, source_run
 from src.research_lab.models import REQUEST_MODELS
+from src.utils.process import pid_is_running
 
 
 def _write(path: Path, payload: dict) -> None:
@@ -107,31 +108,26 @@ def get_job(identifier: str) -> dict:
     if not path.is_file():
         raise ValueError("research job not found")
     state = json.loads(path.read_text())
-    if state["status"] in {"pending", "running"}:
-        try:
-            os.kill(state["owner_pid"], 0)
-        except ProcessLookupError:
-            latest = json.loads(path.read_text())
-            if latest["status"] not in {"pending", "running"} or latest["owner_pid"] != state["owner_pid"]:
-                return latest
-            state = latest
-            report_path = path.with_name("report.json")
-            # The worker commits the report before updating the job status.
-            if state["status"] == "running" and report_path.is_file():
-                state.update(
-                    status="completed",
-                    result=json.loads(report_path.read_text(encoding="utf-8")),
-                    finished_at=datetime.fromtimestamp(report_path.stat().st_mtime, timezone.utc).isoformat(),
-                )
-            else:
-                state.update(
-                    status="failed",
-                    error="Research worker was interrupted; start a new job to rerun the saved request.",
-                    finished_at=datetime.now(timezone.utc).isoformat(),
-                )
-            _write(path, state)
-        except PermissionError:
-            pass
+    if state["status"] in {"pending", "running"} and not pid_is_running(state["owner_pid"]):
+        latest = json.loads(path.read_text())
+        if latest["status"] not in {"pending", "running"} or latest["owner_pid"] != state["owner_pid"]:
+            return latest
+        state = latest
+        report_path = path.with_name("report.json")
+        # The worker commits the report before updating the job status.
+        if state["status"] == "running" and report_path.is_file():
+            state.update(
+                status="completed",
+                result=json.loads(report_path.read_text(encoding="utf-8")),
+                finished_at=datetime.fromtimestamp(report_path.stat().st_mtime, timezone.utc).isoformat(),
+            )
+        else:
+            state.update(
+                status="failed",
+                error="Research worker was interrupted; start a new job to rerun the saved request.",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+            )
+        _write(path, state)
     return state
 
 

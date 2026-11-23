@@ -545,12 +545,10 @@ def calc_crypto_funding_fee(
             carries no historical ``funding_rate`` column.
         applied_set: (symbol, date, hour) dedup set — mutated.
         daily_done_set: (symbol, date) dedup set — mutated.
-        bar_span_hours: Bar span in hours when known. At 8h or wider the
-            settlement count comes from the span (``max(1, span // 8)`` per
-            bar), because a daily bar can never land on the 8h/16h slots:
-            without this a daily-bar run charges a third of the documented
-            funding model (#1290). Narrower bars keep the slot logic below
-            unchanged.
+        bar_span_hours: Intraday bars cover the UTC settlements in
+            [timestamp, timestamp + span). Daily and coarser bars use the
+            configured number of eight-hour periods. Unknown intervals
+            retain the legacy daily fallback.
 
     Returns:
         Fee amount (positive = longs pay, negative = longs receive).
@@ -562,12 +560,28 @@ def calc_crypto_funding_fee(
     hour = timestamp.hour if hasattr(timestamp, "hour") else 0
 
     settlements = 1
-    if bar_span_hours is not None and bar_span_hours >= 8:
+    if bar_span_hours is not None and bar_span_hours >= 24:
         settlements = max(1, int(bar_span_hours // 8))
         key = (symbol, current_date, hour)
         if key in applied_set:
             return 0.0
         applied_set.add(key)
+    elif bar_span_hours is not None:
+        start = pd.Timestamp(timestamp)
+        if start.tzinfo is not None:
+            start = start.tz_convert("UTC")
+        end = start + pd.Timedelta(seconds=bar_span_hours * 3600)
+        step = pd.Timedelta(hours=8)
+        slot = start.ceil("8h")
+        settlements = 0
+        while slot < end:
+            key = (symbol, slot.date(), slot.hour)
+            if key not in applied_set:
+                applied_set.add(key)
+                settlements += 1
+            slot += step
+        if not settlements:
+            return 0.0
     elif hour in FUNDING_HOURS:
         key = (symbol, current_date, hour)
         if key in applied_set:

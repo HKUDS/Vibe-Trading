@@ -80,7 +80,6 @@ _PERIOD_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})$")
 _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
-    "btc-usdt": "crypto",
 }
 
 
@@ -115,16 +114,22 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500`` | ``btc-usdt``.
+        universe: ``csi300`` | ``sp500``. ``btc-usdt`` is single-asset and
+            rejected before cache or data access.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
             ``~/.vibe-trading/cache/`` if the same universe+period was fetched
             before. Set to False to force a re-fetch.
 
     Raises:
-        ValueError: unknown universe or bad period.
+        ValueError: Unsupported universe or invalid period.
         RuntimeError: ``TUSHARE_TOKEN`` unset when csi300 is requested.
     """
+    if universe == "btc-usdt":
+        raise ValueError(
+            "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
+            "Supported bench universes: csi300, sp500."
+        )
     if universe not in _UNIVERSE_TAG:
         raise ValueError(
             f"universe {universe!r} not recognized; expected one of {sorted(_UNIVERSE_TAG)}"
@@ -143,8 +148,6 @@ def _load_universe_panel(
         panel = _load_csi300_panel(start, end)
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
-    elif universe == "btc-usdt":
-        panel = _load_btc_panel(start, end)
     else:  # pragma: no cover — guarded above
         raise ValueError(f"unhandled universe {universe!r}")
 
@@ -152,17 +155,6 @@ def _load_universe_panel(
         raise RuntimeError(
             f"universe {universe!r} produced empty panel for {start}..{end}; "
             "check network / token / date range"
-        )
-
-    # btc-usdt loader returns a single-column close (one instrument). Cross-
-    # sectional IC needs >= 2 instruments — short-circuit with a clean error
-    # that propagates to API (400) and CLI.
-    close_df = panel["close"]
-    if universe == "btc-usdt" and close_df.shape[1] < 2:
-        raise ValueError(
-            "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
-            "Use a multi-symbol crypto basket (e.g. multiple OKX pairs) for "
-            "meaningful results."
         )
 
     if use_cache:
@@ -622,22 +614,6 @@ def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("sp500 Wikipedia fetch failed: %s", exc)
     return [], {}
-
-
-def _load_btc_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
-    """Single-instrument BTC-USDT panel via OKX. Adds vwap = typical price."""
-    from backtest.loaders.registry import resolve_loader
-
-    loader = resolve_loader("crypto")
-    fetched = _retry(lambda: loader.fetch(["BTC-USDT"], start, end)) or {}
-    panel = _wide_from_fetched(fetched, include_amount=False)
-    if all(k in panel for k in ("open", "high", "low", "close")):
-        panel["vwap"] = (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
-    panel["_meta"] = {
-        "universe": "btc-usdt",
-        "price_source": getattr(loader, "name", None) or "crypto",
-    }
-    return panel
 
 
 def _wide_from_fetched(
@@ -1488,7 +1464,11 @@ class AlphaBenchTool(BaseTool):
             },
             "universe": {
                 "type": "string",
-                "description": "csi300 | sp500 | btc-usdt (resolved via existing data tools).",
+                "description": (
+                    "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+                    "data loading. Alphas requiring fund:* SEC filings need sp500; "
+                    "elsewhere they are excluded."
+                ),
             },
             "period": {
                 "type": "string",

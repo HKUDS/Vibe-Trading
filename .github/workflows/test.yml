@@ -29,9 +29,41 @@ env:
   NPM_CONFIG_FUND: "false"
 
 jobs:
+  change-scope:
+    name: Detect CI scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      scope: ${{ steps.changes.outputs.scope }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Classify the checked-out diff
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # For pull requests, HEAD is GitHub's test merge commit. For pushes,
+          # before may be outside the shallow clone when several commits land.
+          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$BASE_SHA" =~ [1-9a-f] ]] &&
+              ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" ||
+              echo "Base unavailable. Running full CI."
+          fi
+          scope=$(python3 tools/ci_readme.py scope "$BASE_SHA")
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "CI scope: $scope"
+
   hash-lock:
     name: Hash lock / ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    needs: change-scope
+    # Expand the matrix even for README changes so its required check names exist.
+    runs-on: ${{ needs.change-scope.outputs.scope == 'readme' && 'ubuntu-latest' || matrix.runner }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -48,17 +80,24 @@ jobs:
             architecture: x64
 
     steps:
+      - name: Report README-only scope
+        if: needs.change-scope.outputs.scope == 'readme'
+        run: echo "README-only diff. Dependency lock checks are skipped."
+
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: needs.change-scope.outputs.scope == 'full'
 
       # actions/setup-python v7.1.0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        if: needs.change-scope.outputs.scope == 'full'
         with:
           python-version: "3.11"
           architecture: ${{ matrix.architecture }}
           cache: pip
 
       - name: Verify hash-locked dependencies
+        if: needs.change-scope.outputs.scope == 'full'
         # Both locks, separately: each must be internally complete on its own,
         # because the Docker build installs them as two independent
         # --require-hashes passes. A native matrix is required because package
@@ -69,6 +108,7 @@ jobs:
 
   test:
     name: test / Python ${{ matrix.python-version }}
+    needs: change-scope
     runs-on: ubuntu-latest
     # 10 minutes stopped fitting again after the frontend split below: on
     # 2026-09-29 the 3.11 leg's pytest step took 520s of a job that finished
@@ -89,14 +129,21 @@ jobs:
         python-version: ["3.11", "3.14"]
 
     steps:
+      - name: Report README-only scope
+        if: needs.change-scope.outputs.scope == 'readme'
+        run: echo "README-only diff. Python tests are skipped."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.change-scope.outputs.scope == 'full'
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: needs.change-scope.outputs.scope == 'full'
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install dependencies
+        if: needs.change-scope.outputs.scope == 'full'
         # `openbb` is included so agent/tests/test_openbb_bridge actually runs:
         # those tests importorskip on openbb_ai, so without the extra the whole
         # OpenBB Workspace bridge would report green while never being exercised.
@@ -107,6 +154,7 @@ jobs:
         run: pip install -e ".[dev,openbb,stats,anthropic,matrix,ashare]"
 
       - name: Verify optional extras under test are importable
+        if: needs.change-scope.outputs.scope == 'full'
         # Fails loudly if an extra stops resolving, instead of letting its
         # suite silently degrade to skips.
         run: |
@@ -118,12 +166,15 @@ jobs:
           python -c "import langchain_anthropic; print('langchain-anthropic', langchain_anthropic.__version__)"
 
       - name: Repository safety gates
+        if: needs.change-scope.outputs.scope == 'full'
         run: bash tools/ci_grep_gates.sh
 
       - name: Test repository safety gates
-        run: pytest tools/test_ci_env_var_gate.py tools/test_ci_private_files_gate.py -q
+        if: needs.change-scope.outputs.scope == 'full'
+        run: pytest tools/test_ci_env_var_gate.py tools/test_ci_private_files_gate.py tools/test_ci_readme.py -q
 
       - name: Syntax check
+        if: needs.change-scope.outputs.scope == 'full'
         run: |
           cd agent
           python -m compileall -q cli
@@ -134,6 +185,7 @@ jobs:
           python -m py_compile backtest/runner.py
 
       - name: Run tests
+        if: needs.change-scope.outputs.scope == 'full'
         # test_e2e_harness_v2.py is gated by VIBE_TRADING_RUN_LIVE_E2E
         # (real-LLM only); list --ignore here so CI's intent is explicit and
         # the suite never silently switches state on env presence.
@@ -141,6 +193,9 @@ jobs:
 
   frontend:
     name: frontend
+    needs: change-scope
+    # Keep this required check running on both routes and fail if scope detection failed.
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Split out of `test` on 2026-09-04. It used to be the tail of BOTH Python
@@ -153,28 +208,55 @@ jobs:
     # commands run on the same tree — but the frontend now owns its own budget
     # and the Python legs get ~65s of headroom back.
     steps:
+      - name: Require a valid CI scope
+        env:
+          SCOPE_RESULT: ${{ needs.change-scope.result }}
+          SCOPE: ${{ needs.change-scope.outputs.scope }}
+        run: |
+          test "$SCOPE_RESULT" = success
+          case "$SCOPE" in
+            readme|full) ;;
+            *) echo "CI scope could not be determined."; exit 1 ;;
+          esac
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: needs.change-scope.outputs.scope == 'readme'
+        with:
+          python-version: "3.11"
+
+      - name: Check README and referenced media
+        if: needs.change-scope.outputs.scope == 'readme'
+        run: |
+          python -m pip install --no-deps markdown-it-py==4.2.0 mdurl==0.1.2
+          python tools/ci_readme.py check
+          bash tools/ci_grep_gates.sh
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: needs.change-scope.outputs.scope == 'full'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Frontend build
+        if: needs.change-scope.outputs.scope == 'full'
         run: |
           cd frontend
           npm ci
           npm run build
 
       - name: Frontend tests
+        if: needs.change-scope.outputs.scope == 'full'
         run: |
           cd frontend
           npx vitest run --reporter=verbose
 
   windows-background:
     name: ${{ matrix.name }} / Python 3.14 background lifecycle
-    runs-on: ${{ matrix.runner }}
+    needs: change-scope
+    runs-on: ${{ needs.change-scope.outputs.scope == 'readme' && 'ubuntu-latest' || matrix.runner }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -188,22 +270,30 @@ jobs:
             architecture: x64
 
     steps:
+      - name: Report README-only scope
+        if: needs.change-scope.outputs.scope == 'readme'
+        run: echo "README-only diff. Windows background regressions are skipped."
+
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: needs.change-scope.outputs.scope == 'full'
 
       # actions/setup-python v7.1.0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        if: needs.change-scope.outputs.scope == 'full'
         with:
           python-version: "3.14"
           architecture: ${{ matrix.architecture }}
           cache: pip
 
       - name: Install focused test dependencies
+        if: needs.change-scope.outputs.scope == 'full'
         # The private paper-strategy worker imports the actual daily engine.
         # Exercise its blocked-stdio regression on native x64 and ARM64 too.
         run: python -m pip install pytest pydantic pyyaml python-dotenv numpy pandas defusedxml requests
 
       - name: Run Windows background safety regressions
+        if: needs.change-scope.outputs.scope == 'full'
         env:
           PYTHONPATH: agent
         run: >-
@@ -215,6 +305,7 @@ jobs:
 
 
       - name: Run scoped cancellation and restart recovery on native Windows
+        if: needs.change-scope.outputs.scope == 'full'
         env:
           PYTHONPATH: agent
         run: >-
@@ -226,10 +317,13 @@ jobs:
           agent/tests/test_background_host_lifecycle.py::test_completion_callback_keeps_originating_attempt
           agent/tests/test_background_store_recovery.py::TestRecoveryIsConservative
           agent/tests/test_background_store_recovery.py::test_cancel_intent_is_persisted_before_reaping
+          agent/tests/test_process_liveness.py::test_running_and_exited_processes_are_told_apart
           -q
 
   desktop-electron-windows:
     name: Windows desktop source lifecycle
+    needs: change-scope
+    if: needs.change-scope.outputs.scope != 'readme'
     runs-on: windows-2025
     timeout-minutes: 30
 

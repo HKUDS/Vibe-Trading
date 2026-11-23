@@ -1086,6 +1086,7 @@ class BaseEngine(ABC):
             else f"equal-weight basket of {len(basket_codes)} symbols"
         )
         benchmark_metadata = {"benchmark_kind": "equal_weight", "benchmark_label": basket_label}
+        external_equity = None
         requested = config.get("benchmark")
         source = config.get("source", "yfinance")
         ticker = default_benchmark(basket_codes, source) if requested == "auto" else requested
@@ -1102,12 +1103,13 @@ class BaseEngine(ABC):
                     interval=interval,
                     loader=loader if source != "auto" or config.get("frozen_data_manifest") else None,
                 )
-            window_return = result.total_return_over(dates) if result is not None else None
-            if result is not None and window_return is not None:
+            external_equity = result.normalized_equity_over(dates) if result is not None else None
+            if result is not None and external_equity is not None:
                 bench_ret = result.returns_over(dates)
                 benchmark_metadata = {
                     "benchmark_kind": "external", "benchmark_label": result.ticker,
-                    "benchmark_ticker": result.ticker, "benchmark_return": window_return,
+                    "benchmark_ticker": result.ticker,
+                    "benchmark_return": float(external_equity.iloc[-1]) - 1.0,
                 }
             else:
                 reason = f"benchmark {ticker!r} could not be resolved over the evaluation window"
@@ -1116,7 +1118,9 @@ class BaseEngine(ABC):
             if benchmark_metadata["benchmark_kind"] == "equal_weight" else None
         )
 
-        bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
+        bench_equity = self.initial_capital * (
+            external_equity if external_equity is not None else (1 + bench_ret).cumprod()
+        )
 
         # 6. Metrics
         realized_turnover = calc_fill_turnover_series(self.fill_records, equity_series)
@@ -2440,13 +2444,16 @@ class BaseEngine(ABC):
         # entry_price is the weighted cost after any scale-ins while its
         # entry_time stays on the first open, so pairing those two would
         # report a fill that never happened. Scale-ins stay in fills.jsonl.
+        # Keep date-only output for naive midnight bars. Other runs need
+        # full timestamps to match trades to the equity curve.
+        date_only = dates.tz is None and dates.equals(dates.normalize())
         trade_rows = []
         for t in self.trades:
             # Entry event
             entry_price = t.entry_price if t.open_price is None else t.open_price
             entry_qty = t.size if t.open_size is None else t.open_size
             trade_rows.append({
-                "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
+                "timestamp": t.entry_time.date().isoformat() if date_only else t.entry_time.isoformat(),
                 "code": t.symbol,
                 "side": "buy" if t.direction == 1 else "sell",
                 "price": entry_price,
@@ -2464,7 +2471,7 @@ class BaseEngine(ABC):
             except Exception:
                 hold_days = 0
             trade_rows.append({
-                "timestamp": str(t.exit_time.date()) if hasattr(t.exit_time, "date") else str(t.exit_time),
+                "timestamp": t.exit_time.date().isoformat() if date_only else t.exit_time.isoformat(),
                 "code": t.symbol,
                 "side": "sell" if t.direction == 1 else "buy",
                 "price": t.exit_price,

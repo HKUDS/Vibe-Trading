@@ -66,6 +66,10 @@
 
 ## 📰 ニュース
 
+- **2026-11-22** 🛠️ **バックテストの精度向上とオプション分析のエクスポート拡充** — 研究ラボのウォークフォワード分析では、元の評価日だけを採点し、それ以前の足は指標のウォームアップに使えます。外部ベンチマークの価格が負になっても、資産曲線と報告収益率は一致します。暗号資産の無期限先物では、日中足の資金調達料を UTC の 00:00、08:00、16:00 に計上します。 [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  オプション分析の CSV に、保存した代替戦略と比較結果が含まれます。ローカルの日足データでは `timestamp_basis: session_date` を指定して取引所の日付を保持できます。 [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  定期配信は新しいジョブ状態を保持し、Signal の同名添付ファイルは個別に保存します。ジョブの復旧処理は Windows x64 と ARM64 のネイティブテストに合格しました。 **`main` に反映済みで、次回の pip リリースに含まれます。** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
 - **2026-11-20** 📈 **米国株の株式クラスと騰訊の日足履歴** — 東方財富と Yahoo のどちらでもバークシャーのクラス B 株を `BRK-B.US` として検索できます。東方財富から株価を取得する前に銘柄コードを照合し、`BW-A.US` と `BWA.US` を区別します。騰訊の日足は `2023-1-5` のような日付でも全ページを取得します。 [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   戦略比較ではドローダウン −10% を −30% より上に評価します。バックテストで負の価格を使うには `allow_nonpositive_prices: true` を指定します。CLI では履歴を引き継いでチャットを再開できます。 **`main` に統合済み。次回の pip リリースに含まれます。**
 
