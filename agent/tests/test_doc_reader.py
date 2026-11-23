@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -12,7 +16,7 @@ from src.tools.doc_reader_tool import read_document
 
 
 def _call(path: Path, pages: str = "") -> dict:
-    return json.loads(read_document(str(path), pages))
+    return json.loads(read_document(str(path), pages, roots=FileRoots.from_config(get_env_config().api)))
 
 
 @pytest.fixture(autouse=True)

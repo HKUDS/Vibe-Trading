@@ -6,6 +6,10 @@ the agent loop should skip that iteration and continue instead of breaking.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any, Callable
 
@@ -91,7 +95,7 @@ def _run(
 
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=max_iterations,
         persistent_memory=pm,
@@ -278,7 +282,7 @@ def test_auto_compact_summary_hard_deadline(
             return LLMResponse(content="late summary")
 
     llm = _HangingSummaryLLM()
-    agent = AgentRuntime(registry=ToolRegistry(), llm=llm)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm)
     monkeypatch.setattr(tuning_module, "LLM_TIMEOUT_SECONDS", 0.3, raising=False)
 
     messages: list[dict[str, Any]] = [

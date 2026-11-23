@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import numpy as np
@@ -221,7 +225,7 @@ def test_rebalance_holds_weights_between_estimates():
 
 def test_combination_is_allowlisted_and_dispatchable():
     assert ALLOWED_MODULES["combination"] == "src.quantlib.combination"
-    tool = QuantlibCallTool()
+    tool = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api))
     listed = json.loads(tool.execute(action="list", module="combination"))
     names = {entry["name"] for entry in listed["functions"]}
     assert "combine_factors" in names

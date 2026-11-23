@@ -11,6 +11,10 @@ exits without hitting any real API.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -143,7 +147,7 @@ def _build_agent(llm: Any, max_iter: int = 3, tmp_run_dir: Path | None = None) -
 
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=None,
         max_iterations=max_iter,

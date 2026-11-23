@@ -9,6 +9,10 @@ not the absolute path.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from pathlib import Path
 
@@ -63,7 +67,7 @@ _ABS_LEAK = str(Path.home())  # an internal root redact_internal_paths anchors o
 
 def _drive_run(tmp_path: Path) -> tuple[SwarmStore, SwarmRun]:
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agent = SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0)
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="do x")
     run = SwarmRun(

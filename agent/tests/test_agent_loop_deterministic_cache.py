@@ -9,6 +9,10 @@ succeeded.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -71,7 +75,7 @@ def agent_factory(tmp_path: Path):
     """Return a builder for an AgentRuntime wired to a run dir and one tool."""
 
     def _build(tool: BaseTool) -> tuple[AgentRuntime, Path, list[tuple[str, dict]]]:
-        registry = ToolRegistry()
+        registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
         registry.register(tool)
         captured: list[tuple[str, dict]] = []
         agent = AgentRuntime(

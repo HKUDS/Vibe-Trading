@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import csv
 import json
 import subprocess
@@ -10,7 +12,7 @@ from typing import Any
 
 from backtest.loaders.registry import VALID_SOURCES
 from src.kernel.progress import emit_progress
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.core.runner import Runner
@@ -190,7 +192,7 @@ def _record_bench_if_declared(
         return _outcome("failed", reason=f"{type(exc).__name__}: {exc}")
 
 
-def run_backtest(run_dir: str) -> str:
+def run_backtest(run_dir: str, *, roots: FileRoots) -> str:
     """Run backtest: validate config.json + signal_engine.py, invoke built-in engine.
 
     Args:
@@ -201,7 +203,7 @@ def run_backtest(run_dir: str) -> str:
     """
     emit_progress("validate", message="validating run_dir and config")
     try:
-        run_path = safe_run_dir(run_dir)
+        run_path = safe_run_dir(run_dir, roots=roots)
     except ValueError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
@@ -336,7 +338,7 @@ def _serialize_result(envelope: dict[str, Any]) -> str:
     return encode()
 
 
-class BacktestTool(BaseTool):
+class BacktestTool(FileBoundTool, BaseTool):
     """Backtest execution tool."""
 
     name = "backtest"
@@ -358,4 +360,4 @@ class BacktestTool(BaseTool):
 
     def execute(self, **kwargs) -> str:
         """Execute backtest."""
-        return run_backtest(kwargs["run_dir"])
+        return run_backtest(kwargs["run_dir"], roots=self.roots)

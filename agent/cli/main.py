@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
+
 import cli.commands.dispatch as _cmd_dispatch
 
 import importlib
@@ -97,7 +100,7 @@ _FALLBACK_SKILLS = 77
 _FALLBACK_TOOLS = 31
 
 # Cached banner-stats and session-store so ``/clear`` and repeat slash handlers
-# don't redo the heavy build_registry() / SessionStore construction.
+# don't redo the heavy registry discovery / SessionStore construction.
 _BANNER_STATS_CACHE: Dict[str, Any] = {}
 _SESSION_STORE_CACHE: Any = None
 
@@ -134,7 +137,7 @@ def _probe_tool_count() -> int:
     try:
         from src.tools import build_registry
 
-        return len(build_registry())
+        return len(build_registry(policy=ToolPolicy.from_config(get_env_config())))
     except Exception:  # noqa: BLE001 — never block startup on stats
         return _FALLBACK_TOOLS
 

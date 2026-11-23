@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from datetime import datetime, timedelta
 
@@ -128,7 +132,7 @@ class TestFetchPaths:
     ):
         monkeypatch.setattr(runner, "_get_loader", lambda source: recording_loader)
         result = runner.fetch_data_map(
-            {"source": "yahoo", "codes": ["AAPL.US"], "start_date": "2024-01-01", "end_date": "2024-03-29", "interval": interval}
+            {"source": "yahoo", "codes": ["AAPL.US"], "start_date": "2024-01-01", "end_date": "2024-03-29", "interval": interval}, roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert recording_loader.asked == ["1D"]
@@ -138,7 +142,7 @@ class TestFetchPaths:
         monkeypatch.setattr(runner, "resolve_loader", lambda market: recording_loader())
         monkeypatch.setattr(runner, "LOADER_REGISTRY", {})
         result = runner.fetch_data_map(
-            {"source": "auto", "codes": ["AAPL.US"], "start_date": "2024-01-01", "end_date": "2024-03-29", "interval": "1M"}
+            {"source": "auto", "codes": ["AAPL.US"], "start_date": "2024-01-01", "end_date": "2024-03-29", "interval": "1M"}, roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert recording_loader.asked == ["1D"]

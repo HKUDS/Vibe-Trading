@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
+
 import json
 from pathlib import Path
 
@@ -20,7 +23,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_request_triage_and_routing_are_short_and_explicit() -> None:
-    prompt = ContextBuilder(ToolRegistry(), WorkspaceMemory()).build_system_prompt()
+    prompt = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory()).build_system_prompt()
 
     assert prompt.index("## Request Triage") < prompt.index("## Output Principles")
     assert "question" in prompt and "task" in prompt
@@ -46,7 +49,7 @@ def test_quantlib_index_is_available_through_the_normal_skill_loader() -> None:
 
 def test_moved_workflow_rules_live_in_their_skills() -> None:
     loader = SkillsLoader()
-    prompt = ContextBuilder(ToolRegistry(), WorkspaceMemory(), skills_loader=loader).build_system_prompt()
+    prompt = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory(), skills_loader=loader).build_system_prompt()
     assert "Original issuer or regulatory HTTPS" not in prompt
     assert "shadow_pnl" not in prompt
     assert "financial-facts/v1" in loader.get_content("financial-facts")
@@ -103,7 +106,7 @@ def test_enabled_mid_turn_nudge_is_injected_after_data_without_commentary(
     monkeypatch.setenv("VIBE_TRADING_MID_TURN_NUDGE_ROUNDS", "2")
     monkeypatch.setenv("VIBE_TRADING_WRAP_UP_NUDGE_REMAINING", "0")
     reset_env_config()
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_MarketObservation())
     llm = _ScriptedLLM()
     loop = AgentRuntime(registry=registry, llm=llm, max_iterations=4)

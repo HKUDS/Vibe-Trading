@@ -15,6 +15,10 @@ current date rides in the user-message envelope.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import pytest
 
 from src.product.context import ContextBuilder
@@ -25,7 +29,7 @@ pytestmark = pytest.mark.unit
 
 
 def _builder(memory: WorkspaceMemory) -> ContextBuilder:
-    return ContextBuilder(ToolRegistry(), memory)
+    return ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), memory)
 
 
 class TestSystemPromptCacheStability:
@@ -105,7 +109,7 @@ class TestSystemPromptCacheStability:
 
         m = WorkspaceMemory()
         m.run_dir = "/runs/x"
-        builder = ContextBuilder(ToolRegistry(), m, persistent_memory=_PersistentMemory())
+        builder = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), m, persistent_memory=_PersistentMemory())
 
         user = builder.build_messages("analyze AAPL")[-1]["content"]
 

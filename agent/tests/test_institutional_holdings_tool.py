@@ -9,6 +9,10 @@ sub-advisers actually files.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import io
 import json
 import zipfile
@@ -1665,7 +1669,7 @@ class TestToolContract:
     def test_the_tool_is_auto_discovered(self) -> None:
         from src.tools import build_registry
 
-        assert "get_institutional_holdings" in build_registry()
+        assert "get_institutional_holdings" in build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     @pytest.mark.parametrize(
         ("kwargs", "fragment"),

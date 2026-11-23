@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.providers.adapters import openai as openai_adapter
 from src.providers import settings as _provider_configuration
 
@@ -124,7 +128,7 @@ def test_build_rejects_non_ascii_openrouter_api_key_before_transport() -> None:
         with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
                 with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY.*non-ASCII") as excinfo:
-                    build_llm()
+                    build_llm(policy=ToolPolicy.from_config(get_env_config()))
     finally:
         reset_env_config()
 
@@ -150,7 +154,7 @@ def test_build_passes_openrouter_credentials_explicitly() -> None:
         with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
                 with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                    build_llm()
+                    build_llm(policy=ToolPolicy.from_config(get_env_config()))
     finally:
         reset_env_config()
 
@@ -173,7 +177,7 @@ def test_provider_doctor_reports_header_safety_without_values() -> None:
     try:
         with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
-                diagnostics = provider_diagnostics()
+                diagnostics = provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))
     finally:
         reset_env_config()
 

@@ -10,6 +10,9 @@ tests pin that contract so future drift fails loudly.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import inspect
 import json
 
@@ -29,10 +32,14 @@ class _RecordingRegistry:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def execute(self, name: str, args: dict) -> str:
         self.calls.append((name, args))
         return json.dumps({"status": "ok"})
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def test_wrapper_forwards_registered_contract(monkeypatch) -> None:

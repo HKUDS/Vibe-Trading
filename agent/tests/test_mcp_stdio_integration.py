@@ -21,6 +21,10 @@ IMPORTANT — v1 limits exercised here:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import sys
 from pathlib import Path
@@ -91,7 +95,7 @@ def test_remote_tools_appear_in_registry_after_local_tools(tmp_path: Path) -> No
     cfg_path = _make_agent_json(tmp_path, "fake")
     agent_config = load_agent_config(config_path=cfg_path)
 
-    registry = build_registry(agent_config=agent_config)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
     all_names = registry.tool_names
 
     assert "mcp_fake_echo" in all_names
@@ -114,7 +118,7 @@ def test_remote_tool_is_callable_and_returns_expected_result(tmp_path: Path) -> 
 
     cfg_path = _make_agent_json(tmp_path, "fake")
     agent_config = load_agent_config(config_path=cfg_path)
-    registry = build_registry(agent_config=agent_config)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
     echo_tool = registry.get("mcp_fake_echo")
     assert echo_tool is not None, "mcp_fake_echo not found in registry"
@@ -136,6 +140,7 @@ def test_swarm_registry_loads_and_calls_remote_stdio_tool(tmp_path: Path) -> Non
     registry = build_swarm_registry(
         ["mcp_fake_echo"],
         agent_config=agent_config,
+        policy=ToolPolicy.from_config(get_env_config()),
     )
 
     assert registry.tool_names == ["mcp_fake_echo"]
@@ -151,7 +156,7 @@ def test_remote_tool_add_returns_correct_sum(tmp_path: Path) -> None:
 
     cfg_path = _make_agent_json(tmp_path, "fake")
     agent_config = load_agent_config(config_path=cfg_path)
-    registry = build_registry(agent_config=agent_config)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
     add_tool = registry.get("mcp_fake_add")
     assert add_tool is not None, "mcp_fake_add not found in registry"
@@ -170,7 +175,7 @@ def test_remote_tool_is_serial_only(tmp_path: Path) -> None:
 
     cfg_path = _make_agent_json(tmp_path, "fake")
     agent_config = load_agent_config(config_path=cfg_path)
-    registry = build_registry(agent_config=agent_config)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
     mcp_tools = [registry.get(n) for n in registry.tool_names if n.startswith("mcp_fake_")]
     assert mcp_tools, "No MCP tools found in registry"
@@ -188,7 +193,7 @@ def test_enabled_tools_filter_limits_remote_tools(tmp_path: Path) -> None:
 
     cfg_path = _make_agent_json(tmp_path, "fake", enabledTools=["echo"])
     agent_config = load_agent_config(config_path=cfg_path)
-    registry = build_registry(agent_config=agent_config)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_fake_")]
     assert "mcp_fake_echo" in mcp_names
@@ -221,7 +226,7 @@ def test_broken_server_command_does_not_block_local_tools(tmp_path: Path) -> Non
 
     # Must not raise even though the server command is invalid.
     warnings: list[str] = []
-    registry = build_registry(agent_config=agent_config, warn_callback=warnings.append)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config, warn_callback=warnings.append)
 
     # Local tools (e.g. list_skills) must still be present.
     local_names = registry.tool_names

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -47,7 +51,7 @@ def _make_fake_wrappers(server_name: str, tool_names: list[str]) -> list[MCPRemo
 
 def test_no_agent_config_produces_no_mcp_tools() -> None:
     """build_registry() with no agent_config must not add any mcp_ tools."""
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_")]
     assert mcp_names == [], f"Unexpected MCP tools in registry: {mcp_names}"
@@ -56,7 +60,7 @@ def test_no_agent_config_produces_no_mcp_tools() -> None:
 def test_empty_mcp_servers_produces_no_mcp_tools() -> None:
     """An AgentConfig with no mcp_servers must behave like no config at all."""
     empty_config = AgentConfig.model_validate({"mcpServers": {}})
-    registry = build_registry(agent_config=empty_config)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=empty_config)
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_")]
     assert mcp_names == [], f"Unexpected MCP tools in registry: {mcp_names}"
@@ -73,7 +77,7 @@ def test_mcp_tools_are_injected_and_come_after_local_tools() -> None:
 
     with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=fake_wrappers):
         config = _make_agent_config({"demo": {"command": "uvx", "args": []}})
-        registry = build_registry(agent_config=config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)
 
     all_names = registry.tool_names
     mcp_names = [n for n in all_names if n.startswith("mcp_")]
@@ -97,7 +101,7 @@ def test_mcp_tools_registration_order_matches_config_order() -> None:
 
     with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=fake_wrappers):
         config = _make_agent_config({"alpha": {"command": "uvx", "args": []}})
-        registry = build_registry(agent_config=config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_alpha_")]
     assert mcp_names == ["mcp_alpha_tool_a", "mcp_alpha_tool_b", "mcp_alpha_tool_c"]
@@ -122,7 +126,7 @@ def test_colliding_sanitized_server_names_receive_stable_unique_prefixes() -> No
             "foo-bar": {"command": "uvx", "args": []},
             "foo_bar": {"command": "uvx", "args": []},
         })
-        registry = build_registry(agent_config=config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_foo_bar_")]
     assert len(mcp_names) == 2
@@ -142,7 +146,7 @@ def test_mcp_tools_are_not_readonly() -> None:
 
     with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=fake_wrappers):
         config = _make_agent_config({"srv": {"command": "uvx", "args": []}})
-        registry = build_registry(agent_config=config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)
 
     mcp_tools = [registry.get(n) for n in registry.tool_names if n.startswith("mcp_")]
     assert mcp_tools, "Expected at least one MCP tool to be registered"
@@ -168,7 +172,7 @@ def test_failed_mcp_server_does_not_block_local_tools(
     ):
         config = _make_agent_config({"broken": {"command": "uvx", "args": []}})
         with caplog.at_level(logging.WARNING, logger="src.tools"):
-            registry = build_registry(agent_config=config)
+            registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)
 
     # Local tools must still be present.
     assert len(registry) > 0
@@ -197,7 +201,7 @@ def test_one_failed_server_does_not_affect_other_mcp_servers() -> None:
             "broken": {"command": "uvx", "args": []},
             "good": {"command": "uvx", "args": []},
         })
-        registry = build_registry(agent_config=config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)
 
     assert "mcp_good_alpha" in registry.tool_names
     broken_tools = [n for n in registry.tool_names if n.startswith("mcp_broken_")]
@@ -211,8 +215,8 @@ def test_one_failed_server_does_not_affect_other_mcp_servers() -> None:
 
 def test_build_registry_default_call_is_unchanged() -> None:
     """Calling build_registry() with no kwargs must produce identical results."""
-    r1 = build_registry()
-    r2 = build_registry(agent_config=None)
+    r1 = build_registry(policy=ToolPolicy.from_config(get_env_config()))
+    r2 = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=None)
 
     assert set(r1.tool_names) == set(r2.tool_names)
 
@@ -241,7 +245,7 @@ def test_warn_callback_called_on_server_name_collision() -> None:
             "foo-bar": {"command": "uvx", "args": []},
             "foo_bar": {"command": "uvx", "args": []},
         })
-        build_registry(agent_config=config, warn_callback=received.append)
+        build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config, warn_callback=received.append)
 
     assert len(received) > 0, "warn_callback must be called at least once for a collision"
     assert any("foo" in msg for msg in received), (
@@ -256,7 +260,7 @@ def test_warn_callback_not_called_when_no_collision() -> None:
 
     with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=fake_wrappers):
         config = _make_agent_config({"alpha": {"command": "uvx", "args": []}})
-        build_registry(agent_config=config, warn_callback=received.append)
+        build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config, warn_callback=received.append)
 
     assert received == [], f"warn_callback must not fire without a collision; got: {received}"
 
@@ -282,7 +286,7 @@ def test_warn_callback_omitted_still_logs_collision(
             "foo_bar": {"command": "uvx", "args": []},
         })
         with caplog.at_level(logging.WARNING, logger="src.tools"):
-            registry = build_registry(agent_config=config)  # no warn_callback — must not raise
+            registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=config)  # no warn_callback — must not raise
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_")]
     assert len(mcp_names) == 2

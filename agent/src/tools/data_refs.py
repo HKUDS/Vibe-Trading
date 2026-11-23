@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import json
 from typing import Any
@@ -9,7 +11,7 @@ from typing import Any
 from src.tools.path_utils import allowed_file_roots, resolve_safe_path
 
 
-def resolve_data_refs(value: Any, run_dir: str | None, sources: list[dict]) -> Any:
+def resolve_data_refs(value: Any, run_dir: str | None, sources: list[dict], *, roots: FileRoots) -> Any:
     """Resolve nested JSON/CSV references and record their calculation basis.
 
     Args:
@@ -24,17 +26,17 @@ def resolve_data_refs(value: Any, run_dir: str | None, sources: list[dict]) -> A
         ValueError: If a reference escapes readable roots or has invalid data.
     """
     if isinstance(value, list):
-        return [resolve_data_refs(item, run_dir, sources) for item in value]
+        return [resolve_data_refs(item, run_dir, sources, roots=roots) for item in value]
     if not isinstance(value, dict):
         return value
     if set(value) != {"__data_ref__"}:
-        return {key: resolve_data_refs(item, run_dir, sources) for key, item in value.items()}
+        return {key: resolve_data_refs(item, run_dir, sources, roots=roots) for key, item in value.items()}
     import pandas as pd
 
     ref = value["__data_ref__"]
     if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
         raise ValueError("__data_ref__ needs a path; use the data tool's _result_file.path")
-    path = resolve_safe_path(ref["path"], run_dir, allowed_file_roots(), purpose="file")
+    path = resolve_safe_path(ref["path"], run_dir, allowed_file_roots(roots=roots), purpose="file", roots=roots)
     raw = path.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     if ref.get("sha256") and ref["sha256"] != digest:

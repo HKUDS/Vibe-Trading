@@ -1,5 +1,9 @@
 """Explicit monetary field units survive grounding without licensing guesses."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -19,7 +23,7 @@ from evals.grounding.evidence import _field_money_unit
 def test_explicit_field_units_preserve_currency_scale_and_reference(
     tmp_path, suffix, unit, currency, scale
 ):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Summarize AAPL's filing")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Summarize AAPL's filing")
     field = f"revenue_{suffix}"
     other = f"earnings_{suffix}"
     ledger.ingest_tool_result(

@@ -8,7 +8,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from src.kernel import contracts
-from src.product.tool_policy import offered_tools
+from src.product.tool_policy import ToolPolicy
 from src.providers.adapters.anthropic import _DIRECT_ANTHROPIC_LLM_TYPE, _PROMPT_CACHE_CONTROL, prompt_cache_messages
 from src.providers.llm import build_llm
 from src.providers.request_guards import unwrap_provider_error
@@ -33,6 +33,7 @@ class ChatLLM:
         self,
         model_name: Optional[str] = None,
         *,
+        policy: ToolPolicy,
         snapshot: ProviderConfig | None = None,
         selection: str = "configured",
     ) -> None:
@@ -43,8 +44,9 @@ class ChatLLM:
             snapshot: Resolved connection settings; defaults to the current ones.
             selection: Who chose this model, recorded on ``runtime_snapshot``.
         """
+        self.policy = policy
         self.config = snapshot or resolve_config(model_name=model_name)
-        self._llm = build_llm(model_name=model_name, snapshot=self.config)
+        self._llm = build_llm(model_name=model_name, snapshot=self.config, policy=policy)
         self.model_name = model_name or self.config.model
         self.runtime_snapshot = contracts.LLMRuntimeSnapshot(
             provider=self.config.provider or "openai",
@@ -159,7 +161,7 @@ class ChatLLM:
         self, messages: list[contracts.ModelMessage], tools: list[dict] | None,
     ) -> tuple[Any, list[contracts.ModelMessage], dict[str, Any]]:
         """Bind offered tools and apply the adapter's request cache markers."""
-        available = offered_tools(tools) if tools else []
+        available = self.policy.offered_tools(tools) if tools else []
         llm = self._llm.bind_tools(available) if available else self._llm
         prepared, call_kwargs = self._prompt_cache_request(messages)
         return llm, prepared, call_kwargs

@@ -7,6 +7,8 @@ with cancellation and event callback support.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import logging
 import random
 import shutil
@@ -390,6 +392,8 @@ class SwarmRuntime:
         store: SwarmStore,
         max_workers: int = 4,
         agent_config: AgentConfig | None = None,
+        *,
+        policy: ToolPolicy,
     ) -> None:
         """Initialize SwarmRuntime.
 
@@ -403,6 +407,7 @@ class SwarmRuntime:
                 tools. ``None`` (the default) preserves the current
                 local-tool-only behavior byte-for-byte.
         """
+        self.policy = policy
         self._store = store
         self._max_workers = max_workers
         self._agent_config = agent_config
@@ -1333,6 +1338,7 @@ class SwarmRuntime:
             if stop_requested():
                 return cancelled_result()
             result = run_worker(
+                policy=self.policy,
                 agent_spec=agent_spec,
                 task=task,
                 upstream_summaries=upstream_summaries,

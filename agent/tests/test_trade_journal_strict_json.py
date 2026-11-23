@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -18,7 +22,7 @@ def _analyze(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rows: str) -> dict
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
     csv = tmp_path / "journal.csv"
     csv.write_text("datetime,symbol,side,quantity,price\n" + rows, encoding="utf-8")
-    raw = analyze_trade_journal(str(csv), "full")
+    raw = analyze_trade_journal(str(csv), "full", roots=FileRoots.from_config(get_env_config().api))
     return json.loads(raw, parse_constant=_reject_constant)
 
 

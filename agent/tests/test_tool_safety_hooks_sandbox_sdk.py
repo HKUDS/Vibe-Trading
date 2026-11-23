@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
-import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -54,7 +60,7 @@ def _write_hooks(root: Path, event: str, command: str, matcher: str = "*") -> No
 def test_pre_tool_hook_denies_without_running_tool_and_audits(tmp_path: Path) -> None:
     _write_hooks(tmp_path, "PreToolUse", "printf '{\"decision\":\"deny\",\"reason\":\"operator rule\"}'")
     manager = HookManager(tmp_path)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     tool = _ProbeTool()
     tool.calls = []
     registry.register(tool)
@@ -75,11 +81,11 @@ def test_pre_tool_hook_crash_and_timeout_deny(tmp_path: Path) -> None:
 def test_allowing_hook_cannot_bypass_tool_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     marker = tmp_path / "hook-ran"
     _write_hooks(tmp_path, "PreToolUse", f"touch {marker}")
-    monkeypatch.setattr("src.product.tool_policy._deny_prefixes", lambda: ("blocked_",))
+    monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "blocked_")
     tool = _ProbeTool()
     tool.name = "blocked_probe"
     tool.calls = []
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     registry.hooks = HookManager(tmp_path)
     result, _elapsed = AgentRuntime(registry, SimpleNamespace()).invocation._invoke_tool("blocked_probe", {}, call_id="c1")
@@ -90,7 +96,7 @@ def test_allowing_hook_cannot_bypass_tool_policy(tmp_path: Path, monkeypatch: py
 
 def test_child_registry_keeps_parent_hooks(tmp_path: Path) -> None:
     manager = HookManager(tmp_path)
-    parent = ToolRegistry()
+    parent = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     parent.hooks = manager
     parent.register(_ProbeTool())
     child = child_registry(parent, tmp_path / "child")
@@ -116,7 +122,7 @@ def test_enabled_sandbox_refuses_when_backend_is_missing(tmp_path: Path, monkeyp
 
 
 def test_host_registration_is_explicit_and_rejects_collisions() -> None:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ProbeTool())
     registry.register_host_tool(_HostTool())
     assert registry.get("host_probe") is not None
@@ -154,7 +160,7 @@ def test_hook_reason_is_redacted_before_return_and_thread_audit(tmp_path, monkey
 
 
 def test_post_tool_hook_receives_redacted_worker_exception(monkeypatch):
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ProbeTool())
     events = []
 
@@ -179,7 +185,7 @@ def test_deferred_exposure_keeps_host_denials_and_resource_bindings(tmp_path):
     from src.product.tool_loading import DeferredToolRegistry
     from src.tools.background_tools import BackgroundManager
 
-    parent = ToolRegistry()
+    parent = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     parent.sandbox = SandboxSettings(enabled=False, runtime_root=tmp_path)
     parent.background = BackgroundManager()
     _write_hooks(tmp_path, "PreToolUse", "printf '{\"decision\":\"deny\",\"reason\":\"operator rule\"}'")

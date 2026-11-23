@@ -54,12 +54,18 @@ Claude Desktop config:
 
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
+
 # ruff: noqa: E402
 
 import json
 import logging
 import sys
+from asyncio import to_thread
 from copy import deepcopy
+from dataclasses import replace
+from threading import Lock
 from importlib import import_module
 from pathlib import Path
 from typing import Annotated, Any
@@ -89,32 +95,41 @@ logger = logging.getLogger(__name__)
 
 
 class _ToolPolicyMiddleware(Middleware):
-    """Apply the tool deny-list to every MCP tool.
-
-    The registry refuses denied names, but many MCP tools call their code
-    directly; screening here covers those and keeps denied tools out of the
-    advertised list. Like the registry check, a convenience filter, not a
-    security boundary.
-    """
+    """Bind registry policy, tool hooks and public result redaction to MCP calls."""
 
     async def on_list_tools(self, context: Any, call_next: Any) -> Any:
-        from src.product.tool_policy import _deny_prefixes
-
-        prefixes = _deny_prefixes()
-        return [tool for tool in await call_next(context) if not tool.name.startswith(prefixes)]
+        registry = await to_thread(_get_registry)
+        return [tool for tool in await call_next(context) if not registry.policy.denies(tool.name)]
 
     async def on_call_tool(self, context: Any, call_next: Any) -> Any:
-        from src.product.tool_policy import _deny_prefixes
-
-        name = context.message.name
-        if name.startswith(_deny_prefixes()):
-            raise ToolError(f"{name} is disabled by the active tool policy")
+        from src.product.tool_invocation import ToolRefusal, prepare_tool_call
         from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
+
+        registry = await to_thread(_get_registry)
+        request = context.fastmcp_context
+        has_request = request is not None and request.request_context is not None
+        name = context.message.name
+        arguments = context.message.arguments or {}
+        prepared = await to_thread(
+            prepare_tool_call, name, arguments,
+            check_policy=registry.check_policy, hooks=getattr(registry, "hooks", None),
+            call_id=request.request_id if has_request else "",
+            session_id=request.session_id if has_request else "",
+        )
+        if isinstance(prepared, ToolRefusal):
+            raise ToolError(redact_tool_result(prepared.reason, preserve_format=True))
+
+        if prepared.arguments != arguments:
+            message = context.message.model_copy(update={"arguments": prepared.arguments})
+            context = context.copy(message=message)
 
         try:
             result = await call_next(context)
         except Exception as exc:
             safe_error = redact_tool_result(str(exc), preserve_format=True)
+            if prepared.post_result is not None:
+                error_result = json.dumps({"status": "error", "error": safe_error})
+                await to_thread(prepared.post_result, error_result, "error")
             if safe_error != str(exc):
                 raise ToolError(safe_error) from None
             raise
@@ -127,6 +142,11 @@ class _ToolPolicyMiddleware(Middleware):
         structured = redact_payload(result.structured_content, sink=RESULT_SINK)
         if isinstance(structured, dict) and isinstance(structured.get("result"), str):
             structured["result"] = redact_tool_result(structured["result"], preserve_format=True)
+        if prepared.post_result is not None:
+            text = "\n".join(block.text for block in content if block.type == "text")
+            if not text and structured is not None:
+                text = json.dumps(structured, ensure_ascii=False)
+            await to_thread(prepared.post_result, text, "ok")
         return result.model_copy(update={
             "content": content,
             "structured_content": structured,
@@ -143,6 +163,7 @@ mcp.add_middleware(_ToolPolicyMiddleware())
 
 _skills_loader = None
 _registry = None
+_registry_lock = Lock()
 _goal_store = None
 # Fail-closed default: bash / background_run / cancel_background form a remote
 # process-control surface once the MCP server is reachable by any client (stdio,
@@ -153,14 +174,7 @@ _goal_store = None
 _include_shell_tools = False
 
 
-def _env_shell_tools_enabled() -> bool:
-    """Return whether shell tools were explicitly enabled via the environment."""
-    from src.config.accessor import get_env_config
-
-    return get_env_config().api.vibe_trading_enable_shell_tools
-
-
-def _resolve_include_shell_tools(cli_opt_in: bool) -> bool:
+def _resolve_include_shell_tools(cli_opt_in: bool, *, env_opt_in: bool) -> bool:
     """Resolve whether the MCP server should register shell tools.
 
     Process-control tools (``bash`` / ``background_run`` /
@@ -178,7 +192,7 @@ def _resolve_include_shell_tools(cli_opt_in: bool) -> bool:
         True only when the operator opted in via the flag or the
         ``VIBE_TRADING_ENABLE_SHELL_TOOLS`` environment variable.
     """
-    return bool(cli_opt_in) or _env_shell_tools_enabled()
+    return bool(cli_opt_in) or env_opt_in
 
 
 # ---------------------------------------------------------------------------
@@ -377,11 +391,16 @@ def _get_skills_loader():
 
 def _get_registry():
     global _registry
-    if _registry is None:
-        from src.tools import build_registry
+    with _registry_lock:
+        if _registry is None:
+            from src.tools import build_registry
 
-        _registry = build_registry(include_shell_tools=_include_shell_tools)
-    return _registry
+            policy = replace(
+                ToolPolicy.from_config(get_env_config()),
+                shell_tools_enabled=_include_shell_tools,
+            )
+            _registry = build_registry(policy=policy, include_shell_tools=policy.shell_tools_enabled)
+        return _registry
 
 
 def _get_goal_store():
@@ -739,6 +758,7 @@ def add_goal_evidence(
         resolved_expected_goal_id = expected_goal_id.strip() or resolved_goal_id
 
         evidence = store.append_evidence(
+            roots=_get_registry().policy.file_roots,
             session_id=resolved_session_id,
             goal_id=resolved_goal_id,
             expected_goal_id=resolved_expected_goal_id,
@@ -802,6 +822,7 @@ def update_research_goal(
     from src.tools.goal_tool import UpdateResearchGoalTool
 
     return UpdateResearchGoalTool(
+        roots=_get_registry().policy.file_roots,
         default_session_id=_resolve_session_id(session_id, ctx), store=_get_goal_store()
     ).execute(objective=objective, ui_summary=ui_summary, goal_id=goal_id,
               expected_goal_id=expected_goal_id)
@@ -899,7 +920,7 @@ def backtest(run_dir: str) -> str:
     """
     from src.tools.backtest_tool import run_backtest
 
-    return run_backtest(run_dir)
+    return run_backtest(run_dir, roots=_get_registry().policy.file_roots)
 
 
 # ---------------------------------------------------------------------------
@@ -1189,15 +1210,16 @@ def alpha_bench(
     if research_mode != "explore":
         params["research_mode"] = research_mode
 
+    registry = _get_registry()
     if output_dir:
-        from src.config.paths import get_runtime_root
         from src.tools.path_utils import allowed_write_roots, resolve_safe_path
 
+        roots = registry.policy.file_roots
         try:
             report_roots = [
-                Path.home() / ".vibe-trading" / "reports",
-                get_runtime_root() / "reports",
-                *allowed_write_roots(),
+                roots.home / ".vibe-trading" / "reports",
+                roots.runtime_root / "reports",
+                *allowed_write_roots(roots=roots),
             ]
             params["output_dir"] = str(
                 resolve_safe_path(
@@ -1205,12 +1227,12 @@ def alpha_bench(
                     None,
                     report_roots,
                     purpose="alpha bench report",
+                    roots=roots,
                 )
             )
         except ValueError as exc:
             return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
-    registry = _get_registry()
     return registry.execute("alpha_bench", params)
 
 
@@ -2074,10 +2096,11 @@ async def run_swarm(
     # The MCP caller (this tool's invoker) cannot influence the path — the
     # ``variables`` arg below is template data, never config (R-06).
     agent_config = load_swarm_agent_config()
-    runtime = SwarmRuntime(store=store, agent_config=agent_config)
+    policy = _get_registry().policy
+    runtime = SwarmRuntime(policy=policy, store=store, agent_config=agent_config)
 
     try:
-        run = runtime.start_run(preset_name, variables, include_shell_tools=_include_shell_tools)
+        run = runtime.start_run(preset_name, variables, include_shell_tools=policy.shell_tools_enabled)
     except FileNotFoundError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     except ValueError as exc:
@@ -2172,10 +2195,9 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     return cap_rows(records, max_rows)
 
 
-def _calculation_workspace() -> str:
-    """Use the normal runtime run root for MCP observations and calculations."""
-    from src.config.paths import get_runs_dir
-    return str(get_runs_dir() / "mcp-calculations")
+def _calculation_workspace(policy: ToolPolicy) -> str:
+    """Use the bound runtime run root for MCP observations and calculations."""
+    return str(policy.file_roots.runtime_root / "runs" / "mcp-calculations")
 
 
 @mcp.tool
@@ -2248,7 +2270,7 @@ def get_market_data(
             "source": source,
             "interval": interval,
             "max_rows": max_rows,
-            "run_dir": run_dir or _calculation_workspace(),
+            "run_dir": run_dir or _calculation_workspace(registry.policy),
             "export_csv": export_csv,
             "warmup_start_date": warmup_start_date,
             # Internal hook, not an agent-facing parameter: keeps the MCP
@@ -2327,7 +2349,11 @@ def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
     tool_cls = _key_gated_tool_classes().get(name)
     if tool_cls is None:
         return registry.execute(name, params)
-    return tool_cls().execute(**params)
+    from src.agent.tools import ToolRegistry
+
+    diagnostic_registry = ToolRegistry(policy=registry.policy)
+    diagnostic_registry.register(tool_cls())
+    return diagnostic_registry.execute(name, params)
 
 
 @mcp.tool
@@ -3024,9 +3050,10 @@ def _register_mirrored_tool(tool_cls: Any) -> bool:
         def _call(**kwargs: Any) -> str:
             """Forward an MCP call to the auto-discovered local tool registry."""
             params = _mirrored_call_params(schema, kwargs)
+            registry = _get_registry()
             if name == "quantlib_call" and params.get("action") == "call":
-                params.setdefault("run_dir", _calculation_workspace())
-            return _get_registry().execute(name, params)
+                params.setdefault("run_dir", _calculation_workspace(registry.policy))
+            return registry.execute(name, params)
 
         mcp.add_tool(
             FunctionTool(
@@ -3295,12 +3322,13 @@ def retry_run(run_id: str, resume: bool = False) -> str:
         )
 
     agent_config = load_swarm_agent_config()
-    runtime = SwarmRuntime(store=store, agent_config=agent_config)
+    policy = _get_registry().policy
+    runtime = SwarmRuntime(policy=policy, store=store, agent_config=agent_config)
     try:
         new_run = runtime.start_run(
             reconciled.preset_name,
             reconciled.user_vars or {},
-            include_shell_tools=_include_shell_tools,
+            include_shell_tools=policy.shell_tools_enabled,
             resume_from=reconciled if resume else None,
         )
     except FileNotFoundError as exc:
@@ -3536,7 +3564,9 @@ def main():
     except Exception:  # pragma: no cover — best-effort
         logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
 
-    _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
+    _include_shell_tools = _resolve_include_shell_tools(
+        args.enable_shell_tools, env_opt_in=get_env_config().api.vibe_trading_enable_shell_tools,
+    )
     # After the shell-tool decision: that switch must come from the launch
     # flag or process env, never from a .env written for the web server.
     from src.providers.settings import _ensure_dotenv
@@ -3553,8 +3583,6 @@ def main():
         # 'http' = Streamable HTTP (single /mcp endpoint, MCP spec 2025-03-26+),
         # replacing the deprecated two-endpoint SSE transport for modern clients.
         import uvicorn
-
-        from src.config.accessor import get_env_config
 
         allowed_hosts = _parse_allowed_hosts(get_env_config().api.vibe_trading_mcp_allowed_hosts)
         transport = "streamable-http" if args.transport == "http" else "sse"

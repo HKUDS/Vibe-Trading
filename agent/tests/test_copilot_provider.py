@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+
+
 import asyncio
 import json
 import sys
@@ -377,7 +379,7 @@ def test_message_conversion_keeps_system_and_tool_history() -> None:
             {"role": "system", "content": "Be concise."},
             {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]},
             {"role": "tool", "tool_call_id": "call_1", "content": "123"},
-        ]
+        ],
     )
 
     assert system == "Be concise."

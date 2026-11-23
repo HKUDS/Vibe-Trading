@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.provider_helpers import chat_with_adapter
 
 import json
@@ -94,7 +98,7 @@ def test_agent_loop_executes_dsml_textual_tool_call(
         "</｜｜DSML｜｜invoke>"
         "</｜｜DSML｜｜tool_calls>"
     )
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     memory = PersistentMemory(memory_dir=tmp_path / "memory")
     events: list[tuple[str, dict[str, Any]]] = []
@@ -163,7 +167,7 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
     # The fullwidth-vbar (U+FF5C) form is what the real failure looked like; the
     # streaming DSML parser does not recognize it, so it arrives as text.
     garbage = "<││DSML││tool_calls><││invoke name=\"trading_quote\">"
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentRuntime(
         registry=registry,
@@ -219,7 +223,7 @@ def test_final_tool_syntax_gets_one_text_only_retry(
     )
     garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
     responses = [dsml] * (max_iterations - 1) + [garbage, "The report is ready."]
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentRuntime(
@@ -285,7 +289,7 @@ def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> No
             ),
         ]
     )
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentRuntime(
@@ -332,7 +336,7 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
         ]
     )
     agent = AgentRuntime(
-        registry=ToolRegistry(),
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=llm,
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
@@ -360,7 +364,7 @@ def test_cancel_after_rejected_answer_prevents_retry(tmp_path: Path) -> None:
     garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
     llm = _AnswerRetryLLM([LLMResponse(content=garbage)])
     agent = AgentRuntime(
-        registry=ToolRegistry(),
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=llm,
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
@@ -385,7 +389,7 @@ def test_protocol_retry_delivers_answer_without_numeric_gate(tmp_path: Path) -> 
         ]
     )
     agent = AgentRuntime(
-        registry=ToolRegistry(),
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=llm,
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),

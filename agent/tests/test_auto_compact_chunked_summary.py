@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import src.session.compaction_ops as _owner_context_compact
 
 import json
@@ -29,7 +33,7 @@ class _CompactionLLM:
 
 def _build_agent(llm: Any) -> AgentRuntime:
     """Build an AgentRuntime with the same lightweight registry pattern as loop tests."""
-    return AgentRuntime(registry=ToolRegistry(), llm=llm, max_iterations=1)
+    return AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm, max_iterations=1)
 
 
 def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_request(tmp_path):

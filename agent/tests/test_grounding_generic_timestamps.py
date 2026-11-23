@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -11,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 
 def _ledger(tmp_path: Path, payload: dict) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Show AAPL.US prices by date")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Show AAPL.US prices by date")
     ledger.ingest_tool_result(
         tool_name="external_market_tool",
         arguments={"symbol": "AAPL.US"},
@@ -77,6 +81,7 @@ def test_generic_quote_without_timestamp_stays_undated(tmp_path: Path) -> None:
 
 def test_generic_snapshot_inherits_latest_date(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="Show AAPL.US technical indicators by date",
     )

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -112,7 +116,7 @@ class _ScriptedLLM:
 
 
 def test_agent_repairs_before_next_provider_request_only(tmp_path: Path, monkeypatch) -> None:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_NoopTool())
     llm = _ScriptedLLM()
     loop = AgentRuntime(
@@ -161,7 +165,7 @@ def test_retry_repairs_again_from_canonical_messages(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr("src.agent.tuning.STREAM_RETRY_DELAY_S", 0, raising=False)
     runtime = AgentRuntime(
-        registry=ToolRegistry(), llm=SimpleNamespace(stream_chat=stream_chat),
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=SimpleNamespace(stream_chat=stream_chat),
         memory=WorkspaceMemory(run_dir=str(tmp_path)), max_iterations=1,
     )
     result = runtime.run("Continue", history=history)

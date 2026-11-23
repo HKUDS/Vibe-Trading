@@ -1,5 +1,10 @@
 """Deferred schemas retain discoverability, exact contracts, and execution gates."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config import accessor as config_accessor
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -27,7 +32,7 @@ class ExampleTool(BaseTool):
 
 
 def registry():
-    source = ToolRegistry()
+    source = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for index in range(18):
         source.register(ExampleTool(f"read_observation_{index}"))
     return source
@@ -92,6 +97,7 @@ def test_new_schemas_append_without_reordering_the_existing_prefix():
 def test_eager_escape_hatch_and_small_registries_stay_unchanged(monkeypatch):
     source = registry()
     monkeypatch.setenv("VIBE_TRADING_TOOL_LOADING", "eager")
+    monkeypatch.setattr(config_accessor, "_instance", None)
     assert prepare_registry(source) is source
 
 
@@ -121,6 +127,7 @@ def test_new_schemas_change_measured_context_size_without_double_counting():
 
 def test_real_loop_loads_then_calls_the_original_tool(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBE_TRADING_TOOL_LOADING", "lazy")
+    monkeypatch.setattr(config_accessor, "_instance", None)
     source = registry()
     responses = [
         LLMResponse(tool_calls=[ToolCallRequest(id="load", name="load_tools", arguments={"names": ["read_observation_17"]})]),

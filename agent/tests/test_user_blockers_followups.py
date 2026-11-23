@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+from src.config.env_schema import EnvConfig
+
+
 import json
 import sqlite3
 
@@ -57,20 +62,20 @@ def test_case_alias_and_symlink_paths_use_real_directory_identity(tmp_path):
     root.mkdir()
     lower = tmp_path / "dropbox"
     if lower.exists() and lower.samefile(root):
-        output = resolve_safe_path(str(lower / "report.txt"), None, [root], purpose="write")
+        output = resolve_safe_path(str(lower / "report.txt"), None, [root], purpose="write", roots=FileRoots.from_config(get_env_config().api))
         assert output == root.resolve() / "report.txt"
     else:
         lower.mkdir()
         with pytest.raises(ValueError):
-            resolve_safe_path(str(lower / "report.txt"), None, [root], purpose="write")
+            resolve_safe_path(str(lower / "report.txt"), None, [root], purpose="write", roots=FileRoots.from_config(get_env_config().api))
     alias = tmp_path / "cloud-alias"
     alias.symlink_to(root, target_is_directory=True)
-    assert resolve_safe_path(str(alias / "report.txt"), None, [root]) == root.resolve() / "report.txt"
+    assert resolve_safe_path(str(alias / "report.txt"), None, [root], roots=FileRoots.from_config(get_env_config().api)) == root.resolve() / "report.txt"
     outside = tmp_path / "private"
     outside.mkdir()
     (root / "escape").symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError):
-        resolve_safe_path(str(root / "escape" / "secret.txt"), None, [root])
+        resolve_safe_path(str(root / "escape" / "secret.txt"), None, [root], roots=FileRoots.from_config(get_env_config().api))
 
 
 @pytest.mark.parametrize("prompt,preset,asset,key,duration", [
@@ -132,7 +137,7 @@ def test_pdf_write_authenticated_download_and_im_delivery_share_real_file(tmp_pa
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path / "runtime"))
     from src.config.accessor import reset_env_config
     reset_env_config()
-    payload = json.loads(WriteFileTool().execute(path=str(tmp_path / "研究报告.pdf"), content=(
+    payload = json.loads(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=str(tmp_path / "研究报告.pdf"), content=(
         "# 研究报告\n\n投资策略 < & >\n\n| 指标 | 观察 |\n| --- | --- |\n| 样本 | 完整 |\n")))
     assert payload["status"] == "ok"
     path = report_artifacts.report_path(payload["report_id"])
@@ -158,14 +163,15 @@ def test_pdf_write_authenticated_download_and_im_delivery_share_real_file(tmp_pa
 
 def test_pdf_render_failure_preserves_existing_file_and_reports_error(tmp_path, monkeypatch):
     from src.tools import pdf_report
-    monkeypatch.setattr("src.tools.write_file_tool.allowed_write_roots", lambda: [tmp_path])
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(tmp_path))
     target = tmp_path / "report.pdf"
     target.write_bytes(b"previous version")
     def fail(*args):
         raise RuntimeError("render failed")
     monkeypatch.setattr(pdf_report, "render_markdown_pdf", fail)
-    result = json.loads(WriteFileTool().execute(path=str(target), content="# A report"))
+    result = json.loads(WriteFileTool(roots=FileRoots.from_config(EnvConfig().api)).execute(path=str(target), content="# A report"))
     assert result["status"] == "error"
+    assert "render failed" in result["error"]
     assert target.read_bytes() == b"previous version"
 
 

@@ -1,4 +1,11 @@
 """Boundary regressions for the newly integrated vendor research surfaces."""
+
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import json
 import time
 
@@ -83,7 +90,7 @@ def test_macro_observations_ground_with_explicit_refs_without_widening_price_gat
 
     rows = [{"value": "5.4", "indicatorcode": 10011, "unit": "%", "date": "2026-01-31"}]
     _coerce_numeric_strings(rows)
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Read the macro observation")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Read the macro observation")
     ledger.ingest_tool_result(tool_name="get_cn_macro_series", arguments={"query": "GDP"}, result=json.dumps({"ok": True, "rows": rows}), call_id="macro_call", success=True)
     def check(value):
         return ledger.validate_final_answer(f"Observed growth: {value}%.\n```figures\n{value}% | observed | Growth | macro_call::rows[0].value\n```")
@@ -114,13 +121,13 @@ def test_old_token_and_individual_opt_ins_across_agent_and_mcp(monkeypatch):
     key = "VIBE_TRADING_GILDATA_FEATURES"
     monkeypatch.setenv(key, ",".join(features))
     reset_env_config()
-    retained = build_registry()
+    retained = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     assert all(retained.get(name) for name, _ in features.values())
     monkeypatch.setattr(mcp_server, "_registry", retained)
     for selected in ["", *features]:
         monkeypatch.setenv(key, selected)
         reset_env_config()  # Settings PUT also refreshes the process config.
-        fresh = build_registry()
+        fresh = build_registry(policy=ToolPolicy.from_config(get_env_config()))
         for feature, (name, params) in features.items():
             assert (fresh.get(name) is not None) == (feature == selected)
             if feature != selected:

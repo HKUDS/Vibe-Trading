@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -130,7 +134,7 @@ def test_explicit_baseline_index_uses_the_selected_strategy() -> None:
 def test_tool_is_auto_discovered_as_readonly_and_deterministic() -> None:
     from src.tools import build_registry
 
-    tool = build_registry().get("options_strategy_compare")
+    tool = build_registry(policy=ToolPolicy.from_config(get_env_config())).get("options_strategy_compare")
 
     assert tool is not None
     assert tool.is_readonly is True

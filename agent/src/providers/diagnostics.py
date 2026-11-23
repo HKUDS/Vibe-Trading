@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import os
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
@@ -73,7 +75,7 @@ def _redact_proxy_url(name: str, raw: str | None) -> str:
     return _redact_base_url_for_log(raw)
 
 
-def provider_diagnostics() -> dict[str, Any]:
+def provider_diagnostics(*, policy: ToolPolicy) -> dict[str, Any]:
     """Build a redacted provider diagnostic snapshot.
 
     Returns:
@@ -113,7 +115,6 @@ def provider_diagnostics() -> dict[str, Any]:
         adapter_mode = _deepseek_adapter_mode(options.vibe_trading_deepseek_adapter)
         if adapter_mode != "openai-compatible" and native_package_version not in {None, "not_installed"}:
             adapter_type = "native"
-    from src.product.tool_policy import policy_status
 
     return {
         "provider": caps.name if provider in {"kimi", "openai_codex"} else provider,
@@ -149,7 +150,7 @@ def provider_diagnostics() -> dict[str, Any]:
         "packages": {name: _package_version(name) for name in package_names},
         "timeout_seconds": options.timeout_seconds,
         "max_retries": options.max_retries,
-        "tool_policy": policy_status(),
+        "tool_policy": policy.status(legacy_defaults=snapshot.backend == "claude_cli"),
         "reasoning_effort": options.langchain_reasoning_effort.strip().lower(),
         "adapter": {
             "type": adapter_type,

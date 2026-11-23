@@ -5,6 +5,10 @@ The LLM call is mocked; the only real I/O is a tiny PNG written to tmp_path.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.env_schema import EnvConfig
+
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -21,13 +25,13 @@ _PNG_BYTES = bytes.fromhex(
 
 
 @pytest.fixture()
-def tool() -> AnalyzeImageTool:
-    return AnalyzeImageTool()
+def tool(tmp_path, monkeypatch) -> AnalyzeImageTool:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
+    return AnalyzeImageTool(policy=ToolPolicy.from_config(EnvConfig()))
 
 
 @pytest.fixture()
-def png_in_allowed_root(tmp_path, monkeypatch) -> Path:
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
+def png_in_allowed_root(tmp_path) -> Path:
     p = tmp_path / "chart.png"
     p.write_bytes(_PNG_BYTES)
     return p

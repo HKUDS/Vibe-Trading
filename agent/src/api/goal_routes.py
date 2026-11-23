@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -233,6 +237,7 @@ def register_goal_routes(app: FastAPI, host) -> None:
         goal_store = _get_goal_store()
         try:
             evidence = goal_store.append_evidence(
+                roots=FileRoots.from_config(get_env_config().api),
                 session_id=session_id,
                 goal_id=req.goal_id,
                 expected_goal_id=req.expected_goal_id,

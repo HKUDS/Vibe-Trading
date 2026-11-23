@@ -12,9 +12,8 @@ Three helpers, three threat models:
 * `safe_document_path(p)` — document-reader inputs. Uses the same import-root
   boundary as `safe_user_path()`.
 
-`confined_write_roots(root)` narrows `allowed_write_roots()` to one directory
-for the calls made inside it (a spawned child agent's workspace). It only ever
-narrows: the configured write roots do not apply while it is active.
+A file policy scoped to a spawned child's workspace replaces its configured
+write roots for that child.
 
 All helpers raise ``ValueError`` on rejection — callers already expect this.
 """
@@ -22,12 +21,11 @@ All helpers raise ``ValueError`` on rejection — callers already expect this.
 from __future__ import annotations
 
 import json
-from contextlib import contextmanager
-from contextvars import ContextVar
 from pathlib import Path
-from typing import Iterator
 
-from src.config.accessor import get_env_config
+from dataclasses import dataclass
+
+from src.config.env_schema import APIConfig
 
 _ALLOWED_FILE_ROOTS_ENV = "VIBE_TRADING_ALLOWED_FILE_ROOTS"
 _ALLOWED_RUN_ROOTS_ENV = "VIBE_TRADING_ALLOWED_RUN_ROOTS"
@@ -39,9 +37,6 @@ _ENV_SCOPE_HINT = (
     "in the MCP client's server env block — exporting it in a shell does not "
     "reach a spawned MCP server."
 )
-
-#: The only write root while a confinement is active; ``None`` means none is.
-_CONFINED_WRITE_ROOT: ContextVar[Path | None] = ContextVar("vibe_confined_write_root", default=None)
 
 # The env var that widens each resolve_safe_path purpose; rejections name it
 # so the escape hatch is discoverable from the error itself.
@@ -116,9 +111,36 @@ def _agent_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _configured_file_roots() -> list[Path]:
-    """Return file roots configured through the environment."""
-    raw = get_env_config().api.vibe_trading_allowed_file_roots
+@dataclass(frozen=True)
+class FileRoots:
+    """Operator-configured additions to the built-in containment roots."""
+
+    reads: str
+    writes: str
+    runs: str
+    runtime_root: Path
+    swarm_runs_root: Path
+    home: Path
+    cwd: Path
+    confined_writes: Path | None = None
+
+    @classmethod
+    def from_config(cls, config: APIConfig) -> FileRoots:
+        """Capture root declarations from a trusted host configuration."""
+        from src.config.paths import get_runtime_root, get_swarm_runs_dir
+
+        return cls(
+            runtime_root=get_runtime_root(),
+            swarm_runs_root=get_swarm_runs_dir(),
+            home=Path.home(),
+            cwd=Path.cwd(),
+            reads=config.vibe_trading_allowed_file_roots,
+            writes=config.vibe_trading_allowed_write_roots,
+            runs=config.vibe_trading_allowed_run_roots,
+        )
+
+
+def _configured_roots(raw: str) -> list[Path]:
     roots: list[Path] = []
     for item in raw.split(","):
         item = item.strip()
@@ -129,14 +151,10 @@ def _configured_file_roots() -> list[Path]:
     return roots
 
 
-def _default_file_roots() -> list[Path]:
+def _default_file_roots(roots: FileRoots) -> list[Path]:
     """Return default roots for uploaded/imported user files."""
-    from src.config.paths import get_runtime_root
-
-    cwd = Path.cwd().resolve()
-    home = Path.home().resolve()
+    cwd, home, runtime_root = roots.cwd, roots.home, roots.runtime_root
     agent_root = _agent_root()
-    runtime_root = get_runtime_root()
     return [
         agent_root / "uploads",
         agent_root / "runs",
@@ -150,19 +168,14 @@ def _default_file_roots() -> list[Path]:
     ]
 
 
-def _default_run_roots() -> list[Path]:
+def _default_run_roots(roots: FileRoots) -> list[Path]:
     """Return default roots for generated backtest/tool run directories."""
-    from src.config.paths import get_runtime_root
-    from src.swarm.store import swarm_runs_root
-
-    cwd = Path.cwd().resolve()
-    home = Path.home().resolve()
+    cwd, home, runtime_root = roots.cwd, roots.home, roots.runtime_root
     agent_root = _agent_root()
-    runtime_root = get_runtime_root()
     return [
         agent_root / "runs",
         agent_root / ".swarm" / "runs",  # un-migrated legacy swarm runs
-        swarm_runs_root(),
+        roots.swarm_runs_root,
         cwd / "runs",
         home / ".vibe-trading" / "shadow_runs",
         home / ".vibe-trading" / "runs",
@@ -171,60 +184,22 @@ def _default_run_roots() -> list[Path]:
     ]
 
 
-def allowed_file_roots() -> list[Path]:
+def allowed_file_roots(*, roots: FileRoots) -> list[Path]:
     """Return all roots allowed for document and broker-file reads."""
-    roots: list[Path] = []
-    for root in [*_default_file_roots(), *_configured_file_roots()]:
-        resolved = root.resolve()
-        if resolved not in roots:
-            roots.append(resolved)
-    return roots
+    return list(dict.fromkeys(root.resolve() for root in [*_default_file_roots(roots), *_configured_roots(roots.reads)]))
 
 
-@contextmanager
-def confined_write_roots(root: Path) -> Iterator[None]:
-    """Make ``root`` the only write root for calls made inside the block.
-
-    The binding is a context variable, so it covers exactly the thread (and
-    context) that entered the block; enter it in the thread that runs the
-    tool.
-
-    Args:
-        root: The directory writes and edits must stay inside.
-
-    Yields:
-        None.
-    """
-    token = _CONFINED_WRITE_ROOT.set(Path(root).resolve())
-    try:
-        yield
-    finally:
-        _CONFINED_WRITE_ROOT.reset(token)
-
-
-def allowed_write_roots() -> list[Path]:
+def allowed_write_roots(*, roots: FileRoots) -> list[Path]:
     """Return all roots allowed for file writes and edits.
 
-    Inside :func:`confined_write_roots` this is only the confined directory.
+    Child tools receive only the workspace specified by their file policy.
     """
-    confined = _CONFINED_WRITE_ROOT.get()
-    if confined is not None:
-        return [confined]
-    raw = get_env_config().api.vibe_trading_allowed_write_roots
-    configured: list[Path] = []
-    for item in raw.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        _rejects_unc(item)
-        configured.append(Path(item).expanduser().resolve())
+    if roots.confined_writes is not None:
+        return [roots.confined_writes]
+    configured = _configured_roots(roots.writes)
 
-    from src.config.paths import get_runtime_root
-
-    cwd = Path.cwd().resolve()
-    home = Path.home().resolve()
+    cwd, home, runtime_root = roots.cwd, roots.home, roots.runtime_root
     agent_root = _agent_root()
-    runtime_root = get_runtime_root()
     defaults = [
         agent_root / "uploads",
         agent_root / "runs",
@@ -235,12 +210,7 @@ def allowed_write_roots() -> list[Path]:
         runtime_root / "runs",
     ]
 
-    roots: list[Path] = []
-    for root in [*defaults, *configured]:
-        resolved = root.resolve()
-        if resolved not in roots:
-            roots.append(resolved)
-    return roots
+    return list(dict.fromkeys(root.resolve() for root in [*defaults, *configured]))
 
 
 def _fallback_candidate(file_path: str, base: Path) -> Path:
@@ -254,6 +224,7 @@ def resolve_safe_path(
     run_dir: str | None,
     allowed_roots: list[Path],
     *,
+    roots: FileRoots,
     purpose: str = "workspace",
 ) -> Path:
     """Resolve a file path under run_dir with fallback to allowed roots.
@@ -273,7 +244,7 @@ def resolve_safe_path(
     _rejects_unc(file_path)
 
     hint_env = _PURPOSE_ENV_HINTS.get(purpose)
-    if purpose == "write" and _CONFINED_WRITE_ROOT.get() is not None:
+    if purpose == "write" and roots.confined_writes is not None:
         # No setting widens a confinement, so none is suggested.
         hint_env = None
     hint = f"\nSet {hint_env} to add a directory. {_ENV_SCOPE_HINT}" if hint_env else ""
@@ -283,7 +254,7 @@ def resolve_safe_path(
         # A rejected network path must never enter the fallback resolver.
         _rejects_unc(run_dir)
         try:
-            run_root = safe_run_dir(run_dir)
+            run_root = safe_run_dir(run_dir, roots=roots)
         except ValueError as exc:
             # If safe_run_dir fails, check if the path is in allowed_roots first
             candidate = _fallback_candidate(file_path, Path(run_dir).expanduser())
@@ -320,47 +291,33 @@ def resolve_safe_path(
     )
 
 
-def _allowed_run_roots() -> list[Path]:
+def _allowed_run_roots(*, roots: FileRoots) -> list[Path]:
     """Return all roots allowed for run_dir-based tools."""
-    raw = get_env_config().api.vibe_trading_allowed_run_roots
-    configured: list[Path] = []
-    for item in raw.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        _rejects_unc(item)
-        configured.append(Path(item).expanduser().resolve())
+    configured = _configured_roots(roots.runs)
 
-    roots: list[Path] = []
-    for root in [*_default_run_roots(), *configured]:
-        resolved = root.resolve()
-        if resolved not in roots:
-            roots.append(resolved)
-    return roots
+    return list(dict.fromkeys(root.resolve() for root in [*_default_run_roots(roots), *configured]))
 
 
-def _import_candidate(p: str) -> Path:
+def _import_candidate(p: str, *, roots: FileRoots) -> Path:
     """Return the filesystem candidate for an import path.
 
     Browser uploads are exposed as ``uploads/<name>`` so the UI never needs
     a local absolute path. Resolve that handle back to the user-level upload
     root before enforcing the allowlist.
     """
-    from src.config.paths import get_uploads_dir
-
     candidate = Path(p).expanduser()
     if candidate.is_absolute():
         return candidate.resolve()
 
     parts = candidate.parts
     if parts and parts[0] == "uploads":
-        return (get_uploads_dir() / Path(*parts[1:])).resolve()
+        return ((roots.runtime_root / "uploads") / Path(*parts[1:])).resolve()
     if len(parts) >= 2 and parts[0] == "agent" and parts[1] == "uploads":
-        return (get_uploads_dir() / Path(*parts[2:])).resolve()
-    return (Path.cwd() / candidate).resolve()
+        return ((roots.runtime_root / "uploads") / Path(*parts[2:])).resolve()
+    return (roots.cwd / candidate).resolve()
 
 
-def _safe_import_path(p: str, *, purpose: str) -> Path:
+def _safe_import_path(p: str, *, roots: FileRoots, purpose: str) -> Path:
     """Validate a user-supplied path against explicit import roots.
 
     Args:
@@ -375,9 +332,9 @@ def _safe_import_path(p: str, *, purpose: str) -> Path:
             import roots.
     """
     _rejects_unc(p)
-    resolved = _import_candidate(p)
+    resolved = _import_candidate(p, roots=roots)
 
-    roots = allowed_file_roots()
+    roots = allowed_file_roots(roots=roots)
     for root in roots:
         if resolved.is_relative_to(root):
             return resolved
@@ -389,7 +346,7 @@ def _safe_import_path(p: str, *, purpose: str) -> Path:
     )
 
 
-def safe_user_path(p: str) -> Path:
+def safe_user_path(p: str, *, roots: FileRoots) -> Path:
     """Validate a user-supplied broker/export file path.
 
     Args:
@@ -402,10 +359,10 @@ def safe_user_path(p: str) -> Path:
         ValueError: If `p` is a UNC share or resolves outside all allowed
             import roots.
     """
-    return _safe_import_path(p, purpose="user-file")
+    return _safe_import_path(p, roots=roots, purpose="user-file")
 
 
-def safe_document_path(p: str) -> Path:
+def safe_document_path(p: str, *, roots: FileRoots) -> Path:
     """Validate a document-reader file path.
 
     Args:
@@ -418,10 +375,10 @@ def safe_document_path(p: str) -> Path:
         ValueError: If `p` is a UNC share or resolves outside all allowed
             import roots.
     """
-    return _safe_import_path(p, purpose="document")
+    return _safe_import_path(p, roots=roots, purpose="document")
 
 
-def safe_run_dir(p: str) -> Path:
+def safe_run_dir(p: str, *, roots: FileRoots) -> Path:
     """Validate a run directory used by generated-code tools.
 
     Args:
@@ -437,7 +394,7 @@ def safe_run_dir(p: str) -> Path:
     _rejects_unc(p)
     resolved = Path(p).expanduser().resolve()
 
-    roots = _allowed_run_roots()
+    roots = _allowed_run_roots(roots=roots)
     for root in roots:
         if resolved.is_relative_to(root):
             return resolved
@@ -449,7 +406,7 @@ def safe_run_dir(p: str) -> Path:
     )
 
 
-def session_workspace_for_run(run_dir: str | Path) -> Path | None:
+def session_workspace_for_run(run_dir: str | Path, *, roots: FileRoots) -> Path | None:
     """Return the owning session workspace for a generated run directory.
 
     The session id is read from the run's persisted request envelope. This
@@ -457,7 +414,7 @@ def session_workspace_for_run(run_dir: str | Path) -> Path | None:
     exposing every session workspace as a global file root.
     """
     try:
-        run = safe_run_dir(str(run_dir))
+        run = safe_run_dir(str(run_dir), roots=roots)
         request = run / "req.json"
         payload = json.loads(request.read_text(encoding="utf-8"))
         context = payload.get("context") if isinstance(payload, dict) else None
@@ -470,9 +427,8 @@ def session_workspace_for_run(run_dir: str | Path) -> Path | None:
             workspace = Path(declared).expanduser().resolve()
             if workspace.name == "workspace" and workspace.is_dir():
                 return workspace
-        from src.config.paths import get_sessions_dir
-        workspace = (get_sessions_dir() / session_id / "workspace").resolve()
-        sessions_root = get_sessions_dir().resolve()
+        sessions_root = (roots.runtime_root / "sessions").resolve()
+        workspace = (sessions_root / session_id / "workspace").resolve()
         if not workspace.is_relative_to(sessions_root):
             return None
         return workspace
@@ -480,7 +436,7 @@ def session_workspace_for_run(run_dir: str | Path) -> Path | None:
         return None
 
 
-def safe_run_id(run_id: str) -> Path:
+def safe_run_id(run_id: str, *, roots: FileRoots) -> Path:
     """Resolve a bare run id to an existing allowed run directory.
 
     Args:
@@ -502,7 +458,7 @@ def safe_run_id(run_id: str) -> Path:
     ):
         raise ValueError(f"run_id {run_id!r} must be a bare run directory name")
 
-    roots = _allowed_run_roots()
+    roots = _allowed_run_roots(roots=roots)
     for root in roots:
         resolved = (root / candidate.name).resolve()
         if resolved.is_relative_to(root) and resolved.is_dir():

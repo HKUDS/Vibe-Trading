@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -30,6 +34,7 @@ def _service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionService:
     # clear() is only noticed when the subscriber's idle wait times out; keep
     # that short so each case finishes in well under a second.
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(heartbeat_interval_s=0.2),
         runs_dir=tmp_path / "runs",

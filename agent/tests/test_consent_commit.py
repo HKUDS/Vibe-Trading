@@ -11,6 +11,10 @@ Covers (live-trading SPEC, Consent §1/§3, Mandate §2):
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import ast
 import json
 from datetime import datetime
@@ -697,7 +701,7 @@ def test_registry_has_propose_tool_but_no_mandate_writer(registry_goal_db) -> No
     """The assembled registry exposes propose_mandate_profiles, no commit tool."""
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     names = set(registry.tool_names)
     assert "propose_mandate_profiles" in names
     for forbidden in ("commit_mandate", "set_mandate", "write_mandate", "authorize_live"):

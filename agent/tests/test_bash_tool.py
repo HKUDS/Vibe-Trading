@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.module_os_helpers import patch_module_os
 
 import json
@@ -79,7 +83,7 @@ def test_rejects_broad_python_process_termination(
     popen = MagicMock(side_effect=AssertionError("unsafe command reached subprocess"))
     monkeypatch.setattr(bash_tool.subprocess, "Popen", popen)
 
-    result = json.loads(BashTool().execute(command=command))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command=command))
 
     assert result["status"] == "error"
     assert "cancel_background" in result["error"]
@@ -101,7 +105,7 @@ def test_allows_non_broad_process_commands(
     fake = _FakePopen()
     _install_fake_popen(monkeypatch, fake)
 
-    result = json.loads(BashTool().execute(command=command))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command=command))
 
     assert result["status"] == "ok"
     assert result["exit_code"] == 0
@@ -125,7 +129,7 @@ def test_timeout_kills_process_tree(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(bash_tool, "_kill_process_tree", _fake_kill)
 
-    result = json.loads(BashTool().execute(command="echo hang"))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="echo hang"))
 
     assert result["status"] == "error"
     assert result["error_code"] == "tool_timeout"
@@ -138,7 +142,7 @@ def test_heredoc_unsupported_on_windows(monkeypatch: pytest.MonkeyPatch) -> None
     popen = MagicMock(side_effect=AssertionError("heredoc reached subprocess"))
     monkeypatch.setattr(bash_tool.subprocess, "Popen", popen)
 
-    result = json.loads(BashTool().execute(command="cat <<EOF\nhello\nEOF"))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="cat <<EOF\nhello\nEOF"))
 
     assert result["status"] == "error"
     assert result["error_code"] == "heredoc_unsupported"
@@ -153,6 +157,6 @@ def test_heredoc_allowed_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakePopen()
     _install_fake_popen(monkeypatch, fake)
 
-    result = json.loads(BashTool().execute(command="cat <<EOF\nhello\nEOF"))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="cat <<EOF\nhello\nEOF"))
 
     assert result["status"] == "ok"

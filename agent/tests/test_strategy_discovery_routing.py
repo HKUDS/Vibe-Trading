@@ -15,6 +15,10 @@ network can affect the prompt. No wall-clock assertions.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import inspect
 import json
 import sys
@@ -55,7 +59,7 @@ class _StubTool(BaseTool):
 
 
 def _registry_with(names) -> ToolRegistry:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for name in names:
         registry.register(_StubTool(name))
     return registry

@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Collection
-from typing import Any, Dict, List, Optional
+from collections.abc import Collection
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from src.product.tool_policy import check_tool_call
+from src.product.tool_policy import ToolPolicy
+
+if TYPE_CHECKING:
+    from src.tools.path_utils import FileRoots
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,13 @@ class BaseTool(ABC):
         }
 
 
+class FileBoundTool:
+    """Tool whose filesystem checks use the host's file-root configuration."""
+
+    def __init__(self, *, roots: FileRoots) -> None:
+        self.roots = roots
+
+
 def host_tool_name(tool: BaseTool, registered: Collection[str]) -> str:
     """Validate a trusted host registration before adding it to either catalog."""
     if not isinstance(tool, BaseTool):
@@ -92,9 +102,11 @@ class ToolRegistry:
     """Tool registry."""
 
     def __init__(
-        self, *, policy: Callable[[str, dict], tuple[bool, str, dict]] = check_tool_call,
+        self, *, policy: ToolPolicy,
     ) -> None:
-        self._policy = policy
+        if not isinstance(policy, ToolPolicy):
+            raise TypeError("ToolRegistry requires an explicit ToolPolicy")
+        self.policy = policy
         self._tools: Dict[str, BaseTool] = {}
         self._import_failures: Dict[str, str] = {}
         self._registration_failures: Dict[str, str] = {}
@@ -115,7 +127,7 @@ class ToolRegistry:
 
     def check_policy(self, name: str, params: Dict[str, Any]) -> tuple[bool, str, Dict[str, Any]]:
         """Apply the mandatory registry policy before a hook or a tool can run."""
-        return self._policy(name, params)
+        return self.policy(name, params)
 
     def get(self, name: str) -> Optional[BaseTool]:
         """Retrieve a tool by name."""

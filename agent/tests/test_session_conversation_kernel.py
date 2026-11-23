@@ -11,6 +11,13 @@ a fixed script.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import copy
 import json
@@ -144,7 +151,7 @@ def _service(tmp_path: Path, monkeypatch, registry_factory, llm) -> SessionServi
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: registry_factory())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
     monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
@@ -153,6 +160,7 @@ def _service(tmp_path: Path, monkeypatch, registry_factory, llm) -> SessionServi
 
 def _restart(tmp_path: Path) -> SessionService:
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"), event_bus=EventBus(), runs_dir=tmp_path / "runs",
     )
 
@@ -200,7 +208,7 @@ def _market_registry(market_calls: list, monkeypatch):
     market = _MarketTool(market_calls)
 
     def factory() -> DeferredToolRegistry:
-        base = ToolRegistry()
+        base = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
         base.register(search)
         base.register(market)
         return DeferredToolRegistry(base)
@@ -376,7 +384,7 @@ def _lookup_factory(extra: tuple = ()):
     lookup = _LookupTool(lambda kwargs: json.dumps({"ok": True, "value": f"value-of-{kwargs['key']}"}))
 
     def factory() -> ToolRegistry:
-        registry = ToolRegistry()
+        registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
         registry.register(lookup)
         for tool in extra:
             registry.register(tool)
@@ -681,11 +689,11 @@ def test_cross_turn_compaction_is_recorded_and_the_next_turn_replays_from_it(tmp
 def test_later_turn_reads_an_earlier_turns_offloaded_tool_result(tmp_path, monkeypatch):
     big = json.dumps({"ok": True, "rows": ["x" * 60 for _ in range(400)]})
     lookup = _LookupTool(lambda kwargs: big)
-    reader = ReadFileTool()
+    reader = ReadFileTool(roots=FileRoots.from_config(get_env_config().api))
     seen: dict = {}
 
     def factory() -> ToolRegistry:
-        registry = ToolRegistry()
+        registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
         registry.register(lookup)
         registry.register(reader)
         return registry
@@ -763,7 +771,7 @@ def test_second_turn_request_body_repeats_the_first_turn_byte_for_byte(tmp_path,
     class _WireChatLLM(ChatLLM):
         """The real client, its SDK adapter wired to the mock transport."""
 
-        def __init__(self) -> None:
+        def __init__(self, *, policy) -> None:
             adapter = ChatOpenAIWithReasoning(
                 model="deepseek-v4-pro", api_key="offline", base_url="https://example.invalid/v1",
                 http_client=httpx.Client(transport=httpx.MockTransport(respond)),
@@ -772,7 +780,7 @@ def test_second_turn_request_body_repeats_the_first_turn_byte_for_byte(tmp_path,
             adapter._vibe_provider = "deepseek"
             snapshot = resolve_config(model_name="deepseek-v4-pro", environment=dict(os.environ))
             with patch("src.providers.chat.build_llm", return_value=adapter):
-                super().__init__(snapshot=snapshot)
+                super().__init__(snapshot=snapshot, policy=policy)
 
     service = _service(tmp_path, monkeypatch, _lookup_factory(), None)
     monkeypatch.setattr("src.providers.chat.ChatLLM", _WireChatLLM)
@@ -849,7 +857,10 @@ def test_failed_attempt_scrubs_exception_before_persistence_and_display(tmp_path
         raise RuntimeError("offline failure: api_key=private-error-detail")
 
     llm = _PolicyLLM(fail)
-    service = _service(tmp_path, monkeypatch, fail if stage == "registry" else ToolRegistry, llm)
+    def empty_registry():
+        return ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+
+    service = _service(tmp_path, monkeypatch, fail if stage == "registry" else empty_registry, llm)
     sid = service.create_session(title="error projection").session_id
     turn = asyncio.run(_send(service, sid, "Inspect the failure"))
     attempt = service.store.get_attempt(sid, turn)

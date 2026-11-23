@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -26,7 +30,7 @@ def run_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _run(run_dir: Path, **kwargs):
-    return json.loads(PatternTool().execute(run_dir=str(run_dir), **kwargs))
+    return json.loads(PatternTool(roots=FileRoots.from_config(get_env_config().api)).execute(run_dir=str(run_dir), **kwargs))
 
 
 def test_null_window_uses_default(run_dir: Path) -> None:
@@ -61,6 +65,6 @@ def test_null_patterns_means_all(run_dir: Path) -> None:
 
 
 def test_missing_run_dir_is_a_json_error() -> None:
-    out = json.loads(PatternTool().execute())
+    out = json.loads(PatternTool(roots=FileRoots.from_config(get_env_config().api)).execute())
     assert out["status"] == "error"
     assert "run_dir" in out["error"]

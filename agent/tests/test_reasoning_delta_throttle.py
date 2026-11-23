@@ -10,6 +10,10 @@ iteration immediately so the UI flips to "Reasoning…" without delay.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.provider_helpers import chat_with_adapter
 
 from pathlib import Path
@@ -69,7 +73,7 @@ def _build_agent(llm: Any, events: list, tmp_run_dir: Path):
 
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=lambda event_type, data: events.append((data.get("kind", event_type), data)),
         max_iterations=3,

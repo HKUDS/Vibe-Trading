@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import hashlib
 import json
 from pathlib import Path
@@ -20,9 +27,9 @@ from src.tools.goal_tool import (
 def test_local_goal_tools_use_injected_session(tmp_path: Path) -> None:
     """Agent tools can start, inspect, and mutate the current session goal."""
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    get = GetResearchGoalTool(default_session_id="session-1", store=store)
-    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    get = GetResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
 
     created = json.loads(
         start.execute(
@@ -58,7 +65,7 @@ def test_local_goal_tools_use_injected_session(tmp_path: Path) -> None:
 def test_goal_tool_without_session_returns_validation_error(tmp_path: Path) -> None:
     """Goal tools fail cleanly when no session id was injected or supplied."""
     store = GoalStore(tmp_path / "goals.db")
-    result = json.loads(GetResearchGoalTool(store=store).execute())
+    result = json.loads(GetResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), store=store).execute())
 
     assert result["status"] == "error"
     assert result["error_type"] == "validation"
@@ -68,7 +75,7 @@ def test_goal_tool_without_session_returns_validation_error(tmp_path: Path) -> N
 def test_goal_tool_rejects_live_trading_objective(tmp_path: Path) -> None:
     """Local agent tools keep the research-only boundary."""
     store = GoalStore(tmp_path / "goals.db")
-    tool = StartResearchGoalTool(default_session_id="session-1", store=store)
+    tool = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
 
     result = json.loads(tool.execute(objective="Buy 1 BTC now."))
 
@@ -81,7 +88,7 @@ def test_registry_injects_session_id_into_goal_tools() -> None:
     """SessionService can build a registry with session-scoped goal tools."""
     from src.tools import build_registry
 
-    registry = build_registry(session_id="session-xyz")
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), session_id="session-xyz")
     tool = registry.get("start_research_goal")
 
     assert tool is not None
@@ -96,8 +103,8 @@ def test_goal_tools_emit_mutation_events(tmp_path: Path) -> None:
     def emit(event_type: str, data: dict) -> None:
         events.append((event_type, data))
 
-    start = StartResearchGoalTool(default_session_id="session-1", store=store, event_callback=emit)
-    add = AddGoalEvidenceTool(default_session_id="session-1", store=store, event_callback=emit)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store, event_callback=emit)
+    add = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store, event_callback=emit)
 
     created = json.loads(
         start.execute(
@@ -134,8 +141,8 @@ def test_goal_evidence_tool_binds_runtime_artifact(
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(run_root))
 
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     created = json.loads(
         start.execute(
             objective="Evaluate NVDA momentum as a research-only thesis.",
@@ -189,8 +196,8 @@ def test_goal_evidence_rejects_absolute_artifact_path_from_another_run(
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(run_root))
 
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     created = json.loads(
         start.execute(
             objective="Evaluate NVDA momentum as a research-only thesis.",
@@ -217,8 +224,8 @@ def test_goal_evidence_rejects_absolute_artifact_path_from_another_run(
 def test_goal_evidence_preserves_exact_tool_call_provenance(tmp_path: Path) -> None:
     """Tool-backed goal evidence keeps the exact source call id beside its own evidence id."""
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     created = json.loads(
         start.execute(
             objective="Audit one tool-backed metric.",
@@ -249,8 +256,8 @@ def test_goal_evidence_preserves_exact_tool_call_provenance(tmp_path: Path) -> N
 def test_goal_evidence_can_remain_manual_without_tool_call_id(tmp_path: Path) -> None:
     """Manual evidence does not acquire an invented tool provenance id."""
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     created = json.loads(
         start.execute(
             objective="Record a manual research note.",
@@ -286,8 +293,8 @@ def test_goal_evidence_tool_schema_distinguishes_call_and_evidence_ids() -> None
 def test_goal_status_tool_can_cancel_current_goal(tmp_path: Path) -> None:
     """Agent tools can move a current goal to a terminal status."""
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    update = UpdateResearchGoalStatusTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    update = UpdateResearchGoalStatusTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     created = json.loads(
         start.execute(
             objective="Evaluate NVDA momentum as a research-only thesis.",
@@ -315,9 +322,9 @@ def test_update_goal_tool_edits_objective_without_resetting_progress(tmp_path: P
     which would mint a new goal and reset all criteria to pending.
     """
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    add_evidence = AddGoalEvidenceTool(default_session_id="session-1", store=store)
-    update = UpdateResearchGoalTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    add_evidence = AddGoalEvidenceTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    update = UpdateResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
 
     created = json.loads(
         start.execute(
@@ -342,8 +349,8 @@ def test_update_goal_tool_edits_objective_without_resetting_progress(tmp_path: P
 
 def test_update_goal_tool_requires_a_field_to_change(tmp_path: Path) -> None:
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    update = UpdateResearchGoalTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    update = UpdateResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     start.execute(objective="Evaluate NVDA momentum.", criteria=["Define thesis"])
 
     result = json.loads(update.execute())
@@ -353,8 +360,8 @@ def test_update_goal_tool_requires_a_field_to_change(tmp_path: Path) -> None:
 
 def test_update_goal_tool_rejects_a_stale_expected_goal_id(tmp_path: Path) -> None:
     store = GoalStore(tmp_path / "goals.db")
-    start = StartResearchGoalTool(default_session_id="session-1", store=store)
-    update = UpdateResearchGoalTool(default_session_id="session-1", store=store)
+    start = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
+    update = UpdateResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id="session-1", store=store)
     start.execute(objective="Evaluate NVDA momentum.", criteria=["Define thesis"])
 
     result = json.loads(
@@ -371,6 +378,7 @@ def test_registry_injects_goal_event_callback() -> None:
 
     events: list[tuple[str, dict]] = []
     registry = build_registry(
+        policy=ToolPolicy.from_config(get_env_config()),
         session_id="session-xyz",
         event_callback=lambda event_type, data: events.append((event_type, data)),
     )

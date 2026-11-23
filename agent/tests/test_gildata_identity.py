@@ -1,4 +1,8 @@
 """Optional recall must preserve resolver identity and other sources."""
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import json
 from unittest.mock import Mock
 
@@ -42,7 +46,7 @@ def test_all_exact_venues_survive_and_remain_ambiguous(recall, tmp_path):
     data = json.loads(raw)["data"]
     assert [c["symbol"] for c in data["candidates"]] == ["600000.SH", "00700.HK"]
     assert data["candidates"][0]["vendor_code"] == "internal"
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="测试公司")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="测试公司")
     ledger.ingest_tool_result(tool_name="search_symbol", arguments={"query": "测试公司"},
                               call_id="search1", result=raw, success=True)
     assert ledger.identity_status == "ambiguous"
@@ -51,7 +55,7 @@ def test_all_exact_venues_survive_and_remain_ambiguous(recall, tmp_path):
 def test_unique_name_locks_with_original_gate(recall, tmp_path):
     recall.return_value = recall.return_value[:1]
     raw = ss.SymbolSearchTool().execute(query="测试公司")
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="测试公司")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="测试公司")
     ledger.ingest_tool_result(tool_name="search_symbol", arguments={"query": "测试公司"},
                               call_id="search1", result=raw, success=True)
     assert ledger.identity_status == "locked"

@@ -1,5 +1,12 @@
 """Exact user windows affect acquisition; explicit warmup retains calculation history."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -66,8 +73,8 @@ def runtime(tmp_path, monkeypatch):
         days=pd.date_range(kwargs['start_date'],kwargs['end_date'])
         return json.dumps({'AAPL.US':[{'trade_date':str(d.date()),'close':(d.day-9)*10} for d in days]})
     monkeypatch.setattr('src.tools.market_data_tool.fetch_market_data_json',fetch)
-    registry=ToolRegistry()
-    registry.register(MarketDataTool())
+    registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)))
     agent=AgentRuntime(registry=registry,llm=SimpleNamespace())
     agent.memory.run_dir=str(tmp_path)
     agent.tool_env.data_window=UserDataWindow.parse(PROMPT)
@@ -110,7 +117,7 @@ def test_invalid_warmup_never_fetches(runtime,warmup):
 
 def test_standalone_market_tool_has_no_inferred_user_range(runtime):
     _,seen,path=runtime
-    MarketDataTool().execute(**ARGS,run_dir=str(path))
+    MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(**ARGS,run_dir=str(path))
     assert seen[0]['start_date']=='2026-11-10'
 
 
@@ -128,7 +135,7 @@ def test_technical_indicator_lookback_is_not_clipped(runtime,monkeypatch):
 
 def test_mcp_forwards_explicit_warmup(monkeypatch):
     import mcp_server
-    registry=Mock()
+    registry = Mock(policy=ToolPolicy.from_config(get_env_config()))
     monkeypatch.setattr(mcp_server,'_get_registry',lambda:registry)
     fn=getattr(mcp_server.get_market_data,'fn',None) or getattr(mcp_server.get_market_data,'__wrapped__',mcp_server.get_market_data)
     fn(codes=['AAPL.US'],start_date='2026-11-12',end_date='2026-11-13',warmup_start_date='2026-11-10')

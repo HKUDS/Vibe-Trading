@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -31,7 +35,7 @@ def test_registry_walk_order_and_describe_are_stable() -> None:
 
 
 def _ledger_with_locked_listed_identity(tmp_path: Path) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析 GLD 并给出买入价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="分析 GLD 并给出买入价")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "GLD"},
@@ -78,7 +82,7 @@ def test_migrated_check_fires_identically_through_the_gate(tmp_path: Path) -> No
 
 
 def test_migrated_check_is_silent_with_nothing_locked(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="随便聊聊")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="随便聊聊")
     assert GROUNDING_CHECKS.run("listed-identity-relabelled-private", ledger, "这是一家私人公司。") == []
 
 
@@ -121,7 +125,7 @@ def test_fired_checks_empty_for_a_clean_answer(tmp_path: Path) -> None:
 
 def _ledger_with_invalidated_identity(tmp_path: Path) -> GroundingLedger:
     """A failed resolution leaves identity invalidated (#1622 identity slice)."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析机器人ETF并给出买入价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="分析机器人ETF并给出买入价")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "机器人ETF"},
@@ -159,7 +163,7 @@ def test_identity_not_locked_is_silent_once_locked(tmp_path: Path) -> None:
 
 
 def test_figures_block_malformed_fires_identically_through_the_gate(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="随便聊聊")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="随便聊聊")
     answer = "一些文字\n\n```figures\n0.95 is my entry\n```"
     result = ledger.validate_final_answer(answer)
     assert "figures_block_malformed" in [str(issue.get("code")) for issue in result.issues]
@@ -190,7 +194,7 @@ def test_fired_checks_name_the_identity_and_figure_slices(tmp_path: Path) -> Non
     ledger.validate_final_answer("机器人ETF 可以买入。")
     assert _recorded_validations(tmp_path)[-1]["fired_checks"] == ["identity-not-locked"]
 
-    figure_ledger = GroundingLedger(run_dir=tmp_path / "figs", user_message="随便聊聊")
+    figure_ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path / "figs", user_message="随便聊聊")
     figure_ledger.validate_final_answer("一些文字\n\n```figures\n0.95 is my entry\n```")
     artifact = json.loads(
         (tmp_path / "figs" / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")

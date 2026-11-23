@@ -10,6 +10,10 @@ legitimate spelling of the same thing still passes.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -53,7 +57,7 @@ def _market_payload() -> str:
 
 
 def _ledger(tmp_path: Path) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析 159516.SZ 并给出买入价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="分析 159516.SZ 并给出买入价")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": [SYMBOL]},

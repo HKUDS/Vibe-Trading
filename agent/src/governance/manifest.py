@@ -48,7 +48,7 @@ Mount points for a future integration (NOT implemented here)::
        one lives under the OPEN ``src/tools/`` tree, not protected) already
        exposes ``ToolRegistry.tool_names`` — see
        ``agent/src/agent/tools.py:87`` and the project CLAUDE.md line
-       "measured off ``build_registry().tool_names`` on a default checkout".
+       "measured off ``build_registry(policy=policy).tool_names`` on a default checkout".
        Pass that list as ``tool_names=``.
 
     4. Package versions: call :func:`collect_key_package_versions` once per
@@ -71,7 +71,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 __all__ = [

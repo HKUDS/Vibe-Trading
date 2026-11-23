@@ -17,6 +17,10 @@ Mirrors the BROKERS.md method-name-regex gate. Two checks:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import ast
 import re
 from pathlib import Path
@@ -106,7 +110,7 @@ def test_registry_has_no_mandate_write_tool(registry_goal_db) -> None:
     """The assembled tool registry exposes no tool that can write a mandate."""
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     names = list(getattr(registry, "_tools", {}).keys())
     for name in names:
         assert not _FORBIDDEN_NAME.match(name), f"tool {name!r} matches forbidden write regex"

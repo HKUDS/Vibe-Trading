@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import logging
 import re
 from typing import Any
@@ -48,7 +50,13 @@ def uses_responses_api(
     return adapter == "auto" and not deepseek._native_deepseek_adapter_available()
 
 
-def build_llm(*, model_name: str | None = None, callbacks: Any = None, snapshot: ProviderConfig | None = None) -> Any:
+def build_llm(
+    *,
+    policy: ToolPolicy,
+    model_name: str | None = None,
+    callbacks: Any = None,
+    snapshot: ProviderConfig | None = None,
+) -> Any:
     """Construct the configured LangChain chat model.
 
     Args:
@@ -78,6 +86,7 @@ def build_llm(*, model_name: str | None = None, callbacks: Any = None, snapshot:
 
         effort = options.langchain_reasoning_effort.strip().lower()
         return OpenAICodexLLM(
+            roots=policy.file_roots,
             model=name,
             temperature=temperature,
             timeout=options.timeout_seconds,
@@ -94,6 +103,7 @@ def build_llm(*, model_name: str | None = None, callbacks: Any = None, snapshot:
         from src.providers.claude_cli import ClaudeCliLLM
 
         return ClaudeCliLLM(
+            policy=policy,
             model=name,
             timeout=options.timeout_seconds,
             reasoning_effort=options.langchain_reasoning_effort.strip().lower(),

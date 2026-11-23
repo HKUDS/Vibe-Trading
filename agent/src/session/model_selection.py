@@ -9,6 +9,8 @@ process environment is never written.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -62,7 +64,7 @@ def effective_model_selection(session: Session) -> dict[str, Any]:
                 "reasoning_effort": None, "error": str(exc)}
 
 
-def chat_llm_for_session(config: Optional[Mapping[str, Any]]) -> Any:
+def chat_llm_for_session(config: Optional[Mapping[str, Any]], *, policy: ToolPolicy) -> Any:
     """Build the chat client for one attempt of a session.
 
     Args:
@@ -80,12 +82,12 @@ def chat_llm_for_session(config: Optional[Mapping[str, Any]]) -> Any:
 
     stored = (config or {}).get(SESSION_CONFIG_KEY)
     if stored is None:
-        return chat_module.ChatLLM()
+        return chat_module.ChatLLM(policy=policy)
     _selection, provider_config = validate_model_selection(stored)
-    return chat_module.ChatLLM(snapshot=provider_config, selection="session")
+    return chat_module.ChatLLM(policy=policy, snapshot=provider_config, selection="session")
 
 
-def chat_llm_for_stored_session(sessions_dir: Path | str, session_id: str) -> Any:
+def chat_llm_for_stored_session(sessions_dir: Path | str, session_id: str, *, policy: ToolPolicy) -> Any:
     """Build the chat client for a session read from a session store.
 
     Args:
@@ -101,7 +103,7 @@ def chat_llm_for_stored_session(sessions_dir: Path | str, session_id: str) -> An
 
         session = SessionStore(base_dir=Path(sessions_dir)).get_session(session_id)
         config = session.config if session is not None else None
-    return chat_llm_for_session(config)
+    return chat_llm_for_session(config, policy=policy)
 
 
 def unavailable_selection_result(error: ModelSelectionError) -> dict[str, Any]:

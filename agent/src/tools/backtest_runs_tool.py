@@ -14,11 +14,13 @@ allowed run roots and symlinks are never followed.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 from pathlib import Path
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.config.paths import get_runs_dir
 from src.tools.path_utils import safe_run_dir, safe_run_id
@@ -115,7 +117,7 @@ def _run_summary(run_root: Path) -> dict[str, Any]:
     return result
 
 
-def _candidates(runs_root: Path):
+def _candidates(runs_root: Path, *, roots: FileRoots):
     """Allowed run directories, newest first."""
     try:
         names = sorted(
@@ -125,13 +127,14 @@ def _candidates(runs_root: Path):
         return
     for name in names[:_MAX_SCAN]:
         try:
-            yield safe_run_dir(str(runs_root / name))
+            yield safe_run_dir(str(runs_root / name), roots=roots)
         except ValueError:
             continue
 
 
 def list_backtest_runs(
     *,
+    roots: FileRoots,
     current_run_dir: str | None = None,
     scope: str = "session",
     run_id: str | None = None,
@@ -161,9 +164,9 @@ def list_backtest_runs(
         limit = min(max(int(limit), 1), _MAX_LIMIT)
         offset = max(int(offset), 0)
         runs = (
-            iter([safe_run_id(run_id)])
+            iter([safe_run_id(run_id, roots=roots)])
             if run_id is not None
-            else _candidates(get_runs_dir())
+            else _candidates(get_runs_dir(), roots=roots)
         )
     except (TypeError, ValueError) as exc:
         return json.dumps({"status": "error", "error": str(exc)})
@@ -199,7 +202,7 @@ def list_backtest_runs(
     )
 
 
-class BacktestRunsTool(BaseTool):
+class BacktestRunsTool(FileBoundTool, BaseTool):
     """Discover the backtests earlier turns and sessions already ran."""
 
     name = "list_backtest_runs"
@@ -242,4 +245,5 @@ class BacktestRunsTool(BaseTool):
             run_id=kwargs.get("run_id"),
             limit=kwargs.get("limit", 5),
             offset=kwargs.get("offset", 0),
+            roots=self.roots,
         )

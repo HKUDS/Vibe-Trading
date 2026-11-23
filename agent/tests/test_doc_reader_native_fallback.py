@@ -1,5 +1,9 @@
 """Accepted mixed PDFs retain text while OCR-only selections stay refused."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -41,7 +45,7 @@ def read_pdf(tmp_path, texts, **kwargs):
     finally:
         document.close()
     return json.loads(
-        doc_reader_tool.DocReaderTool().execute(file_path=str(path), **kwargs)
+        doc_reader_tool.DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path=str(path), **kwargs)
     )
 
 

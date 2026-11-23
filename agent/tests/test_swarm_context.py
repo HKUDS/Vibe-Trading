@@ -1,5 +1,12 @@
 """Worker evidence survives ordinary batches and remains readable under pressure."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 
@@ -25,7 +32,7 @@ class _EvidenceTool(BaseTool):
 def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
     names = ['get_financial_statements', 'get_fund_flow', 'get_margin_trading',
              'get_research_reports', 'get_stock_news', 'a', 'b', 'c', 'd', 'e']
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for name in names:
         registry.register(_EvidenceTool(name))
     seen = []
@@ -43,6 +50,7 @@ def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
     result = worker.run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read all evidence.',
                                   tools=names, max_iterations=3),
         task=SwarmTask(id='t', agent_id='analyst', prompt_template='Review the company.'),
@@ -80,7 +88,7 @@ def test_pressure_saves_old_results_and_keeps_the_fresh_batch(tmp_path, monkeypa
         assert receipt['tool_call_id'].startswith('old-')
         parts = []
         for path in receipt['paths']:
-            read = json.loads(truncate_tool_result(ReadFileTool().execute(path=path, run_dir=str(tmp_path))))
+            read = json.loads(truncate_tool_result(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=path, run_dir=str(tmp_path))))
             assert read['status'] == 'ok'
             parts.append(read['content'])
         assert ''.join(parts) == originals[receipt['tool_call_id']]
@@ -122,7 +130,7 @@ def test_result_parts_survive_json_escaping_and_redact_secrets(tmp_path, monkeyp
     original = redact_tool_result(messages[1]['content'])
     receipts = context.compact(messages, [])
     saved = next(r for r in receipts if r['tool_call_id'] == 'old-0')
-    parts = [json.loads(truncate_tool_result(ReadFileTool().execute(path=p, run_dir=str(tmp_path))))['content']
+    parts = [json.loads(truncate_tool_result(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=p, run_dir=str(tmp_path))))['content']
              for p in saved['paths']]
     assert ''.join(parts) == original
     assert 'private-value' not in ''.join(parts)
@@ -141,7 +149,7 @@ def test_context_file_symlink_cannot_redirect_writes(tmp_path):
 
 
 def test_worker_refuses_over_budget_request_without_discarding_fresh_results(tmp_path, monkeypatch):
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EvidenceTool('probe'))
     calls = []
 
@@ -157,6 +165,7 @@ def test_worker_refuses_over_budget_request_without_discarding_fresh_results(tmp
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
     result = worker.run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='a', role='Analyst', system_prompt='Analyze.', tools=['probe'], max_iterations=3),
         task=SwarmTask(id='t', agent_id='a', prompt_template='Read.'),
         upstream_summaries={}, user_vars={}, run_dir=tmp_path,

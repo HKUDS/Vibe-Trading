@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 from typing import Any, Mapping
 
 from src.product.write_targets import pending_write_directive, record_written_target
@@ -10,7 +11,8 @@ from src.product.write_targets import pending_write_directive, record_written_ta
 class WriteTargetState:
     """Own the per-run set of files written by the model."""
 
-    def __init__(self, memory, runtime, model_source) -> None:
+    def __init__(self, memory, runtime, model_source, *, registry) -> None:
+        self.registry = registry
         self.memory = memory
         self.runtime = runtime
         self.active_model_id = runtime.configured_model
@@ -30,6 +32,7 @@ class WriteTargetState:
             llm_runtime=self.runtime,
             active_model_id=self.active_model_id,
             active_model_source=self.active_model_source,
+            roots=self.registry.policy.file_roots,
         )
 
     def pending(self, user_message: str, run_started_wall: float) -> str:

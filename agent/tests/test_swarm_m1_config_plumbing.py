@@ -13,6 +13,10 @@ in M2 / M3 and bring their own tests. The contract this file defends:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,7 +29,7 @@ from src.swarm.store import SwarmStore
 def _make_runtime(tmp_path: Path, **kwargs) -> SwarmRuntime:
     """Build a SwarmRuntime backed by a tmp-path SwarmStore."""
     store = SwarmStore(base_dir=tmp_path / "swarm_runs")
-    return SwarmRuntime(store=store, **kwargs)
+    return SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, **kwargs)
 
 
 def _make_agent_spec() -> SwarmAgentSpec:

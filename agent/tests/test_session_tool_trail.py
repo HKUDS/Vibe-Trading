@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -31,6 +35,7 @@ class _DummyIndex:
 def _service(tmp_path: Path, monkeypatch) -> SessionService:
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -214,7 +219,7 @@ def test_run_with_agent_consolidates_tool_results_by_call_id(
 
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: object())
     llm = SimpleNamespace(aclose=AsyncMock())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
     monkeypatch.setattr("src.agent.runtime.AgentRuntime", _DummyAgentLoop)
     monkeypatch.setattr(

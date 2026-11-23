@@ -324,7 +324,10 @@ def _keyless_agent_tool_count() -> int:
         [
             sys.executable,
             "-c",
-            "from src.tools import build_registry; print(len(build_registry().tool_names))",
+            "from src.config.accessor import get_env_config; "
+            "from src.product.tool_policy import ToolPolicy; "
+            "from src.tools import build_registry; "
+            "print(len(build_registry(policy=ToolPolicy.from_config(get_env_config())).tool_names))",
         ],
         cwd=AGENT_DIR,
         env=env,

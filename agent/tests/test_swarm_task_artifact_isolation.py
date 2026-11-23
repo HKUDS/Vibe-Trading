@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -66,7 +70,7 @@ def test_runtime_preserves_each_same_agent_tasks_real_files(
         agents=[agent], tasks=tasks,
     )
     store.create_run(run)
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     runtime._execute_run(run, threading.Event())
     saved = store.load_run(run.id)
     assert saved is not None and saved.status == RunStatus.completed

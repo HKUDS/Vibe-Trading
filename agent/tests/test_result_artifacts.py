@@ -1,5 +1,12 @@
 """Large observations remain usable without resending or refetching them."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 from pathlib import Path
@@ -34,8 +41,8 @@ def large_result():
 
 
 def registry_with_reader():
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)))
     return registry
 
 
@@ -67,7 +74,7 @@ def test_complete_json_and_every_readable_part(tmp_path):
 def test_unavailable_artifact_is_not_claimed(tmp_path, monkeypatch, failure):
     registry = registry_with_reader()
     if failure == 'no_reader':
-        registry = ToolRegistry()
+        registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     elif failure == 'write_failure':
         def fail(*args, **kwargs):
             raise OSError('disk full')
@@ -151,6 +158,7 @@ def test_worker_model_can_recover_complete_result(tmp_path, monkeypatch):
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
     result = worker.run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read evidence.',
                                   tools=['large_result_probe', 'read_file'], max_iterations=3),
         task=SwarmTask(id='t', agent_id='analyst', prompt_template='Read evidence.'),

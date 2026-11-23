@@ -1,4 +1,11 @@
 """FinQuery's output must work with the existing grounding and delivery contracts."""
+
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import copy
 import json
 from pathlib import Path
@@ -125,7 +132,7 @@ def test_service_error_does_not_leak_or_fallback(vendor):
     ("营业收入12.34亿元", "12.34亿元", "ratio.percent", False),
 ])
 def test_existing_grounding_accepts_correct_paths_and_rejects_wrong_values(vendor, tmp_path, prose, value, field, valid):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600000.SH 财务")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600000.SH 财务")
     out = execute()
     ledger.ingest_tool_result(tool_name="gildata_fin_query", arguments={"query": "mixed metrics"},
                               result=json.dumps(out), call_id="fq1", success=True)
@@ -135,7 +142,7 @@ def test_existing_grounding_accepts_correct_paths_and_rejects_wrong_values(vendo
 
 
 def test_repeated_calls_need_the_right_call_id(vendor, tables, tmp_path):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600000.SH 财务")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600000.SH 财务")
     for call_id, value in [("first", 12.34), ("second", 56.78)]:
         tables[0]["rows"][0]["financevalue"] = value
         ledger.ingest_tool_result(tool_name="gildata_fin_query", arguments={"query": "mixed metrics"},
@@ -152,8 +159,8 @@ def test_large_result_uses_original_delivery_without_loss(vendor, tables, tmp_pa
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     tables[0]["rows"] *= 150
     raw = json.dumps(execute(), ensure_ascii=False)
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)))
     receipt = json.loads(deliver_tool_result(raw, tmp_path, registry))
     saved = json.loads(Path(receipt["_result_file"]["path"]).read_text(encoding="utf-8"))
     assert saved == json.loads(raw)
@@ -184,7 +191,7 @@ def test_shared_transport_preserves_results_and_old_flattening(monkeypatch, tabl
 
 
 def test_returned_display_and_ref_can_be_cited_without_extra_calculation(vendor, tmp_path):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600000.SH 财务")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600000.SH 财务")
     out = execute()
     ledger.ingest_tool_result(tool_name="gildata_fin_query", arguments={"query": "mixed metrics"},
                               result=json.dumps(out), call_id="fq1", success=True)
@@ -206,7 +213,7 @@ def test_display_keeps_units_and_sign_and_uses_existing_evidence(vendor, tables,
     cell = out["data"]["tables"][0]["rows"][0]["financevalue"]
     assert cell["display"] == display
     assert cell["citation"].split(" | ")[0] == display
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600000.SH 财务")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600000.SH 财务")
     ledger.ingest_tool_result(tool_name="gildata_fin_query", arguments={"query": "mixed metrics"},
                               result=json.dumps(out), call_id="fq1", success=True)
     records = [r for r in ledger._evidence if "financevalue" in r.field]
@@ -227,7 +234,7 @@ def test_quote_date_aliases_keep_actual_date(vendor, tmp_path, date_label):
     out = execute()
     row = out["data"]["tables"][0]["rows"][0]
     assert row == {"trade_date": "2024-12-31", "prev_close": 110, "close": 100}
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600000.SH quote")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600000.SH quote")
     ledger.ingest_tool_result(tool_name="gildata_fin_query", arguments={"query": "mixed metrics"},
                               result=json.dumps(out), call_id="fq1", success=True)
     assert any(r.timestamp == "2024-12-31" and r.symbol is None and r.value == 100
@@ -252,7 +259,7 @@ def test_query_without_code_calls_finquery_directly(vendor):
 
 
 def test_no_code_uses_existing_authorization_without_resolution(tmp_path):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="查询某公司财务")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="查询某公司财务")
     decision = ledger.authorize_tool_call(tool_name="gildata_fin_query", arguments={"query": "公司财务"},
                                          batch_authorized_symbols=[], batch_identity_status="invalidated", call_id="q1")
     assert decision.allowed

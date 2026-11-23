@@ -10,6 +10,10 @@ performance is real or overfit.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -68,7 +72,7 @@ def test_link_autopilot_backtest_surfaces_validation_section(isolated_env: Path)
     run_dir = _run_dir(isolated_env)
     validation = _write_run_card_with_validation(run_dir)
 
-    result = json.loads(LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
+    result = json.loads(LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
 
     assert result["status"] == "ok"
     assert (

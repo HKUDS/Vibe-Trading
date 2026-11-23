@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 import math
@@ -27,7 +31,7 @@ def _from_call_prices(strikes, prices, *, spot=100.0, rate=0.0):
 
 def _call(observations, *, spot=100.0, rate=0.0, dividend=0.0):
     return json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="volatility",
             function="diagnose_iv_surface",
@@ -49,7 +53,7 @@ def _diagnose(observations, **kwargs):
 
 
 def test_diagnostics_are_available_through_the_readonly_quantlib_tool() -> None:
-    payload = json.loads(QuantlibCallTool().execute(action="list", module="volatility"))
+    payload = json.loads(QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(action="list", module="volatility"))
 
     assert "diagnose_iv_surface" in {item["name"] for item in payload["functions"]}
 

@@ -14,6 +14,10 @@ web client and is covered by its own tests.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 import time
@@ -100,7 +104,7 @@ def test_execute_returns_cancelled_without_waiting_for_the_poll(tmp_path, monkey
     monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: ({}, None))
 
     stop = threading.Event()
-    tool = SwarmTool(session_id="sess-1", cancel_event=stop)
+    tool = SwarmTool(policy=ToolPolicy.from_config(get_env_config()), session_id="sess-1", cancel_event=stop)
 
     def cancel_soon():
         time.sleep(0.05)
@@ -155,7 +159,7 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
     monkeypatch.setattr(rt.SwarmRuntime, "_execute_layer", execute_layer)
     monkeypatch.setattr(swarm_tool, "_max_wait_seconds", wait_budget)
 
-    tool = SwarmTool(session_id="sess-2", cancel_event=threading.Event())
+    tool = SwarmTool(policy=ToolPolicy.from_config(get_env_config()), session_id="sess-2", cancel_event=threading.Event())
     try:
         payload = json.loads(tool.execute(prompt="test local run"))
         assert payload["status"] == ("completed" if finish_before_wait else "running")

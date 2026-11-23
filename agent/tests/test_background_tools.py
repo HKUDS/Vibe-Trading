@@ -174,7 +174,7 @@ def test_cancel_completed_task_does_not_touch_process(
 
 
 def test_cancel_background_tool_contract() -> None:
-    tool = background_tools.CancelBackgroundTool()
+    tool = background_tools.CancelBackgroundTool(background_tools.get_background_manager())
 
     assert tool.name == "cancel_background"
     assert tool.parameters["required"] == ["task_id"]

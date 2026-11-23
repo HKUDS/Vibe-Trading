@@ -11,7 +11,7 @@ from src.kernel import events as vocabulary
 from src.product.context import ContextBuilder
 from src.product.result_artifacts import deliver_tool_result
 from src.product.tool_progress import ToolProgress
-from src.product.tool_results import _archive_backtest_result, _is_tool_success
+from src.product.tool_results import _archive_backtest_result, _failure_code, _is_tool_success
 from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
 
@@ -34,6 +34,78 @@ class ToolDelivery:
     def reset(self) -> None:
         self.waiting_user = None
         self.progress = ToolProgress()
+
+    def deliver_blocked_call(
+        self,
+        tc: Any,
+        result: str,
+        context: ContextBuilder,
+        messages: list,
+        trace: Any,
+        iteration: int,
+        *,
+        blocked: bool = True,
+    ) -> None:
+        """Record a blocked call without invoking its implementation.
+
+        Args:
+            tc: Provider tool-call object.
+            result: Structured identity-gate error payload.
+            context: Context builder.
+            messages: Conversation messages.
+            trace: Persistent trace writer.
+            iteration: Current iteration.
+        """
+        self.progress.note("blocked", tc.name, _failure_code(result))
+        args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
+        self._emit_tool_started(tc, args, iteration, blocked=blocked)
+        trace.write(
+            {
+                "type": "tool_execution",
+                "iter": iteration,
+                "tool": tc.name,
+                "call_id": tc.id,
+                **({"blocked": True} if blocked else {}),
+            }
+        )
+        self._finalize_tool_result(
+            tc,
+            result,
+            0,
+            context,
+            messages,
+            trace,
+            iteration,
+            update_memory=False,
+        )
+
+    def deliver_cancelled_calls(
+        self,
+        tool_calls: list[Any],
+        context: ContextBuilder,
+        messages: list,
+        trace: Any,
+        iteration: int,
+    ) -> None:
+        """Record calls skipped after cancellation as explicit tool errors."""
+        result = json.dumps(
+            {
+                "status": "error",
+                "error_code": "tool_cancelled",
+                "message": "Run stopped before this tool started; no action was performed.",
+            },
+            ensure_ascii=False,
+        )
+        for tc in tool_calls:
+            self.deliver_blocked_call(
+                tc,
+                result,
+                context,
+                messages,
+                trace,
+                iteration,
+                blocked=False,
+            )
 
     def _emit_tool_started(self, tc: Any, arguments: Mapping[str, Any], iteration: int, *, blocked: bool = False) -> None:
         """Publish the canonical live item for a tool call."""
@@ -192,7 +264,10 @@ class ToolDelivery:
                 self.replay._successful_call_keys[tc.id] = recorded_key
             if tc.name == "backtest":
                 try:
-                    _archive_backtest_result(result, self.env.memory.run_dir, source_call_id=tc.id)
+                    _archive_backtest_result(
+                        result, self.env.memory.run_dir, source_call_id=tc.id,
+                        roots=self.env.registry.policy.file_roots,
+                    )
                 except OSError as exc:
                     logger.warning("Could not archive backtest output into active run: %s", exc)
             if tc.name in {"write_file", "edit_file"}:

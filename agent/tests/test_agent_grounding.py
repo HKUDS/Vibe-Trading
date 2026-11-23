@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -168,7 +175,7 @@ def _build_direct_agent(
     resolver = _ResolverTool(resolver_result)
     market = _MarketTool(_market_payload())
     private_skill = _PrivateCompanySkillTool("private company workflow")
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for tool in (resolver, market, private_skill):
         registry.register(tool)
     agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=5)
@@ -176,6 +183,7 @@ def _build_direct_agent(
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
     agent.tool_env.identity = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=run_dir,
         user_message="分析机器人ETF并给出买入价",
     )
@@ -202,7 +210,7 @@ def test_ok_false_tool_envelope_is_failure() -> None:
 def test_re_resolving_same_query_cannot_overwrite_a_locked_symbol(
     tmp_path: Path,
 ) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze Acme")
     first = {
         "ok": True,
         "data": {
@@ -272,7 +280,7 @@ def _resolve_candidate(
 
 def test_a_repeat_resolution_cannot_clear_a_conflict(tmp_path: Path) -> None:
     """Re-answering one side of a contradiction is not evidence that settles it."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze Acme")
     _resolve_candidate(ledger, "AAA.US", "Acme", "resolve-a")
     _resolve_candidate(ledger, "BBB.US", "Acme", "resolve-b")
     assert ledger.identity_status == "conflicting"
@@ -285,7 +293,7 @@ def test_a_repeat_resolution_cannot_clear_a_conflict(tmp_path: Path) -> None:
 
 def test_a_non_conclusive_step_cannot_clear_a_conflict(tmp_path: Path) -> None:
     """A timeout after a contradiction leaves the contradiction standing."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze Acme")
     _resolve_candidate(ledger, "AAA.US", "Acme", "resolve-a")
     _resolve_candidate(ledger, "BBB.US", "Acme", "resolve-b")
     assert ledger.identity_status == "conflicting"
@@ -326,7 +334,7 @@ def test_a_non_conclusive_re_resolution_cannot_retract_a_locked_symbol(
     tmp_path: Path, payload: dict[str, Any], success: bool, call_id: str
 ) -> None:
     """A timeout, a refusal or an empty list is not evidence against the lock."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze Acme")
     resolved = {
         "ok": True,
         "data": {
@@ -448,7 +456,7 @@ def test_argentina_symbols_have_grounding_identity() -> None:
 
 
 def test_argentina_symbol_is_seeded_with_market_identity(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Check GOOGL.BA price")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Check GOOGL.BA price")
 
     assert ledger.authorized_symbols == {"GOOGL.BA"}
 
@@ -476,6 +484,7 @@ def test_bare_ticker_is_allowed_whenever_it_names_one_locked_identity(
     rejected for using their documented contract.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 AAPL.US 的价格",
     )
@@ -495,6 +504,7 @@ def test_bare_ticker_stays_blocked_when_it_names_more_than_one_identity(
 ) -> None:
     """Uniqueness is the whole guarantee, so a shared base must not resolve."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="对比 600519.SH 与 600519.SZ 的价格",
     )
@@ -534,7 +544,7 @@ def test_provider_spellings_of_one_instrument_are_one_identity(
     requested: str,
 ) -> None:
     """A suffix convention, an exchange prefix, or a separator is not a venue."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=f"{locked} 现价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=f"{locked} 现价多少")
 
     authorization = ledger.authorize_tool_call(
         "get_market_data",
@@ -628,6 +638,7 @@ def test_genuine_tusd_pairs_still_fold() -> None:
 def test_binance_pair_resolution_authorizes_crypto_consumers(tmp_path: Path) -> None:
     """Issue #1234: an exact connector pair must survive unrelated Yahoo hits."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="Check the ETH-USDT orderbook and current price.",
     )
@@ -690,6 +701,7 @@ def test_binance_pair_resolution_authorizes_crypto_consumers(tmp_path: Path) -> 
 def test_stale_history_identity_does_not_unlock_new_subject(tmp_path: Path) -> None:
     """A previous turn's AAPL identity cannot authorize a SpaceX price request."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="SpaceX 在什么价格买入比较合适？",
         history=[{"role": "user", "content": "请分析 AAPL.US"}],
@@ -747,6 +759,7 @@ def test_explicit_symbol_and_resolver_suffix_alias_are_one_identity(
     sources publish one listing under both spellings, so no tie-break existed.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 562500.SS 并给出买入价",
     )
@@ -826,6 +839,7 @@ def test_resolver_answering_a_different_venue_is_still_conflicting(
 ) -> None:
     """Folding a suffix alias must not fold a genuinely different exchange."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 600519.SH 并给出买入价",
     )
@@ -942,6 +956,7 @@ def test_ambiguous_resolution_keeps_consumers_blocked(tmp_path: Path) -> None:
 def test_final_numeric_gate_rejects_known_trace_contradiction(tmp_path: Path) -> None:
     """Known 1.11-1.18 evidence cannot become 0.88-0.91 in the answer."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 562500.SS 并给出买入价",
     )
@@ -989,6 +1004,7 @@ def test_run_dir_ohlc_csv_is_observed_evidence(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 BYN.V 并推荐买入价",
     )
@@ -1015,6 +1031,7 @@ def test_run_dir_ohlc_csv_tsx_filename_maps_symbol(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 PDI.TO 并推荐买入价",
     )
@@ -1068,6 +1085,7 @@ def test_run_dir_ohlc_csv_us_filename_maps_symbol(tmp_path: Path) -> None:
     assert _symbol_from_csv_filename("INTC_US") == "INTC.US"
 
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="please update intel-tech-trend-6-months.md",
     )
@@ -1117,6 +1135,7 @@ def test_run_dir_ohlc_csv_stray_symbol_is_ignored(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 BYN.V 并推荐买入价",
     )
@@ -1136,6 +1155,7 @@ def test_run_dir_ohlc_csv_stray_symbol_is_ignored(tmp_path: Path) -> None:
 def test_numeric_gate_validates_derived_formula_and_provenance(tmp_path: Path) -> None:
     """A derived entry level must calculate correctly from observed evidence."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="请分析 562500.SS 并给出买入价",
     )
@@ -1251,7 +1271,7 @@ def test_agent_loop_delivers_original_answer_without_numeric_rewrite(
     """Numeric audit does not rewrite the user-facing model output."""
     resolver = _ResolverTool(_resolver_payload())
     market = _MarketTool(_market_payload())
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(resolver)
     registry.register(market)
     events: list[tuple[str, dict[str, Any]]] = []
@@ -1319,6 +1339,7 @@ _SCREENED_MARKET_PAYLOAD = json.dumps(
 def _screened_ledger(tmp_path: Path) -> GroundingLedger:
     """Return a ledger that screened broadly, then locked one candidate."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="推荐A股低价高增长股票并给出买入价",
     )
@@ -1352,6 +1373,7 @@ def _screened_ledger(tmp_path: Path) -> GroundingLedger:
 def test_screening_shortlist_does_not_block_workflow_selection(tmp_path: Path) -> None:
     """A many-candidate screening result is an answer, not a stalled resolution (#955)."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="推荐A股低价高增长股票并给出买入价",
     )
@@ -1589,6 +1611,7 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     agent, resolver, market, skill, trace = _build_direct_agent(tmp_path, _SHORTLIST_PAYLOAD)
     market.result = _SCREENED_MARKET_PAYLOAD
     agent.tool_env.identity = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=Path(agent.memory.run_dir),
         user_message="推荐A股低价高增长股票并给出买入价",
     )
@@ -1722,6 +1745,7 @@ def test_plan_level_alone_reaches_a_valid_answer(tmp_path: Path) -> None:
 def _spcx_us_ledger(tmp_path: Path) -> GroundingLedger:
     """A ledger that locked SPCX.US and observed 8/7–8/12 OHLC bars."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="以 SPCX.US（纳斯达克，SpaceX 本体）作为美股侧参考",
     )
@@ -1897,7 +1921,7 @@ def _shanghai_shortlist() -> str:
 
 def test_shanghai_ticker_resolves_to_one_locked_identity(tmp_path: Path) -> None:
     """Eastmoney's .SH and Yahoo's .SS describe one listing, so one lock."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600519 现价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600519 现价多少")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "600519"},
@@ -1919,7 +1943,7 @@ def test_shanghai_lock_depends_on_symbol_canonicalization(
         "src.product.identity.ledger._normalize_symbol",
         lambda value: str(value or "").strip().upper(),
     )
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600519 现价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600519 现价多少")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "600519"},
@@ -1939,7 +1963,7 @@ def test_zero_candidates_with_a_skipped_source_are_not_found(tmp_path: Path) -> 
     ``test_single_clean_not_found_source_is_not_enough_for_private_routing``,
     which must keep reporting ``invalidated``.
     """
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="这家公司现在股价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="这家公司现在股价多少")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "某某不存在公司"},
@@ -1971,7 +1995,7 @@ def test_a_failed_side_query_does_not_retract_a_locked_identity(
     tmp_path: Path,
 ) -> None:
     """One flaky resolver call must not end the run's ability to answer."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="茅台现价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="茅台现价多少")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "茅台"},
@@ -2002,6 +2026,7 @@ def test_a_failed_side_query_does_not_retract_a_locked_identity(
 def test_a_conflict_outranks_a_lock_from_another_query(tmp_path: Path) -> None:
     """A contradiction is a fact about the data, so a lock cannot mask it."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="对比 600519.SH 和 AAPL.US 的现价",
     )
@@ -2018,7 +2043,7 @@ def test_a_conflict_outranks_a_lock_from_another_query(tmp_path: Path) -> None:
 
 def _cny_ledger(tmp_path: Path) -> GroundingLedger:
     """A ledger holding one Shanghai quote sourced from yahoo, priced in CNY."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="562500.SH 现价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="562500.SH 现价多少")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["562500.SH"]},
@@ -2063,6 +2088,7 @@ def test_an_unnamed_source_is_still_reported(tmp_path: Path) -> None:
 def _comparison_ledger(tmp_path: Path) -> GroundingLedger:
     """A ledger holding quotes for two instruments, as a comparison run does."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="对比 562500.SH 与 AAPL.US 现价",
     )
@@ -2133,7 +2159,7 @@ def test_a_conceptual_question_reaches_its_answer(
     The trigger phrase is matched against the user message, so these questions
     demanded a locked identity that no correct answer could ever supply.
     """
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=question)
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=question)
 
     assert ledger.validate_final_answer(answer).valid is True
 
@@ -2150,7 +2176,7 @@ def test_an_unevidenced_price_is_still_rejected_without_any_tool_call(
     answer: str,
 ) -> None:
     """Relaxing the identity check must not license a remembered quote."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="茅台适合买入吗")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="茅台适合买入吗")
 
     result = ledger.validate_final_answer(answer)
 
@@ -2181,6 +2207,7 @@ def test_fullwidth_parentheses_do_not_split_symbol_from_figure(
     control that already passed.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="What is Kweichow Moutai (600519.SH) trading at this week?",
     )
@@ -2240,6 +2267,7 @@ def test_unsourced_symbol_without_a_figure_stays_silent(tmp_path: Path) -> None:
     dropped without this test failing.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="What is Kweichow Moutai (600519.SH) trading at this week?",
     )
@@ -2292,7 +2320,7 @@ def test_a_shortlist_answers_the_user_but_still_cannot_fetch_a_quote(
     tmp_path: Path,
 ) -> None:
     """#955 closed half of this: the skill loaded, the answer stayed blocked."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="推荐几只低估值的高股息A股")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="推荐几只低估值的高股息A股")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "高股息"},
@@ -2322,7 +2350,7 @@ def test_a_shortlist_answers_the_user_but_still_cannot_fetch_a_quote(
 
 def _large_cap_ledger(tmp_path: Path) -> GroundingLedger:
     """A ledger holding a quote large enough to be written with separators."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600519.SH 收盘价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="600519.SH 收盘价多少")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["600519.SH"]},
@@ -2413,7 +2441,7 @@ def test_every_resolver_skip_marker_is_understood_as_a_non_failure(
     statuses = json.loads(result)["data"]["sources"]
     assert any(value.startswith("skipped:") for value in statuses.values()), statuses
 
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="这家公司现在股价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="这家公司现在股价多少")
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": query},
@@ -2436,7 +2464,7 @@ def test_a_currency_symbol_counts_as_naming_the_currency(
     written: str,
 ) -> None:
     """A model writes a quote as ¥ or C$, not as the ISO code."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=f"{symbol} 现价多少")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=f"{symbol} 现价多少")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": [symbol]},
@@ -2598,6 +2626,7 @@ def test_fx_pair_resolution_authorizes_market_data_consumer(tmp_path: Path) -> N
     creating a conflicting identity that outranked every later lock.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="Get me the GBP/USD spot rate.",
     )
@@ -2656,6 +2685,7 @@ def test_backtest_metrics_rejected_when_analysis_tool_failed(
 ) -> None:
     """#1336: failed analysis tools cannot ground backtest-style metrics."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="比较几支标的并回测不同市场状态",
     )
@@ -2684,6 +2714,7 @@ def test_backtest_metrics_rejected_when_no_analysis_result(
 ) -> None:
     """#1336: without any completed analysis, metric prose is unsupported."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="比较几个标的的历史行情",
     )
@@ -2711,6 +2742,7 @@ def test_backtest_metrics_accepted_after_successful_backtest(
         encoding="utf-8",
     )
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="比较几支标的并回测不同市场状态",
     )
@@ -2743,6 +2775,7 @@ def test_backtest_metrics_accepted_after_successful_backtest(
 def test_analysis_mention_without_figures_is_allowed(tmp_path: Path) -> None:
     """#1336: refusal prose naming the gap is not a quantitative claim."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="回测这几个标的",
     )
@@ -2763,6 +2796,7 @@ def test_metrics_from_successful_numeric_tool_are_allowed(
     -0.094) while answers quote percents — the unit scaling must match.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="分析组合风险",
     )
@@ -2795,6 +2829,7 @@ def test_partially_unsupported_analysis_metrics_are_rejected(
 ) -> None:
     """One observed metric cannot launder another invented metric."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="分析组合风险",
     )
@@ -2828,6 +2863,7 @@ def test_forecast_probability_is_declared_not_phrased(tmp_path: Path) -> None:
     — and an undeclared one is reported.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="明天市场会怎么样",
     )
@@ -2848,6 +2884,7 @@ def test_valid_price_does_not_launder_unsupported_analysis_metric(
 ) -> None:
     """A valid quote must not make an invented backtest metric acceptable."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="AAPL.US 现价多少",
     )
@@ -2877,6 +2914,7 @@ def test_successful_backtest_only_supports_metrics_in_its_artifact(
     metrics.parent.mkdir()
     metrics.write_text("annual_return,sharpe\n0.182,1.21\n", encoding="utf-8")
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="回测策略",
     )
@@ -2904,7 +2942,7 @@ def test_successful_backtest_only_supports_metrics_in_its_artifact(
 
 def test_skipped_analysis_result_does_not_authorize_metrics(tmp_path: Path) -> None:
     """A skipped/deduplicated call is not a completed analysis."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测策略")
     ledger.ingest_tool_result(
         tool_name="backtest",
         arguments={"run_dir": str(tmp_path)},
@@ -2925,7 +2963,7 @@ def test_analysis_definition_is_declared_not_phrased(tmp_path: Path) -> None:
     stated as what it is — a figure taken from outside this run — and an
     undeclared one is reported instead of being waved through by its framing.
     """
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="什么是夏普比率？")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="什么是夏普比率？")
 
     declared = ledger.validate_final_answer(
         "按行业惯例，夏普比率大于 1.0 被认为较好。\n\n"
@@ -2942,7 +2980,7 @@ def test_forecast_table_cell_does_not_exempt_measured_cell(
     tmp_path: Path,
 ) -> None:
     """A forecast column must not hide an unsupported historical metric cell."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="比较两种策略")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="比较两种策略")
 
     result = ledger.validate_final_answer(
         "| 策略 | 预计收益 | 历史最大回撤 |\n"
@@ -2961,7 +2999,7 @@ def test_analysis_completion_is_persisted_with_metric_provenance(
     metrics = tmp_path / "artifacts" / "metrics.csv"
     metrics.parent.mkdir()
     metrics.write_text("annual_return\n0.182\n", encoding="utf-8")
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测策略")
     ledger.ingest_tool_result(
         tool_name="backtest",
         arguments={"run_dir": str(tmp_path)},
@@ -2986,7 +3024,7 @@ def test_analysis_completion_is_persisted_with_metric_provenance(
 
 def _aapl_endpoint_ledger(tmp_path: Path) -> GroundingLedger:
     """A ledger holding two observed AAPL.US closes, 100.0 and 112.4."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="AAPL.US 最近一个月走势如何")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="AAPL.US 最近一个月走势如何")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["AAPL.US"]},
@@ -3081,6 +3119,7 @@ def test_unanchored_return_claim_is_still_rejected(tmp_path: Path) -> None:
 def test_wrong_derived_return_arithmetic_is_rejected(tmp_path: Path) -> None:
     """A from/to frame with arithmetic that no observed pair supports fails."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="AAPL.US 价格",
     )
@@ -3117,6 +3156,7 @@ def test_research_paper_reported_metrics_are_grounded(tmp_path: Path) -> None:
     — compound leaves whose kind must resolve by token, not verbatim alias.
     """
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="查一下动量策略论文的回测表现",
     )
@@ -3171,7 +3211,7 @@ def test_analysis_gates_accept_attributed_paper_restatement(tmp_path: Path) -> N
         "文献指出因子年化收益 18.2%。",
         "Analysts estimate an annualized volatility of 22%.",
     ):
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="Research the factor.")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Research the factor.")
         issues = ledger.validate_final_answer(answer).issues
         assert not [i for i in issues if i.get("code") == "analysis_claim_unavailable"], (
             answer,
@@ -3190,7 +3230,7 @@ def test_analysis_gate_still_rejects_unattributed_and_unsourced(
         "特斯拉现价 412.35 美元。",
         "The strategy reports a Sharpe ratio of 1.8.",
     ):
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze something.")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze something.")
         ledger.ingest_tool_result(
             tool_name="get_market_data",
             arguments={"codes": ["AAPL.US"]},
@@ -3237,7 +3277,7 @@ def test_a_citation_subject_no_longer_exempts_anything(tmp_path: Path) -> None:
         "The paper reports a Sharpe ratio of 1.8, and our strategy achieved "
         "an annualized return of 47.3%.",
     ):
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="Research the factor.")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Research the factor.")
         issues = ledger.validate_final_answer(answer).issues
         assert issues, answer
         assert {i["code"] for i in issues} <= {
@@ -3247,7 +3287,7 @@ def test_a_citation_subject_no_longer_exempts_anything(tmp_path: Path) -> None:
 
     # The other side: declaring the paper's figure cited passes, and it does
     # NOT carry the sibling the same sentence invents.
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Research the factor.")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Research the factor.")
     partial = ledger.validate_final_answer(
         "The Fama-French paper reports a Sharpe ratio of 1.8, and our strategy achieved "
         "an annualized return of 47.3%.\n\n"
@@ -3273,7 +3313,7 @@ def test_attribution_never_exempts_a_price_claim(tmp_path: Path) -> None:
         "据研究机构报告，AAPL.US 收盘价为 189.20。",
         "The filing reports the stock closed at 412.35.",
     ):
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="Quote the price.")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Quote the price.")
         issues = ledger.validate_final_answer(answer).issues
         assert issues, f"attributed price accepted with zero evidence: {answer}"
 
@@ -3337,7 +3377,7 @@ def test_generic_header_table_metric_rows_are_gated(tmp_path: Path) -> None:
     so the formatting dodge closes by construction instead of by a second
     validator that had to mirror the prose one.
     """
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测策略")
 
     for draft in (
         "| 指标 | 数值 |\n|---|---:|\n| 年化收益 | 18.2% |\n| 最大回撤 | -9.4% |",
@@ -3366,8 +3406,8 @@ def test_a_table_cell_and_the_same_prose_figure_get_one_verdict(
     simply a measurement-shaped figure, so the parity is structural.
     """
     def verdicts(figure: str, block: str = "") -> tuple[bool, bool]:
-        prose = GroundingLedger(run_dir=tmp_path / "p", user_message="回测策略")
-        table = GroundingLedger(run_dir=tmp_path / "t", user_message="回测策略")
+        prose = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path / "p", user_message="回测策略")
+        table = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path / "t", user_message="回测策略")
         return (
             prose.validate_final_answer(f"年化波动率 {figure}。{block}").valid,
             table.validate_final_answer(
@@ -3454,7 +3494,7 @@ def _declared_currency_ledger(tmp_path: Path, symbol: str, quote_currency: str |
     payload = json.loads(_market_payload(symbol))
     if quote_currency is not None:
         payload["_provenance"][symbol]["quote_currency"] = quote_currency
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=f"{symbol} last close?")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=f"{symbol} last close?")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": [symbol]},

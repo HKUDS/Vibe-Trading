@@ -1,3 +1,7 @@
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import pytest
 from src.quantlib.volatility import heston_price, heston_feller_condition
 
@@ -59,7 +63,7 @@ def test_quantlib_tool_rejects_zero_integration_domain():
     from src.tools.quantlib_tool import QuantlibCallTool
 
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="volatility",
             function="heston_price",

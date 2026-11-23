@@ -8,6 +8,10 @@ The overlay is exercised through the real orchestration loop
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 
@@ -115,7 +119,7 @@ def test_replay_keeps_completed_upstream_and_reruns_subgraph(
     """t-a is carried over untouched; t-b and t-c re-execute; t-c sees the
     kept summary as upstream context."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", orig_status)
     _seed_original_run(store, original)
 
@@ -157,7 +161,7 @@ def test_replay_keeps_completed_upstream_and_reruns_subgraph(
 
 def test_replay_emits_task_resumed_event(tmp_path, workers_succeed):
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
 
@@ -177,7 +181,7 @@ def test_replay_emits_task_resumed_event(tmp_path, workers_succeed):
 def test_replay_missing_prior_task_store_runs_fresh(tmp_path, workers_succeed):
     """A resume_from run whose task files are gone degrades to a full re-run."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     store.create_run(original)  # run.json only — no task files
 
@@ -199,7 +203,7 @@ def test_replay_seeds_empty_kept_summary(tmp_path, workers_succeed):
     """A kept task with an empty summary still seeds its input_from key, so a
     re-executed dependent sees an empty-string upstream (matching live runs)."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     store.create_run(original)
     task_store = TaskStore(store.run_dir(original.id))
@@ -224,7 +228,7 @@ def test_replay_does_not_keep_changed_task_definition(tmp_path, workers_succeed)
     """A completed task whose definition changed since the original run must be
     re-executed, not kept — a kept result must still mean the same thing."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
 
@@ -248,7 +252,7 @@ def test_replay_rehomes_only_artifacts_subtree(tmp_path, workers_succeed):
     """Control-file paths stored as artifacts (run.json, tasks/*, absolute) must
     be dropped: they must never clobber the new run's own state files."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     store.create_run(original)
     task_store = TaskStore(store.run_dir(original.id))
@@ -287,7 +291,7 @@ def test_replay_artifact_destination_symlink_escape_blocked(tmp_path, workers_su
     outside = tmp_path / "outside"
     outside.mkdir()
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
 
@@ -312,7 +316,7 @@ def test_replay_cancel_before_first_layer_keeps_completed_tasks(tmp_path, worker
     cancelled — the in-memory task list is synced from the store after the
     overlay, so _cancel_remaining_tasks sees kept tasks as completed."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
 
@@ -335,7 +339,7 @@ def test_replay_keeps_completed_task_in_later_layer(tmp_path, workers_succeed):
     """Completed tasks in later layers are kept when their upstreams are kept;
     only the failed task re-executes."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agents = [
         SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0),
         SwarmAgentSpec(id="pm", role="PM", system_prompt="x", max_retries=0),
@@ -410,7 +414,7 @@ def test_replay_rejects_dotdot_artifact_clobber(tmp_path, workers_succeed):
     """artifacts/../run.json normalizes into the run root and must be dropped —
     it would otherwise overwrite the new run's control file."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     store.create_run(original)
     task_store = TaskStore(store.run_dir(original.id))
@@ -443,7 +447,7 @@ def test_replay_source_symlink_artifact_dropped(tmp_path, workers_succeed):
     """A symlinked component in the SOURCE artifact tree (artifacts/analyst ->
     tasks) must not redirect a re-homed artifact onto task files."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     store.create_run(original)
     task_store = TaskStore(store.run_dir(original.id))
@@ -481,7 +485,7 @@ def test_replay_does_not_keep_changed_agent_definition(tmp_path, workers_succeed
     """A completed task must not be kept when the agent that executes it changed
     (here its system prompt) even though the task fields are identical."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
 
@@ -505,7 +509,7 @@ def test_replay_reexecutes_dependents_of_reexecuted_upstream(tmp_path, workers_s
     dependent must also re-execute — its kept summary would be stale relative
     to the fresh upstream output flowing into it."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agents = [
         SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0),
         SwarmAgentSpec(id="pm", role="PM", system_prompt="x", max_retries=0),
@@ -578,7 +582,7 @@ def test_replay_destination_artifacts_dir_symlink_escape_blocked(tmp_path, worke
     outside = tmp_path / "outside"
     outside.mkdir()
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
 
@@ -604,7 +608,7 @@ def test_replay_does_not_keep_run_level_model_change(tmp_path, workers_succeed):
     when agents use the run-level default (model_name=None) — the effective
     model that produced a kept result must still mean the same thing."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     original.model = "deepseek-v1"
     original.provider = "openai"
@@ -628,7 +632,7 @@ def test_replay_seeds_none_summary_key_for_downstream(tmp_path, workers_succeed)
     input_from key to re-executed dependents — the live run path seeds the key
     unconditionally, so a silent None must not behave differently."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agents = [
         SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0),
         SwarmAgentSpec(id="pm", role="PM", system_prompt="x", max_retries=0),
@@ -687,7 +691,7 @@ def test_replay_partially_missing_store_keeps_present_completed(tmp_path, worker
     fresh-run fallback: present completed tasks are kept, missing ones re-execute
     (documented partial-resume contract, distinct from whole-store degradation)."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     original = _make_dag_run("r-orig", RunStatus.failed)
     _seed_original_run(store, original)
     # Delete t-b's task file: it exists in the run model but not the store.

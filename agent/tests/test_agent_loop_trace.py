@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,6 +26,9 @@ class _Tool:
 class _SecretRegistry:
     """Minimal registry returning a JSON result with sensitive fields."""
 
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
+
     _tools: dict[str, Any] = {}
 
     def get(self, tool_name: str) -> _Tool:
@@ -38,6 +44,9 @@ class _SecretRegistry:
                 "nested": {"api_key": "secret-key"},
             }
         )
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def test_tool_call_trace_redacts_args_and_structured_results(tmp_path: Path) -> None:

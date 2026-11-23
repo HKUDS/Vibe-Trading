@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 
 from src.tools.research_artifact_tool import (
@@ -114,7 +118,7 @@ def test_agent_tool_reports_validation_and_missing_records(tmp_path, monkeypatch
 def test_agent_registry_discovers_research_artifact_tools():
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     assert {
         "save_research_artifact",
         "search_research_artifacts",

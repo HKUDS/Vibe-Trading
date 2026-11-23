@@ -1,5 +1,9 @@
 """CSV export reuses observations, preserves provenance and respects artifact bounds."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import csv
 import hashlib
 import json
@@ -31,7 +35,7 @@ def setup(tmp_path, monkeypatch):
 
 
 def call(args, **kw):
-    return json.loads(MarketDataTool().execute(**{**args, **kw}))
+    return json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(**{**args, **kw}))
 
 
 def test_csv_has_exact_rows_and_provenance_without_refetch(setup):
@@ -83,7 +87,7 @@ def test_export_requires_authorized_workspace_before_fetch(setup, tmp_path):
 def test_large_response_keeps_csv_schema_and_sampling_diagnostics(setup):
     payload, _, args = setup
     payload['AAPL.US'] *= 300
-    out = MarketDataTool().execute(**args, export_csv=True)
+    out = MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(**args, export_csv=True)
     assert len(out) <= TOOL_RESULT_LIMIT
     receipt = json.loads(out)
     assert '_preview' in receipt and '_data_layout' in receipt

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import hashlib
 import json
 from pathlib import Path
@@ -61,7 +65,7 @@ def runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _list(current: Path | None = None, **kwargs) -> dict:
     return json.loads(
-        list_backtest_runs(current_run_dir=str(current) if current else None, **kwargs)
+        list_backtest_runs(roots=FileRoots.from_config(get_env_config().api), current_run_dir=str(current) if current else None, **kwargs)
     )
 
 
@@ -86,7 +90,7 @@ def test_previous_turn_is_found_and_readable_without_rerun(runs: Path) -> None:
     }
     assert "unfilled_plan_rejections_by_symbol" not in by_name["b"]
     # The returned run_dir is what read_run_artifact takes.
-    assert json.loads(read_run_artifact(by_name["a"]["run_dir"], "metrics"))[
+    assert json.loads(read_run_artifact(by_name["a"]["run_dir"], "metrics", roots=FileRoots.from_config(get_env_config().api)))[
         "rows"
     ] == [[0.1, 1.25]]
 
@@ -206,13 +210,13 @@ def test_run_outside_allowed_roots_is_skipped(runs: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         backtest_runs_tool,
         "safe_run_dir",
-        lambda p: (_ for _ in ()).throw(ValueError("outside")),
+        lambda p, *, roots: (_ for _ in ()).throw(ValueError("outside")),
     )
     assert _list(scope="all")["runs"] == []
 
 
 def test_tool_contract(runs: Path) -> None:
-    tool = BacktestRunsTool()
+    tool = BacktestRunsTool(roots=FileRoots.from_config(get_env_config().api))
     assert (
         tool.name == "list_backtest_runs"
         and tool.is_readonly
@@ -225,7 +229,7 @@ def test_tool_contract(runs: Path) -> None:
 
 def test_a_large_rejection_map_cannot_overflow_the_first_page(runs: Path) -> None:
     _turn(runs, "20261026_100000_aaaaaa", rejections={f"SYMBOL{i}": {"blocked": 15} for i in range(2000)})
-    output = list_backtest_runs(scope="all")
+    output = list_backtest_runs(roots=FileRoots.from_config(get_env_config().api), scope="all")
     assert len(output) <= backtest_runs_tool.TOOL_RESULT_LIMIT
     entry = json.loads(output)["runs"][0]["backtests"][0]
     assert entry["unfilled_plan_rejections_by_symbol_omitted"] is True

@@ -10,6 +10,10 @@ the CLI replays, not of a fixed script.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import cli.commands.common as _cmd_common
 import cli.commands.execution as _cmd_execution
 import cli.commands.sessions as _cmd_sessions
@@ -124,6 +128,7 @@ class _Harness:
         self.sessions.mkdir()
         self.lookup_calls: list = []
         self.agents: list[AgentRuntime] = []
+        self.provider_policies = []
         self.llm = _PolicyLLM(_lookup_once_policy)
         harness = self
 
@@ -133,8 +138,7 @@ class _Harness:
                 harness.agents.append(self)
 
         def registry(**kwargs: Any) -> ToolRegistry:
-            del kwargs
-            built = ToolRegistry()
+            built = ToolRegistry(policy=kwargs["policy"])
             built.register(_LookupTool(self.lookup_calls))
             return built
 
@@ -145,7 +149,11 @@ class _Harness:
         monkeypatch.setattr("src.session.search.get_shared_index", lambda: _DummyIndex())
         monkeypatch.setattr("src.agent.runtime.AgentRuntime", _CapturingLoop)
         monkeypatch.setattr("src.tools.build_registry", registry)
-        monkeypatch.setattr("src.providers.chat.ChatLLM", lambda *a, **k: self.llm)
+        def chat(*, policy):
+            self.provider_policies.append(policy)
+            return self.llm
+
+        monkeypatch.setattr("src.providers.chat.ChatLLM", chat)
         monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
         monkeypatch.setattr("src.config.loader.load_agent_config", lambda: object())
         self.store = SessionStore(self.sessions)
@@ -175,6 +183,14 @@ def cli(tmp_path, monkeypatch) -> _Harness:
 # ---------------------------------------------------------------------------
 # A CLI turn writes what a web turn writes
 # ---------------------------------------------------------------------------
+
+
+def test_cli_uses_the_same_configured_policy_for_the_provider_and_registry(cli, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "forbidden_")
+    result = cli.run("Quote Apple", cli.new_session())
+    assert result["status"] == "success"
+    assert cli.agents[0].registry.policy is cli.provider_policies[0]
+    assert cli.provider_policies[0].denies("forbidden_probe")
 
 
 def test_cli_turn_writes_the_thread_items_and_the_display_rows_of_a_web_turn(cli):
@@ -604,7 +620,7 @@ def test_clear_leaves_the_session_so_the_model_forgets_the_conversation(cli, mon
 def test_cli_question_survives_thread_projection_and_json_output(cli, monkeypatch, capsys):
     from src.tools.ask_user_tool import AskUserTool
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(AskUserTool())
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: registry)
     cli.llm.policy = lambda *args: _response(
@@ -636,7 +652,7 @@ def test_cli_abort_redacts_the_persisted_exception(cli, monkeypatch):
 def test_reused_loop_finishes_the_turn_after_a_question(cli, tmp_path):
     from src.tools.ask_user_tool import AskUserTool
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(AskUserTool())
     loop = AgentRuntime(registry=registry, llm=cli.llm, max_iterations=4)
     loop.memory.run_dir = tmp_path / "runs" / "reused"

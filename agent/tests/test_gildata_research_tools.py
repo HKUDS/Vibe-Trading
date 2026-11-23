@@ -6,6 +6,10 @@ no test reaches the live vendor.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -142,7 +146,7 @@ class TestNumericCoercion:
     def test_coerced_values_land_in_generic_evidence(self, tmp_path):
         from evals.grounding.ledger import GroundingLedger
 
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="2024年GDP增速")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="2024年GDP增速")
         payload = {
             "api_names": ["EDB取数"],
             "rows": [{"indicatorcode": 110252269, "indicatorname": "GDP当季同比",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools.path_utils import allowed_write_roots
 from src.tools.path_utils import resolve_safe_path
 from src.tools.redaction import redact_internal_paths
@@ -38,7 +38,7 @@ def _match_positions(content: str, old_text: str) -> int:
     return count
 
 
-class EditFileTool(BaseTool):
+class EditFileTool(FileBoundTool, BaseTool):
     """Replace one exact, unique occurrence of a string in a workspace file."""
 
     name = "edit_file"
@@ -99,7 +99,8 @@ class EditFileTool(BaseTool):
             resolved = resolve_safe_path(
                 file_path=file_path,
                 run_dir=run_dir,
-                allowed_roots=allowed_write_roots(),
+                allowed_roots=allowed_write_roots(roots=self.roots),
+                roots=self.roots,
                 purpose="write",
             )
         except ValueError as exc:

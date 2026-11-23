@@ -8,6 +8,10 @@ the tool is auto-discovered into the default registry.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import math
 from decimal import Decimal
@@ -275,7 +279,7 @@ def test_tool_metadata() -> None:
 
 
 def test_tool_is_auto_discovered() -> None:
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     assert "financial_rigor" in registry.tool_names
 
 

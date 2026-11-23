@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import cli.commands.common as _cmd_common
 import cli.commands.execution as _cmd_execution
 import cli.commands.providers as _cmd_providers
@@ -82,13 +89,14 @@ class _DummyIndex:
 
 
 def test_a_session_without_a_selection_builds_the_configured_client(server_settings, monkeypatch):
+    policy = ToolPolicy.from_config(get_env_config())
     calls = []
     monkeypatch.setattr(chat_module, "ChatLLM", lambda *a, **k: calls.append((a, k)) or "default")
 
-    assert chat_llm_for_session({}) == "default"
-    assert chat_llm_for_session(None) == "default"
-    assert chat_llm_for_session({"include_shell_tools": False}) == "default"
-    assert calls == [((), {})] * 3
+    assert chat_llm_for_session({}, policy=policy) == "default"
+    assert chat_llm_for_session(None, policy=policy) == "default"
+    assert chat_llm_for_session({"include_shell_tools": False}, policy=policy) == "default"
+    assert calls == [((), {"policy": policy})] * 3
 
 
 def test_a_session_selection_resolves_its_own_provider_without_touching_the_process(
@@ -98,7 +106,7 @@ def test_a_session_selection_resolves_its_own_provider_without_touching_the_proc
     before = dict(os.environ)
 
     llm = chat_llm_for_session(
-        {SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a", "reasoning_effort": "low"}}
+        {SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a", "reasoning_effort": "low"}}, policy=ToolPolicy.from_config(get_env_config())
     )
 
     assert llm.config.provider == "groq"
@@ -108,7 +116,7 @@ def test_a_session_selection_resolves_its_own_provider_without_touching_the_proc
     assert llm.runtime_snapshot.selection == "session"
     assert llm.runtime_snapshot.reasoning_effort == "low"
     assert dict(os.environ) == before
-    inherited = ChatLLM()
+    inherited = ChatLLM(policy=ToolPolicy.from_config(get_env_config()))
     assert (inherited.config.provider, inherited.config.model) == ("openrouter", "global/model")
     assert inherited.runtime_snapshot.selection == "configured"
 
@@ -161,7 +169,7 @@ def test_a_stored_selection_whose_credentials_were_removed_fails_the_turn(server
     monkeypatch.delenv("GROQ_API_KEY")
 
     with pytest.raises(ModelSelectionError):
-        chat_llm_for_session(config)
+        chat_llm_for_session(config, policy=ToolPolicy.from_config(get_env_config()))
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +248,7 @@ def test_concurrent_sessions_each_reach_their_own_model(server_settings, monkeyp
     )
 
     store = SessionStore(tmp_path / "sessions")
-    service = SessionService(store=store, event_bus=EventBus(), runs_dir=tmp_path / "runs")
+    service = SessionService(policy=ToolPolicy.from_config(get_env_config()), store=store, event_bus=EventBus(), runs_dir=tmp_path / "runs")
     selections = {
         "groq": {"provider": "groq", "model": "llama-a", "reasoning_effort": ""},
         "openrouter": {"provider": "openrouter", "model": "vendor/model-b", "reasoning_effort": "high"},
@@ -292,7 +300,7 @@ def test_a_failed_session_selection_fails_the_attempt_instead_of_falling_back(
     monkeypatch.setattr(chat_module, "ChatLLM", lambda *a, **k: built.append(k) or SimpleNamespace(aclose=AsyncMock()))
     monkeypatch.delenv("GROQ_API_KEY")
     store = SessionStore(tmp_path / "sessions")
-    service = SessionService(store=store, event_bus=EventBus(), runs_dir=tmp_path / "runs")
+    service = SessionService(policy=ToolPolicy.from_config(get_env_config()), store=store, event_bus=EventBus(), runs_dir=tmp_path / "runs")
     session = Session(config={SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
     store.create_session(session)
     attempt = Attempt(session_id=session.session_id, prompt="hi")
@@ -329,7 +337,7 @@ def test_agent_loop_reports_a_session_selected_model_as_such(
     from src.agent.runtime import AgentRuntime
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
-    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
+    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}}, policy=ToolPolicy.from_config(get_env_config()))
     llm.stream_chat = MethodType(
         lambda self, *a, **k: LLMResponse(content="done", response_model=response_model), llm
     )
@@ -351,7 +359,7 @@ def test_llm_usage_names_the_provider_the_client_called(server_settings, monkeyp
     from src.product.usage import _new_llm_usage_summary
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
-    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
+    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}}, policy=ToolPolicy.from_config(get_env_config()))
 
     summary = _new_llm_usage_summary(llm)
 
@@ -536,7 +544,7 @@ def test_cli_model_sets_and_clears_the_current_sessions_selection(cli, tmp_path,
     assert stored == {"provider": "groq", "model": "llama-a", "reasoning_effort": "high"}
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
-    llm = chat_llm_for_stored_session(tmp_path / "sessions", ctx.session_id)
+    llm = chat_llm_for_stored_session(tmp_path / "sessions", ctx.session_id, policy=ToolPolicy.from_config(get_env_config()))
     assert (llm.config.provider, llm.model_name, llm.runtime_snapshot.selection) == ("groq", "llama-a", "session")
 
     assert cmd_model(ctx) == 0
@@ -544,7 +552,7 @@ def test_cli_model_sets_and_clears_the_current_sessions_selection(cli, tmp_path,
 
     assert cmd_model(ctx, "clear") == 0
     assert SESSION_CONFIG_KEY not in cli_store.get_session(ctx.session_id).config
-    assert chat_llm_for_stored_session(tmp_path / "sessions", ctx.session_id).runtime_snapshot.selection == "configured"
+    assert chat_llm_for_stored_session(tmp_path / "sessions", ctx.session_id, policy=ToolPolicy.from_config(get_env_config())).runtime_snapshot.selection == "configured"
     cli.out.truncate(0)
     cli.out.seek(0)
     cmd_model(ctx)
@@ -601,7 +609,7 @@ def test_empty_response_trace_names_the_session_clients_provider(server_settings
     from tests.recording_helpers import records_at
 
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
-    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
+    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}}, policy=ToolPolicy.from_config(get_env_config()))
     llm.stream_chat = MethodType(lambda self, *a, **k: LLMResponse(content=""), llm)
     agent = AgentRuntime(registry=_EmptyRegistry(), llm=llm, max_iterations=3)  # type: ignore[arg-type]
     run_dir = tmp_path / "run"
@@ -634,10 +642,10 @@ def test_strategy_provenance_records_a_session_selected_model(server_settings, m
         for index, (path, model) in enumerate([("config.json", "llama-a-0423"), ("code/signal_engine.py", None)])
     ] + [SimpleNamespace(content="Saved.", reasoning_content=None, usage_metadata=None,
                          response_model=None, has_tool_calls=False, tool_calls=[])])
-    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}})
+    llm = chat_llm_for_session({SESSION_CONFIG_KEY: {"provider": "groq", "model": "llama-a"}}, policy=ToolPolicy.from_config(get_env_config()))
     llm.stream_chat = MethodType(lambda self, *a, **k: next(turns), llm)
-    registry = ToolRegistry()
-    registry.register(WriteFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)))
     agent = AgentRuntime(registry=registry, llm=llm, memory=WorkspaceMemory(run_dir=str(tmp_path)),
                       max_iterations=3)
 

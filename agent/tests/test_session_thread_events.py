@@ -7,6 +7,10 @@ the transient in-memory buffer has rotated.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 import threading
@@ -20,7 +24,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
-from src.session.event_projection import ThreadEvents, display_item
+from src.session.event_projection import ThreadEvents
+from src.session.thread_display import display_item
 from src.session.events import EventBus, SSEEvent, cursor_from_event_id
 from src.session.models import Session
 from src.agent.loop_streaming import TurnStream
@@ -451,6 +456,7 @@ class _ScriptedLoop:
 def _service(tmp_path: Path, monkeypatch, *, heartbeat: float = 30.0) -> SessionService:
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(heartbeat_interval_s=heartbeat),
         runs_dir=tmp_path / "runs",
@@ -460,7 +466,7 @@ def _service(tmp_path: Path, monkeypatch, *, heartbeat: float = 30.0) -> Session
 def _patch_agent(monkeypatch) -> None:
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: object())
     llm = SimpleNamespace(aclose=AsyncMock())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
     monkeypatch.setattr("src.agent.runtime.AgentRuntime", _ScriptedLoop)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())

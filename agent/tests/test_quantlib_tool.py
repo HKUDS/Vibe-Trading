@@ -7,6 +7,13 @@ name, which is precisely what this tool exists to avoid.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -17,7 +24,7 @@ from src.tools.quantlib_tool import ALLOWED_MODULES, QuantlibCallTool
 
 @pytest.fixture
 def tool():
-    return QuantlibCallTool()
+    return QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api))
 
 
 def call(tool, **kwargs):
@@ -256,7 +263,7 @@ def test_non_finite_floats_are_explicit_strings_not_null(tool):
 def test_registry_exposes_the_tool_without_shell_tools_enabled():
     # The whole point: reachable on a registry built the way the API and MCP
     # transports build it, with shell tools off.
-    registry = build_registry(include_shell_tools=False)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=False)
     assert "quantlib_call" in registry.tool_names
     assert "bash" not in registry.tool_names
 

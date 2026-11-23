@@ -11,10 +11,12 @@ applied here from the same definitions: session ids and message size from
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import asyncio
 import copy
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, Union
@@ -291,7 +293,13 @@ class Client:
         except SessionsDirInUseError as exc:
             raise RuntimeRootInUseError(str(exc)) from exc
         try:
+            from src.providers.settings import _ensure_dotenv
+
+            shell_tools_enabled = get_env_config().api.vibe_trading_enable_shell_tools
+            _ensure_dotenv()
+            policy = replace(ToolPolicy.from_config(get_env_config()), shell_tools_enabled=shell_tools_enabled)
             self._service = SessionService(
+                policy=policy,
                 store=SessionStore(base_dir=root / "sessions"),
                 event_bus=EventBus(),
                 runs_dir=root / "runs",
@@ -438,7 +446,7 @@ class Client:
                 session_id,
                 text,
                 include_shell_tools=self._settings.include_shell_tools
-                and get_env_config().api.vibe_trading_enable_shell_tools,
+                and self._service.policy.shell_tools_enabled,
             )
         except ValueError as exc:
             self._stream_done(stream)

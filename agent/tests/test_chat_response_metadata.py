@@ -1,3 +1,7 @@
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 from tests.provider_helpers import chat_with_adapter
 
 from pathlib import Path
@@ -48,7 +52,7 @@ def test_runtime_metadata_is_frozen_at_construction_with_model_override(
     reset_env_config()
     monkeypatch.setattr(chat_module, "build_llm", lambda **kwargs: object())
 
-    llm = ChatLLM(model_name="explicit-model-override")
+    llm = ChatLLM(policy=ToolPolicy.from_config(get_env_config()), model_name="explicit-model-override")
 
     def _stream_chat(self, *args, **kwargs):
         del self, args, kwargs

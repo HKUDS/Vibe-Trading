@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import ast
 import hashlib
 import json
@@ -28,12 +30,12 @@ def digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def source_run(value: str) -> Path:
+def source_run(value: str, *, roots: FileRoots) -> Path:
     """Resolve a run identifier or an explicitly allowed run directory."""
     path = Path(value).expanduser()
     if not path.is_absolute():
         path = get_runs_dir() / path
-    return safe_run_dir(str(path))
+    return safe_run_dir(str(path), roots=roots)
 
 
 def constructor_defaults(source: str) -> dict[str, Any]:

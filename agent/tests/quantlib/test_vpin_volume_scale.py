@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import numpy as np
@@ -32,7 +36,7 @@ def test_a_completed_bucket_is_still_emitted(scale: float) -> None:
 
 def test_quantlib_call_keeps_completed_bucket_count_for_fractional_volume() -> None:
     response = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="microstructure",
             function="vpin",

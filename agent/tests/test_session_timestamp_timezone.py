@@ -1,3 +1,7 @@
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 from datetime import datetime
 from pathlib import Path
 
@@ -23,7 +27,6 @@ def test_sending_a_message_keeps_updated_at_aware_and_sessions_in_order(
     monkeypatch, tmp_path: Path
 ) -> None:
     import asyncio
-    import os
     import time
 
     from src.session.events import EventBus
@@ -42,6 +45,7 @@ def test_sending_a_message_keeps_updated_at_aware_and_sessions_in_order(
     time.tzset()
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _NoIndex())
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"), event_bus=EventBus(), runs_dir=tmp_path / "runs"
     )
 

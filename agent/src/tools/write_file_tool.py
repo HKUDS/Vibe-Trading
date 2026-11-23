@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools.path_utils import allowed_write_roots
 from src.tools.path_utils import resolve_safe_path
 from src.tools.redaction import redact_internal_paths
 
 
-class WriteFileTool(BaseTool):
+class WriteFileTool(FileBoundTool, BaseTool):
     """Create or overwrite a workspace file, creating parent directories as needed."""
 
     name = "write_file"
@@ -78,7 +78,8 @@ class WriteFileTool(BaseTool):
             resolved = resolve_safe_path(
                 file_path=file_path,
                 run_dir=run_dir,
-                allowed_roots=allowed_write_roots(),
+                allowed_roots=allowed_write_roots(roots=self.roots),
+                roots=self.roots,
                 purpose="write",
             )
         except ValueError as exc:

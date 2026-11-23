@@ -9,6 +9,10 @@ and no state file when validation rejects the run before the engine starts.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import subprocess
 from dataclasses import dataclass, field
@@ -42,7 +46,7 @@ def tool_run_dir(tmp_path, monkeypatch) -> Path:
 def _run_with_result(run_dir: Path, result: _FakeRunResult) -> dict:
     with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
         runner_cls.return_value.execute.return_value = result
-        return json.loads(run_backtest(str(run_dir)))
+        return json.loads(run_backtest(str(run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
 
 def test_successful_run_records_state_success(tool_run_dir):
@@ -64,7 +68,7 @@ def test_failed_run_records_state_failed_with_exit_code(tool_run_dir):
 def test_validation_error_records_no_state(tool_run_dir):
     (tool_run_dir / "config.json").unlink()
 
-    envelope = json.loads(run_backtest(str(tool_run_dir)))
+    envelope = json.loads(run_backtest(str(tool_run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
     assert envelope["status"] == "error"
     assert not (tool_run_dir / "state.json").exists()
@@ -76,7 +80,7 @@ def test_validation_error_names_the_directory_it_checked(tool_run_dir):
     the tool looked somewhere other than the path it passed."""
     (tool_run_dir / "config.json").unlink()
 
-    envelope = json.loads(run_backtest(str(tool_run_dir)))
+    envelope = json.loads(run_backtest(str(tool_run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
     assert str(tool_run_dir) in envelope["error"]
     assert "hint" in envelope, "mirrors autopilot_tool's missing-artifact envelope"
@@ -85,7 +89,7 @@ def test_validation_error_names_the_directory_it_checked(tool_run_dir):
 def test_missing_signal_engine_names_the_directory_it_checked(tool_run_dir):
     (tool_run_dir / "code" / "signal_engine.py").unlink()
 
-    envelope = json.loads(run_backtest(str(tool_run_dir)))
+    envelope = json.loads(run_backtest(str(tool_run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
     assert envelope["status"] == "error"
     assert str(tool_run_dir) in envelope["error"]
@@ -96,7 +100,7 @@ def test_timeout_records_state_failed_and_returns_error_envelope(tool_run_dir):
     with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
         runner_cls.return_value.timeout = 300
         runner_cls.return_value.execute.side_effect = subprocess.TimeoutExpired(cmd="runner.py", timeout=300)
-        envelope = json.loads(run_backtest(str(tool_run_dir)))
+        envelope = json.loads(run_backtest(str(tool_run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
     assert envelope["status"] == "error"
     assert envelope["error"] == "backtest engine timed out after 300s"
@@ -108,7 +112,7 @@ def test_backtest_uses_configured_tool_timeout(tool_run_dir, monkeypatch):
     monkeypatch.setenv("VIBE_TRADING_TOOL_TIMEOUT_SECONDS", "42")
     with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
         runner_cls.return_value.execute.return_value = _FakeRunResult(success=True, exit_code=0)
-        run_backtest(str(tool_run_dir))
+        run_backtest(str(tool_run_dir), roots=FileRoots.from_config(get_env_config().api))
 
     assert runner_cls.call_args.kwargs == {"timeout": 42.0}
 
@@ -120,7 +124,7 @@ def test_timeout_persists_partial_runner_output(tool_run_dir):
     with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
         runner_cls.return_value.timeout = 300
         runner_cls.return_value.execute.side_effect = timeout
-        envelope = json.loads(run_backtest(str(tool_run_dir)))
+        envelope = json.loads(run_backtest(str(tool_run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
     assert envelope["stdout"] == "partial stdout"
     assert envelope["stderr"] == "partial stderr"

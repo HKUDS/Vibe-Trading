@@ -1,6 +1,10 @@
 """CLI providers commands and their helpers."""
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+
+from src.product.tool_policy import ToolPolicy
+
 from cli.commands import common
 from cli.commands import execution
 from cli.commands import inspection
@@ -197,5 +201,5 @@ def cmd_provider_doctor() -> int:
     """Print redacted provider diagnostics."""
     from src.providers.diagnostics import provider_diagnostics
 
-    common.console.print_json(data=provider_diagnostics())
+    common.console.print_json(data=provider_diagnostics(policy=ToolPolicy.from_config(get_env_config())))
     return common.EXIT_SUCCESS

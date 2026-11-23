@@ -14,6 +14,10 @@ populates/refreshes the cache they read.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 import argparse
 import json
 import logging
@@ -63,7 +67,10 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
 
     manifest = getattr(args, "strategy_evidence_manifest", None)
     try:
-        envelope = refresh_strategy_evidence_core(manifest_path=manifest, scope=getattr(args, "scope", "all"))
+        envelope = refresh_strategy_evidence_core(
+            manifest_path=manifest, scope=getattr(args, "scope", "all"),
+            roots=FileRoots.from_config(get_env_config().api),
+        )
     except ValueError as exc:
         message = str(exc)
         if getattr(args, "strategy_evidence_json", False):

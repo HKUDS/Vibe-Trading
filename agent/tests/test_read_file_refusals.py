@@ -12,6 +12,10 @@ allowed, so the model kept guessing.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -31,7 +35,7 @@ def run_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _read(path: str, run: Path) -> dict:
-    return json.loads(ReadFileTool().execute(path=path, run_dir=str(run)))
+    return json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=path, run_dir=str(run)))
 
 
 @pytest.mark.parametrize(

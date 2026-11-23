@@ -1,5 +1,9 @@
 """Risk contributions use the same sample and signed exposure as the x-ray."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import math
 
@@ -188,6 +192,7 @@ def test_agent_tool_exposes_groundable_per_asset_contributions(tmp_path):
     assert rows["AAA"]["contribution_pct"] == pytest.approx(60)
     assert rows["BBB"]["contribution_pct"] == pytest.approx(40)
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path, user_message="Compare AAA and BBB risk contributions"
     )
     ledger.ingest_tool_result(

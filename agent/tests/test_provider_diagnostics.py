@@ -1,6 +1,10 @@
 """Provider capability and diagnostic regression tests."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 from src.providers.adapters import openai as openai_adapter
 
 from src.providers import settings as _provider_configuration
@@ -30,7 +34,7 @@ def test_provider_diagnostics_redacts_secrets_and_proxy_values() -> None:
     }
 
     with patch.dict(os.environ, env, clear=True):
-        diagnostics = provider_diagnostics()
+        diagnostics = provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))
 
     encoded = json.dumps(diagnostics, sort_keys=True)
     assert diagnostics["provider"] == "deepseek"
@@ -114,7 +118,7 @@ def test_reasoning_effort_extra_body_is_openrouter_only() -> None:
     }
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert captured["extra_body"] is None
 
@@ -137,7 +141,7 @@ def test_kimi_user_agent_header_is_moonshot_only() -> None:
     }
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert captured["default_headers"]["User-Agent"].startswith("Vibe-Trading/")
 
@@ -150,7 +154,7 @@ def test_kimi_user_agent_header_is_moonshot_only() -> None:
     }
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert "default_headers" not in captured
 
@@ -174,7 +178,7 @@ def test_kimi_user_agent_respects_moonshot_user_agent_env_var() -> None:
     }
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert captured["default_headers"]["User-Agent"] == "MyCustomAgent/2.0"
 
@@ -182,7 +186,7 @@ def test_kimi_user_agent_respects_moonshot_user_agent_env_var() -> None:
     del env["MOONSHOT_USER_AGENT"]
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert captured["default_headers"]["User-Agent"].startswith("Vibe-Trading/")
 
@@ -223,7 +227,7 @@ def test_nvidia_build_passes_only_capability_headers() -> None:
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             _provider_configuration._dotenv_loaded = True
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert captured["vibe_provider"] == "nvidia"
     assert captured["default_headers"]["User-Agent"].startswith("Vibe-Trading/")
@@ -254,7 +258,7 @@ def test_deepseek_native_adapter_is_used_when_available(monkeypatch) -> None:
     }
 
     with patch.dict(os.environ, env, clear=True):
-        llm = build_llm()
+        llm = build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert isinstance(llm, _FakeChatDeepSeek)
     assert captured["model"] == "deepseek-v4-pro"

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pandas as pd
@@ -48,7 +52,7 @@ def test_calendar_underwater_duration_excludes_an_already_recovered_episode():
 
 def test_registered_quantlib_tool_reports_the_current_drawdown_episode():
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="risk",
             function="max_drawdown_analysis",

@@ -9,7 +9,6 @@ from src.agent.tuning import _override
 from src.kernel.contracts import BoundCall
 from src.kernel.tool_runner import execute_batch
 from src.product.context import ContextBuilder
-from src.product.tool_results import _failure_code
 from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import redact_payload
 
@@ -31,11 +30,9 @@ class ToolExecution:
         """Read the opted-in dependency without issuing a refused consumer call."""
         if self.env.identity is None or self._cancel_event.is_set():
             return None
-        from src.product.tool_policy import _deny_prefixes
-
         tool = self.env.registry.get(tc.name)
         field = getattr(tool, "identity_argument", None)
-        if not field or not self.replay._is_tool_readonly(tc.name) or tc.name.startswith(_deny_prefixes()):
+        if not field or not self.replay._is_tool_readonly(tc.name) or self.env.registry.policy.denies(tc.name):
             return None
         if self.env.registry.get("search_symbol") is None:
             return None
@@ -193,7 +190,7 @@ class ToolExecution:
 
         # Cancelled before this turn's tools ran — skip execution entirely.
         if self._cancel_event.is_set():
-            self._record_unstarted_calls(
+            self.delivery.deliver_cancelled_calls(
                 tool_calls, context, messages, trace, iteration
             )
             return compact_requested, focus_topic
@@ -246,7 +243,7 @@ class ToolExecution:
                         "reason": "This exact call already failed repeatedly in this run. Change strategy or ask the user for help.",
                     }
                 )
-                self._record_blocked_tool_call(
+                self.delivery.deliver_blocked_call(
                     tc,
                     failed_result,
                     context,
@@ -259,10 +256,8 @@ class ToolExecution:
                 self.env.identity is not None and tc.name == "search_symbol"
                 and getattr(tool_def, "reuse_session_identity", False)
             ):
-                from src.product.tool_policy import _deny_prefixes
-
                 reused = (
-                    None if tc.name.startswith(_deny_prefixes())
+                    None if self.env.registry.policy.denies(tc.name)
                     else self.env.identity.reusable_resolution(tc.arguments)
                 )
                 if reused is not None:
@@ -311,7 +306,7 @@ class ToolExecution:
             if not authorized_segment:
                 return
             if self._cancel_event.is_set():
-                self._record_unstarted_calls(authorized_segment, context, messages, trace, iteration)
+                self.delivery.deliver_cancelled_calls(authorized_segment, context, messages, trace, iteration)
             else:
                 plan = []
                 for tc in authorized_segment:
@@ -326,7 +321,7 @@ class ToolExecution:
                 authorized_segment.append(tc)
                 continue
             flush_authorized_segment()
-            self._record_blocked_tool_call(
+            self.delivery.deliver_blocked_call(
                 tc,
                 blocked_result,
                 context,
@@ -337,79 +332,6 @@ class ToolExecution:
         flush_authorized_segment()
 
         return compact_requested, focus_topic
-
-    def _record_blocked_tool_call(
-        self,
-        tc: Any,
-        result: str,
-        context: ContextBuilder,
-        messages: list,
-        trace: Any,
-        iteration: int,
-        *,
-        blocked: bool = True,
-    ) -> None:
-        """Record a blocked call without invoking its implementation.
-
-        Args:
-            tc: Provider tool-call object.
-            result: Structured identity-gate error payload.
-            context: Context builder.
-            messages: Conversation messages.
-            trace: Persistent trace writer.
-            iteration: Current iteration.
-        """
-        self.delivery.progress.note("blocked", tc.name, _failure_code(result))
-        args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
-        self.delivery._emit_tool_started(tc, args, iteration, blocked=blocked)
-        trace.write(
-            {
-                "type": "tool_execution",
-                "iter": iteration,
-                "tool": tc.name,
-                "call_id": tc.id,
-                **({"blocked": True} if blocked else {}),
-            }
-        )
-        self.delivery._finalize_tool_result(
-            tc,
-            result,
-            0,
-            context,
-            messages,
-            trace,
-            iteration,
-            update_memory=False,
-        )
-
-    def _record_unstarted_calls(
-        self,
-        tool_calls: list[Any],
-        context: ContextBuilder,
-        messages: list,
-        trace: Any,
-        iteration: int,
-    ) -> None:
-        """Record calls skipped after cancellation as explicit tool errors."""
-        result = json.dumps(
-            {
-                "status": "error",
-                "error_code": "tool_cancelled",
-                "message": "Run stopped before this tool started; no action was performed.",
-            },
-            ensure_ascii=False,
-        )
-        for tc in tool_calls:
-            self._record_blocked_tool_call(
-                tc,
-                result,
-                context,
-                messages,
-                trace,
-                iteration,
-                blocked=False,
-            )
-
 
     def _bind(self, tc, context, messages, trace, iteration, *, parallel) -> BoundCall:
         def start(in_parallel: bool):
@@ -424,6 +346,6 @@ class ToolExecution:
             self.delivery._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, iteration)
 
         def skip():
-            self._record_unstarted_calls([tc], context, messages, trace, iteration)
+            self.delivery.deliver_cancelled_calls([tc], context, messages, trace, iteration)
 
         return BoundCall(start=start, finish=finish, skip=skip, parallel=parallel)

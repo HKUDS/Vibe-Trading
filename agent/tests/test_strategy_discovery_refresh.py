@@ -19,6 +19,13 @@ Atomicity failure-injection is NOT duplicated here — Unit 1 pins it in
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -79,7 +86,7 @@ def runs_root(isolated_home: Path) -> Path:
 
 
 def _tool() -> "sdt.RefreshStrategyEvidenceTool":
-    return sdt.RefreshStrategyEvidenceTool()
+    return sdt.RefreshStrategyEvidenceTool(roots=FileRoots.from_config(get_env_config().api))
 
 
 def _write_manifest(path: Path, payload) -> Path:
@@ -428,7 +435,7 @@ class TestRegistryDiscovery:
     ) -> None:
         from src.tools import build_registry
 
-        registry = build_registry()
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
         assert TOOL_NAME in registry.tool_names
         tool = registry.get(TOOL_NAME)
         assert tool is not None

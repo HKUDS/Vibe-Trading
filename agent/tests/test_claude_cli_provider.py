@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import subprocess
 import threading
@@ -68,7 +72,7 @@ def test_build_llm_returns_cli_wrapper(monkeypatch) -> None:
     from src.providers.llm import build_llm
 
     use_provider(monkeypatch)
-    model = build_llm()
+    model = build_llm(policy=ToolPolicy.from_config(get_env_config()))
     assert isinstance(model, claude_cli.ClaudeCliLLM)
     assert model.model == "claude-opus-5-5"
 
@@ -95,7 +99,7 @@ def test_tool_calls_map_to_vibe_tool_call_requests(fake_cli, monkeypatch) -> Non
     )
     use_provider(monkeypatch)
 
-    response = ChatLLM().stream_chat(
+    response = ChatLLM(policy=ToolPolicy.from_config(get_env_config())).stream_chat(
         [{"role": "system", "content": "SYS"}, {"role": "user", "content": "price?"}],
         tools=[tool("get_market_data")],
     )
@@ -113,7 +117,7 @@ def test_final_answer_maps_to_content(fake_cli, monkeypatch) -> None:
     set_replies({"payload": payload({"action": "final", "content": "close 6.125"})})
     use_provider(monkeypatch)
 
-    response = ChatLLM().chat([{"role": "user", "content": "hi"}])
+    response = ChatLLM(policy=ToolPolicy.from_config(get_env_config())).chat([{"role": "user", "content": "hi"}])
 
     assert response.content == "close 6.125"
     assert not response.has_tool_calls
@@ -126,7 +130,7 @@ def test_final_without_content_is_fed_back_and_retried(fake_cli) -> None:
         {"payload": payload({"action": "final", "content": "order 42 cancelled"})},
     )
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "user", "content": "cancel"}]
     )
 
@@ -160,7 +164,7 @@ def test_native_attempt_is_fed_back_with_the_original_prompt(fake_cli) -> None:
         },
     )
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "user", "content": "run the backtest"}]
     )
 
@@ -180,7 +184,7 @@ def test_permission_denials_are_fed_back_instead_of_accepting_final(fake_cli) ->
         {"payload": payload({"action": "final", "content": "recovered"})},
     )
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -195,7 +199,7 @@ def test_repeated_native_attempts_exhaust_the_existing_retry_budget(fake_cli) ->
     set_replies({"payload": reply})
 
     with pytest.raises(RuntimeError, match="native tool calls kept bypassing"):
-        claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
             [{"role": "user", "content": "x"}]
         )
 
@@ -213,7 +217,7 @@ def test_valid_structured_calls_are_not_retried_after_native_metadata(fake_cli) 
     set_replies, calls = fake_cli
     set_replies({"payload": reply})
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -228,7 +232,7 @@ def test_single_turn_final_answer_does_not_trigger_native_retry(fake_cli) -> Non
     set_replies, calls = fake_cli
     set_replies({"payload": reply})
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -245,7 +249,7 @@ def test_structured_output_turn_final_answer_does_not_trigger_native_retry(
     set_replies, calls = fake_cli
     set_replies({"payload": reply})
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -258,7 +262,7 @@ def test_final_never_echoes_the_structured_output_as_content(fake_cli) -> None:
     set_replies({"payload": payload({"action": "final", "content": "  "})})
 
     with pytest.raises(RuntimeError, match="without content"):
-        claude_cli.ClaudeCliLLM().invoke([{"role": "user", "content": "x"}])
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config())).invoke([{"role": "user", "content": "x"}])
 
 
 def test_vibe_system_prompt_is_a_verbatim_prefix_and_lone_user_is_verbatim(
@@ -269,7 +273,7 @@ def test_vibe_system_prompt_is_a_verbatim_prefix_and_lone_user_is_verbatim(
     system = "## Role\n\nexact text {with braces}\n"
     user = "Report the latest close of 03988.HK."
 
-    claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(
         [{"role": "system", "content": system}, {"role": "user", "content": user}]
     )
 
@@ -283,7 +287,7 @@ def test_turn_without_tools_only_allows_final(fake_cli) -> None:
     set_replies, calls = fake_cli
     set_replies({"payload": payload({"action": "final", "content": "ok"})})
 
-    claude_cli.ClaudeCliLLM().invoke([{"role": "user", "content": "x"}])
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config())).invoke([{"role": "user", "content": "x"}])
 
     args = calls()[0]["args"]
     schema = json.loads(args[args.index("--json-schema") + 1])
@@ -317,7 +321,7 @@ def test_history_renders_tool_calls_and_results(fake_cli) -> None:
         },
     ]
 
-    claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(messages)
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("get_market_data")]).invoke(messages)
 
     stdin = calls()[0]["stdin"]
     assert "[assistant tool_calls]" in stdin
@@ -339,7 +343,7 @@ def test_bad_cli_output_raises(fake_cli, reply, message) -> None:
     set_replies, _ = fake_cli
     set_replies(reply)
     with pytest.raises(RuntimeError, match=message):
-        claude_cli.ClaudeCliLLM().invoke([{"role": "user", "content": "x"}])
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config())).invoke([{"role": "user", "content": "x"}])
 
 
 def test_timeout_kills_the_child(fake_cli, monkeypatch) -> None:
@@ -350,7 +354,7 @@ def test_timeout_kills_the_child(fake_cli, monkeypatch) -> None:
     monkeypatch.setattr(claude_cli, "_TIMEOUT_FLOOR_S", 1)
     started = time.monotonic()
     with pytest.raises(RuntimeError, match="exceeded"):
-        claude_cli.ClaudeCliLLM(timeout=1).invoke([{"role": "user", "content": "x"}])
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), timeout=1).invoke([{"role": "user", "content": "x"}])
     assert time.monotonic() - started < 10
 
 
@@ -383,7 +387,7 @@ def test_slow_decision_outlives_the_stream_idle_timeout(fake_cli, monkeypatch) -
     use_provider(monkeypatch)
 
     waiting = []
-    response = ChatLLM().stream_chat(
+    response = ChatLLM(policy=ToolPolicy.from_config(get_env_config())).stream_chat(
         [{"role": "user", "content": "x"}], idle_timeout_s=1,
         on_waiting_chunk=lambda: waiting.append(time.monotonic()),
     )
@@ -402,7 +406,7 @@ def test_stop_button_ends_a_running_decision(fake_cli, monkeypatch) -> None:
     stop_at = time.monotonic() + 1.0
 
     started = time.monotonic()
-    response = ChatLLM().stream_chat(
+    response = ChatLLM(policy=ToolPolicy.from_config(get_env_config())).stream_chat(
         [{"role": "user", "content": "x"}],
         should_cancel=lambda: time.monotonic() > stop_at,
     )
@@ -417,7 +421,7 @@ def test_retries_share_one_deadline(fake_cli, monkeypatch) -> None:
     monkeypatch.setattr(claude_cli, "_TIMEOUT_FLOOR_S", 1)
 
     with pytest.raises(RuntimeError, match="exceeded"):
-        claude_cli.ClaudeCliLLM(timeout=1).invoke([{"role": "user", "content": "x"}])
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), timeout=1).invoke([{"role": "user", "content": "x"}])
 
     # Four attempts fit in 4 x 1s budgets but not in one shared 1s deadline.
     assert len(calls()) < 4
@@ -429,7 +433,7 @@ def test_image_input_is_refused_instead_of_dropped(fake_cli) -> None:
     image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
 
     with pytest.raises(RuntimeError, match="text input only"):
-        claude_cli.ClaudeCliLLM().invoke(
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config())).invoke(
             [{"role": "user", "content": [{"type": "text", "text": "what?"}, image]}]
         )
 
@@ -442,7 +446,7 @@ def test_lone_langchain_human_message_is_passed_verbatim(fake_cli) -> None:
     set_replies, calls = fake_cli
     set_replies({"payload": payload({"action": "final", "content": "ok"})})
 
-    claude_cli.ClaudeCliLLM().invoke(
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config())).invoke(
         [SystemMessage(content="SYS"), HumanMessage(content="exact prompt")]
     )
 
@@ -454,7 +458,7 @@ def test_unknown_bash_policy_fails_before_any_turn(fake_cli, monkeypatch) -> Non
     monkeypatch.setenv("CLAUDE_CLI_BASH_POLICY", "strict")
 
     with pytest.raises(RuntimeError, match="CLAUDE_CLI_BASH_POLICY"):
-        claude_cli.ClaudeCliLLM()
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()))
 
     assert calls() == []
 
@@ -518,7 +522,7 @@ def test_preflight_uses_cli_login(monkeypatch) -> None:
     monkeypatch.setattr(
         diagnostics,
         "provider_diagnostics",
-        lambda: {"base_url": "", "timeout_seconds": 120, "max_retries": 2, "proxy": {}},
+        lambda **kwargs: {"base_url": "", "timeout_seconds": 120, "max_retries": 2, "proxy": {}},
     )
     monkeypatch.setattr(
         claude_cli, "get_claude_cli_auth_status", lambda: (False, "not logged in")
@@ -570,7 +574,7 @@ def test_retry_details_reach_persisted_usage(fake_cli, monkeypatch, tmp_path, st
         replies.append({"payload": reply})
     set_replies(*replies)
     use_provider(monkeypatch)
-    client = ChatLLM()
+    client = ChatLLM(policy=ToolPolicy.from_config(get_env_config()))
     response = (client.stream_chat if streaming else client.chat)([{"role": "user", "content": "hi"}])
     usage = response.usage_metadata
     assert usage["input_tokens"] == 54
@@ -596,7 +600,7 @@ def test_exhausted_feedback_retries_keep_their_paid_usage(fake_cli, monkeypatch)
                   for _ in range(claude_cli._MAX_RETRIES + 1)])
     use_provider(monkeypatch)
     with pytest.raises(Exception, match="without content") as failure:
-        ChatLLM().stream_chat([{"role": "user", "content": "hi"}])
+        ChatLLM(policy=ToolPolicy.from_config(get_env_config())).stream_chat([{"role": "user", "content": "hi"}])
     usage = failure.value.usage_metadata
     assert usage["calls"] == 4
     assert usage["input_tokens"] == 40

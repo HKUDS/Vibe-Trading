@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pandas as pd
@@ -272,7 +279,7 @@ def test_market_data_json_is_strict_when_loader_returns_nan():
 
 
 def test_swarm_registry_can_expose_local_get_market_data_tool():
-    registry = build_swarm_registry(["get_market_data"])
+    registry = build_swarm_registry(["get_market_data"], policy=ToolPolicy.from_config(get_env_config()))
 
     assert "get_market_data" in registry.tool_names
 
@@ -310,42 +317,42 @@ def test_worker_prompt_prioritizes_get_market_data_for_ohlcv():
 def test_market_data_tool_rejects_empty_codes():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=[], start_date="2026-01-01", end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=[], start_date="2026-01-01", end_date="2026-02-01"))
     assert out == {"ok": False, "error": "codes must be a non-empty list of strings"}
 
 
 def test_market_data_tool_rejects_blank_code():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=[""], start_date="2026-01-01", end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=[""], start_date="2026-01-01", end_date="2026-02-01"))
     assert out == {"ok": False, "error": "every code must be a non-empty string"}
 
 
 def test_market_data_tool_rejects_non_list_codes():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes="AAPL.US", start_date="2026-01-01", end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes="AAPL.US", start_date="2026-01-01", end_date="2026-02-01"))
     assert out == {"ok": False, "error": "codes must be a non-empty list of strings"}
 
 
 def test_market_data_tool_rejects_missing_start_date():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], end_date="2026-02-01"))
     assert out == {"ok": False, "error": "start_date must be a non-empty YYYY-MM-DD string"}
 
 
 def test_market_data_tool_rejects_malformed_dates():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], start_date="banana", end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="banana", end_date="2026-02-01"))
     assert out == {"ok": False, "error": "start_date and end_date must be valid YYYY-MM-DD dates"}
 
 
 def test_market_data_tool_rejects_inverted_date_range():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], start_date="2026-08-21", end_date="2026-08-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-08-21", end_date="2026-08-01"))
     assert out == {"ok": False, "error": "start_date (2026-08-21) must not be after end_date (2026-08-01)"}
 
 
@@ -354,7 +361,7 @@ def test_market_data_tool_rejects_whitespace_only_code():
 
     # Validation strips codes before the emptiness check, so a whitespace-only
     # code is caught after stripping.
-    out = json.loads(MarketDataTool().execute(codes=["   "], start_date="2026-01-01", end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["   "], start_date="2026-01-01", end_date="2026-02-01"))
     assert out == {"ok": False, "error": "every code must be a non-empty string"}
 
 
@@ -362,7 +369,7 @@ def test_market_data_tool_rejects_compact_date_form():
     """fromisoformat accepts YYYYMMDD on 3.11+; loaders do not. Reject it."""
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], start_date="20260101", end_date="2026-02-01"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="20260101", end_date="2026-02-01"))
     assert out == {"ok": False, "error": "start_date and end_date must be valid YYYY-MM-DD dates"}
 
 
@@ -370,7 +377,7 @@ def test_market_data_tool_rejects_unknown_source():
     from src.tools.market_data_tool import MarketDataTool
     from backtest.loaders.registry import VALID_SOURCES
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", source="bogus"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", source="bogus"))
     assert out == {"ok": False, "error": f"source must be one of {sorted(VALID_SOURCES)}"}
 
 
@@ -394,7 +401,7 @@ def test_market_data_tool_accepts_every_registered_source():
         mod, "fetch_market_data_json", side_effect=lambda **kw: calls.append(kw) or "{}"
     ):
         for source in sorted(VALID_SOURCES):
-            out = mod.MarketDataTool().execute(
+            out = mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(
                 codes=["BTC-USDT"],
                 start_date="2026-08-20",
                 end_date="2026-08-21",
@@ -407,7 +414,7 @@ def test_market_data_tool_accepts_every_registered_source():
 def test_market_data_tool_rejects_garbage_interval():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", interval="BANANA"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", interval="BANANA"))
     assert out["ok"] is False
     assert "interval must be one of" in out["error"]
     assert "BANANA" in out["error"]
@@ -420,14 +427,14 @@ def test_market_data_tool_normalizes_interval_case():
 
     calls = []
     with mock.patch.object(mod, "fetch_market_data_json", side_effect=lambda **kw: calls.append(kw) or "{}"):
-        mod.MarketDataTool().execute(codes=["AAPL.US"], start_date="2026-08-20", end_date="2026-08-21", interval="1d", max_rows=0)
+        mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-08-20", end_date="2026-08-21", interval="1d", max_rows=0)
     assert calls and calls[0]["interval"] == "1D"
 
 
 def test_market_data_tool_rejects_non_int_max_rows():
     from src.tools.market_data_tool import MarketDataTool
 
-    out = json.loads(MarketDataTool().execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", max_rows="abc"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", max_rows="abc"))
     assert out == {"ok": False, "error": "max_rows must be a non-negative integer (0 = all rows)"}
 
 
@@ -439,7 +446,7 @@ def test_market_data_tool_clamps_negative_max_rows_to_default_cap():
 
     calls = []
     with mock.patch.object(mod, "fetch_market_data_json", side_effect=lambda **kw: calls.append(kw) or "{}"):
-        out = mod.MarketDataTool().execute(
+        out = mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             codes=["AAPL.US"], start_date="2026-08-20", end_date="2026-08-21", max_rows=-5
         )
     assert json.loads(out) == {}
@@ -458,7 +465,7 @@ def test_market_data_tool_accepts_minute_intervals():
     calls = []
     with mock.patch.object(mod, "fetch_market_data_json", side_effect=lambda **kw: calls.append(kw) or "{}"):
         for interval in ("1m", "5m", "15m", "30m", "30M", "1H", "1d"):
-            out = mod.MarketDataTool().execute(
+            out = mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(
                 codes=["AAPL.US"],
                 start_date="2026-08-20",
                 end_date="2026-08-21",
@@ -479,7 +486,7 @@ def test_market_data_tool_serves_month_and_week_spellings():
             ("1M", "1M"), ("1mo", "1M"), ("1W", "1W"), ("1w", "1W"), ("1wk", "1W"), ("1m", "1m")
         ):
             fetch.reset_mock()
-            mod.MarketDataTool().execute(
+            mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(
                 codes=["AAPL.US"],
                 start_date="2026-08-20",
                 end_date="2026-08-21",
@@ -512,10 +519,10 @@ def test_market_data_tool_asks_only_a_us_equity_for_its_suffix():
     with mock.patch.object(mod, "fetch_market_data_json", side_effect=lambda **kw: "{}"):
         for code in ("RB0", "rb2501", "IF2412", "BTCUSDT"):
             out = json.loads(
-                mod.MarketDataTool().execute(codes=[code], start_date="2026-08-20", end_date="2026-08-21")
+                mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=[code], start_date="2026-08-20", end_date="2026-08-21")
             )
             assert out == {}, (code, out)
         refused = json.loads(
-            mod.MarketDataTool().execute(codes=["AAPL"], start_date="2026-08-20", end_date="2026-08-21")
+            mod.MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL"], start_date="2026-08-20", end_date="2026-08-21")
         )
     assert refused["ok"] is False and "AAPL.US" in refused["error"]

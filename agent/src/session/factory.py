@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import asyncio
 import concurrent.futures
 import logging
@@ -37,6 +39,7 @@ class SessionAgentFactory:
     pending_inputs: PendingInputQueue
     active_loops: dict
     background_handles: dict
+    policy: ToolPolicy
     host_tools: dict[str, Any] = field(default_factory=dict)
 
     def register_tool(self, tool: Any) -> str:
@@ -98,7 +101,7 @@ class SessionAgentFactory:
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
-        llm = chat_llm_for_session(session_config)
+        llm = chat_llm_for_session(session_config, policy=self.policy)
         try:
             pm = PersistentMemory()
 
@@ -150,6 +153,7 @@ class SessionAgentFactory:
             registry = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
                 lambda: build_registry(
+                    policy=self.policy,
                     persistent_memory=pm,
                     include_shell_tools=include_shell_tools,
                     agent_config=agent_config,
@@ -265,14 +269,16 @@ def load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
     return metrics or None
 
 
-def compact_recorded_history(llm, runtime: SessionRuntime, recorder, messages: list, run_dir: Path, focus: str) -> None:
+def compact_recorded_history(
+    llm, runtime: SessionRuntime, recorder, messages: list, run_dir: Path, focus: str, *, policy: ToolPolicy,
+) -> None:
     """Bind manual compaction to the same product policies as a conversation turn."""
     from src.agent.runtime import AgentRuntime
     from src.product.resources.memory import WorkspaceMemory
     from src.agent.tools import ToolRegistry
 
     agent = AgentRuntime(
-        registry=ToolRegistry(),
+        registry=ToolRegistry(policy=policy),
         llm=llm,
         memory=WorkspaceMemory(session_workspace=str(runtime.workspace_path)),
         thread_recorder=recorder,

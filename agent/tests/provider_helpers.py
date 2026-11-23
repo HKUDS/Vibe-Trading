@@ -1,5 +1,9 @@
 """Shared provider test setup: real ChatLLM initialization and local HTTP wire."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import os
 import threading
@@ -16,7 +20,7 @@ def chat_with_adapter(adapter, model="test"):
     """Initialize ChatLLM normally while substituting only its SDK adapter."""
     snapshot = resolve_config(model_name=model, environment=dict(os.environ))
     with patch("src.providers.chat.build_llm", return_value=adapter):
-        return ChatLLM(snapshot=snapshot)
+        return ChatLLM(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot)
 
 
 def assert_stream_tool_roundtrip(llm, model):

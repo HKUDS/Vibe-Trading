@@ -3,12 +3,68 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Dict
 
 from src.agent.tuning import _heartbeat_interval_s, _tool_timeout_seconds
 from src.kernel.progress import HeartbeatTimer, _set_emitter
 from src.kernel.tool_runner import wait_for_tool
+from src.product.resources.hooks import HookManager
 from src.tools.redaction import redact_payload, redact_tool_result
+
+
+@dataclass(frozen=True)
+class ToolRefusal:
+    reason: str
+    result: str
+    elapsed_ms: int = 0
+
+
+@dataclass(frozen=True)
+class PreparedToolCall:
+    arguments: dict[str, Any]
+    post_result: Callable[[str, str], None] | None = None
+
+
+def prepare_tool_call(
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    check_policy: Callable[[str, dict], tuple[bool, str, dict]],
+    hooks: HookManager | None,
+    call_id: str,
+    session_id: str,
+) -> PreparedToolCall | ToolRefusal:
+    """Apply the mandatory policy before allowing a hook to add a refusal."""
+    allowed, reason, arguments = check_policy(name, arguments)
+    if not allowed:
+        return ToolRefusal(reason, json.dumps(
+            {"status": "error", "skipped": True, "error": reason}, ensure_ascii=False,
+        ))
+    if hooks is None:
+        return PreparedToolCall(arguments)
+
+    payload = {
+        "tool_name": name,
+        "call_id": call_id,
+        "arguments": redact_payload(arguments),
+        "session_id": session_id,
+    }
+    decision = hooks.run("PreToolUse", payload)
+    if decision.denied:
+        reason = decision.reason or "PreToolUse hook denied the call"
+        return ToolRefusal(reason, json.dumps(
+            {"status": "error", "skipped": True, "error_code": "hook_denied", "tool": name, "message": reason},
+            ensure_ascii=False,
+        ), decision.elapsed_ms)
+
+    def post_result(result: str, status: str) -> None:
+        hooks.run("PostToolUse", {
+            **payload, "result": redact_tool_result(result), "status": status,
+        })
+
+    return PreparedToolCall(arguments, post_result)
 
 
 class ToolInvocation:
@@ -36,37 +92,15 @@ class ToolInvocation:
         """Screen effective arguments, run hooks and invoke with the bound wait policy."""
         readonly = self.replay._is_tool_readonly(tool_name)
         order_tool = self._is_order_tool(tool_name)
-        # Apply the provider tool policy before invoking a hook.  A hook can
-        # add a refusal, while a hook result can never skip the policy gate.
-        policy_check = getattr(self.env.registry, "check_policy", None)
-        effective_args = args
-        if callable(policy_check):
-            allowed, policy_reason, effective_args = policy_check(tool_name, args)
-            if not allowed:
-                return json.dumps(
-                    {"status": "error", "skipped": True, "error": policy_reason},
-                    ensure_ascii=False,
-                ), 0
-        hooks = self.hooks or getattr(self.env.registry, "hooks", None)
-        hook_payload = {
-            "tool_name": tool_name,
-            "call_id": call_id,
-            "arguments": redact_payload(effective_args),
-            "session_id": self.env.session_id,
-        }
-        if hooks is not None:
-            decision = hooks.run("PreToolUse", hook_payload)
-            if decision.denied:
-                return json.dumps(
-                    {
-                        "status": "error",
-                        "skipped": True,
-                        "error_code": "hook_denied",
-                        "tool": tool_name,
-                        "message": decision.reason or "PreToolUse hook denied the call",
-                    },
-                    ensure_ascii=False,
-                ), decision.elapsed_ms
+        prepared = prepare_tool_call(
+            tool_name, args,
+            check_policy=self.env.registry.check_policy,
+            hooks=self.hooks or getattr(self.env.registry, "hooks", None),
+            call_id=call_id, session_id=self.env.session_id,
+        )
+        if isinstance(prepared, ToolRefusal):
+            return prepared.result, prepared.elapsed_ms
+        effective_args = prepared.arguments
         if order_tool:
             # Broker errors can mean that the response was lost after acceptance.
             # Latch before dispatch, including concurrent copies in one batch.
@@ -88,11 +122,6 @@ class ToolInvocation:
                                "Check broker state before requesting another action.",
                 }), 0
 
-        def post_result(result: str, status: str) -> None:
-            hooks.run("PostToolUse", {
-                **hook_payload, "result": redact_tool_result(result), "status": status,
-            })
-
         def heartbeat(emit):
             return HeartbeatTimer(tool_name=tool_name, interval=_heartbeat_interval_s(), emit=emit)
 
@@ -102,7 +131,7 @@ class ToolInvocation:
             readonly=readonly, detachable=not order_tool,
             timeout=limit if not order_tool and limit > 0 else None,
             cancelled=self.cancelled, progress=self.progress,
-            heartbeat=heartbeat, set_emitter=_set_emitter, post_result=post_result if hooks is not None else None,
+            heartbeat=heartbeat, set_emitter=_set_emitter, post_result=prepared.post_result,
         )
 
     def _is_order_tool(self, tool_name: str) -> bool:

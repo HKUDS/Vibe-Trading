@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -22,7 +26,7 @@ def _read_json(result: str) -> dict:
 
 
 def test_read_document_rejects_system_paths() -> None:
-    result = _read_json(read_document("/etc/passwd"))
+    result = _read_json(read_document("/etc/passwd", roots=FileRoots.from_config(get_env_config().api)))
 
     assert result["status"] == "error"
     assert "outside allowed document roots" in result["error"]
@@ -30,7 +34,7 @@ def test_read_document_rejects_system_paths() -> None:
 
 def test_safe_user_path_rejects_root_home_credentials() -> None:
     with pytest.raises(ValueError, match="outside allowed user-file roots"):
-        safe_user_path("/root/.aws/credentials")
+        safe_user_path("/root/.aws/credentials", roots=FileRoots.from_config(get_env_config().api))
 
 
 def test_read_document_allows_configured_import_root(
@@ -41,16 +45,16 @@ def test_read_document_allows_configured_import_root(
     doc.write_text("VT_DOC_OK", encoding="utf-8")
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
 
-    result = _read_json(read_document(str(doc)))
+    result = _read_json(read_document(str(doc), roots=FileRoots.from_config(get_env_config().api)))
 
     assert result["status"] == "ok"
     assert result["text"] == "VT_DOC_OK"
-    assert safe_document_path(str(doc)) == doc.resolve()
+    assert safe_document_path(str(doc), roots=FileRoots.from_config(get_env_config().api)) == doc.resolve()
 
 
 @pytest.mark.parametrize("arguments", [{}, {"file_path": ""}, {"file_path": None}])
 def test_missing_document_path_names_the_required_argument(arguments) -> None:
-    result = _read_json(DocReaderTool().execute(**arguments))
+    result = _read_json(DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(**arguments))
     assert result["status"] == "error"
     assert "file_path is required" in result["error"]
 
@@ -62,6 +66,6 @@ def test_uploaded_handle_uses_upload_root_even_when_a_run_dir_is_supplied(tmp_pa
     doc = get_uploads_dir() / "report.txt"
     doc.parent.mkdir(parents=True, exist_ok=True)
     doc.write_text("UPLOADED_REPORT", encoding="utf-8")
-    result = _read_json(DocReaderTool().execute(file_path="uploads/report.txt", run_dir=str(tmp_path / "runs/r1")))
+    result = _read_json(DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path="uploads/report.txt", run_dir=str(tmp_path / "runs/r1")))
     assert result["status"] == "ok"
     assert result["text"] == "UPLOADED_REPORT"

@@ -177,10 +177,9 @@ class UsageLedger:
             self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE, **event})
         elif purpose is None and not self.activity.cancel.is_set():
             self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
-        elif purpose == "subagent":
-            self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
-            _record_unreported_llm_call(run_dir, self.summary)
         else:
+            if purpose == "subagent":
+                self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
             _record_unreported_llm_call(run_dir, self.summary)
 
     def record_subagent(self, event_type: str, data: dict[str, Any]) -> bool:

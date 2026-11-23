@@ -10,6 +10,10 @@ sync; these tests fail fast if either side drifts again.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 
 import pytest
@@ -243,7 +247,7 @@ def test_every_preset_tool_exists_in_local_registry() -> None:
     prompt may depend on. Every bundled preset tool must resolve."""
     from src.tools import build_registry
 
-    registry = build_registry(include_shell_tools=True)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True)
     for entry in list_presets():
         preset = load_preset(entry["name"])
         for agent in preset["agents"]:

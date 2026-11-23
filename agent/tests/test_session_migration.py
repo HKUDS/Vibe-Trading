@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.session.event_projection import display_item
+from src.session.thread_display import display_item
 from src.session.migration import migrate_session
 from src.session.replay import replay
 from src.session.thread import ThreadLog

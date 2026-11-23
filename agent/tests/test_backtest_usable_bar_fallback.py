@@ -1,5 +1,9 @@
 """Backtest fallback decides which symbols were served after bar preparation."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 
@@ -66,7 +70,7 @@ def test_retries_only_the_symbol_with_no_valid_bars(source, interval, chart_feed
             "interval": interval,
             "start_date": dates[0],
             "end_date": dates[-1],
-        }
+        }, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert calls == [("yahoo", "AAPL", "1d"), ("yahoo", "MSFT", "1d"), ("stooq", "msft.us", "d")]
@@ -91,7 +95,7 @@ def test_a_fallback_with_no_valid_bars_does_not_complete_the_basket(source, char
                 "codes": ["MSFT.US"],
                 "start_date": dates[0],
                 "end_date": dates[-1],
-            }
+            }, roots=FileRoots.from_config(get_env_config().api)
         )
 
     assert calls == [("yahoo", "MSFT", "1d"), ("stooq", "msft.us", "d")]

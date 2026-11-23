@@ -11,6 +11,10 @@ registry for a recording fake, so nothing reaches SEC / Polymarket / arXiv.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 import importlib
@@ -19,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from src.agent.tools import BaseTool, ToolRegistry
+from src.product.resources.hooks import HookDecision
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -121,7 +127,7 @@ def test_mirrored_tool_names_match_the_agent_side_registry() -> None:
     """
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     for name in MIRRORED_TOOL_NAMES:
         assert (
@@ -206,7 +212,7 @@ def test_no_unexpected_mutating_tool_is_exposed_via_mcp() -> None:
     """
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     exposed_mutating = {
         name
@@ -255,16 +261,95 @@ def test_register_mirrored_tool_refuses_a_non_readonly_class(caplog) -> None:
 # ---------------------------------------------------------------------------
 
 
-class _RecordingRegistry:
+class _RecordingRegistry(ToolRegistry):
     """Stand-in for the local tool registry that records the forwarded call."""
 
     def __init__(self) -> None:
+        super().__init__(policy=ToolPolicy.from_config(get_env_config()))
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def execute(self, name: str, params: dict[str, Any]) -> str:
         """Record the call and return a JSON envelope like the real registry."""
         self.calls.append((name, params))
         return '{"status": "ok"}'
+
+
+@pytest.mark.parametrize("outcome", ["policy", "hook", "error", "success"])
+def test_direct_mcp_tool_uses_policy_then_hooks(monkeypatch, outcome) -> None:
+    from types import SimpleNamespace
+
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    mod = _import_mcp_server()
+    tool_name = "get_research_goal"
+    steps = []
+
+    def policy(name, params):
+        steps.append(("policy", name))
+        assert params == {"session_id": "caller-session"}
+        return outcome != "policy", "policy refused the call", {"session_id": "prepared-session"}
+
+    def hook(event, payload):
+        steps.append((event, payload["tool_name"]))
+        assert payload["arguments"] == {"session_id": "prepared-session"}
+        if event == "PostToolUse":
+            assert payload["status"] == ("error" if outcome == "error" else "ok")
+            assert "sample-private-value" not in payload["result"]
+        return HookDecision(
+            event, "deny" if outcome == "hook" else "allow", reason="hook refused the call",
+        )
+
+    def get_snapshot(session_id):
+        steps.append(("execute", tool_name))
+        assert session_id == "prepared-session"
+        if outcome == "error":
+            raise RuntimeError("probe failed with api_key=sample-private-value")
+        return {"title": "probe", "api_key": "sample-private-value"}
+
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    monkeypatch.setattr(registry, "check_policy", policy)
+    registry.hooks = SimpleNamespace(run=hook)
+    monkeypatch.setattr(mod, "_registry", registry)
+    monkeypatch.setattr(mod, "_goal_store", SimpleNamespace(get_current_snapshot=get_snapshot))
+
+    async def call():
+        async with Client(mod.mcp) as client:
+            return await client.call_tool(tool_name, {"session_id": "caller-session"})
+
+    expected = [("policy", tool_name)]
+    if outcome != "policy":
+        expected.append(("PreToolUse", tool_name))
+    if outcome in {"policy", "hook"}:
+        with pytest.raises(ToolError, match=f"{outcome} refused the call"):
+            asyncio.run(call())
+    else:
+        if outcome == "error":
+            with pytest.raises(ToolError, match="probe failed") as excinfo:
+                asyncio.run(call())
+            assert "sample-private-value" not in str(excinfo.value)
+        else:
+            result = asyncio.run(call())
+            assert "sample-private-value" not in result.content[0].text
+        expected.extend([("execute", tool_name), ("PostToolUse", tool_name)])
+    assert steps == expected
+
+
+def test_key_gated_diagnostic_uses_the_parent_registry_policy(monkeypatch) -> None:
+    mod = _import_mcp_server()
+
+    class DiagnosticTool(BaseTool):
+        name = "diagnostic_probe"
+
+        def execute(self, **kwargs):
+            pytest.fail("denied diagnostic tool executed")
+
+    monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "diagnostic_")
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    monkeypatch.setattr(mod, "_registry", registry)
+    monkeypatch.setattr(mod, "_key_gated_tool_classes", lambda: {DiagnosticTool.name: DiagnosticTool})
+    result = json.loads(mod._execute_key_gated(DiagnosticTool.name, {}))
+    assert result == {"status": "error", "skipped": True, "error": "diagnostic_probe is disabled by the active tool policy"}
 
 
 def test_mirrored_call_reaches_the_registry_with_clean_params(monkeypatch) -> None:

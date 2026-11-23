@@ -9,6 +9,10 @@ contract, ``execute`` happy/error paths, and auto-discovery.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from typing import Any
 
@@ -307,7 +311,7 @@ def test_tool_metadata() -> None:
 
 
 def test_tool_is_auto_discovered() -> None:
-    assert "report_audit" in build_registry().tool_names
+    assert "report_audit" in build_registry(policy=ToolPolicy.from_config(get_env_config())).tool_names
 
 
 # ── execute ───────────────────────────────────────────────────────────────

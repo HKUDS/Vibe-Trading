@@ -1,3 +1,7 @@
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -29,7 +33,7 @@ def test_quantlib_tool_reports_unmeasured_style_weight():
     from src.tools.quantlib_tool import QuantlibCallTool
 
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="factormodel",
             function="portfolio_style_exposure",

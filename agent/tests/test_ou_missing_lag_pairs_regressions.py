@@ -1,3 +1,7 @@
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -24,7 +28,7 @@ def test_quantlib_tool_refuses_insufficient_adjacent_ou_pairs():
     from src.tools.quantlib_tool import QuantlibCallTool
 
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="timeseries",
             function="fit_ornstein_uhlenbeck",

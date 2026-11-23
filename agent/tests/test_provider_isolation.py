@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -67,7 +71,7 @@ def test_old_and_new_clients_keep_their_own_connection_over_real_http(
         for name in ("OPENAI_PROXY", "ANTHROPIC_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
             monkeypatch.setenv(name, "http://127.0.0.1:1")
         before_build = dict(os.environ)
-        clients = [stack.enter_context(closing(ChatLLM(snapshot=snapshot))) for snapshot in snapshots]
+        clients = [stack.enter_context(closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot))) for snapshot in snapshots]
         assert dict(os.environ) == before_build
         with ThreadPoolExecutor(2) as pool:
             replies = list(pool.map(lambda c: c.chat([{"role": "user", "content": "hello"}]), clients))
@@ -134,7 +138,7 @@ def test_cross_origin_redirect_never_receives_credentials(provider_server, provi
         "ANTHROPIC_MAX_TOKENS": "128", "TIMEOUT_SECONDS": "5", "MAX_RETRIES": "0",
         "VIBE_TRADING_DISABLE_HTTP_PROXY": "1", "LANGCHAIN_USE_RESPONSES_API": "false",
     })
-    with closing(ChatLLM(snapshot=snapshot)) as client:
+    with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot)) as client:
         with pytest.raises(Exception) as failure:
             if mode == "async":
                 asyncio.run(client._llm.ainvoke("private prompt"))
@@ -170,7 +174,7 @@ def test_stream_errors_keep_original_provider_and_redact_original_key(monkeypatc
             raise RuntimeError("old-private-token failed")
 
     monkeypatch.setattr("src.providers.chat.build_llm", lambda **_: Broken())
-    client = ChatLLM(snapshot=snapshot)
+    client = ChatLLM(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot)
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "deepseek")
     monkeypatch.setenv("OPENROUTER_API_KEY", "new-token")
     with pytest.raises(ProviderStreamError) as caught:
@@ -223,9 +227,9 @@ def test_native_sdk_credentials_and_headers_are_scoped(monkeypatch, provider, ke
     monkeypatch.setenv("OPENAI_API_KEY", "unrelated-new-default")
     if not key:
         with pytest.raises(RuntimeError, match="Set DEEPSEEK_API_KEY"):
-            build_llm(snapshot=snapshot)
+            build_llm(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot)
         return
-    adapter = build_llm(snapshot=snapshot)
+    adapter = build_llm(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot)
     sdk = adapter._client if provider == "anthropic" else adapter.root_client
     assert sdk.api_key == "snapshot-key"
     assert str(sdk.base_url).rstrip("/") == "https://original.invalid"

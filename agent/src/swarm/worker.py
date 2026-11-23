@@ -1,10 +1,8 @@
-"""Swarm Worker: standalone worker execution engine with a lightweight ReAct loop.
-
-Uses ChatLLM.chat + manual for-loop directly (without instantiating AgentRuntime),
-keeping the worker self-contained and the agent core unchanged.
-"""
+"""Swarm task preparation, kernel ports and worker result delivery."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
 
 import json
 import logging
@@ -12,6 +10,7 @@ import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event
 from typing import Any, Callable, NamedTuple, Protocol
 
 from src.product.context import ContextBuilder
@@ -21,8 +20,13 @@ from src.kernel.progress import HeartbeatTimer
 from src.product.resources.skills import SkillsLoader
 from src.agent.tools import BaseTool, ToolRegistry
 from src.product.result_artifacts import deliver_tool_result
+from src.product.tool_invocation import ToolRefusal, prepare_tool_call
 from src.config.schema import AgentConfig
-from src.kernel.contracts import LLMResponse
+from src.kernel.contracts import (
+    Continue, Iteration, LLMResponse, LLMRuntimeSnapshot, LoopContext, LoopPorts, RunLimits, Stop,
+)
+from src.kernel.events import EventSink
+from src.kernel.loop import run_loop
 from src.providers.chat import ChatLLM
 from src.providers.response import ProviderStreamError
 from src.providers.messages import repair_provider_messages
@@ -36,6 +40,7 @@ from src.swarm.models import (
     SwarmEvent,
     SwarmTask,
     WorkerResult,
+    WorkerStatus,
 )
 from src.swarm.context import WorkerContext
 from src.swarm import checkpoint
@@ -500,6 +505,8 @@ def run_worker(
     agent_config: AgentConfig | None = None,
     cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
+    *,
+    policy: ToolPolicy,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
 
@@ -532,7 +539,7 @@ def run_worker(
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
     """
-    llm = ChatLLM(model_name=agent_spec.model_name)
+    llm = ChatLLM(model_name=agent_spec.model_name, policy=policy)
     result = None
     try:
         result = _run_worker_impl(
@@ -542,6 +549,7 @@ def run_worker(
             user_vars=user_vars,
             run_dir=run_dir,
             llm=llm,
+            policy=policy,
             event_callback=event_callback,
             include_shell_tools=include_shell_tools,
             grounding_block=grounding_block,
@@ -577,18 +585,11 @@ def _run_worker_impl(
     agent_config: AgentConfig | None = None,
     *,
     llm: ChatLLM,
+    policy: ToolPolicy,
     cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
 ) -> WorkerResult:
-    """Execute a single worker task using a lightweight ReAct loop.
-
-    Steps:
-      1. Build filtered ToolRegistry from agent_spec.tools
-      2. Build system prompt with role + upstream summaries + filtered skills
-      3. Resolve task.prompt_template with user_vars
-      4. Run ReAct loop (for iteration in range(max_iterations))
-      5. Write summary to artifacts/{agent_id}/{task_id}/summary.md
-      6. Return WorkerResult
+    """Prepare a worker task, bind its kernel ports, and deliver its result.
 
     Args:
         agent_spec: Agent role specification with tools/skills/model config.
@@ -635,6 +636,7 @@ def _run_worker_impl(
     background_scope = background.scope
     registry = build_swarm_registry(
         agent_spec.tools,
+        policy=policy,
         agent_config=agent_config,
         include_shell_tools=include_shell_tools,
         skill_allowlist=agent_spec.skills or None,
@@ -696,12 +698,12 @@ def _run_worker_impl(
         {"role": "user", "content": user_prompt},
     ]
 
-    # 6. ReAct loop
     artifact_dir = agent_artifact_dir(run_dir, agent_id, task_id)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     get_tool = getattr(registry, "get", None)
+    model = agent_spec.model_name or getattr(llm, "model_name", "") or ""
     worker_context = WorkerContext(
-        model=agent_spec.model_name or getattr(llm, "model_name", "") or "",
+        model=model,
         artifact_dir=artifact_dir,
         can_read_files=callable(get_tool) and get_tool("read_file") is not None,
     )
@@ -723,7 +725,7 @@ def _run_worker_impl(
 
     t0 = time.monotonic()
     iteration = 0
-    summary = ""
+    terminal: WorkerResult | None = None
 
     # Threshold for injecting a "wrap up" nudge (80% of budget)
     wrap_up_at = max(1, int(max_iterations * 0.8))
@@ -738,6 +740,8 @@ def _run_worker_impl(
             _emit(event_callback, "worker_resume_unavailable", agent_id, task_id,
                   {"reason": "Saved conversation is unavailable or incompatible; restarting from supplied reports."})
 
+    starting_message_count = len(messages)
+
     def save_checkpoint() -> None:
         checkpoint.save(artifact_dir, key=resume_key, messages=messages,
                         last_content=last_assistant_content, run_dir=run_dir)
@@ -750,13 +754,12 @@ def _run_worker_impl(
     def stop_requested() -> bool:
         return cancel_event is not None and cancel_event.is_set()
 
-    def finish_cancelled(iterations: int) -> WorkerResult:
-        summary = _resolve_summary(artifact_dir, last_assistant_content)
-        _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iterations})
-        _finalize_run(artifact_dir, summary, messages)
-        return WorkerResult(
-            status="cancelled",
-            summary=summary,
+    def finish(
+        status: WorkerStatus, summary: str, iterations: int, *, warning_iterations: int, error: str | None = None,
+    ) -> Stop:
+        nonlocal terminal
+        terminal = WorkerResult(
+            status=status, summary=summary, error=error,
             artifact_paths=_collect_artifacts(run_dir, artifact_dir),
             iterations=iterations,
             input_tokens=total_input_tokens,
@@ -764,36 +767,33 @@ def _run_worker_impl(
             cache_read_tokens=total_cache_read_tokens,
             cache_creation_tokens=total_cache_creation_tokens,
             token_source=token_source,
-            content_filter_warnings=compute_content_filter_warnings(content_filter_count, iteration + 1),
+            content_filter_warnings=compute_content_filter_warnings(content_filter_count, warning_iterations),
         )
+        return Stop(status.value)
 
-    for iteration in range(max_iterations):
+    def finish_cancelled(iterations: int) -> Stop:
+        summary = _resolve_summary(artifact_dir, last_assistant_content)
+        _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iterations})
+        _finalize_run(artifact_dir, summary, messages)
+        return finish(WorkerStatus.cancelled, summary, iterations, warning_iterations=iteration + 1)
+
+    def on_cancel() -> None:
+        finish_cancelled(iteration)
+
+    def before_cancel_check(completed: int) -> Stop | None:
+        nonlocal iteration
+        iteration = completed
         save_checkpoint()
-        # Check timeout
         elapsed = time.monotonic() - t0
         if elapsed > timeout:
-            summary = _best_summary(messages, last_assistant_content) or f"Worker timed out after {elapsed:.0f}s ({iteration} iterations)"
-            summary = _resolve_summary(artifact_dir, summary)
+            fallback = f"Worker timed out after {elapsed:.0f}s ({iteration} iterations)"
+            summary = _resolve_summary(artifact_dir, _best_summary(messages, last_assistant_content) or fallback)
             _emit(event_callback, "worker_timeout", agent_id, task_id, {"elapsed": elapsed})
             _finalize_run(artifact_dir, summary, messages)
-            return WorkerResult(
-                status="timeout",
-                summary=summary,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+            return finish(WorkerStatus.timeout, summary, iteration, warning_iterations=iteration + 1)
+        return None
 
-        if stop_requested():
-            return finish_cancelled(iteration)
-
+    def prepare_request(view: LoopContext, step: Iteration) -> Stop | None:
         # Inject wrap-up nudge when approaching iteration limit
         if iteration == wrap_up_at:
             remaining = max_iterations - iteration
@@ -809,8 +809,8 @@ def _run_worker_impl(
             })
 
         # On last iteration, call LLM without tool definitions to force text output
-        is_last_iteration = iteration == max_iterations - 1
-        tool_defs = None if is_last_iteration else registry.get_definitions()
+        view.tools = None if step.text_only else registry.get_definitions()
+        tool_defs = view.tools
         compacted = worker_context.compact(messages, tool_defs)
         if compacted:
             _emit(event_callback, "worker_context_offloaded", agent_id, task_id,
@@ -823,33 +823,20 @@ def _run_worker_impl(
             summary = _resolve_summary(artifact_dir, summary)
             _emit(event_callback, "worker_token_limit", agent_id, task_id, {"tokens": token_estimate})
             _finalize_run(artifact_dir, summary, messages)
-            return WorkerResult(
-                status="token_limit",
-                summary=summary,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+            return finish(WorkerStatus.token_limit, summary, iteration, warning_iterations=iteration + 1)
 
+        return finish_cancelled(iteration) if stop_requested() else None
 
-        if stop_requested():
-            return finish_cancelled(iteration)
-
+    def request(view: LoopContext, emit: EventSink) -> LLMResponse | Continue | Stop:
+        nonlocal stream_failure_streak, last_assistant_content
+        nonlocal content_filter_count, consecutive_content_filter_count
         # Stream the LLM — moonshot/kimi non-streaming invoke is unreliable
         # (issue #42), and streaming also feeds dashboard live progress.
         streamed_text: list[str] = []
         try:
             def _on_text_chunk(delta: str) -> None:
                 streamed_text.append(delta)
-                _emit(event_callback, "worker_text", agent_id, task_id,
-                      {"content": delta, "iteration": iteration})
+                emit("worker_text", {"content": delta, "iteration": iteration})
 
             # LLM streaming can stall for 30s+ between request start and the
             # first text chunk (slow first-token providers, reasoning models'
@@ -892,8 +879,8 @@ def _run_worker_impl(
                 ):
                     try:
                         return llm.stream_chat(
-                            repair_provider_messages(messages),
-                            tools=tool_defs,
+                            repair_provider_messages(view.messages),
+                            tools=view.tools,
                             timeout=remaining_timeout,
                             on_text_chunk=_on_text_chunk,
                             **stream_kwargs,
@@ -966,27 +953,13 @@ def _run_worker_impl(
             summary = _resolve_summary(artifact_dir, last_assistant_content or "")
             save_checkpoint()
             _finalize_run(artifact_dir, summary, messages)
-            return WorkerResult(
-                status="failed",
-                summary=summary,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration,
-                error=error_msg,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+            return finish(WorkerStatus.failed, summary, iteration, warning_iterations=iteration + 1, error=error_msg)
 
         # Accumulate token counts (provider-reported when available, with the
         # cache breakdown). The provenance label is sticky-estimated, mirroring
         # runtime._merge_token_source: one heuristic iteration contaminates the
         # cumulative total, so a partly-estimated sum never reads as billed.
-        worker_context.observe(messages, tool_defs, getattr(response, "usage_metadata", None))
+        worker_context.observe(view.messages, view.tools, getattr(response, "usage_metadata", None))
         account_response(response)
 
         # Track last meaningful assistant content
@@ -1009,25 +982,11 @@ def _run_worker_impl(
                 )
                 summary = _resolve_summary(artifact_dir, last_assistant_content or "")
                 _finalize_run(artifact_dir, summary, messages)
-                return WorkerResult(
-                    status="failed",
-                    summary=summary,
-                    artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                    iterations=iteration + 1,
-                    error=(
-                        f"content_filter_circuit_breaker: "
-                        f"{MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS} consecutive "
-                        "LLM responses were blocked by content moderation"
-                    ),
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cache_read_tokens=total_cache_read_tokens,
-                    cache_creation_tokens=total_cache_creation_tokens,
-                    token_source=token_source,
-                    content_filter_warnings=compute_content_filter_warnings(
-                        content_filter_count, iteration + 1,
-                    ),
+                error = (
+                    f"content_filter_circuit_breaker: {MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS} consecutive "
+                    "LLM responses were blocked by content moderation"
                 )
+                return finish(WorkerStatus.failed, summary, iteration + 1, warning_iterations=iteration + 1, error=error)
             _emit(
                 event_callback,
                 "content_filter_skipped",
@@ -1039,80 +998,35 @@ def _run_worker_impl(
                 "role": "user",
                 "content": f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>",
             })
-            continue
+            return Continue.NEXT
 
         consecutive_content_filter_count = 0
+        return response
 
-        # A token-truncated response is not a terminal deliverable, even if
-        # earlier tools succeeded or a report file exists. Do not execute
-        # potentially partial tool calls from the same response either.
-        if response.finish_reason in {"length", "max_tokens", "max_output_tokens"}:
-            summary = response.content or ""
-            messages.append({"role": "assistant", "content": summary})
-            _finalize_run(artifact_dir, summary, messages)
-            error = "Model output was truncated; increase the provider output-token limit and retry."
-            _emit(event_callback, "worker_token_limit", agent_id, task_id,
-                  {"reason": response.finish_reason, "error": error})
-            return WorkerResult(
-                status="token_limit",
-                summary=summary,
-                error=error,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration + 1,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+    def record_partial(response: LLMResponse, reason: str) -> None:
+        summary = response.content or ""
+        messages.append({"role": "assistant", "content": summary})
+        _finalize_run(artifact_dir, summary, messages)
+        error = "Model output was truncated; increase the provider output-token limit and retry."
+        _emit(event_callback, "worker_token_limit", agent_id, task_id, {"reason": reason, "error": error})
+        finish(WorkerStatus.token_limit, summary, iteration + 1, warning_iterations=iteration + 1, error=error)
 
-        # If no tool calls, this is the final response
-        if not response.has_tool_calls:
-            summary = response.content or ""
-            # The final response supersedes any earlier draft file, on fresh
-            # runs as well as continuation. Keep files as separate artifacts.
-            messages.append({"role": "assistant", "content": summary})
-            if not summary:
-                summary = _resolve_summary(artifact_dir, summary)
-            _finalize_run(artifact_dir, summary, messages)
-            reason = _delivery_error(response.content or "") if resume and not response.content else _delivery_error(summary)
-            if reason:
-                _emit(event_callback, "worker_incomplete", agent_id, task_id,
-                      {"iterations": iteration + 1, "reason": reason})
-                return WorkerResult(
-                    status="incomplete",
-                    summary=summary,
-                    artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                    iterations=iteration + 1,
-                    error=reason,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cache_read_tokens=total_cache_read_tokens,
-                    cache_creation_tokens=total_cache_creation_tokens,
-                    token_source=token_source,
-                    content_filter_warnings=compute_content_filter_warnings(
-                        content_filter_count, iteration + 1,
-                    ),
-                )
-            _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
-            return WorkerResult(
-                status="completed",
-                summary=summary,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration + 1,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+    def after_text(response: LLMResponse) -> Stop:
+        summary = response.content or ""
+        # The final response supersedes any previous draft. Files remain separate artifacts.
+        messages.append({"role": "assistant", "content": summary})
+        if not summary:
+            summary = _resolve_summary(artifact_dir, summary)
+        _finalize_run(artifact_dir, summary, messages)
+        reason = _delivery_error(response.content or "") if resume and not response.content else _delivery_error(summary)
+        if reason:
+            _emit(event_callback, "worker_incomplete", agent_id, task_id,
+                  {"iterations": iteration + 1, "reason": reason})
+            return finish(WorkerStatus.incomplete, summary, iteration + 1, warning_iterations=iteration + 1, error=reason)
+        _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
+        return finish(WorkerStatus.completed, summary, iteration + 1, warning_iterations=iteration + 1)
 
+    def run_tools(response: LLMResponse) -> Continue | Stop:
         # Append assistant message with tool calls
         messages.append(
             ContextBuilder.format_assistant_tool_calls(
@@ -1135,9 +1049,8 @@ def _run_worker_impl(
                           "arguments": _preview_tool_arguments(tc.arguments), **mcp_meta}},
             )
             tc_start = time.monotonic()
-            args, run_dir_refusal = _tool_arguments(
-                registry.get(tc.name), tc.arguments, artifact_dir
-            )
+            tool = registry.get(tc.name)
+            args, run_dir_refusal = _tool_arguments(tool, tc.arguments, artifact_dir)
 
             # Wrap tool execution in a heartbeat so the events.jsonl tail has a
             # fresh timestamp every few seconds. The stale-run reaper relies on
@@ -1164,8 +1077,22 @@ def _run_worker_impl(
                         {"status": "error", "error": run_dir_refusal},
                         ensure_ascii=False,
                     )
-                else:
+                elif tool is None:
+                    # The registry retains its existing unavailable-tool diagnostic.
                     result = registry.execute(tc.name, args)
+                else:
+                    prepared = prepare_tool_call(
+                        tc.name, args, check_policy=registry.check_policy,
+                        hooks=getattr(registry, "hooks", None), call_id=tc.id, session_id="",
+                    )
+                    if isinstance(prepared, ToolRefusal):
+                        result = prepared.result
+                    elif stop_requested():
+                        break
+                    else:
+                        result = registry.execute(tc.name, prepared.arguments)
+                        if prepared.post_result is not None:
+                            prepared.post_result(result, "ok")
             # The model and persisted conversation need the same protection as
             # event previews, before truncation can cut a credential envelope.
             result = redact_tool_result(result)
@@ -1199,29 +1126,46 @@ def _run_worker_impl(
         if stop_requested():
             return finish_cancelled(iteration + 1)
 
-    # Content filter ratio tracking
-    content_filter_warnings = compute_content_filter_warnings(
-        content_filter_count, iteration + 1,
-    )
+        return Continue.NEXT
 
-    # Hit iteration limit — use last meaningful content as summary
-    summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
-    summary = _resolve_summary(artifact_dir, summary)
-    _finalize_run(artifact_dir, summary, messages)
-    _emit(event_callback, "worker_iteration_limit", agent_id, task_id)
-    return WorkerResult(
-        status="incomplete",
-        error="iteration limit reached before a final response",
-        summary=summary,
-        artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-        iterations=max_iterations,
-        input_tokens=total_input_tokens,
-        output_tokens=total_output_tokens,
-        cache_read_tokens=total_cache_read_tokens,
-        cache_creation_tokens=total_cache_creation_tokens,
-        token_source=token_source,
-        content_filter_warnings=content_filter_warnings,
+    snapshot = getattr(llm, "runtime_snapshot", None)
+    if not isinstance(snapshot, LLMRuntimeSnapshot):
+        snapshot = LLMRuntimeSnapshot("", model, "")
+    context = LoopContext(messages, snapshot, None)
+    ports = LoopPorts(
+        before_iteration=lambda view: None,
+        prepare_request=prepare_request,
+        request=request,
+        record_partial=record_partial,
+        after_text=after_text,
+        run_tools=run_tools,
+        poll_inputs=lambda: None,
+        on_cancel=on_cancel,
+        read_delta=lambda: messages[starting_message_count:],
+        read_usage=lambda: {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "cache_read_tokens": total_cache_read_tokens,
+            "cache_creation_tokens": total_cache_creation_tokens,
+        },
+        before_cancel_check=before_cancel_check,
     )
+    turn = run_loop(
+        context, ports, RunLimits(max_iterations, frozenset({"length", "max_tokens", "max_output_tokens"})),
+        cancel_event if cancel_event is not None else Event(),
+        lambda kind, data: _emit(event_callback, kind, agent_id, task_id, data),
+    )
+    if turn.reason == "max_iterations":
+        fallback = f"Worker hit iteration limit ({max_iterations} iterations)"
+        summary = _resolve_summary(artifact_dir, _best_summary(messages, last_assistant_content) or fallback)
+        _finalize_run(artifact_dir, summary, messages)
+        _emit(event_callback, "worker_iteration_limit", agent_id, task_id)
+        finish(
+            WorkerStatus.incomplete, summary, max_iterations, warning_iterations=iteration + 1,
+            error="iteration limit reached before a final response",
+        )
+    assert terminal is not None
+    return terminal
 
 
 def _best_summary(messages: list[dict], fallback: str) -> str:

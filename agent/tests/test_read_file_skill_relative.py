@@ -13,6 +13,10 @@ bundled skill docs only.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from typing import Tuple
@@ -63,8 +67,8 @@ def test_bare_link_resolves_to_the_owning_skill(subdir: str, suffix: str) -> Non
     """A bare link resolves to the same file as its skill-prefixed form."""
     skill, rel = _unique_link(subdir, suffix)
 
-    bare = _body(ReadFileTool().execute(path=rel))
-    prefixed = _body(ReadFileTool().execute(path=f"{skill}/{rel}"))
+    bare = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=rel))
+    prefixed = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=f"{skill}/{rel}"))
 
     assert bare["status"] == "ok", bare
     assert prefixed["status"] == "ok", prefixed
@@ -76,7 +80,7 @@ def test_skills_rooted_form_still_resolves() -> None:
     """The explicit ``skills/`` namespace keeps working unchanged."""
     skill, rel = _unique_link("references", ".md")
 
-    body = _body(ReadFileTool().execute(path=f"skills/{skill}/{rel}"))
+    body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=f"skills/{skill}/{rel}"))
 
     assert body["status"] == "ok", body
     assert body["content"]
@@ -93,7 +97,7 @@ def test_bare_link_does_not_shadow_run_dir(tmp_path: Path, monkeypatch) -> None:
     local.parent.mkdir(parents=True, exist_ok=True)
     local.write_text("RUN DIR CONTENT", encoding="utf-8")
 
-    body = _body(ReadFileTool().execute(path=rel, run_dir=str(tmp_path)))
+    body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=rel, run_dir=str(tmp_path)))
 
     assert body["status"] == "ok", body
     assert body["content"] == "RUN DIR CONTENT"
@@ -101,7 +105,7 @@ def test_bare_link_does_not_shadow_run_dir(tmp_path: Path, monkeypatch) -> None:
 
 def test_unknown_bare_link_is_still_an_error() -> None:
     """A references/ path no skill owns reports not-found, not a wrong file."""
-    body = _body(ReadFileTool().execute(path="references/no_such_document.md"))
+    body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="references/no_such_document.md"))
 
     assert body["status"] == "error"
     assert "not found" in body["error"]
@@ -123,7 +127,7 @@ def test_bare_link_cannot_climb_out_of_the_skill(tmp_path: Path, monkeypatch) ->
         "references/../../../../pyproject.toml",
         "scripts/../../../../../etc/passwd",
     ):
-        body = _body(ReadFileTool().execute(path=attempt))
+        body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=attempt))
         assert body["status"] == "error", f"{attempt} resolved: {body}"
 
 
@@ -139,7 +143,7 @@ def test_ambiguous_bare_link_names_the_candidates(tmp_path: Path, monkeypatch) -
         target.write_text(f"content from {skill}", encoding="utf-8")
     monkeypatch.setattr(read_file_tool, "_bundled_skills_dir", lambda: tmp_path)
 
-    body = _body(ReadFileTool().execute(path="references/overview.md"))
+    body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="references/overview.md"))
 
     assert body["status"] == "error"
     assert "Ambiguous" in body["error"]

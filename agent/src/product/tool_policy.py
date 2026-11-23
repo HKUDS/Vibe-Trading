@@ -6,14 +6,20 @@ run anything, and live orders stay bound by the mandate gate and kill switch.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import shlex
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from src.config.accessor import get_env_config
+from src.config.accessor import get_env_value
+from src.config.env_schema import EnvConfig, LLMConfig
+if TYPE_CHECKING:
+    from src.tools.path_utils import FileRoots
+    from src.tools.sandbox import SandboxSettings
 
 _PYTHON_COMMANDS = frozenset({"python", "python3"})
 _READONLY_COMMANDS = frozenset({"ls", "cat", "head", "tail", "wc", "pwd"})
@@ -21,8 +27,7 @@ _SHELL_PROCESS_TOOLS = frozenset({"background_run", "cancel_background"})
 _SHELL_OPERATOR_CHARS = set("();<>|&")
 
 
-def _policy_value(generic: str, legacy: str, default: str, legacy_defaults: bool) -> tuple[str, str]:
-    config = get_env_config().llm
+def _policy_value(config: LLMConfig, generic: str, legacy: str, default: str, legacy_defaults: bool) -> tuple[str, str]:
     if (value := getattr(config, generic)) is not None:
         return value, type(config).model_fields[generic].alias
     if legacy_defaults or legacy in config.model_fields_set:
@@ -30,46 +35,116 @@ def _policy_value(generic: str, legacy: str, default: str, legacy_defaults: bool
     return default, "default"
 
 
-def _deny_prefixes(*, legacy_defaults: bool = False) -> tuple[str, ...]:
-    """Tool-name prefixes never offered to the model; ``""`` disables the list."""
-    raw, _ = _policy_value("vibe_trading_deny_tool_prefixes", "claude_cli_deny_tool_prefixes", "", legacy_defaults)
-    return tuple(p.strip() for p in raw.split(",") if p.strip())
+@dataclass(frozen=True)
+class ToolPolicy:
+    """Host-configured policy shared by the registry and the provider."""
+
+    prefixes: tuple[str, ...]
+    deny_source: str
+    bash: str
+    bash_source: str
+    claude_prefixes: tuple[str, ...]
+    claude_deny_source: str
+    claude_bash: str
+    claude_bash_source: str
+    sandbox: SandboxSettings
+    shell_tools_enabled: bool
+    file_roots: FileRoots
+
+    @classmethod
+    def from_config(cls, config: EnvConfig) -> ToolPolicy:
+        """Snapshot generic policy and Claude CLI's historical defaults."""
+        from src.tools.path_utils import FileRoots
+        from src.tools.sandbox import SandboxSettings
+
+        def settings(legacy: bool) -> tuple[tuple[str, ...], str, str, str]:
+            deny, deny_source = _policy_value(
+                config.llm, "vibe_trading_deny_tool_prefixes", "claude_cli_deny_tool_prefixes", "", legacy
+            )
+            bash, bash_source = _policy_value(
+                config.llm, "vibe_trading_bash_policy", "claude_cli_bash_policy", "off", legacy
+            )
+            return tuple(p.strip() for p in deny.split(",") if p.strip()), deny_source, bash.strip().lower(), bash_source
+
+        file_roots = FileRoots.from_config(config.api)
+        sandbox_root = file_roots.home / ".vibe-trading"
+        return cls(
+            *settings(False), *settings(True),
+            SandboxSettings.from_config(
+                config.api,
+                runtime_root=sandbox_root,
+                credential_root=Path(get_env_value("VIBE_TRADING_HOME", str(sandbox_root))),
+            ),
+            config.api.vibe_trading_enable_shell_tools,
+            file_roots,
+        )
+
+    def denies(self, name: str, *, legacy_defaults: bool = False) -> bool:
+        """Check the tool name against the applicable deny prefixes."""
+        return name.startswith(self.claude_prefixes if legacy_defaults else self.prefixes)
+
+    def bash_policy(self, *, legacy_defaults: bool = False) -> str:
+        """Validate the selected bash policy at the enforcement boundary."""
+        value, source = (self.claude_bash, self.claude_bash_source) if legacy_defaults else (self.bash, self.bash_source)
+        if value not in {"python-only", "off"}:
+            raise RuntimeError(f"{source} must be python-only or off, got {value!r}")
+        return value
+
+    def status(self, *, legacy_defaults: bool) -> dict[str, Any]:
+        """Report the selected policy and its configuration sources."""
+        return {
+            "deny_tool_prefixes": list(self.claude_prefixes if legacy_defaults else self.prefixes),
+            "deny_tool_prefixes_source": self.claude_deny_source if legacy_defaults else self.deny_source,
+            "bash_policy": self.bash_policy(legacy_defaults=legacy_defaults),
+            "bash_policy_source": self.claude_bash_source if legacy_defaults else self.bash_source,
+        }
+
+    def offered_tools(self, tools: list[dict[str, Any]], *, legacy_defaults: bool = False) -> list[dict[str, Any]]:
+        """Keep tool definitions that the applicable policy allows."""
+        return [tool for tool in tools if not self.denies(tool_name(tool), legacy_defaults=legacy_defaults)]
+
+    def screen_calls(
+        self, calls: list[dict[str, Any]], offered: set[str], *, legacy_defaults: bool = False
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Return calls the host may execute, plus one rejection note per refused call."""
+        policy = self.bash_policy(legacy_defaults=legacy_defaults)
+        accepted: list[dict[str, Any]] = []
+        notes: list[str] = []
+        for call in calls:
+            name = str(call.get("name") or "")
+            args = dict(call.get("arguments") or {})
+            if name not in offered:
+                notes.append(f"- {name}: not an available tool")
+                continue
+            if policy == "python-only" and name in _SHELL_PROCESS_TOOLS:
+                notes.append(
+                    f"- {name}: background processes are not allowed (python-only policy)"
+                )
+                continue
+            if policy == "python-only" and name == "bash":
+                rewritten, reason = check_bash_command(str(args.get("command") or ""))
+                if reason:
+                    notes.append(f"- bash `{args.get('command')}`: {reason}")
+                    continue
+                args["command"] = rewritten
+            accepted.append({"name": name, "arguments": args})
+        return accepted, notes
 
 
-def bash_policy(*, legacy_defaults: bool = False) -> str:
-    """Resolve an explicitly configured cross-provider policy or prior defaults."""
-    raw, source = _policy_value("vibe_trading_bash_policy", "claude_cli_bash_policy", "off", legacy_defaults)
-    value = raw.strip().lower()
-    if value not in {"python-only", "off"}:
-        raise RuntimeError(f"{source} must be python-only or off, got {value!r}")
-    return value
-
-
-def policy_status() -> dict[str, Any]:
-    """Return the active, non-secret policy for provider diagnostics."""
-    config = get_env_config().llm
-    legacy_defaults = config.langchain_provider.replace("-", "_") == "claude_cli"
-    _, deny_source = _policy_value("vibe_trading_deny_tool_prefixes", "claude_cli_deny_tool_prefixes", "", legacy_defaults)
-    _, bash_source = _policy_value("vibe_trading_bash_policy", "claude_cli_bash_policy", "off", legacy_defaults)
-    return {
-        "deny_tool_prefixes": list(_deny_prefixes(legacy_defaults=legacy_defaults)),
-        "deny_tool_prefixes_source": deny_source,
-        "bash_policy": bash_policy(legacy_defaults=legacy_defaults),
-        "bash_policy_source": bash_source,
-    }
+    def __call__(self, name: str, params: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
+        """Preflight a call from the tool registry or a trusted invocation."""
+        if self.denies(name):
+            return False, f"{name} is disabled by the active tool policy", params
+        if name in {"bash", "background_run", "cancel_background"}:
+            accepted, notes = self.screen_calls([{"name": name, "arguments": params}], {name})
+            if notes:
+                return False, notes[0], params
+            return True, "", accepted[0]["arguments"]
+        return True, "", params
 
 
 def tool_name(definition: dict[str, Any]) -> str:
     return str((definition.get("function") or definition).get("name") or "")
-
-
-def offered_tools(tools: list[dict[str, Any]], *, legacy_defaults: bool = False) -> list[dict[str, Any]]:
-    prefixes = _deny_prefixes(legacy_defaults=legacy_defaults)
-    return (
-        [t for t in tools if not tool_name(t).startswith(prefixes)]
-        if prefixes
-        else list(tools)
-    )
 
 
 def _relative_path(token: str) -> bool:
@@ -124,43 +199,3 @@ def check_bash_command(command: str) -> tuple[Optional[str], Optional[str]]:
             f"{program} may only read non-hidden relative paths inside the working directory",
         )
     return None, f"program {program!r} is not allowed (python-only policy)"
-
-
-def screen_calls(
-    calls: list[dict[str, Any]], offered: set[str], *, legacy_defaults: bool = False
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Return calls the host may execute, plus one rejection note per refused call."""
-    policy = bash_policy(legacy_defaults=legacy_defaults)
-    accepted: list[dict[str, Any]] = []
-    notes: list[str] = []
-    for call in calls:
-        name = str(call.get("name") or "")
-        args = dict(call.get("arguments") or {})
-        if name not in offered:
-            notes.append(f"- {name}: not an available tool")
-            continue
-        if policy == "python-only" and name in _SHELL_PROCESS_TOOLS:
-            notes.append(
-                f"- {name}: background processes are not allowed (python-only policy)"
-            )
-            continue
-        if policy == "python-only" and name == "bash":
-            rewritten, reason = check_bash_command(str(args.get("command") or ""))
-            if reason:
-                notes.append(f"- bash `{args.get('command')}`: {reason}")
-                continue
-            args["command"] = rewritten
-        accepted.append({"name": name, "arguments": args})
-    return accepted, notes
-
-
-def check_tool_call(name: str, params: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
-    """Preflight a call from the tool registry or a trusted invocation."""
-    if name.startswith(_deny_prefixes()):
-        return False, f"{name} is disabled by the active tool policy", params
-    if name in {"bash", "background_run", "cancel_background"}:
-        accepted, notes = screen_calls([{"name": name, "arguments": params}], {name})
-        if notes:
-            return False, notes[0], params
-        return True, "", accepted[0]["arguments"]
-    return True, "", params

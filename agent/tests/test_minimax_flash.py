@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 from pathlib import Path
@@ -125,7 +129,7 @@ def requests(monkeypatch):
 def test_flash_real_sdk_request(requests, monkeypatch, endpoint, effort):
     monkeypatch.setenv("MINIMAX_BASE_URL", endpoint)
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", effort)
-    model = llm.build_llm()
+    model = llm.build_llm(policy=ToolPolicy.from_config(get_env_config()))
     assert model.invoke([HumanMessage(content="hello")]).content == "offline"
     request, body = requests[0]
     assert str(request.url) == endpoint + "/chat/completions"
@@ -142,7 +146,7 @@ def test_flash_real_sdk_request(requests, monkeypatch, endpoint, effort):
 
 def test_registry_endpoint_is_used_when_unset(requests, monkeypatch):
     monkeypatch.delenv("MINIMAX_BASE_URL")
-    llm.build_llm().invoke("hello")
+    llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).invoke("hello")
     assert str(requests[0][0].url) == ENDPOINTS[0] + "/chat/completions"
     assert requests[0][1]["model"] == FLASH
 
@@ -150,7 +154,7 @@ def test_registry_endpoint_is_used_when_unset(requests, monkeypatch):
 @pytest.mark.parametrize("effort", ["none", "minimal", "invalid"])
 def test_flash_does_not_send_unsupported_effort(requests, monkeypatch, effort):
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", effort)
-    llm.build_llm().invoke("hello")
+    llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).invoke("hello")
     assert "reasoning_effort" not in requests[0][1]
     assert "thinking" not in requests[0][1]
 
@@ -162,7 +166,7 @@ def test_flash_does_not_send_unsupported_effort(requests, monkeypatch, effort):
 def test_saved_models_are_sent_unchanged(requests, monkeypatch, model_name):
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", model_name)
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", "none")
-    llm.build_llm().invoke("hello")
+    llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).invoke("hello")
     assert requests[0][1]["model"] == model_name
     assert "reasoning_effort" not in requests[0][1]
 
@@ -170,7 +174,7 @@ def test_saved_models_are_sent_unchanged(requests, monkeypatch, model_name):
 def test_custom_gateway_keeps_its_contract(requests, monkeypatch):
     monkeypatch.setenv("MINIMAX_BASE_URL", "https://gateway.example/v1")
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", "none")
-    llm.build_llm().invoke("hello")
+    llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).invoke("hello")
     assert str(requests[0][0].url) == "https://gateway.example/v1/chat/completions"
     assert "reasoning_effort" not in requests[0][1]
 
@@ -187,12 +191,12 @@ def test_existing_content_blocks_are_not_rewritten(requests):
             "video_url": {"url": "https://video.example/fixture.mp4"},
         },
     ]
-    llm.build_llm().invoke([HumanMessage(content=content)])
+    llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).invoke([HumanMessage(content=content)])
     assert requests[0][1]["messages"][0]["content"] == content
 
 
 def test_real_sdk_tool_call_and_async_stream(requests):
-    model = llm.build_llm()
+    model = llm.build_llm(policy=ToolPolicy.from_config(get_env_config()))
     tool = {
         "type": "function",
         "function": {
@@ -376,6 +380,6 @@ def test_gateway_real_sdk_preserves_route_id(
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", model_name)
     monkeypatch.setenv(provider.api_key_env, "test-key")
     monkeypatch.setenv(provider.base_url_env, endpoint)
-    llm.build_llm().invoke("hello")
+    llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).invoke("hello")
     assert str(requests[0][0].url) == endpoint + "/chat/completions"
     assert requests[0][1]["model"] == model_name

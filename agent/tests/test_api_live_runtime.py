@@ -13,6 +13,10 @@ All tests run against stubbed runner/liveness state — no real agent or broker.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.api import session_reads
 import asyncio
 import json
@@ -878,7 +882,7 @@ def test_real_runner_factory_uses_fresh_sessions_and_persistent_budget(tmp_path,
     async def scenario():
         bus = EventBus()
         bus.set_loop(asyncio.get_running_loop())
-        svc = SessionService(SessionStore(base_dir=tmp_path / "sessions"), bus, runs_dir=tmp_path / "runs")
+        svc = SessionService(SessionStore(base_dir=tmp_path / "sessions"), bus, runs_dir=tmp_path / "runs", policy=ToolPolicy.from_config(get_env_config()))
         sessions = []
         async def attempt(attempt, **kwargs):
             sessions.append(attempt.session_id)
@@ -934,7 +938,7 @@ def test_live_runner_owns_its_actual_background_session_attempt(tmp_path, monkey
         bus = EventBus()
         bus.set_loop(asyncio.get_running_loop())
         service = SessionService(SessionStore(base_dir=tmp_path / "sessions"), bus,
-                                 runs_dir=tmp_path / "runs")
+                                 runs_dir=tmp_path / "runs", policy=ToolPolicy.from_config(get_env_config()))
         started, release = asyncio.Event(), asyncio.Event()
         cancelled = False
         attempt_sessions = []

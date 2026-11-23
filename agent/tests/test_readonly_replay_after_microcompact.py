@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import json
 
-import threading
 from types import SimpleNamespace
 
 
@@ -36,6 +38,7 @@ class _Registry:
             replay_after_compaction=replay_after_compaction,
         )
         self.execute_calls = 0
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get(self, name):
         return self.tool
@@ -43,6 +46,9 @@ class _Registry:
     def execute(self, name, args):
         self.execute_calls += 1
         return '{"status":"ok","value":"fresh"}'
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _Context:
@@ -170,6 +176,7 @@ class _VisibilityRegistry:
             name: SimpleNamespace(name=name, description="Offline visibility tool")
             for name in names
         }
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     @property
     def tool_names(self):
@@ -200,6 +207,9 @@ class _VisibilityRegistry:
         else:
             self.other_executions += 1
         return result
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def test_agent_loop_sends_replay_before_consuming_its_visibility_lease(
@@ -486,6 +496,7 @@ class _ReadAndWriteRegistry:
     def __init__(self):
         self.version = "v1"
         self.execute_calls = 0
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get(self, name):
         return SimpleNamespace(
@@ -498,6 +509,9 @@ class _ReadAndWriteRegistry:
             self.version = "v2"
             return '{"status":"ok"}'
         return '{"status":"ok","version":"%s"}' % self.version
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def test_a_write_makes_earlier_readonly_results_unreplayable() -> None:

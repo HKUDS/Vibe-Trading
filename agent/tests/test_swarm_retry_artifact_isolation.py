@@ -32,6 +32,10 @@ artifact-reading functions, not just one function in isolation.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,7 +54,7 @@ from src.swarm.worker import (
 
 def _make_runtime(tmp_path: Path) -> SwarmRuntime:
     store = SwarmStore(base_dir=tmp_path / "swarm_runs")
-    return SwarmRuntime(store=store)
+    return SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
 
 
 def _make_agent_spec(max_retries: int) -> SwarmAgentSpec:

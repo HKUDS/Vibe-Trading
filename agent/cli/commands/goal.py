@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 from typing import Any
 
 from rich import box
@@ -241,6 +245,7 @@ def cmd_evidence(ctx: Any = None, *args: str) -> int:
         from src.goal import EvidenceInput
 
         _get_goal_store().append_evidence(
+            roots=FileRoots.from_config(get_env_config().api),
             session_id=session_id,
             goal_id=snapshot["goal"]["goal_id"],
             expected_goal_id=snapshot["goal"]["goal_id"],

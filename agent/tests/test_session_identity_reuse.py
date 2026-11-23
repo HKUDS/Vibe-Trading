@@ -1,5 +1,9 @@
 """Only already settled exact identities can avoid a network resolver call."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from dataclasses import replace
 import json
 from types import SimpleNamespace
@@ -58,14 +62,14 @@ def test_actual_loop_reuses_without_bypassing_policy_or_identity(tmp_path, monke
         return json.dumps({"ok": True, "data": {"query": "00700.HK", "candidates": [{"symbol": "00700.HK"}], "sources": {"fixture": "ok"}}})
 
     monkeypatch.setattr(tool, "execute", execute)
-    registry = ToolRegistry()
+    if mode == "denied":
+        monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "search_symbol")
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
     agent.memory.run_dir = str(tmp_path)
     agent.tool_env.identity = IdentityLedger(run_dir=tmp_path, user_message="Read 00700.HK")
     before = agent.tool_env.identity.identity_summary()
-    if mode == "denied":
-        monkeypatch.setattr("src.product.tool_policy._deny_prefixes", lambda **kwargs: ("search_symbol",))
     args = {"query": "00700.HK", **({"refresh": True} if mode == "refresh" else {})}
     messages, trace = _drive(agent, "search_symbol", tmp_path, [args])
     result = json.loads(messages[-1]["content"])

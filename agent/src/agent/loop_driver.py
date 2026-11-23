@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from src.agent.loop_state import TurnState
 from src.agent.loop_streaming import TurnStream
 from src.agent.tuning import (
     _heartbeat_interval_s,
     _reasoning_delta_min_interval_s,
 )
-from src.kernel.contracts import Continue, Iteration, LLMResponse, LoopContext, Stop
+from src.kernel.contracts import Continue, Iteration, LLMResponse, LoopContext, LoopPorts, Stop
 from src.kernel.events import EventSink
 from src.product.tool_loading import request_definitions
 from src.providers.response import reported_model_source
@@ -34,6 +36,17 @@ class IterationSteps:
         self.usage = usage
         self.background = background
         self.pacing = pacing
+
+    def ports(self) -> LoopPorts:
+        """Bind this turn's callbacks to the kernel contract."""
+        return LoopPorts(
+            before_iteration=self.before_iteration, prepare_request=self.prepare_request,
+            request=self.request, record_partial=self.record_partial,
+            after_text=partial(self.pacing.handle, self.state), run_tools=self.run_tools,
+            poll_inputs=self.poll_inputs, on_cancel=self.on_cancel,
+            read_delta=self.conversation.delta.copy,
+            read_usage=lambda: dict(self.usage.summary["totals"]),
+        )
 
     def on_cancel(self) -> None:
         self.state.trace.write({"type": "cancelled", "iter": self.activity.iteration + 1})

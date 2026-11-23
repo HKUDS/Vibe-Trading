@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -73,13 +77,14 @@ def test_run_with_agent_keeps_event_loop_responsive_during_registry_build(
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     monkeypatch.setattr("src.tools.build_registry", _slow_build_registry)
     llm = SimpleNamespace(aclose=AsyncMock())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
     monkeypatch.setattr("src.agent.runtime.AgentRuntime", _agent_factory)
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
     monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
 
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -109,14 +114,14 @@ def test_run_with_agent_keeps_event_loop_responsive_during_registry_build(
 
 def test_registry_failure_closes_attempt_owned_llm(monkeypatch, tmp_path):
     llm = SimpleNamespace(aclose=AsyncMock())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: llm)
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
     monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda **kw: object())
     def fail(**kwargs):
         raise RuntimeError("registry construction failed")
     monkeypatch.setattr("src.tools.build_registry", fail)
-    service = SessionService(store=SessionStore(tmp_path / "sessions"),
+    service = SessionService(policy=ToolPolicy.from_config(get_env_config()), store=SessionStore(tmp_path / "sessions"),
                              event_bus=EventBus(), runs_dir=tmp_path / "runs")
     attempt = Attempt(session_id="session-1", prompt="hello")
     with pytest.raises(RuntimeError, match="registry construction failed"):

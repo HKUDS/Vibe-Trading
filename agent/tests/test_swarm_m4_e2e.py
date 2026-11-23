@@ -20,6 +20,10 @@ event-emit / tool-execution / report-write contract.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from typing import Any
@@ -156,7 +160,7 @@ def _stub_llm_factory(responses: list[LLMResponse]):
     """
     stub = _StubChatLLM(responses)
 
-    def _factory(model_name=None):
+    def _factory(model_name=None, *, policy):
         return stub
 
     _factory.stub = stub  # type: ignore[attr-defined]
@@ -274,15 +278,17 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
     with (
         patch(
             "src.swarm.worker.build_swarm_registry",
-            wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
+            wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
                 tool_names,
                 remote_tools,
+                policy=policy,
                 include_shell_tools=include_shell_tools,
             ),
         ),
         patch("src.swarm.worker.ChatLLM", llm_factory),
     ):
         result = run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=_agent_spec(
                 agent_id="kb_analyst",
                 tools=["mcp_kb_search", "write_file"],
@@ -359,13 +365,14 @@ def test_two_agents_with_distinct_servers_only_see_their_own_remote_tools(
         with (
             patch(
                 "src.swarm.worker.build_swarm_registry",
-                wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
-                    tool_names, remote_tools, include_shell_tools=include_shell_tools,
+                wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
+                    tool_names, remote_tools, policy=policy, include_shell_tools=include_shell_tools,
                 ),
             ),
             patch("src.swarm.worker.ChatLLM", llm_factory),
         ):
             run_worker(
+                policy=ToolPolicy.from_config(get_env_config()),
                 agent_spec=_agent_spec(agent_id=agent_id, tools=whitelist),
                 task=_task(task_id=f"task_{agent_id}", agent_id=agent_id),
                 upstream_summaries={},
@@ -454,13 +461,14 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
     with (
         patch(
             "src.swarm.worker.build_swarm_registry",
-            wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
-                tool_names, remote_tools, include_shell_tools=include_shell_tools,
+            wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
+                tool_names, remote_tools, policy=policy, include_shell_tools=include_shell_tools,
             ),
         ),
         patch("src.swarm.worker.ChatLLM", llm_factory),
     ):
         run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=_agent_spec(
                 agent_id="kb_analyst", tools=["mcp_kb_search"], max_iterations=3,
             ),
@@ -544,13 +552,14 @@ def test_remote_tool_transport_failure_does_not_crash_worker(tmp_path: Path) -> 
     with (
         patch(
             "src.swarm.worker.build_swarm_registry",
-            wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
-                tool_names, remote_tools, include_shell_tools=include_shell_tools,
+            wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
+                tool_names, remote_tools, policy=policy, include_shell_tools=include_shell_tools,
             ),
         ),
         patch("src.swarm.worker.ChatLLM", llm_factory),
     ):
         result = run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=_agent_spec(
                 agent_id="kb_analyst", tools=["mcp_kb_search"], max_iterations=3,
             ),
@@ -585,6 +594,7 @@ def _registry_with_remote(
     tool_names: list[str],
     remote_tools,
     *,
+    policy: ToolPolicy,
     include_shell_tools: bool = False,
 ):
     """Build a swarm registry that exposes the given remote tools verbatim.
@@ -598,7 +608,7 @@ def _registry_with_remote(
     """
     from src.tools import build_swarm_registry as _real
 
-    registry = _real(tool_names, agent_config=None, include_shell_tools=include_shell_tools)
+    registry = _real(tool_names, policy=policy, agent_config=None, include_shell_tools=include_shell_tools)
     whitelist = set(tool_names)
     for tool in remote_tools:
         if tool.name in whitelist:

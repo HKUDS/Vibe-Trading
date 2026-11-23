@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 import hashlib
 import json
 from pathlib import Path
@@ -19,7 +23,8 @@ Progress = Callable[[dict], None]
 
 def cost_sensitivity(request: CostRequest, root: Path, progress: Progress) -> dict:
     """Re-execute the same strategy and price inputs under declared costs."""
-    config, manifest, _, source_hash = freeze_run(source_run(request.run_dir), root)
+    source = source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api))
+    config, manifest, _, source_hash = freeze_run(source, root)
     rows = []
     for index, scenario in enumerate(request.scenarios):
         progress(
@@ -67,7 +72,8 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
     liquidate at their end, so fold boundary costs are included. A reserved
     final holdout is never included in any training or validation fold.
     """
-    config, manifest, calendar, code_hash = freeze_run(source_run(request.run_dir), root)
+    source = source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api))
+    config, manifest, calendar, code_hash = freeze_run(source, root)
     if config.get("engine", "daily") != "daily":
         raise ValueError("walk-forward parameter selection currently requires a daily/bar execution engine")
     limit = len(calendar) - request.holdout_bars

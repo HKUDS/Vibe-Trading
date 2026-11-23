@@ -30,6 +30,10 @@ naming the tool in the prompt — never to relax the assertion.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import re
 from pathlib import Path
 
@@ -77,7 +81,7 @@ def _registered_tool_names() -> frozenset[str]:
     Returns:
         Frozen set of registered tool names.
     """
-    return frozenset(build_registry(include_shell_tools=True).tool_names)
+    return frozenset(build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True).tool_names)
 
 
 def _agent_prompt_text(preset: dict, agent_id: str, agent: dict) -> str:

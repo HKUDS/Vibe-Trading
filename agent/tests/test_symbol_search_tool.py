@@ -7,6 +7,10 @@ All HTTP is mocked at the client functions the tool imports
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from unittest.mock import patch
 
@@ -895,7 +899,7 @@ class TestFxPairAlignment:
         assert candidate["venue"] == "Exness-MT5Trial8"
         assert candidate["profile_id"] == "mt5-paper-sdk"
 
-        ledger = GroundingLedger(run_dir=tmp_path, user_message=f"Quote {query}")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=f"Quote {query}")
         ledger.ingest_tool_result(
             tool_name="search_symbol",
             arguments={"query": query},
@@ -1303,7 +1307,7 @@ def test_mt5_selected_identity_reaches_grounding_without_substitution(monkeypatc
         "status": "ok", "instruments": [{"symbol": native, "native_symbol": native, "market": market, "type": kind, "venue": "MT5"}]
     })
     result = ss.SymbolSearchTool().execute(query=query)
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=f"Quote {query}")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=f"Quote {query}")
     ledger.ingest_tool_result(tool_name="search_symbol", arguments={"query": query}, result=result, call_id="mt5-identity", success=True)
     assert json.loads(result)["data"]["candidates"][0]["native_symbol"] == native
     assert ledger.identity_status == "locked"
@@ -1320,7 +1324,7 @@ def test_mt5_ambiguous_catalog_leaves_grounding_unresolved(monkeypatch, tmp_path
         "status": "ok", "instruments": [{"native_symbol": name} for name in ("XAUUSDm", "XAUUSDz")]
     })
     result = ss.SymbolSearchTool().execute(query="XAUUSD")
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Quote XAUUSD")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Quote XAUUSD")
     ledger.ingest_tool_result(tool_name="search_symbol", arguments={"query": "XAUUSD"}, result=result, call_id="ambiguous-mt5", success=True)
     assert ledger.identity_status != "locked"
     assert ledger.identity_summary()["authorized_symbols"] == []

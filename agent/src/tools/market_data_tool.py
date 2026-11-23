@@ -8,7 +8,7 @@ from datetime import date
 
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.market_data import DEFAULT_MAX_ROWS, fetch_market_data_json
 from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.registry import VALID_SOURCES
@@ -76,7 +76,7 @@ def _valid_iso_date(value: str) -> bool:
     return True
 
 
-class MarketDataTool(BaseTool):
+class MarketDataTool(FileBoundTool, BaseTool):
     """Fetch normalized OHLCV data through repository loaders."""
 
     name = "get_market_data"
@@ -263,7 +263,7 @@ class MarketDataTool(BaseTool):
             if not kwargs.get("run_dir"):
                 return _error("export_csv requires an authorized run_dir workspace")
             try:
-                safe_run_dir(str(kwargs["run_dir"]))
+                safe_run_dir(str(kwargs["run_dir"]), roots=self.roots)
             except ValueError as exc:
                 return _error(str(exc))
 
@@ -301,4 +301,5 @@ class MarketDataTool(BaseTool):
             }
         return persist_calculation_result(
             json.dumps(payload, ensure_ascii=False), kwargs.get("run_dir"), export_csv=export_csv,
+            roots=self.roots,
         )

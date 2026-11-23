@@ -15,6 +15,10 @@ what ``run_worker`` does with it once it arrives:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -39,6 +43,7 @@ class _Registry:
 
     def __init__(self) -> None:
         self.executed: list[str] = []
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get_definitions(self) -> list[dict]:
         """Return the single scripted tool definition."""
@@ -52,6 +57,9 @@ class _Registry:
         """Record the dispatch and return a benign JSON envelope."""
         self.executed.append(name)
         return '{"ok": true, "data": {}}'
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedLLM:
@@ -119,6 +127,7 @@ def _run(tmp_path: Path, llm: _ScriptedLLM, registry: _Registry, cancel_event: t
         patch.object(worker_mod, "ChatLLM", llm),
     ):
         result = run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},

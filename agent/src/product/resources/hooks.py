@@ -155,10 +155,6 @@ class HookManager:
         else:
             self.audit = getattr(sink, "hook", None)
 
-    def configured(self, event: str) -> bool:
-        """Return whether an event has at least one matching declaration."""
-        return bool(self._hooks.get(event))
-
     def run(self, event: str, payload: Mapping[str, Any] | None = None) -> HookDecision:
         """Run matching hooks and return the first refusal.
 

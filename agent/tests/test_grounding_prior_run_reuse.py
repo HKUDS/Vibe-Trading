@@ -5,6 +5,10 @@ Every value is synthetic.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.env_schema import EnvConfig
+
+
 import json
 from pathlib import Path
 
@@ -20,10 +24,13 @@ REF = f"{PRIOR}/rp"
 
 
 @pytest.fixture()
-def reuse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def reuse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
     """A finished earlier turn with two backtests, and a ledger for the next turn."""
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
-    monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
+    if extra_root := getattr(request, "param", None):
+        monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / extra_root))
+    else:
+        monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
     prior = tmp_path / "runs" / PRIOR
     prior.mkdir(parents=True)
     (prior / "req.json").write_text(
@@ -37,6 +44,7 @@ def reuse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     current.mkdir()
     return (
         GroundingLedger(
+            roots=FileRoots.from_config(EnvConfig().api),
             run_dir=current, user_message="profundizá el backtest anterior"
         ),
         prior,
@@ -46,7 +54,7 @@ def reuse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _read(
     ledger: GroundingLedger, run_dir: Path, artifact: str, call_id: str, **kwargs
 ) -> dict:
-    result = read_run_artifact(str(run_dir), artifact, **kwargs)
+    result = read_run_artifact(str(run_dir), artifact, **kwargs, roots=ledger.file_roots)
     ledger.ingest_tool_result(
         tool_name="read_run_artifact",
         arguments={"run_dir": str(run_dir), "artifact": artifact},
@@ -136,11 +144,11 @@ def test_extra_unmanifested_metric_cannot_enter_prior_run_evidence(reuse) -> Non
     ).valid
 
 
-def test_identically_named_runs_in_other_allowed_roots_keep_distinct_scopes(reuse, tmp_path, monkeypatch):
+@pytest.mark.parametrize("reuse", ["other"], indirect=True)
+def test_identically_named_runs_in_other_allowed_roots_keep_distinct_scopes(reuse, tmp_path):
     ledger, prior = reuse
     other = tmp_path / "other" / PRIOR / "rp"
     _write_backtest(other, EW)
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / "other"))
     _read(ledger, prior / "rp", "metrics", "original-root")
     _read(ledger, other, "metrics", "other-root")
     assert ledger.validate_final_answer(

@@ -12,6 +12,10 @@ the running turn after its current tool batch, or starts the next turn.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
+from functools import partial
+
 import asyncio
 import logging
 import threading
@@ -74,6 +78,8 @@ class SessionService:
         store: SessionStore,
         event_bus: EventBus,
         runs_dir: Path,
+        *,
+        policy: ToolPolicy,
     ) -> None:
         """Initialize the session service.
 
@@ -82,6 +88,7 @@ class SessionService:
             event_bus: SSE event bus.
             runs_dir: Root runs directory.
         """
+        self.policy = policy
         self.store = store
         self.event_bus = event_bus
         # Every event of a running turn is published through this item/run
@@ -114,6 +121,7 @@ class SessionService:
             lambda session_id: store.thread_path(session_id).parent / PENDING_INPUTS_FILENAME
         )
         self._factory = SessionAgentFactory(
+            policy=policy,
             store=store, event_bus=event_bus, thread_events=self.thread_events,
             runs_dir=runs_dir, runtime=self._runtimes.get, pending_inputs=self.pending_inputs,
             active_loops=self._active_loops, background_handles=self._background_handles,
@@ -281,7 +289,7 @@ class SessionService:
             )
         compacted = await compact_history(
             session, focus, runtime_for=self.runtime, runs_dir=Path(self.runs_dir),
-            compact=compact_recorded_history,
+            compact=partial(compact_recorded_history, policy=self.policy), policy=self.policy,
         )
         self.thread_events.sync(session_id)
         self.event_bus.emit(

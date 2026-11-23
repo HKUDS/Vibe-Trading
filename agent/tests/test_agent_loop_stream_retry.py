@@ -9,6 +9,10 @@ contain duplicated thinking text.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any, Callable
 
@@ -131,7 +135,7 @@ def _run(
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 0.0, raising=False)
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(
             (lambda event_type, data: events.append((data.get("kind", event_type), data)))

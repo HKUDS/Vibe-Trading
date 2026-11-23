@@ -11,6 +11,10 @@ notice. The two call paths must behave identically for the same input.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +40,7 @@ class _OneToolRegistry:
 
     def __init__(self, result: str) -> None:
         self._result = result
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get_definitions(self) -> list[dict]:
         return [
@@ -47,6 +52,9 @@ class _OneToolRegistry:
 
     def execute(self, name: str, args: dict) -> str:
         return self._result
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedChatLLM:
@@ -95,6 +103,7 @@ def _run(monkeypatch, tmp_path: Path, llm: _ScriptedChatLLM, tool_result: str) -
         patch.object(worker_mod, "ChatLLM", llm),
     ):
         run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},

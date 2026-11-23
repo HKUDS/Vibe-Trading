@@ -1,5 +1,9 @@
 """The real quantlib consumer must bound its serialized result, not only numbers."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from dataclasses import dataclass
 
@@ -25,7 +29,7 @@ def leaves(value):
 
 def test_real_exported_monte_carlo_result_stays_within_budget():
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="risk",
             function="monte_carlo_gbm",

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 
 import pytest
@@ -56,7 +60,7 @@ class TestSafeUserPath:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
 
-        result = safe_user_path(str(target))
+        result = safe_user_path(str(target), roots=FileRoots.from_config(get_env_config().api))
         assert result == target.resolve()
 
     def test_tilde_expansion_works(self, tmp_path: Path, monkeypatch):
@@ -67,7 +71,7 @@ class TestSafeUserPath:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
 
-        result = safe_user_path("~/.vibe-imports/journal.csv")
+        result = safe_user_path("~/.vibe-imports/journal.csv", roots=FileRoots.from_config(get_env_config().api))
         assert result == target.resolve()
 
     def test_default_cwd_uploads_file_accepted(self, tmp_path: Path, monkeypatch):
@@ -76,7 +80,7 @@ class TestSafeUserPath:
         target = tmp_path / "uploads" / "local.csv"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
-        result = safe_user_path(str(target))
+        result = safe_user_path(str(target), roots=FileRoots.from_config(get_env_config().api))
         assert result == target.resolve()
 
     def test_system_path_outside_import_roots_rejected(self, tmp_path: Path, monkeypatch):
@@ -84,7 +88,7 @@ class TestSafeUserPath:
         monkeypatch.chdir(tmp_path)
 
         with pytest.raises(ValueError, match="outside allowed user-file roots"):
-            safe_user_path("/etc/passwd")
+            safe_user_path("/etc/passwd", roots=FileRoots.from_config(get_env_config().api))
 
     def test_parent_traversal_from_cwd_rejected(self, tmp_path: Path, monkeypatch):
         deep = tmp_path / "deep" / "cwd"
@@ -93,28 +97,28 @@ class TestSafeUserPath:
         monkeypatch.chdir(deep)
 
         with pytest.raises(ValueError, match="outside allowed user-file roots"):
-            safe_user_path("../../../../../etc/passwd")
+            safe_user_path("../../../../../etc/passwd", roots=FileRoots.from_config(get_env_config().api))
 
     def test_unc_path_rejected(self):
         with pytest.raises(ValueError, match="UNC paths"):
-            safe_user_path("\\\\evil-server\\share\\passwd.csv")
+            safe_user_path("\\\\evil-server\\share\\passwd.csv", roots=FileRoots.from_config(get_env_config().api))
 
     def test_unix_double_slash_rejected(self):
         with pytest.raises(ValueError, match="UNC paths"):
-            safe_user_path("//evil-server/share/passwd.csv")
+            safe_user_path("//evil-server/share/passwd.csv", roots=FileRoots.from_config(get_env_config().api))
 
 
 class TestSafeDocumentPath:
     def test_upload_handle_resolves_to_runtime_uploads(self) -> None:
         from src.config.paths import get_uploads_dir
 
-        result = safe_document_path("uploads/local.csv")
+        result = safe_document_path("uploads/local.csv", roots=FileRoots.from_config(get_env_config().api))
 
         assert result == (get_uploads_dir() / "local.csv").resolve()
 
     def test_upload_handle_traversal_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="outside allowed document roots"):
-            safe_document_path("uploads/../api_server.py")
+            safe_document_path("uploads/../api_server.py", roots=FileRoots.from_config(get_env_config().api))
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +131,7 @@ class TestSafeRunDir:
         run_dir = tmp_path / "run_123"
         run_dir.mkdir()
 
-        result = safe_run_dir(str(run_dir))
+        result = safe_run_dir(str(run_dir), roots=FileRoots.from_config(get_env_config().api))
 
         assert result == run_dir.resolve()
 
@@ -137,14 +141,14 @@ class TestSafeRunDir:
         run_dir.mkdir()
 
         with pytest.raises(ValueError, match="outside allowed run roots"):
-            safe_run_dir(str(run_dir))
+            safe_run_dir(str(run_dir), roots=FileRoots.from_config(get_env_config().api))
 
     def test_default_agent_runs_dir_accepted(self, tmp_path: Path, monkeypatch):
         monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
         agent_runs = Path(__file__).resolve().parents[1] / "runs" / "safe_run"
         agent_runs.mkdir(parents=True, exist_ok=True)
 
-        result = safe_run_dir(str(agent_runs))
+        result = safe_run_dir(str(agent_runs), roots=FileRoots.from_config(get_env_config().api))
 
         assert result == agent_runs.resolve()
 
@@ -162,7 +166,7 @@ class TestSafeRunDir:
         rejected.mkdir()
 
         with pytest.raises(ValueError) as excinfo:
-            safe_run_dir(str(rejected))
+            safe_run_dir(str(rejected), roots=FileRoots.from_config(get_env_config().api))
 
         message = str(excinfo.value)
         assert "outside allowed run roots" in message
@@ -176,7 +180,7 @@ class TestSafeRunId:
         run_dir = tmp_path / "run_123"
         run_dir.mkdir()
 
-        result = safe_run_id("run_123")
+        result = safe_run_id("run_123", roots=FileRoots.from_config(get_env_config().api))
 
         assert result == run_dir.resolve()
 
@@ -184,10 +188,10 @@ class TestSafeRunId:
         monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
 
         with pytest.raises(ValueError, match="bare run directory name"):
-            safe_run_id("../api_server.py")
+            safe_run_id("../api_server.py", roots=FileRoots.from_config(get_env_config().api))
 
     def test_missing_run_id_rejected(self, tmp_path: Path, monkeypatch):
         monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
 
         with pytest.raises(ValueError, match="was not found"):
-            safe_run_id("missing_run")
+            safe_run_id("missing_run", roots=FileRoots.from_config(get_env_config().api))

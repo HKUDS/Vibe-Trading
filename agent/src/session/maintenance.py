@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import asyncio
 import copy
 import uuid
@@ -56,13 +58,13 @@ def fork_completed_turn(
 
 async def compact_history(
     session: Session, focus: str, *, runtime_for: Callable[[str], SessionRuntime], runs_dir: Path,
-    compact: Callable,
+    compact: Callable, policy: ToolPolicy,
 ):
     """Run manual compaction through a recorder with the session's selected model."""
     from src.session.model_selection import chat_llm_for_session
     from src.session.runtime import TurnRecorder
 
-    llm = chat_llm_for_session(session.config)
+    llm = chat_llm_for_session(session.config, policy=policy)
     async with AsyncExitStack() as resources:
         resources.push_async_callback(llm.aclose)
         compact_id = f"compact-{uuid.uuid4().hex[:12]}"
