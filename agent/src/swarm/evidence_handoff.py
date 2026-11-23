@@ -14,7 +14,7 @@ from src.tools.path_utils import safe_path
 from src.tools.redaction import redact_tool_result
 
 
-def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str]]:
+def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str, str | None]]:
     """Yield recorded calls and their results, including from pre-cutover runs."""
     if thread_path.is_file():
         calls = {}
@@ -26,7 +26,7 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
                 call_id = item.get("tool_call_id", "")
                 call = calls.pop((item.turn_id, call_id), None)
                 if call is not None and item.get("status") == "ok":
-                    yield call, call_id, item.get("name", "unknown"), item.get("content", "")
+                    yield call, call_id, item.get("name", "unknown"), item.get("content", ""), item.turn_id
         return
 
     messages_path = safe_path("messages.json", source)
@@ -39,7 +39,7 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
                 call_id = message.get("tool_call_id", "")
                 yield (
                     calls.get(call_id, {}), call_id, message.get("name", "unknown"),
-                    message.get("content", ""),
+                    message.get("content", ""), None,
                 )
 
 
@@ -59,7 +59,7 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
                 errors.append(f"{task_id} inherited observation unavailable: {exc}")
     thread_path = safe_path("thread.jsonl", source)
     canonical = thread_path.is_file()
-    for call, call_id, name, raw in _recorded_results(source, thread_path):
+    for call, call_id, name, raw, turn_id in _recorded_results(source, thread_path):
         tool = call.get("name", name)
         # Methodology/file plumbing is already in the transcript; it is not a
         # fresh observation. This selection never decides whether a task passes.
@@ -83,13 +83,17 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
             continue
         if not isinstance(result, dict):
             continue
-        ref = result.get("_result_file")
-        if ref:
+        if "_result_file" in result:
+            ref = result["_result_file"]
             # Resumed logs can still name the old workspace. Resolve by content
             # hash inside the copied source task, never by trusting that path.
             try:
-                digest = ref.get("sha256", "")
-                if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                if not isinstance(ref, dict):
+                    raise ValueError("Invalid observation receipt")
+                digest = ref.get("sha256")
+                if not isinstance(digest, str) or len(digest) != 64 or any(
+                    c not in "0123456789abcdef" for c in digest
+                ):
                     raise ValueError("Invalid observation digest")
                 relative = f"tool-results/{digest}/result.json"
                 path = safe_path(relative, source)
@@ -101,10 +105,13 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 errors.append(f"{task_id}/{call_id} observation unavailable: {exc}")
                 continue
-        found.append(({"source_task": task_id, "tool": tool, "call_id": call_id,
-                       "request": {key: args[key] for key in
-                                   ("codes", "symbol", "code", "start_date", "end_date", "module", "function")
-                                   if key in args}}, raw))
+        entry = {"source_task": task_id, "tool": tool, "call_id": call_id,
+                 "request": {key: args[key] for key in
+                             ("codes", "symbol", "code", "start_date", "end_date", "module", "function")
+                             if key in args}}
+        if turn_id is not None:
+            entry["turn_id"] = turn_id
+        found.append((entry, raw))
     return found
 
 
@@ -136,7 +143,7 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()
-                identity = (entry["source_task"], entry["call_id"], digest)
+                identity = (entry["source_task"], entry.get("turn_id"), entry["call_id"], digest)
                 if identity in seen:
                     continue
                 seen.add(identity)

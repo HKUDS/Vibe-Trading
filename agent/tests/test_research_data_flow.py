@@ -147,8 +147,14 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     receipt["_result_file"]["path"] = "/old/run/result.json"
     call = {"id": "q1", "type": "function", "function": {
         "name": "get_market_data", "arguments": '{"codes":["NVDA.US"],"end_date":"2026-11-12"}'}}
+    malformed_call = {**call, "id": "bad-receipt"}
+    malformed_receipt = '{"_result_file":"not a receipt object"}'
     if canonical:
         thread = ThreadLog(source / "thread.jsonl")
+        thread.append("assistant", "malformed-turn", content="", phase="commentary",
+                      tool_calls=[malformed_call])
+        thread.append("tool_result", "malformed-turn", name="get_market_data",
+                      tool_call_id="bad-receipt", content=malformed_receipt, status="ok")
         thread.append("assistant", "first-turn", content="", phase="commentary", tool_calls=[call])
         thread.append("assistant", "second-turn", content="", phase="commentary", tool_calls=[
             {**call, "function": {**call["function"], "arguments": '{"codes":["OTHER.US"]}'}},
@@ -157,13 +163,22 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
                       content=json.dumps(receipt), status="ok")
         thread.append("tool_result", "second-turn", name="get_market_data", tool_call_id="q1",
                       content='{"error":"unavailable"}', status="error")
+        thread.append("assistant", "third-turn", content="", phase="commentary", tool_calls=[
+            {**call, "function": {**call["function"], "arguments": '{"codes":["NVDA.US"],"start_date":"2026-11-12"}'}},
+        ])
+        thread.append("tool_result", "third-turn", name="get_market_data", tool_call_id="q1",
+                      content=json.dumps(receipt), status="ok")
     else:
-        messages = [{"role": "assistant", "tool_calls": [call]},
+        messages = [{"role": "assistant", "tool_calls": [malformed_call]},
+                    {"role": "tool", "tool_call_id": "bad-receipt", "content": malformed_receipt},
+                    {"role": "assistant", "tool_calls": [call]},
                     {"role": "tool", "tool_call_id": "q1", "content": json.dumps(receipt)}]
         (source / "messages.json").write_text(json.dumps(messages))
     risk_dir = agent_artifact_dir(tmp_path, "risk", "risk")
     note = prepare_handoff(tmp_path, risk, risk_dir)
     assert "not fresh" in note
+    index = json.loads((risk_dir / "upstream/index.json").read_text())
+    assert index["unavailable"] == ["bull/bad-receipt observation unavailable: Invalid observation receipt"]
     from src.tools.read_file_tool import ReadFileTool
     page = json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="upstream/index-parts/1.txt", run_dir=str(risk_dir)))
     assert page["status"] == "ok"
@@ -171,7 +186,11 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     pm_dir = agent_artifact_dir(tmp_path, "pm", "pm")
     prepare_handoff(tmp_path, pm, pm_dir)
     entries = json.loads((pm_dir / "upstream/index.json").read_text())["observations"]
-    assert len(entries) == 1
+    assert len(entries) == (2 if canonical else 1)
+    if canonical:
+        assert [entry["turn_id"] for entry in entries] == ["first-turn", "third-turn"]
+        assert entries[1]["request"] == {"codes": ["NVDA.US"], "start_date": "2026-11-12"}
+        assert entries[1]["path"] == entries[0]["path"]
     assert entries[0]["source_task"] == "bull"
     assert entries[0]["tool"] == "get_market_data"
     assert entries[0]["call_id"] == "q1"
