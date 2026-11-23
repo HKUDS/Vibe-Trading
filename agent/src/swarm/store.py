@@ -205,6 +205,8 @@ class SwarmStore:
                 if attempt < len(_REPLACE_BACKOFF):
                     time.sleep(_REPLACE_BACKOFF[attempt])
         assert last is not None  # loop body sets `last` or returns
+        if isinstance(last, ValueError):
+            raise ValueError("Invalid swarm run record") from None
         raise type(last)(redact_internal_paths(str(last))) from None
 
     def request_cancel(self, run_id: str) -> bool:

@@ -321,3 +321,28 @@ def test_mcp_cancel_swarm_requests_cancellation_by_run_id(tmp_path, monkeypatch)
     assert accepted == {"status": "cancel_requested", "run_id": run.id}
     assert missing["status"] == "error"
     assert (store.run_dir(run.id) / "cancel.request").is_file()
+
+
+def test_cancel_by_id_rejects_an_unreadable_run_record(tmp_path, monkeypatch, capsys):
+    import asyncio
+    import json
+
+    import mcp_server
+    from cli.commands import common, swarm_runtime
+    from fastmcp import Client
+
+    store, _, run = _make_run(tmp_path)
+    run_dir = store.run_dir(run.id)
+    (run_dir / "run.json").write_text('{"status":"private-invalid-value"}')
+    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(common, "SWARM_DIR", store.base_dir)
+
+    async def request():
+        async with Client(mcp_server.mcp) as client:
+            result = await client.call_tool("cancel_swarm", {"run_id": run.id})
+            return json.loads(result.content[0].text)
+
+    assert asyncio.run(request()) == {"status": "error", "error": "Invalid swarm run record"}
+    assert swarm_runtime.cmd_swarm_cancel(run.id) == 1
+    assert "Invalid swarm run record" in capsys.readouterr().out
+    assert not (run_dir / "cancel.request").exists()
