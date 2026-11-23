@@ -24,7 +24,8 @@ import src.swarm.worker as worker_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-from src.swarm.worker import agent_artifact_dir, run_worker
+from src.swarm.artifacts import agent_artifact_dir
+from src.swarm.worker import run_worker
 
 
 class _ProbeTool(BaseTool):

@@ -13,6 +13,7 @@ import pytest
 
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
+from src.swarm.artifacts import collect_artifacts
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -24,7 +25,6 @@ from src.swarm.models import (
 from src.swarm.store import SwarmStore
 from src.swarm.worker import (
     _delivery_error,
-    _collect_artifacts,
     _is_error_result,
     run_worker,
 )
@@ -299,7 +299,7 @@ def test_collect_artifacts_recurses_and_returns_sorted_run_relative_paths(
     (artifact_dir / "nested" / "report.json").write_text("{}", encoding="utf-8")
     (artifact_dir / "other" / "report.json").write_text("{}", encoding="utf-8")
 
-    assert _collect_artifacts(tmp_path / "run", artifact_dir) == [
+    assert collect_artifacts(tmp_path / "run", artifact_dir) == [
         "artifacts/analyst/nested/report.json",
         "artifacts/analyst/other/report.json",
         "artifacts/analyst/summary.md",
@@ -317,7 +317,7 @@ def test_collect_artifacts_rejects_symlink_escape(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are not available on this platform")
 
-    assert _collect_artifacts(tmp_path / "run", artifact_dir) == []
+    assert collect_artifacts(tmp_path / "run", artifact_dir) == []
 
 
 # ---------------------------------------------------------------------------

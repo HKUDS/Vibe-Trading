@@ -12,7 +12,8 @@ import threading
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm import checkpoint
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-from src.swarm.worker import _run_worker_impl, agent_artifact_dir
+from src.swarm.artifacts import agent_artifact_dir
+from src.swarm.worker import _run_worker_impl
 
 
 class Registry:

@@ -14,6 +14,7 @@ import pytest
 
 import src.swarm.worker as worker
 from src.kernel.contracts import LLMResponse, ToolCallRequest
+from src.swarm.artifacts import agent_artifact_dir
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore
@@ -90,4 +91,4 @@ def test_internal_task_symlink_cannot_share_a_siblings_directory(tmp_path: Path)
     (parent / "second").mkdir(parents=True)
     (parent / "first").symlink_to(parent / "second", target_is_directory=True)
     with pytest.raises(ValueError):
-        worker.agent_artifact_dir(tmp_path, "analyst", "first")
+        agent_artifact_dir(tmp_path, "analyst", "first")

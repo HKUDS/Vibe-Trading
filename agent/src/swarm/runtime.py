@@ -29,6 +29,7 @@ from src.config.schema import AgentConfig
 from src.providers.settings import _ensure_dotenv
 from src.providers.llm import uses_responses_api
 from src.swarm import checkpoint, grounding
+from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -52,7 +53,7 @@ from src.swarm.task_store import (
 )
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
-from src.swarm.worker import _CancellationSignal, agent_artifact_dir, clear_agent_artifacts, run_worker
+from src.swarm.worker import _CancellationSignal, run_worker
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,7 @@ def _rehome_artifact_paths(
     """Copy a kept task's run-relative artifacts into *target_run_dir*.
 
     Workers persist artifacts as POSIX paths relative to the run directory
-    (``artifacts/<agent>/<task>/<file>``; see ``worker._collect_artifacts``). A
+    (``artifacts/<agent>/<task>/<file>``; see ``artifacts.collect_artifacts``). A
     resumed run must not reference the old run's directory — the old run
     stays as a record and may be deleted later.
 
