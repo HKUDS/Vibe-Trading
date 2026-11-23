@@ -226,6 +226,8 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
     expired_task = tasks.load_task("t1")
     assert expired_task.status == TaskStatus.failed
     assert "exceeded layer deadline" in expired_task.error
+    assert "outcome is unknown" in expired_task.error
+    assert "before retrying" in expired_task.error
     assert tasks.load_task("sibling").status == TaskStatus.completed
     assert tasks.load_task("next").status == TaskStatus.completed
     assert store.load_run(run.id).status == RunStatus.failed

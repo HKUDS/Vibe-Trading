@@ -1215,16 +1215,22 @@ class SwarmRuntime:
                 for pending, tid in futures.items():
                     if tid in results:
                         continue
-                    pending.cancel()
+                    cancelled_before_start = pending.cancel()
                     logger.error(
                         "Worker for task %s exceeded layer deadline (%ds)",
                         tid,
                         layer_deadline,
                     )
+                    error = f"Worker exceeded layer deadline of {layer_deadline}s"
+                    if not cancelled_before_start:
+                        error += (
+                            ". Its outcome is unknown. Check task artifacts and any "
+                            "external side effects before retrying."
+                        )
                     results[tid] = WorkerResult(
                         status="timeout",
                         summary="",
-                        error=f"Worker exceeded layer deadline of {layer_deadline}s",
+                        error=error,
                     )
         except KeyboardInterrupt:
             cancel_event.set()
