@@ -24,7 +24,7 @@ from pathlib import Path
 
 from src.config.accessor import get_env_config
 
-from src.swarm.models import SwarmEvent, SwarmRun
+from src.swarm.models import RunStatus, SwarmEvent, SwarmRun
 from src.tools.redaction import redact_internal_paths
 
 
@@ -206,6 +206,24 @@ class SwarmStore:
                     time.sleep(_REPLACE_BACKOFF[attempt])
         assert last is not None  # loop body sets `last` or returns
         raise type(last)(redact_internal_paths(str(last))) from None
+
+    def request_cancel(self, run_id: str) -> bool:
+        """Queue cancellation beside the run record for its owning process."""
+        run_dir = self.run_dir(run_id)
+        if run_dir.is_symlink():
+            return False
+        run = self.load_run(run_id)
+        if run is None or run.status not in {RunStatus.pending, RunStatus.running}:
+            return False
+        request = run_dir / "cancel.request"
+        try:
+            with request.open("x"):
+                pass
+        except FileExistsError:
+            return not request.is_symlink() and request.is_file()
+        except FileNotFoundError:
+            return False
+        return True
 
     def update_run(self, run: SwarmRun) -> None:
         """Atomically update run state.

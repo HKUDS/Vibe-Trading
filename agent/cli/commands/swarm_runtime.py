@@ -593,15 +593,18 @@ def cmd_swarm_show(run_id: str) -> None:
     common.console.print(common.Panel("\n".join(lines), border_style=status_color, title=run_id))
 
 
-def cmd_swarm_cancel(run_id: str) -> None:
-    """Cancel a swarm run."""
-    from src.swarm.runtime import SwarmRuntime
+def cmd_swarm_cancel(run_id: str) -> int:
+    """Request cooperative cancellation from the run owner."""
     from src.swarm.store import SwarmStore
 
     store = SwarmStore(base_dir=common.SWARM_DIR)
-    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
-
-    if runtime.cancel_run(run_id):
-        common.console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")
-    else:
-        common.console.print(f"[red]Run {run_id} not found or already finished[/red]")
+    try:
+        accepted = store.request_cancel(run_id)
+    except ValueError as exc:
+        common.console.print(f"[red]{common.rich_escape(str(exc))}[/red]")
+        return 1
+    if accepted:
+        common.console.print(f"[yellow]Cancellation requested: {common.rich_escape(run_id)}[/yellow]")
+        return 0
+    common.console.print(f"[red]Run {common.rich_escape(run_id)} not found or already finished[/red]")
+    return 1

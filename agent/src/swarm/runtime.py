@@ -539,9 +539,23 @@ class SwarmRuntime:
         resume_from: SwarmRun | None,
         record_usage: Callable[[dict], None] | None = None,
     ) -> None:
+        cancel_request = self._store.run_dir(run.id) / "cancel.request"
+        finished = threading.Event()
+
+        def watch_cancel_request() -> None:
+            while not finished.is_set():
+                if not cancel_request.is_symlink() and cancel_request.is_file():
+                    cancel_event.set()
+                    return
+                finished.wait(0.2)
+
+        watcher = threading.Thread(target=watch_cancel_request, name=f"swarm-cancel-{run.id}", daemon=True)
+        watcher.start()
         try:
             self._execute_run(run, cancel_event, include_shell_tools, resume_from, record_usage)
         finally:
+            finished.set()
+            watcher.join()
             self._forget_run(run.id)
 
     def cancel_run(self, run_id: str) -> bool:
