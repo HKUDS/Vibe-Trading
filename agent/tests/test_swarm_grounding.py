@@ -330,7 +330,6 @@ def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatc
         task_store=task_store,
         agent_map={agent.id: agent},
         layer_task_ids=[task.id],
-        task_summaries={},
         run_dir=run_dir,
         cancel_event=threading.Event(),
         grounding_block="GROUNDING",

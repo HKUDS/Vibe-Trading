@@ -688,7 +688,6 @@ class SwarmRuntime:
 
         # Compute execution layers
         layers = topological_layers(run.tasks)
-        task_summaries: dict[str, str] = {}
         all_succeeded = True
 
         try:
@@ -700,7 +699,7 @@ class SwarmRuntime:
             # completed — otherwise a cancellation in the pre-layer window
             # would relabel them cancelled.
             if resume_from is not None:
-                self._apply_resume_overlay(run, run_dir, task_store, resume_from, task_summaries)
+                self._apply_resume_overlay(run, run_dir, task_store, resume_from)
                 run.tasks = task_store.load_all()
 
             for layer_idx, layer_task_ids in enumerate(layers):
@@ -725,7 +724,6 @@ class SwarmRuntime:
                     task_store=task_store,
                     agent_map=agent_map,
                     layer_task_ids=layer_task_ids,
-                    task_summaries=task_summaries,
                     run_dir=run_dir,
                     cancel_event=cancel_event,
                     include_shell_tools=include_shell_tools,
@@ -748,7 +746,6 @@ class SwarmRuntime:
                     }
                     if completed:
                         status = TaskStatus.completed
-                        task_summaries[tid] = result.summary
                     elif cancelled:
                         status = TaskStatus.cancelled
                     else:
@@ -827,30 +824,13 @@ class SwarmRuntime:
         run_dir: Path,
         task_store: TaskStore,
         resume_from: SwarmRun,
-        task_summaries: dict[str, str],
     ) -> None:
         """Carry completed tasks from *resume_from* into *run* before execution.
 
-        Completed results are retained only with unchanged completed inputs.
-        Compatible unfinished tasks also retain their saved conversation and
-        files; tasks without a checkpoint restart from upstream reports. Two
-        invalidation rules apply:
-        - A completed task is NOT kept when its definition changed since the
-          original run — the task's own defining fields (agent, prompt
-          template, DAG wiring) or the agent spec that executes it (role,
-          system prompt, tools, skills, model, retries, timeout) — because a
-          kept result must still mean the same thing.
-        - A completed task is NOT kept when any of its transitive upstreams
-          re-executes, because its kept summary was produced from the upstream's
-          old output and would be stale relative to the fresh upstream output
-          flowing into it (and unchanged dependents cascade the same way).
-        Kept tasks are re-marked ``completed`` with their original
-        summary/artifacts (artifacts re-homed into this run's directory so the
-        new run is self-contained), kept ids are resolved out of downstream
-        ``blocked_by`` edges, and their summaries are seeded into
-        ``task_summaries`` so ``input_from`` context flows to re-executed
-        dependents. Tasks with no counterpart in the original run (added to the
-        preset since) run fresh.
+        Retain completed results only when the definition and all transitive
+        inputs are unchanged. Rehome artifacts and unblock dependents, which
+        read the retained summaries from the task store. Compatible unfinished
+        tasks can retain their thread and files for checkpoint continuation.
 
         Degradation: a wholly missing or unreadable prior task store falls back
         to a fully fresh run (logged, never fatal). Individual tasks absent
@@ -934,10 +914,6 @@ class SwarmRuntime:
                 blocked_by=[],
             )
             resolve_dependencies(run_dir / "tasks", task.id)
-            # Mirror _execute_run's live seeding (unconditional key): a kept
-            # task must contribute its input_from key to re-executed dependents
-            # even when the stored summary is empty or None.
-            task_summaries[task.id] = prev.summary or ""
             kept += 1
             self._emit_event(
                 run.id,
@@ -1044,7 +1020,6 @@ class SwarmRuntime:
         task_store: TaskStore,
         agent_map: dict[str, SwarmAgentSpec],
         layer_task_ids: list[str],
-        task_summaries: dict[str, str],
         run_dir: Path,
         cancel_event: threading.Event,
         include_shell_tools: bool = False,
@@ -1061,7 +1036,6 @@ class SwarmRuntime:
             task_store: TaskStore for task persistence.
             agent_map: Agent specs keyed by agent_id.
             layer_task_ids: Task IDs in this layer.
-            task_summaries: Accumulated task summaries from previous layers.
             run_dir: Run directory path.
             cancel_event: Cancellation event.
             include_shell_tools: Whether workers may register shell tools.
@@ -1084,10 +1058,6 @@ class SwarmRuntime:
             for tid in layer_task_ids:
                 task = task_store.load_task(tid)
 
-                # Replay support: a task kept completed by the resume overlay
-                # must not be re-dispatched — its summary and artifacts were
-                # carried into this run and its summary seeded into
-                # task_summaries before layers started.
                 if task.status == TaskStatus.completed:
                     continue
 

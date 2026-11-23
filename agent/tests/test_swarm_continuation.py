@@ -185,9 +185,10 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     current = TaskStore(store.run_dir(resumed.id))
     for task in tasks:
         current.save_task(task)
-    summaries = {}
-    SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(resumed, store.run_dir(resumed.id), current, prior, summaries)
-    assert summaries == {"a": "Revenue $26B"}
+    SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(resumed, store.run_dir(resumed.id), current, prior)
+    retained = current.load_task("a")
+    assert retained.status == TaskStatus.completed
+    assert retained.summary == "Revenue $26B"
     assert current.load_task("b").status == TaskStatus.pending
     copied = agent_artifact_dir(store.run_dir(resumed.id), "b", "b")
     assert node_thread(store.run_dir(resumed.id), "b", "b").read_bytes() == prior_thread.read_bytes()
@@ -198,9 +199,8 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     current = TaskStore(store.run_dir(changed.id))
     for task in tasks:
         current.save_task(task)
-    kept = {}
-    SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(changed, store.run_dir(changed.id), current, prior, kept)
-    assert not kept
+    SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(changed, store.run_dir(changed.id), current, prior)
+    assert current.load_task("a").status == TaskStatus.pending
     assert not node_thread(store.run_dir(changed.id), "b", "b").exists()
 
 
