@@ -28,6 +28,7 @@ import pytest
 
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm import checkpoint
+from src.swarm.artifacts import agent_artifact_dir
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
 import src.swarm.worker as worker_mod
 from src.swarm.worker import run_worker
@@ -198,7 +199,7 @@ def test_cancel_during_tool_batch_keeps_completed_result(tmp_path, cancel_at):
     assert registry.executed == ["noop_tool"]
     assert events.count("item.completed") == 1
     assert "worker_cancelled" in events
-    artifact_dir = worker_mod.agent_artifact_dir(tmp_path, "analyst", "t1")
+    artifact_dir = agent_artifact_dir(tmp_path, "analyst", "t1")
     saved = json.loads((artifact_dir / checkpoint.FILENAME).read_text(encoding="utf-8"))
     restored, _ = checkpoint.restore(artifact_dir, key=saved["key"], system=saved["messages"][0], run_dir=tmp_path)
     results = {m["tool_call_id"]: json.loads(m["content"]) for m in restored if m["role"] == "tool"}

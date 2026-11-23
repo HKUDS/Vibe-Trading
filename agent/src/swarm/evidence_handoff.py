@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from src.product.result_artifacts import _write_original, save_result_parts
+from src.swarm.artifacts import agent_artifact_dir
 from src.tools.path_utils import safe_path
 from src.tools.redaction import redact_tool_result
 
@@ -95,7 +96,6 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         Missing evidence is reported, without withholding the upstream prose.
     """
     from src.swarm.task_store import TaskStore
-    from src.swarm.worker import agent_artifact_dir
 
     if not task.input_from:
         return ""

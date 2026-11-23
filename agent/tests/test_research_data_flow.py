@@ -21,7 +21,7 @@ from src.quantlib.risk import fit_gpd_tail
 from src.swarm.evidence_handoff import prepare_handoff
 from src.swarm.models import SwarmTask
 from src.swarm.task_store import TaskStore
-from src.swarm.worker import agent_artifact_dir
+from src.swarm.artifacts import agent_artifact_dir
 from src.tools.data_refs import resolve_data_refs
 from src.tools.options_payoff_tool import OptionsPayoffTool
 from src.tools.quantlib_tool import QuantlibCallTool
