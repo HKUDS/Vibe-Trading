@@ -20,6 +20,7 @@ class TurnState:
     user_message: str
     run_started_wall: float
     session_id: str
+    state_store: Any
     iteration: int = 0
     current_iter: int = 0
     final_content: str = ""
@@ -36,19 +37,6 @@ class TurnState:
     no_commentary_rounds: int = 0
     mid_turn_nudge_rounds: int = 0
     final_answer_retry: bool = False
-    compact_requested: bool = False
-    focus_topic: str = ""
     stream: Any = None
     thinking_text: str = ""
     current_response_model: str | None = None
-
-
-@dataclass
-class TurnSetup:
-    """Resources established before the iteration driver starts."""
-
-    state: TurnState | None = None
-    run_dir: Path | None = None
-    trace: Any = None
-    state_store: Any = None
-    denied_result: dict[str, Any] | None = None

@@ -121,8 +121,6 @@ class TurnPacing:
             state.trace.write({"type": "no_progress", "iter": state.current_iter, "iterations_without_progress": progress.stalled_iterations})
             state.stream.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_DELTA, "delta": state.final_content, "iter": state.current_iter, "phase": "final"})
             self.conversation.record_final_answer(state.final_content)
-            state.compact_requested = False
-            state.focus_topic = ""
             return True
         return False
 

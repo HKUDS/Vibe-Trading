@@ -206,66 +206,54 @@ def _scan_symbols(text: str) -> set[str]:
     return {_normalize_symbol(match.group(0)) for match in _CANONICAL_SYMBOL_RE.finditer(text or "")}
 
 
+# The HKEX counter-specific currency lookup takes precedence over this table.
+_LISTING_MARKETS = {
+    ".US": ("us", "USD"),
+    ".SH": ("shanghai", "CNY"),
+    ".SZ": ("shenzhen", "CNY"),
+    ".BJ": ("beijing", "CNY"),
+    ".HK": ("hong_kong", "HKD"),
+    ".T": ("tokyo", "JPY"),
+    ".KS": ("kospi", "KRW"),
+    ".KQ": ("kosdaq", "KRW"),
+    ".NS": ("nse", "INR"),
+    ".BO": ("bse", "INR"),
+    ".FX": ("forex", None),
+    ".TO": ("toronto", "CAD"),
+    ".V": ("tsx_venture", "CAD"),
+    ".BA": ("buenos_aires", "ARS"),
+    ".SA": ("b3", "BRL"),
+    ".L": ("lse", "GBP"),
+    ".VN": ("hose", "VND"),
+    ".TW": ("twse", "TWD"),
+    ".TWO": ("tpex", "TWD"),
+}
+_BARE_FX_RE = re.compile(r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$")
+_YAHOO_FX_RE = re.compile(r"^[A-Z]{6}=X$")
+
+
+def _pair_type(symbol: str) -> str | None:
+    if _BARE_FX_RE.match(symbol) or _YAHOO_FX_RE.match(symbol):
+        return "forex"
+    separator = "-" if "-" in symbol else "/"
+    base, separator, quote = symbol.partition(separator)
+    if not separator:
+        return None
+    if quote in _CRYPTO_QUOTE_ASSETS or (quote == "USD" and base in _CRYPTO_USD_BASES):
+        return "crypto"
+    return "forex"
+
+
 def _infer_venue(symbol: str) -> str | None:
     """Infer a coarse venue from a project symbol."""
     upper = _normalize_symbol(symbol)
-    suffixes = {
-        ".US": "us",
-        ".SH": "shanghai",
-        ".SZ": "shenzhen",
-        ".BJ": "beijing",
-        ".HK": "hong_kong",
-        ".T": "tokyo",
-        ".KS": "kospi",
-        ".KQ": "kosdaq",
-        ".NS": "nse",
-        ".BO": "bse",
-        ".FX": "forex",
-        ".TO": "toronto",
-        ".V": "tsx_venture",
-        ".BA": "buenos_aires",
-        ".SA": "b3",
-        ".L": "lse",
-        ".VN": "hose",
-        ".TW": "twse",
-        ".TWO": "tpex",
-    }
-    for suffix, venue in suffixes.items():
+    for suffix, (venue, _) in _LISTING_MARKETS.items():
         if upper.endswith(suffix):
             return venue
-    # Yahoo's continuous-front-month futures notation (GC=F, CL=F, SI=F, ...).
-    # The exchange category is the venue class. The engine and the
-    # correlation helper mirror this pattern; this is the third copy.
     if upper.endswith("=F"):
         return "futures"
-    # Yahoo's forex notation (XAUUSD=X, EURUSD=X) is FX.
-    if re.match(r"^[A-Z]{6}=X$", upper):
-        return "forex"
-    # Bare 6-character precious-metal / FX symbols. The whitelist is
-    # ISO 4217 metals + G10 currencies; it intentionally does NOT include
-    # any US-equity prefix. Mirroring the engine ``_MARKET_PATTERNS``.
-    if re.match(
-        r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$",
-        upper,
-    ):
-        return "forex"
-    # Dashed / slashed symbols are NOT categorically crypto: a USD quote is
-    # crypto only on a whitelisted base (``_CRYPTO_USD_BASES``), so
-    # ``XAU-USD`` / ``EUR-USD`` / ``GBP-USD`` are forex. Without this guard a
-    # spot-gold pair surfaced as a crypto-or-fx hybrid in the runtime
-    # registry, contradicting the engine classifier that already routes it to
-    # ``forex`` (#1280).
-    if "-" in upper or "/" in upper:
-        base, _, quote = upper.partition("-") if "-" in upper else upper.partition("/")
-        if quote in _CRYPTO_QUOTE_ASSETS:
-            return "crypto_or_fx"
-        if quote == "USD" and base in _CRYPTO_USD_BASES:
-            return "crypto_or_fx"
-        # Any other dashed / slashed pair is forex-shaped (e.g. ``XAU-USD``,
-        # ``EUR-USD``, ``GBP-USD``); the per-pair engine classifier decides
-        # ``forex`` vs ``crypto`` vs ``futures`` downstream.
-        return "forex"
-    return None
+    pair = _pair_type(upper)
+    return "crypto_or_fx" if pair == "crypto" else pair
 
 
 def _infer_currency(symbol: str) -> str | None:
@@ -279,30 +267,8 @@ def _infer_currency(symbol: str) -> str | None:
     hk_currency = hk_counter_currency(upper)
     if hk_currency is not None:
         return hk_currency
-    suffixes = {
-        ".US": "USD",
-        ".SH": "CNY",
-        ".SZ": "CNY",
-        ".BJ": "CNY",
-        ".HK": "HKD",
-        ".T": "JPY",
-        ".KS": "KRW",
-        ".KQ": "KRW",
-        ".NS": "INR",
-        ".BO": "INR",
-        ".TO": "CAD",
-        ".V": "CAD",
-        ".BA": "ARS",
-        ".SA": "BRL",
-        # The UK loaders admit only a declared GBP / GBp quote and hand back
-        # GBP, the same contract as the backtest's _MARKET_CURRENCY.
-        ".L": "GBP",
-        ".VN": "VND",
-        ".TW": "TWD",
-        ".TWO": "TWD",
-    }
-    for suffix, currency in suffixes.items():
-        if upper.endswith(suffix):
+    for suffix, (_, currency) in _LISTING_MARKETS.items():
+        if currency is not None and upper.endswith(suffix):
             return currency
     for separator in ("-", "/"):
         if separator in upper:
@@ -338,32 +304,9 @@ def _infer_instrument_type(symbol: str, candidate_type: Any = None) -> str:
         return "future"
     if upper.endswith(".FX"):
         return "forex"
-    # Yahoo's continuous-front-month futures notation (GC=F, CL=F, ...).
-    # Mirrors the engine ``_MARKET_PATTERNS`` and the correlation helper.
-    if re.match(r"^[A-Z]{2,5}=F$", upper):
-        return "future"
-    # Yahoo's forex notation (XAUUSD=X, EURUSD=X).
-    if re.match(r"^[A-Z]{6}=X$", upper):
-        return "forex"
-    # Bare 6-character precious-metal / FX symbols (whitelist).
-    if re.match(
-        r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$",
-        upper,
-    ):
-        return "forex"
-    # Dashed / slashed symbols: crypto only when the quote leg is a
-    # stablecoin OR the base is in the USD-whitelist. The whitelist
-    # mirrors ``_canonical_crypto_pair`` in
-    # ``src.tools.symbol_search_tool``. ``XAU-USD`` / ``EUR-USD`` /
-    # ``GBP-USD`` are NOT crypto and resolve as ``forex`` (the per-pair
-    # engine classifier decides the final market downstream).
-    if "-" in upper or "/" in upper:
-        base, _, quote = upper.partition("-") if "-" in upper else upper.partition("/")
-        if quote in _CRYPTO_QUOTE_ASSETS:
-            return "crypto"
-        if quote == "USD" and base in _CRYPTO_USD_BASES:
-            return "crypto"
-        return "forex"
+    pair = _pair_type(upper)
+    if pair is not None:
+        return pair
     if upper.startswith("^"):
         return "index"
     return "listed_security"

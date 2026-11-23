@@ -120,17 +120,12 @@ class IterationSteps:
             self.pacing.capture_interrupted_response(state)
             return Stop(self.goals.stop_reason or "cancelled")
         state.thinking_text = "".join(state.stream.thinking_chunks)
-        self._record_thinking(state)
+        if state.thinking_text:
+            state.trace.write({"type": "thinking", "iter": state.current_iter, "content": state.thinking_text})
         if getattr(response, "content_filter_triggered", False):
             return self._skip_content_filter(state)
         state.consecutive_content_filter_count = 0
         return Continue.NEXT if response is None else response
-
-    def _record_thinking(self, state: TurnState) -> None:
-        """Persist reasoning text only after the response phase is known."""
-        if not state.thinking_text:
-            return
-        state.trace.write({"type": "thinking", "iter": state.current_iter, "content": state.thinking_text})
 
     def _skip_content_filter(self, state: TurnState) -> Continue | Stop:
         """Skip filtered responses and trip the existing circuit breaker."""
@@ -160,7 +155,7 @@ class IterationSteps:
         self.conversation.append_assistant(state.view.messages, assistant, phase="commentary")
         self.writes.active_model_id = state.current_response_model or state.view.model.configured_model
         self.writes.active_model_source = reported_model_source(state.view.model, state.current_response_model)
-        state.compact_requested, state.focus_topic = self.tools.process(response.tool_calls, state.context, state.view.messages, state.trace, state.current_iter)
+        compact_requested, focus_topic = self.tools.process(response.tool_calls, state.context, state.view.messages, state.trace, state.current_iter)
         if self.tools.delivery.waiting_user is not None:
             state.final_content = self.tools.delivery.waiting_user.get("prompt", "")
             options = self.tools.delivery.waiting_user.get("options") or []
@@ -172,8 +167,8 @@ class IterationSteps:
         if self.pacing.after_tools(state, response, self.tools.delivery.progress, self.activity.cancel):
             return Stop("no_progress")
 
-        if state.compact_requested:
-            self.compactor.auto_compact(state.view.messages, state.run_dir, state.trace, focus_topic=state.focus_topic, iteration=state.current_iter)
+        if compact_requested:
+            self.compactor.auto_compact(state.view.messages, state.run_dir, state.trace, focus_topic=focus_topic, iteration=state.current_iter)
         return Continue.NEXT
 
     def poll_inputs(self) -> None:

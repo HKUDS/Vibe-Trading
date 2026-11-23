@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from src.tools.path_utils import FileRoots
-
 import hashlib
 import json
 import logging
 from pathlib import Path
 
 from src.config.limits import TOOL_RESULT_LIMIT, truncate_tool_result
+from src.tools.path_utils import FileRoots, safe_run_dir
 from src.tools.redaction import redact_tool_result
 
 logger = logging.getLogger(__name__)
@@ -29,21 +28,13 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots
     """
     if not run_dir:
         return result
-    from src.tools.path_utils import safe_run_dir
 
     result = redact_tool_result(result)
     payload = json.loads(result)
     try:
         root = safe_run_dir(str(run_dir), roots=roots)
-        digest = hashlib.sha256(result.encode()).hexdigest()
-        folder = root / 'tool-results' / digest
-        path = folder / 'result.json'
-        _write_original(path, result, root)
-        parts = save_result_parts(result, folder / 'parts', root)
-        ref = {'path': str(path), 'sha256': digest, 'format': 'json',
-               'relative_path': str(path.relative_to(root)),
-               'parts_relative_dir': str((folder / 'parts').relative_to(root)),
-               'parts_dir': str(folder / 'parts'), 'part_count': len(parts)}
+        ref = _persist_result_files(result, root, is_json=True)
+        folder = Path(ref["path"]).parent
     except (OSError, ValueError) as exc:
         payload['_artifact_error'] = str(exc)
         return json.dumps(payload, ensure_ascii=False)
@@ -135,6 +126,24 @@ def save_result_parts(content: str, folder: Path, root: Path) -> list[str]:
     return [str(folder / f"{index + 1}.txt") for index in range(part_count)]
 
 
+def _persist_result_files(
+    result: str, root: Path, *, is_json: bool, include_characters: bool = False,
+) -> dict:
+    digest = hashlib.sha256(result.encode()).hexdigest()
+    folder = root / 'tool-results' / digest
+    path = folder / ('result.json' if is_json else 'result.txt')
+    parts_dir = folder / 'parts'
+    _write_original(path, result, root)
+    parts = save_result_parts(result, parts_dir, root)
+    return {
+        'path': str(path), 'sha256': digest, 'format': 'json' if is_json else 'text',
+        'relative_path': str(path.relative_to(root)),
+        'parts_relative_dir': str(parts_dir.relative_to(root)),
+        **({'characters': len(result)} if include_characters else {}),
+        'parts_dir': str(parts_dir), 'part_count': len(parts),
+    }
+
+
 def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> str:
     """Keep a large result in full, with a bounded valid JSON receipt.
 
@@ -153,7 +162,6 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
         return truncate_tool_result(result)
     from src.tools.bash_tool import BashTool
     from src.tools.read_file_tool import ReadFileTool
-    from src.tools.path_utils import safe_run_dir
 
     try:
         shell = registry.get('bash')
@@ -176,23 +184,13 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
         workspace = getattr(registry, "session_workspace", None)
         root = Path(workspace).expanduser().resolve() if workspace else Path(run_dir).resolve()
         root.mkdir(parents=True, exist_ok=True)
-        digest = hashlib.sha256(result.encode()).hexdigest()
-        folder = root / 'tool-results' / digest
-        path = folder / ('result.json' if is_json else 'result.txt')
-        _write_original(path, result, root)
-        parts = save_result_parts(result, folder / 'parts', root)
-        part_count = len(parts)
+        ref = _persist_result_files(result, root, is_json=is_json, include_characters=True)
     except (OSError, UnicodeError, ValueError):
         logger.warning('Could not preserve complete tool result', exc_info=True)
         return truncate_tool_result(result)
 
     receipt = {
-        '_result_file': {'path': str(path), 'sha256': digest,
-                         'format': 'json' if is_json else 'text',
-                         'relative_path': str(path.relative_to(root)),
-                         'parts_relative_dir': str((folder / 'parts').relative_to(root)),
-                         'characters': len(result), 'parts_dir': str(folder / 'parts'),
-                         'part_count': part_count},
+        '_result_file': ref,
         '_delivery': (
             'The complete tool result is saved in this task workspace. Load the JSON '
             'file with a quantlib_call __data_ref__ argument. For read_file, use the exact '

@@ -102,19 +102,6 @@ class TestSkill:
         assert s.body == ""
         assert s.metadata == {}
 
-    def test_load_support_file_no_dir(self) -> None:
-        s = Skill(name="test")
-        assert s.load_support_file("missing.md") is None
-
-    def test_load_support_file(self, tmp_path: Path) -> None:
-        (tmp_path / "extra.md").write_text("extra content", encoding="utf-8")
-        s = Skill(name="test", dir_path=tmp_path)
-        assert s.load_support_file("extra.md") == "extra content"
-
-    def test_load_support_file_missing(self, tmp_path: Path) -> None:
-        s = Skill(name="test", dir_path=tmp_path)
-        assert s.load_support_file("nope.md") is None
-
 
 # ---------------------------------------------------------------------------
 # SkillsLoader

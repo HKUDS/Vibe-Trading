@@ -147,10 +147,7 @@ class IdentityLedger:
         }
 
     def _restore_state(self, state: Mapping[str, Any]) -> None:
-        """Load records a previous :meth:`export_state` produced.
-
-        A record that does not have the exported shape is skipped, never
-        repaired: guessing a field of an authorization record would invent one.
+        """Restore only records with the exported shape.
 
         Args:
             state: Exported ledger state.
@@ -177,12 +174,7 @@ class IdentityLedger:
         self._identity_required = bool(state.get("identity_required"))
 
     def pending_resolution_query(self, arguments: Mapping[str, Any], field: str) -> str | None:
-        """Find a new unresolved dependency without changing authorization.
-
-        Never re-resolve a failed/ambiguous query automatically, settle a
-        contradiction, or authorize a second venue by rewriting the caller.
-        The existing consumer gate still decides after the resolver finishes.
-        """
+        """Find a new dependency without re-resolving a failed query or a contradiction."""
         query = arguments.get(field)
         if not isinstance(query, str) or not query.strip():
             return None
@@ -196,12 +188,7 @@ class IdentityLedger:
         return query
 
     def reusable_resolution(self, arguments: Mapping[str, Any]) -> str | None:
-        """Reuse an exact, settled session identity without asserting a fresh lookup.
-
-        Bare names, extra search text, contextual constraints, conflicts and
-        explicit refreshes still require the real resolver. Nothing mutates the
-        ledger: a user assertion remains a user assertion, not provider evidence.
-        """
+        """Reuse settled exact identities without changing their source of authority."""
         if arguments.get("refresh") or self.identity_status != "locked":
             return None
         query = str(arguments.get("query") or "").strip()
@@ -252,7 +239,7 @@ class IdentityLedger:
         """
         if tool_name == _RESOLVER_TOOL:
             self._identity_required = True
-            self._begin_resolution(str(arguments.get("query") or ""), call_id)
+            self._record_unsettled(str(arguments.get("query") or ""), call_id, "unresolved")
             return ToolAuthorization(allowed=True)
 
         # Reading methodology does not choose or change an instrument identity.
@@ -288,13 +275,7 @@ class IdentityLedger:
             self._identity_required = True
 
     def _hold_locked(self, existing: IdentityRecord | None) -> bool:
-        """Whether a settled record must survive a non-conclusive resolver step.
-
-        A repeat resolution that fails, is refused or comes back empty carries
-        no evidence about the entity, and replacing the record would erase the
-        contradiction anchor an earlier successful resolution established. A
-        ``conflicting`` record is settled in the same sense: the anchor is the
-        only record of which symbols disagreed.
+        """Keep the existing lock or contradiction when the resolver supplies no new evidence.
 
         Args:
             existing: The record for this query key, if any.
@@ -307,37 +288,19 @@ class IdentityLedger:
             return True
         return False
 
-    def _begin_resolution(self, query: str, call_id: str) -> None:
-        """Enter unresolved state before the resolver executes."""
+    def _record_unsettled(self, query: str, call_id: str, status: str) -> None:
         key = _query_key(query) or f"call:{call_id}"
         existing = self._identities.get(key)
-        if self._hold_locked(existing):
-            return
-        self._identities[key] = IdentityRecord(
-            query=query,
-            status="unresolved",
-            source_tool_call_id=call_id,
-            version=(existing.version + 1) if existing else 1,
-        )
-        self.persist()
+        if not self._hold_locked(existing):
+            self._identities[key] = IdentityRecord(
+                query=query, status=status, source_tool_call_id=call_id,
+                version=existing.version + 1 if existing else 1,
+            )
+            if status == "unresolved":
+                self.persist()
 
-    def _finish_failed_resolution(
-        self,
-        arguments: Mapping[str, Any],
-        call_id: str,
-    ) -> None:
-        """Mark transport/business failure as invalidated, never not-found."""
-        query = str(arguments.get("query") or "")
-        key = _query_key(query) or f"call:{call_id}"
-        existing = self._identities.get(key)
-        if self._hold_locked(existing):
-            return
-        self._identities[key] = IdentityRecord(
-            query=query,
-            status="invalidated",
-            source_tool_call_id=call_id,
-            version=(existing.version + 1) if existing else 1,
-        )
+    def _finish_failed_resolution(self, arguments: Mapping[str, Any], call_id: str) -> None:
+        self._record_unsettled(str(arguments.get("query") or ""), call_id, "invalidated")
 
     def _ingest_resolution(
         self,
@@ -354,14 +317,7 @@ class IdentityLedger:
         version = (existing.version + 1) if existing else 1
 
         if not isinstance(payload, dict) or payload.get("ok") is False:
-            if self._hold_locked(existing):
-                return
-            self._identities[key] = IdentityRecord(
-                query=query,
-                status="invalidated",
-                source_tool_call_id=call_id,
-                version=version,
-            )
+            self._record_unsettled(query, call_id, "invalidated")
             return
 
         raw_candidates = data.get("candidates")
@@ -377,12 +333,7 @@ class IdentityLedger:
         if not candidates:
             if self._hold_locked(existing):
                 return
-            # "This entity does not exist" may only be concluded when every
-            # source that could answer did answer. Counting two clean sources
-            # instead was unreachable for a Chinese query — Yahoo cannot serve
-            # one at all — so an entity that simply is not listed came back as
-            # ``invalidated``, which blocks the run rather than answering it.
-            # A source that skipped an unsupported query shape is not an outage.
+            # Every applicable source must answer before an empty result counts as not found.
             clean_sources = [str(name) for name, value in sources.items() if str(value).casefold() == "ok"]
             failed_sources = [
                 str(name)
@@ -400,101 +351,43 @@ class IdentityLedger:
             )
             return
 
+        def record_candidates(status: str, options: list[dict[str, Any]]) -> None:
+            self._identities[key] = IdentityRecord(
+                query=query, status=status, source_tool_call_id=call_id,
+                candidates=options, resolution_constraints=constraint_audit, version=version,
+            )
+
         market_values = {item.value for item in relevant_constraints if item.dimension == "market" and item.explicit}
         if market_values:
-            constrained = [candidate for candidate in candidates if candidate_market(candidate) in market_values]
-            if constrained:
-                candidates = constrained
-            else:
-                # A mismatch with an explicit constraint must stay fail closed.
-                # The candidate list may be truncated, so this is ambiguity,
-                # not proof that the requested listing does not exist.
-                self._identities[key] = IdentityRecord(
-                    query=query,
-                    status="ambiguous",
-                    source_tool_call_id=call_id,
-                    candidates=resolver_candidates,
-                    resolution_constraints=constraint_audit,
-                    version=version,
-                )
-                return
+            candidates = [candidate for candidate in candidates if candidate_market(candidate) in market_values]
 
+        # A shortlist that misses the explicit market constraint may be truncated.
         chosen = self._choose_candidate(query, candidates)
         if chosen is None:
-            self._identities[key] = IdentityRecord(
-                query=query,
-                status="ambiguous",
-                source_tool_call_id=call_id,
-                candidates=resolver_candidates,
-                resolution_constraints=constraint_audit,
-                version=version,
-            )
+            record_candidates("ambiguous", resolver_candidates)
             return
 
         symbol = _normalize_symbol(chosen.get("symbol"))
         if not symbol:
-            self._identities[key] = IdentityRecord(
-                query=query,
-                status="invalidated",
-                source_tool_call_id=call_id,
-                candidates=resolver_candidates,
-                resolution_constraints=constraint_audit,
-                version=version,
-            )
+            record_candidates("invalidated", resolver_candidates)
             return
 
-        # A query that already spells a canonical symbol is asserting one, so a
-        # resolver answering with a different instrument contradicts it rather
-        # than refining it. This generalizes the ``.SS``/``.SH`` alias check it
-        # replaces: that one fired on one exchange's two spellings and stayed
-        # silent on an actual cross-exchange swap, which is the case that
-        # matters.
         asserted = _scan_symbols(query)
         if asserted and symbol not in asserted:
-            conflicting = list(candidates)
-            conflicting.extend({"symbol": item, "source": ["query"]} for item in sorted(asserted))
-            self._identities[key] = IdentityRecord(
-                query=query,
-                status="conflicting",
-                source_tool_call_id=call_id,
-                candidates=conflicting,
-                resolution_constraints=constraint_audit,
-                version=version,
-            )
+            record_candidates("conflicting", [
+                *candidates, *({"symbol": item, "source": ["query"]} for item in sorted(asserted)),
+            ])
             return
-
         if existing and existing.status == "locked" and existing.symbol != symbol:
-            conflicting = list(candidates)
-            conflicting.insert(0, {"symbol": existing.symbol, "source": existing.source})
-            self._identities[key] = IdentityRecord(
-                query=query,
-                status="conflicting",
-                source_tool_call_id=call_id,
-                candidates=conflicting,
-                resolution_constraints=constraint_audit,
-                version=version,
-            )
+            record_candidates("conflicting", [{"symbol": existing.symbol, "source": existing.source}, *candidates])
             return
-
         if existing and existing.status == "conflicting":
-            # Re-answering one side of a contradiction is not evidence that
-            # settles it: the same query through the same resolver returns the
-            # same opinion it did a moment ago, so promoting it to ``locked``
-            # would drop the anchor and authorize a symbol the run had already
-            # found contradicted. Only a different query (a new key, e.g. a
-            # disambiguated name) can answer this.
+            # A repeated query cannot settle its own contradiction.
             conflicting = list(candidates)
             for item in existing.candidates:
                 if item not in conflicting:
                     conflicting.append(item)
-            self._identities[key] = IdentityRecord(
-                query=query,
-                status="conflicting",
-                source_tool_call_id=call_id,
-                candidates=conflicting,
-                resolution_constraints=constraint_audit,
-                version=version,
-            )
+            record_candidates("conflicting", conflicting)
             return
 
         source_names = []
@@ -519,12 +412,7 @@ class IdentityLedger:
         self._supersede_shortlists(symbol)
 
     def _supersede_shortlists(self, symbol: str) -> None:
-        """Retire ambiguous shortlists that this lock has just answered.
-
-        A screening query resolves to many candidates by design. Once one of
-        them is locked by a later, narrower resolution, the earlier shortlist is
-        answered rather than unresolved — leaving it ``ambiguous`` blocks every
-        final answer in the run for the rest of the session (#955).
+        """Retire ambiguous shortlists that a narrower resolution has now answered.
 
         Args:
             symbol: Canonical symbol locked by the current resolution.
@@ -541,13 +429,7 @@ class IdentityLedger:
         query: str,
         candidates: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
-        """Choose only a unique or strongly corroborated resolver candidate.
-
-        Candidates are collapsed onto their canonical symbol first. Two rows
-        that differ only by a provider's suffix convention describe one listing,
-        and counting them as rival candidates is what left every Shanghai query
-        with two "exact" matches and therefore no choice at all.
-        """
+        """Choose a unique or corroborated candidate, collapsing provider aliases first."""
         by_symbol: dict[str, dict[str, Any]] = {}
         for candidate in candidates:
             by_symbol.setdefault(_normalize_symbol(candidate.get("symbol")), candidate)
@@ -583,18 +465,7 @@ class IdentityLedger:
 
     @property
     def identity_status(self) -> str:
-        """Return the aggregate first-class identity state.
-
-        ``conflicting`` is the only state that outranks a successful lock: two
-        sources contradicting each other about one query is a fact about the
-        data, not a gap in it. Every other blocking state means "not known
-        yet", and a side query that failed, went unanswered, or returned a
-        shortlist must not retract an identity the run did lock — one flaky
-        resolver call otherwise poisons every remaining answer in the session,
-        with no path back. Per-symbol safety does not depend on this aggregate:
-        a consumer still has to match a locked symbol in
-        :func:`match_authorized_symbol` before it may run.
-        """
+        """Rank contradictions above locks; a failed side query cannot retract a lock."""
         records = list(self._identities.values())
         if not records:
             return "unresolved" if self._identity_required else "not_required"

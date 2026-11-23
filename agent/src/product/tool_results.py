@@ -20,14 +20,18 @@ ARCHIVE_MANIFEST = ".archived_backtest.json"
 
 logger = logging.getLogger(__name__)
 
-def _failure_code(result: str) -> str:
-    """The ``error_code`` (else error text) of a refused call, for the stop message."""
+def parse_tool_payload(result: str) -> dict | None:
+    """Decode a structured result while allowing plain text."""
     try:
-        payload = json.loads(result)
+        value = json.loads(result)
     except (TypeError, ValueError):
-        return ""
-    if not isinstance(payload, dict):
-        return ""
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _failure_code(result: str) -> str:
+    """The error code or refusal text for the stop message."""
+    payload = parse_tool_payload(result) or {}
     return str(payload.get("error_code") or payload.get("reason") or payload.get("error") or "")[:120]
 
 
@@ -48,12 +52,7 @@ def _is_tool_success(result: str) -> bool:
     return True
 
 
-# Provider tool-call markup that a model can emit as plain text on the
-# forced-text final iteration, where tool definitions are withheld. Releasing
-# it verbatim hands the user mojibake instead of an answer. Both DSML bar
-# spellings are covered: ASCII double bars and fullwidth double bars, opening
-# and closing tags (a draft ending in "</｜｜DSML｜｜invoke>" once reached the
-# response parser as unparsed protocol).
+# Recognize plain XML and both ASCII and fullwidth DSML bar spellings.
 _FORCED_TEXT_TOOL_CALL_RE = re.compile(
     r"<\s*/?\s*(?:invoke|parameter|tool_calls|dsml)\b",
     re.IGNORECASE,
@@ -65,13 +64,7 @@ _DSML_BAR_TOOL_CALL_RE = re.compile(
 
 
 def _looks_like_tool_call_syntax(content: str) -> bool:
-    """Return whether final text still contains provider tool-call DSL.
-
-    When tool calling is unavailable, a model may nonetheless answer with its
-    native tool-call markup as prose - ``<DSML>tool_calls>``, ``<invoke
-    name=...>``, or the fullwidth-vbar mojibake of the same. Such content is
-    not an answer and must not be released to the user as one.
-    """
+    """Detect provider tool-call markup in a forced-text response."""
     if not content:
         return False
     return bool(
@@ -80,13 +73,7 @@ def _looks_like_tool_call_syntax(content: str) -> bool:
     )
 
 
-# Task target-file detection: a user message usually names the file to
-# create or update ("update C:\\...\\plan.md"). If a run approaches its
-# iteration cap without having written that file, the loop must remind the
-# model instead of ending "answered but incomplete".
-# Windows absolute paths may contain spaces (e.g. C:\Users\Emad Karimi\...),
-# so the drive-letter branch allows spaces and stops non-greedily at the first
-# ".md"; the POSIX and bare-name branches stay space-free word matches.
+# Allow spaces in Windows drive paths and stop at the first .md suffix.
 _TARGET_PATH_RE = re.compile(
     r"[A-Za-z]:\\[^<>|?*\x22\x27\r\n]+?\.md\b"
     r"|/[\w./\\-]+\.md\b"
@@ -100,10 +87,7 @@ _TARGET_ACTION_RE = re.compile(
 
 
 def _named_target_paths(text: str) -> list[Path]:
-    """Return the .md file paths named in a user message (deduped).
-
-    Both absolute Windows paths and bare or relative filenames are matched.
-    """
+    """Return unique .md paths, including Windows absolute paths with spaces."""
     seen: set[str] = set()
     paths: list[Path] = []
     for match in _TARGET_PATH_RE.finditer(text or ""):
@@ -124,14 +108,7 @@ def _named_target_paths(text: str) -> list[Path]:
 
 
 def _previously_archived(target: Path) -> set[str]:
-    """Return the run-relative files the previous archive copied into ``target``.
-
-    The caller deletes what this returns, and the names are read back off disk,
-    so each one is confined to ``target`` here — a manifest carrying ``..`` must
-    not become a way to delete a file elsewhere. An unreadable or malformed
-    manifest yields an empty set: the worst case is the pre-#1094 merge for one
-    turn, which beats refusing to archive a backtest the user is waiting for.
-    """
+    """Read the previous archive manifest, limiting deletion candidates to the resolved target."""
     try:
         payload = json.loads((target / ARCHIVE_MANIFEST).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -152,28 +129,7 @@ def _previously_archived(target: Path) -> set[str]:
 def _archive_backtest_result(
     result: str, active_run_dir: str | None, *, roots: FileRoots, source_call_id: str | None = None
 ) -> bool:
-    """Copy a successful detached backtest into the active, reportable run.
-
-    The model may choose another allowed run directory while iterating.  The
-    CLI and web API, however, identify the turn by ``active_run_dir``.  Keep
-    that public identity stable by copying only deterministic backtest output
-    into the active run as soon as the backtest tool succeeds.
-
-    Both paths are re-validated here.  ``backtest`` already refuses a run_dir
-    outside the allowed roots, so today the source cannot be arbitrary — but
-    that invariant lives in another module and this function reads its path back
-    out of a *tool result* rather than from the validated arguments.  Checking
-    locally keeps a copy loop from depending on a guarantee made elsewhere.
-
-    The copy REPLACES the previous archive rather than merging with it (#1094).
-    An agent may backtest more than once in a turn, and the copy is a plain
-    merge, so a file only the earlier backtest produced used to survive
-    alongside the later one's output — one artifacts directory describing two
-    different runs, which ``/runs/{id}`` then lists as artifacts of the current
-    one.  Only files a previous archive placed here are removed, recorded in
-    :data:`ARCHIVE_MANIFEST`; anything the active run wrote itself (notably
-    ``code/signal_engine.py``, written before ``backtest`` is called) is
-    untouched, which is why the manifest exists instead of a blanket wipe.
+    """Archive a detached backtest after revalidating both paths and pruning only previously copied files.
 
     Args:
         result: Serialized successful backtest tool result.
