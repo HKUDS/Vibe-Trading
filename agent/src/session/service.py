@@ -17,6 +17,7 @@ from src.product.tool_policy import ToolPolicy
 from functools import partial
 
 import asyncio
+import copy
 import logging
 import threading
 import time
@@ -29,7 +30,7 @@ from src.session.attempts import AttemptRunner
 from src.session.event_projection import ThreadEvents
 from src.session.events import EventBus
 from src.session.factory import SessionAgentFactory, compact_recorded_history
-from src.session.maintenance import compact_history, fork_completed_turn
+from src.session.maintenance import compact_history
 from src.session.models import (
     Attempt,
     AttemptStatus,
@@ -243,7 +244,39 @@ class SessionService:
         snapshots are copied only through the selected turn, so identity and
         loaded-tool state cannot include authorisations earned later.
         """
-        fork = fork_completed_turn(self.store, source_session_id, turn_id, title)
+        source = self.store.get_session(source_session_id)
+        if source is None:
+            raise ValueError(f"Session {source_session_id} not found")
+        source_items = self.store.thread_log(source_session_id).read()
+        turn_items = [item for item in source_items if item.turn_id == turn_id]
+        if not any(item.type == "turn_start" for item in turn_items):
+            raise ValueError(f"Turn {turn_id} not found in session {source_session_id}")
+        end = next((item for item in turn_items if item.type == "turn_end"), None)
+        if end is None:
+            raise SessionBusyError("Cannot fork from a turn that is still running")
+        if end.get("status") != "completed":
+            raise ValueError(f"Turn {turn_id} is not completed")
+        copied = [item for item in source_items if item.seq <= end.seq]
+        fork = Session(
+            title=title or f"{source.title or source_session_id} (fork)",
+            config=copy.deepcopy(source.config),
+            owner=source.owner,
+            forked_from_session_id=source_session_id,
+            forked_from_turn_id=turn_id,
+        )
+        self.store.create_session(fork)
+        target_log = self.store.thread_log(fork.session_id)
+        workspace_dir = str(target_log.path.parent / "workspace")
+        try:
+            for item in copied:
+                payload = copy.deepcopy(item.data)
+                if item.type == "state":
+                    payload["workspace_dir"] = workspace_dir
+                    payload["workspace"] = workspace_dir
+                target_log.append(item.type, item.turn_id, **payload)
+        except BaseException:
+            self.store.delete_session(fork.session_id)
+            raise
         self._search_index.index_session(fork.session_id, fork.title)
         self.event_bus.emit(
             fork.session_id,
@@ -450,7 +483,6 @@ class SessionService:
             session_id=session_id,
             role="user",
             content=content,
-            metadata={"queued_input_id": queued.input_id} if queued is not None else {},
         )
         self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": "user", "content": content})
 

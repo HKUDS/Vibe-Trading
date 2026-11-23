@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import threading
 from collections import OrderedDict
@@ -66,44 +67,14 @@ def _parse_line(raw_line: bytes) -> Optional[ThreadItem]:
 
 
 class ThreadEvents:
-    """Item and run events derived from each session's ``thread.jsonl``.
+    """Project durable thread items and correlate transient live events.
 
-    Every event the session publishes goes through :meth:`emit`, which first
-    reads the items appended to the thread since the last call and publishes
-    their item and run events, then forwards canonical live item events. The
-    loop owns event construction and this class only supplies the durable
-    cursor and live-item correlation.
-
-    Vocabulary (``data["kind"]`` names the lifecycle step inside the item
-    envelope):
-
-    * ``item.started`` — ``item.started`` / ``tool.started``.
-    * ``item.delta`` — ``text.delta``, ``reasoning.delta`` (the throttled
-      reasoning tail and character count, not every chunk), ``text.reset``
-      (the streamed text was withdrawn), ``tool.progress``.
-    * ``item.completed`` — ``item.completed`` / ``tool.completed`` /
-      ``tool.failed`` with the recorded ``item`` and its ``seq``; or
-      ``item.discarded`` (no ``seq``) for a live item the thread never
-      recorded.
-    * ``run.started`` / ``run.completed`` / ``run.failed`` / ``run.cancelled``
-      from ``turn_start`` / ``turn_end`` (an ``interrupted`` turn is
-      ``run.failed`` with that status). A run event names its ``turn_id``: a
-      stale turn closed when the next turn begins is reported live too.
-    * A message sent while a turn runs is a live
-      ``item.started`` of type ``user`` with ``status: queued`` and its
-      ``input_id``; the ``user`` item recorded when it joins the conversation
-      completes it under the same ``live_id`` (the oldest queued input with
-      that text), and ``input.discarded`` ends it as ``item.discarded``.
-
-    An event derived from a recorded item has ``SSEEvent.seq`` set and a
-    durable id (:func:`durable_event_id`); it can be rebuilt from disk at any
-    time, also after a restart. Live-only events (``item.started`` of an
-    in-progress response or call, every ``item.delta``, ``item.discarded``)
-    exist in memory only. Every item and run event carries ``cursor``: the
-    highest seq read from the thread when it was published.
+    Recorded events carry a thread seq and a durable SSE ID. Live starts,
+    deltas and discards have no durable seq. Every event in this stream
+    carries the highest seq seen when it was published as its cursor.
 
     Attributes:
-        bus: The event bus events are published on.
+        bus: The event bus used by the session.
     """
 
     def __init__(self, bus: EventBus, thread_path: Callable[[str], Path]) -> None:
@@ -339,12 +310,14 @@ class ThreadEvents:
         self.bus.publish(event)
 
     def _recorded_events(
-        self, session_id: str, item: ThreadItem, live_id: Optional[str]
+        self, session_id: str, item: ThreadItem, live_id: Optional[str],
+        *, view: Optional[Dict[str, Any]] = None,
     ) -> List[SSEEvent]:
         """The completion (and run) events of one recorded item."""
-        view = display_item(item)
         if view is None:
-            return []
+            view = display_item(item)
+            if view is None:
+                return []
         _, completed_kind = _type_kinds(item.type, item.get("status"))
         data: Dict[str, Any] = {
             "kind": completed_kind,
@@ -430,16 +403,16 @@ class ThreadEvents:
                     tail.interactions.pop((item.turn_id, item.type), None)
         elif item.type == "user":
             content = item.get("content")
-            for index, (_, queued_content, queued) in enumerate(tail.inputs):
-                if (item.get("input_id") == tail.inputs[index][0] if item.get("input_id") else queued_content == content):
+            for index, (input_id, queued_content, queued) in enumerate(tail.inputs):
+                if (item.get("input_id") == input_id if item.get("input_id") else queued_content == content):
                     live = queued
                     del tail.inputs[index]
                     break
         elif item.type == "turn_end":
             self._discard_live(session_id, tail, item.turn_id)
 
-        started_kind, _ = _type_kinds(item.type, item.get("status"))
         if live is None:
+            started_kind, _ = _type_kinds(item.type, item.get("status"))
             self._publish(
                 session_id,
                 vocabulary.ITEM_STARTED,
@@ -447,7 +420,7 @@ class ThreadEvents:
                     "kind": started_kind,
                     "seq": item.seq,
                     "turn_id": item.turn_id,
-                    "item": view,
+                    "item": copy.deepcopy(view),
                     "cursor": item.seq,
                 },
                 seq=item.seq,
@@ -457,7 +430,7 @@ class ThreadEvents:
             tail.live_by_seq[item.seq] = live.live_id
             while len(tail.live_by_seq) > _LIVE_ID_MEMORY:
                 tail.live_by_seq.popitem(last=False)
-        for event in self._recorded_events(session_id, item, live.live_id if live else None):
+        for event in self._recorded_events(session_id, item, live.live_id if live else None, view=view):
             self.bus.publish(event)
 
     def _discard(self, session_id: str, tail: _Tail, live: _LiveItem) -> None:

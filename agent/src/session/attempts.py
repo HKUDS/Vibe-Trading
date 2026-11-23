@@ -41,12 +41,7 @@ class AttemptRunner:
         started_at = time.perf_counter()
         try:
             attempt.mark_running()
-            # Wall-clock start (epoch seconds) is the one timing fact clients
-            # cannot reconstruct on their own: a client that (re)connects
-            # mid-attempt resumes its elapsed timer from it, and history
-            # hydration derives the finished attempt's duration from it rather
-            # than from the first tool call. It lives on the persisted attempt
-            # so it survives reconnects and durable thread replay.
+            # Persist wall-clock start for reconnect and history timing.
             wall_started_at = attempt.started_at or time.time()
             self.store.update_attempt(attempt)
             messages = self.store.get_messages(session.session_id)
@@ -107,16 +102,11 @@ class AttemptRunner:
         elif status == "waiting_user":
             attempt.mark_waiting_user(summary=result.get("content", ""))
         elif status == "cancelled":
-            # A cooperative cancel is not an outage; AttemptStatus.CANCELLED
-            # existed but was dead because every non-success landed in the
-            # failure branch.
             attempt.mark_cancelled(reason=result.get("reason", "cancelled by user"))
         else:
             attempt.mark_failed(error=result.get("reason", "unknown"))
         attempt.run_dir = result.get("run_dir")
         if result.get("metrics"):
-            # Metrics were loaded from the run directory but never reached
-            # the attempt, so the reply metadata below was always empty.
             attempt.metrics = result["metrics"]
 
         reply_content = format_result_message(

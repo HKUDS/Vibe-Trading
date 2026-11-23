@@ -27,7 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from src.session.replay import TurnProjection, durable_tool_calls, project_turn, replay_with_seqs
+from src.session.replay import durable_tool_calls, replay_with_seqs
 from src.session.thread import ThreadLog, open_turns
 from src.session.thread_schema import ThreadItem, ThreadItemError
 
@@ -496,8 +496,8 @@ class SessionRuntime:
         model: Optional[str] = None,
         pending_inputs: Optional[list[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> TurnProjection:
-        """Close a turn in the thread and project its display row.
+    ) -> None:
+        """Close a turn in the thread.
 
         A turn that never reached the model (it failed or was cancelled while
         its tools were still being built) has no ``turn_start``; the user's
@@ -515,9 +515,6 @@ class SessionRuntime:
             error: Stored failure reason for durable run events.
             provider: Provider used by the turn.
             model: Model used by the turn.
-
-        Returns:
-            The turn's projection onto the legacy display row.
         """
         with self._lock:
             recorder = self._recorders.pop(turn_id, None)
@@ -535,15 +532,14 @@ class SessionRuntime:
                 provider=provider, model=model, pending_inputs=pending_inputs,
                 metadata=metadata,
             )
-        return project_turn(self.thread.read(), turn_id, run_dir=run_dir)
 
     def partial_response(self, turn_id: str) -> Optional[str]:
         """Return the latest durable streaming checkpoint for a turn."""
-        value: Optional[str] = None
-        for item in self.thread.read():
-            if item.turn_id == turn_id and item.type == "checkpoint":
-                value = item.get("content")
-        return value
+        return next(
+            (item.get("content") for item in reversed(self.thread.read())
+             if item.turn_id == turn_id and item.type == "checkpoint"),
+            None,
+        )
 
     def record_checkpoint(self, turn_id: str, content: str) -> None:
         """Append a streamed-text checkpoint for an active turn."""
