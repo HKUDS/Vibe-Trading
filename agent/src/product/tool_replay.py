@@ -7,28 +7,19 @@ from typing import Any, Mapping
 
 from src.session.compaction_ops import _result_data_gone
 from src.product.result_artifacts import deliver_tool_result
+from src.product.tool_results import parse_tool_payload
 from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import redact_tool_result
 
 logger = logging.getLogger(__name__)
 
 
-# Compaction recovery is a bounded reliability aid, not an alternate research
-# loop: a run restores at most this many lost readonly payloads from its replay
-# cache. Past the cap a lost call runs again as it does without replay, so the
-# model is never told to use a result it can no longer see, and a loop of
-# identical re-runs still ends at the no-progress limit.
+# Beyond this cap, a lost read may execute again under the normal progress budget.
 MAX_READONLY_REPLAY_RECOVERIES = 6
 
 
 def _replay_context_result(result: str) -> str:
-    """Annotate a restored readonly result with planner guidance.
-
-    Replay exists to recover evidence that context compaction removed, not to
-    trigger another fetch under slightly different freshness arguments. Keep
-    the original payload intact and add a reserved metadata field when the
-    result is a JSON object; non-JSON results get a short textual suffix.
-    """
+    """Expose restored evidence with a replay notice while preserving the payload."""
     notice = (
         "Exact prior successful result restored after context compaction. "
         "Treat this payload as available evidence and continue the analysis. "
@@ -36,13 +27,9 @@ def _replay_context_result(result: str) -> str:
         "request a fresh fetch only when the evidence itself is stale/cached "
         "or the task genuinely requires newer data."
     )
-    try:
-        payload = json.loads(result)
-    except (TypeError, ValueError):
+    replay_payload = parse_tool_payload(result)
+    if replay_payload is None:
         return f"{result}\n\n[Replay notice: {notice}]"
-    if not isinstance(payload, dict):
-        return f"{result}\n\n[Replay notice: {notice}]"
-    replay_payload = dict(payload)
     replay_payload["_vibe_replay"] = {
         "restored": True,
         "notice": notice,
@@ -79,13 +66,7 @@ class ToolReplay:
         return bool(tool_def and getattr(tool_def, "is_readonly", False))
 
     def _readonly_replay_allowed(self, tool_def: Any, arguments: Mapping[str, Any]) -> bool:
-        """Whether an exact readonly result may be restored after compaction.
-
-        This is intentionally narrower than ``is_readonly``: deterministic
-        calls already use the existing cache, and ``no_cache=True`` explicitly
-        requests a fresh read. Repeatable calls require explicit opt-in because
-        they may otherwise be intentionally refreshed.
-        """
+        """Require compaction replay opt-in for repeatable reads and honor explicit freshness."""
         if tool_def is None or not getattr(tool_def, "is_readonly", False):
             return False
         if getattr(tool_def, "deterministic", False):
@@ -161,11 +142,6 @@ class ToolReplay:
 
     def deliver_cached(self, tc, tool_def, is_repeatable, dedup_key, context, messages, trace, iteration, delivery):
         """Deliver or skip an already authorized call when its replay policy permits."""
-        # A successful readonly call whose visible result was removed by
-        # micro/auto-compaction can be replayed from this run's memory. This
-        # extends the existing deterministic-cache pattern without declaring
-        # mutable web resources deterministic. Fresh/no-cache calls bypass
-        # this path, while repeatable calls must explicitly opt in.
         if (
             dedup_key is not None
             and dedup_key in self._readonly_replay_ready
@@ -213,7 +189,7 @@ class ToolReplay:
                 or dedup_key in self._readonly_replay_protected
             )
         ):
-            logger.warning(f"Blocked duplicate call: {tc.name} (already succeeded)")
+            logger.warning("Blocked duplicate call: %s (already succeeded)", tc.name)
             replay_restored = dedup_key in self._readonly_replay_protected
             reason = (
                 f"{tc.name} was just restored from the run-scoped replay cache after "
@@ -229,32 +205,20 @@ class ToolReplay:
             delivery.progress.note("skipped", tc.name)
             return True
 
-        # Deterministic tools (e.g. financial_rigor calc) return the same
-        # result for the same args. Checked AFTER authorization above so a
-        # cached repeat can never bypass the identity gate. After auto-compact cleared earlier
-        # tool outputs, the model used to re-run identical expressions
-        # 5-9x each (2026-08-20 INTC run) to re-verify numbers it could
-        # no longer see. Serve an identical prior call from cache instead.
-        if tool_def is not None and getattr(tool_def, "deterministic", False):
-            cache_key = self._identical_call_key(tc.name, tc.arguments)
-            if cache_key is not None and cache_key in self._called_identical:
-                cached = self._called_identical[cache_key]
-                delivery._append_tool_result(
-                    messages, context, tc.id, tc.name,
-                    deliver_tool_result(cached, self.env.memory.run_dir, self.env.registry),
-                    status="ok", elapsed_ms=0,
-                )
-                self._successful_call_keys[tc.id] = cache_key
-                self._called_ok.add(cache_key)
-                trace.write({
-                    "type": "tool_result_cached",
-                    "iter": iteration,
-                    "tool": tc.name,
-                    "call_id": tc.id,
-                })
-                delivery.progress.note("cached", tc.name)
-                delivery._emit_tool_completed(tc, "ok", 0, cached[:200], cached=True)
-                return True
+        # Deterministic results can be reused after authorization and compaction.
+        if getattr(tool_def, "deterministic", False) and dedup_key in self._called_identical:
+            cached = self._called_identical[dedup_key]
+            delivery._append_tool_result(
+                messages, context, tc.id, tc.name,
+                deliver_tool_result(cached, self.env.memory.run_dir, self.env.registry),
+                status="ok", elapsed_ms=0,
+            )
+            self._successful_call_keys[tc.id] = dedup_key
+            self._called_ok.add(dedup_key)
+            trace.write({"type": "tool_result_cached", "iter": iteration, "tool": tc.name, "call_id": tc.id})
+            delivery.progress.note("cached", tc.name)
+            delivery._emit_tool_completed(tc, "ok", 0, cached[:200], cached=True)
+            return True
 
         return False
 

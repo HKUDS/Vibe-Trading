@@ -302,19 +302,9 @@ class EventBus:
             List of events that should be replayed.
         """
         with self._lock:
-            return self._replay_locked(session_id, last_event_id, replay_all=replay_all)
-
-    def _replay_locked(
-        self,
-        session_id: str,
-        last_event_id: Optional[str] = None,
-        *,
-        replay_all: bool = False,
-    ) -> List[SSEEvent]:
-        """Compute the replay list. Caller must already hold ``self._lock``."""
-        return select_replay(
-            self._buffers.get(session_id, []), last_event_id, replay_all=replay_all
-        )
+            return select_replay(
+                self._buffers.get(session_id, []), last_event_id, replay_all=replay_all
+            )
 
     def attach(self, session_id: str) -> Tuple["SubscriberQueue", List[SSEEvent]]:
         """Register a subscriber queue and snapshot the buffer atomically.

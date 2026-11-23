@@ -51,10 +51,6 @@ def _default_max_iterations() -> int:
     return get_env_config().swarm.swarm_worker_max_iter
 
 
-def _default_timeout_seconds() -> int:
-    return get_env_config().swarm.swarm_worker_timeout
-
-
 def _emit(
     callback: Callable[[SwarmEvent], None] | None,
     event_type: str,
@@ -106,17 +102,7 @@ def _filter_skill_descriptions(loader: SkillsLoader, skill_names: list[str]) -> 
 
 
 class UsageMeasure(NamedTuple):
-    """Token usage of a single LLM call, with cache breakdown and provenance.
-
-    Attributes:
-        input_tokens: Input tokens — provider-reported or heuristic estimate.
-        output_tokens: Output tokens — provider-reported or heuristic estimate.
-        cache_read_tokens: Prompt-cache read tokens (0 when estimated).
-        cache_creation_tokens: Prompt-cache creation tokens (0 when estimated).
-        token_source: ``"provider"`` when the counts came from real
-            ``usage_metadata``, ``"estimated"`` when they came from the
-            ``len // 4`` heuristic.
-    """
+    """One request’s token counts, cache breakdown and provenance."""
 
     input_tokens: int
     output_tokens: int
@@ -129,33 +115,14 @@ def _measure_usage(
     messages: list[dict],
     response: object,
 ) -> UsageMeasure:
-    """Return full token usage for a single LLM call, real if available.
-
-    Prefers the provider-reported counts attached to the response by
-    :func:`src.providers.response.parse_response` (``usage_metadata``), normalized through
-    :func:`src.product.usage._normalize_llm_usage` — the exact same
-    normalization the main agent loop applies behind ``llm_usage.json``, so
-    the swarm never grows a second cache-token accounting rule. Falls back to a
-    character-length heuristic (``len // 4``) only when the provider didn't
-    return usage data — keeps the behaviour contract for legacy or partial
-    responses while making per-run totals (which feed
-    ``SwarmRun.total_input_tokens`` / ``total_output_tokens`` and the cache
-    totals) reflect real billing instead of a CJK-hostile char-count guess.
+    """Normalize provider usage or estimate from character counts.
 
     Args:
-        messages: Messages sent to the LLM for this call. Used only for
-            the fallback estimate when ``response.usage_metadata`` is
-            missing.
-        response: ``LLMResponse`` from ``ChatLLM.chat`` /
-            ``ChatLLM.stream_chat``.
+        messages: Request messages used for the input estimate.
+        response: Provider response, when available.
 
     Returns:
-        :class:`UsageMeasure` with input/output tokens, the prompt-cache
-        breakdown (zero on the heuristic path — a cache count is never
-        estimated) and the ``token_source`` provenance label. Any token
-        component may be zero — that simply means the provider didn't
-        report it and the fallback couldn't compute it either (e.g.
-        binary content).
+        Counts, cache breakdown and the provenance label.
     """
     if isinstance(response, LLMResponse) and response.usage_metadata:
         normalized = _normalize_llm_usage(response.usage_metadata)
@@ -311,16 +278,6 @@ def build_worker_prompt(
     return "\n\n".join(prompt_parts)
 
 
-def _worker_background(run_dir: Path, agent_id: str, task_id: str):
-    """Return the canonical background handle for a worker."""
-    from src.tools.background_tools import BackgroundScope, get_background_manager
-
-    return get_background_manager().for_scope(BackgroundScope(
-        owner_id=f"swarm:{Path(run_dir).resolve()}:{agent_id}:{task_id}", attempt_id=task_id,
-    ))
-
-
-
 _UNPARSED_TOOL_MARKERS = (
     "<\uff5ctool\u2581calls\u2581begin\uff5c>",
     "<tool_calls_begin>",
@@ -328,6 +285,8 @@ _UNPARSED_TOOL_MARKERS = (
     "<tool_sep>",
     "tool\u2581sep",
 )
+
+
 def _delivery_error(summary: str) -> str | None:
     """Detect missing output or unparsed provider protocol, not report quality."""
     text = (summary or "").strip()
@@ -725,14 +684,18 @@ def run_node(
     thread = ThreadLog(thread_path)
     try:
         previous = thread.read(strict=True) if resume else []
+        uncertain = unknown_outcome(previous)
     except (OSError, ThreadItemError):
-        emit("worker_failed", {"error": UNKNOWN_TOOL_OUTCOME})
-        return WorkerResult(status="failed", summary="", error=UNKNOWN_TOOL_OUTCOME)
-    if unknown_outcome(previous):
+        uncertain = True
+    if uncertain:
         emit("worker_failed", {"error": UNKNOWN_TOOL_OUTCOME})
         return WorkerResult(status="failed", summary="", error=UNKNOWN_TOOL_OUTCOME)
 
-    background = _worker_background(run_dir, agent_spec.id, task.id)
+    from src.tools.background_tools import BackgroundScope, get_background_manager
+
+    background = get_background_manager().for_scope(BackgroundScope(
+        owner_id=f"swarm:{Path(run_dir).resolve()}:{agent_spec.id}:{task.id}", attempt_id=task.id,
+    ))
     registry = build_swarm_registry(
         agent_spec.tools, policy=policy, agent_config=agent_config,
         include_shell_tools=include_shell_tools, skill_allowlist=agent_spec.skills or None,
@@ -759,7 +722,7 @@ def run_node(
     if history:
         emit("worker_resumed", {"messages": len(history) + 1})
     llm = ChatLLM(model_name=agent_spec.model_name, policy=policy)
-    stop = NodeStop(cancel_event, agent_spec.timeout_seconds or _default_timeout_seconds())
+    stop = NodeStop(cancel_event, agent_spec.timeout_seconds or get_env_config().swarm.swarm_worker_timeout)
     model = NodeModel(llm, stop, emit, record_usage)
     try:
         child = NodeRuntime(

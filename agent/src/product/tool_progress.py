@@ -7,14 +7,7 @@ import json
 from collections import Counter
 
 NO_PROGRESS_LIMIT = 8
-#: Identical failures tolerated before an exact repeat is refused. Blocking
-#: on the FIRST one makes a transient failure permanent: a rate limit, a
-#: network blip or the 1800s tool timeout says nothing about the arguments,
-#: and only a successful *mutating* call clears the ledger -- which a pure
-#: research run may never make. The second identical failure is the one that
-#: shows the call itself is the problem. #1353's loop reissued the same
-#: rejected path ~35 times, so a threshold of 2 still kills it well inside
-#: NO_PROGRESS_LIMIT.
+# Allow one retry for a transient failure. A successful mutation clears the count.
 FAILURE_BLOCK_THRESHOLD = 2
 #: What the user can do next, whatever stalled: #1363's case was an artifact
 #: the agent could not find, where only the exact path helps.
@@ -111,15 +104,7 @@ class ToolProgress:
             self.note("repeat", name)
 
     def mark_context_restored(self) -> None:
-        """Grant one run-scoped grace iteration after compaction restores evidence.
-
-        Replaying a cached readonly result is not a new external observation, so
-        it must never reset the no-progress history indefinitely. The first
-        restoration in a run may hold the current stall count for one iteration
-        so the model gets a chance to consume the restored payload; later
-        restorations do not extend the budget. A genuinely new observation still
-        resets the stall chain through :meth:`record`.
-        """
+        """Give the model one run-scoped grace iteration to read restored evidence."""
         if self._context_restore_grace_used:
             return
         self._context_restore_grace_used = True
@@ -156,12 +141,7 @@ class ToolProgress:
         return self.stalled_iterations >= NO_PROGRESS_LIMIT
 
     def recovery_message(self) -> str:
-        """Say what the stalled iterations kept doing, not just that they stalled.
-
-        The fixed message this replaces described one scenario (an answer lost
-        to compaction) for every stop, so a user whose data source was down or
-        whose request was refused by the identity check read about "the
-        previous summary" and could not tell what to change.
+        """Summarize the repeated operations that stalled the run.
 
         Returns:
             The stop message shown to the user.

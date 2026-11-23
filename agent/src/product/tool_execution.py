@@ -3,16 +3,32 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import copy
+from dataclasses import dataclass
+from itertools import groupby
 from typing import Any
 
+from src.agent.tools import ToolRegistry
 from src.agent.tuning import _override
-from src.kernel.contracts import BoundCall
+from src.kernel.contracts import BoundCall, ToolCallRequest
 from src.kernel.tool_runner import execute_batch
 from src.product.context import ContextBuilder
+from src.product.data_window import UserDataWindow
+from src.product.identity.ledger import IdentityLedger
+from src.product.resources.memory import WorkspaceMemory
 from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import redact_payload
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ToolEnvironment:
+    registry: ToolRegistry
+    memory: WorkspaceMemory
+    identity: IdentityLedger | None = None
+    data_window: UserDataWindow | None = None
+    session_id: str = ""
 
 
 class ToolExecution:
@@ -47,8 +63,6 @@ class ToolExecution:
         provider tool messages with invented call IDs. Failures are attached to
         the requesting consumer's normal refusal so the model can see the cause.
         """
-        from src.kernel.contracts import ToolCallRequest
-
         outcomes = {}
         for tc in tool_calls:
             query = self._identity_dependency_query(tc)
@@ -66,16 +80,15 @@ class ToolExecution:
             # The lookup is not model input, but its result is part of the
             # turn the user saw run; the thread records it for the display
             # trail (replay drops a result whose call the model never made).
-            self.delivery.conversation.dependency_lists = (*self.delivery.conversation.dependency_lists, internal_messages)
+            conversation = self.delivery.conversation
+            previous_lists = conversation.dependency_lists
+            conversation.dependency_lists = (*previous_lists, internal_messages)
             try:
                 self.process(
                     [dependency], context, internal_messages, trace, iteration,
                 )
             finally:
-                self.delivery.conversation.dependency_lists = tuple(
-                    listed for listed in self.delivery.conversation.dependency_lists
-                    if listed is not internal_messages
-                )
+                conversation.dependency_lists = previous_lists
             if internal_messages:
                 outcomes[tc.id] = internal_messages[-1]["content"]
         return outcomes
@@ -105,8 +118,6 @@ class ToolExecution:
         tool_calls = list(tool_calls)
         window = self.env.data_window
         if window is not None:
-            from copy import copy
-
             for index, tc in enumerate(tool_calls):
                 if not getattr(self.env.registry.get(tc.name), "use_user_date_window", False):
                     continue
@@ -133,29 +144,15 @@ class ToolExecution:
                     tool_calls.insert(index, tool_calls.pop(later))
                     break
 
-        # A resolver is a real data dependency. Execute it at a boundary so
-        # subsequent reads see its result rather than a stale pre-turn snapshot.
+        # Each resolver commits its identity before the next tool segment.
         if len(tool_calls) > 1 and any(tc.name == "search_symbol" for tc in tool_calls):
             compact_requested, focus_topic = False, ""
-            segment = []
-            for tc in tool_calls:
-                if tc.name == "search_symbol":
-                    for part in (segment, [tc]):
-                        if part:
-                            compact, focus = self.process(
-                                part, context, messages, trace, iteration,
-                            )
-                            compact_requested |= compact
-                            focus_topic = focus or focus_topic
-                    segment = []
-                else:
-                    segment.append(tc)
-            if segment:
-                compact, focus = self.process(
-                    segment, context, messages, trace, iteration,
-                )
-                compact_requested |= compact
-                focus_topic = focus or focus_topic
+            for is_resolver, group in groupby(tool_calls, key=lambda tc: tc.name == "search_symbol"):
+                parts = ([tc] for tc in group) if is_resolver else (list(group),)
+                for part in parts:
+                    compact, focus = self.process(part, context, messages, trace, iteration)
+                    compact_requested |= compact
+                    focus_topic = focus or focus_topic
             return compact_requested, focus_topic
 
         # Do not pull an implicit prerequisite ahead of a prior mutation.

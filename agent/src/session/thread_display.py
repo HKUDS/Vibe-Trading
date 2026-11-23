@@ -115,12 +115,8 @@ def display_page(
         view for view in (display_item(item) for item in items if item.seq > after)
         if view is not None and (before is None or view["seq"] < before)
     ]
-    if before is None:
-        page, has_more = shown[:limit], len(shown) > limit
-    else:
-        page, has_more = shown[-limit:], len(shown) > limit
     return {
-        "items": page,
-        "has_more": has_more,
+        "items": shown[:limit] if before is None else shown[-limit:],
+        "has_more": len(shown) > limit,
         "cursor": max((item.seq for item in items), default=0),
     }

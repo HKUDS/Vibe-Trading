@@ -739,6 +739,50 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
         common.console.print(f"\n{content}")
 
 
+def _execute_prompt(
+    prompt: str,
+    max_iter: int,
+    *,
+    session_id: str,
+    start: float,
+    json_mode: bool,
+    no_rich: bool,
+    run_id: str | None = None,
+    run_dir: str | None = None,
+) -> dict | None:
+    """Run a prompt with the output and interrupt handling for its mode."""
+    run_options = {"run_dir_override": run_dir} if run_dir is not None else {}
+    try:
+        if json_mode or no_rich:
+            result = _run_agent(
+                prompt,
+                **run_options,
+                max_iter=max_iter,
+                no_rich=no_rich,
+                stream_output=not json_mode,
+                session_id=session_id,
+            )
+        else:
+            dashboard = rail.RailRunDashboard(prompt, max_iter)
+            with common.Live(dashboard.render(), console=common.console, refresh_per_second=6, transient=True) as live:
+                dashboard.live = live
+                result = _run_agent(
+                    prompt, max_iter=max_iter, dashboard=dashboard, session_id=session_id, **run_options
+                )
+                dashboard.finish(result, common.time.perf_counter() - start)
+    except KeyboardInterrupt:
+        if json_mode:
+            _print_json_result({
+                "status": "cancelled", "run_id": run_id, "run_dir": run_dir, "reason": "Interrupted",
+            })
+        elif no_rich:
+            print("\nInterrupted")
+        else:
+            common.console.print("\n[yellow]Interrupted[/yellow]")
+        return None
+    return result
+
+
 def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: bool = False) -> int:
     """Single run."""
     if not json_mode:
@@ -756,31 +800,10 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
             common.console.print(f"[dim]Prompt:[/dim] {preview}{suffix}\n")
     start = common.time.perf_counter()
     session_id = _ensure_session_id(prompt)
-    try:
-        if json_mode or no_rich:
-            result = _run_agent(
-                prompt,
-                max_iter=max_iter,
-                no_rich=no_rich,
-                stream_output=not json_mode,
-                session_id=session_id,
-            )
-        else:
-            dashboard = rail.RailRunDashboard(prompt, max_iter)
-            with common.Live(dashboard.render(), console=common.console, refresh_per_second=6, transient=True) as live:
-                dashboard.live = live
-                result = _run_agent(
-                    prompt, max_iter=max_iter, dashboard=dashboard, session_id=session_id
-                )
-                dashboard.finish(result, common.time.perf_counter() - start)
-    except KeyboardInterrupt:
-        if json_mode:
-            _print_json_result({"status": "cancelled", "run_id": None, "run_dir": None, "reason": "Interrupted"})
-            return common.EXIT_RUN_FAILED
-        if no_rich:
-            print("\nInterrupted")
-            return common.EXIT_RUN_FAILED
-        common.console.print("\n[yellow]Interrupted[/yellow]")
+    result = _execute_prompt(
+        prompt, max_iter, session_id=session_id, start=start, json_mode=json_mode, no_rich=no_rich,
+    )
+    if result is None:
         return common.EXIT_RUN_FAILED
     if json_mode:
         _print_json_result(result)
@@ -837,56 +860,22 @@ def cmd_continue(
         prompt,
         session_id=run_id if session_trace_dir.exists() else f"run-{run_id}",
     )
-    if not json_mode and no_rich:
-        print(f"Continue {run_id}: {prompt[:120]}\n")
-    if json_mode or no_rich:
-        start = common.time.perf_counter()
-        try:
-            result = _run_agent(
-                prompt,
-                run_dir_override=str(trace_dir),
-                max_iter=max_iter,
-                no_rich=no_rich,
-                stream_output=not json_mode,
-                session_id=session_id,
-            )
-        except KeyboardInterrupt:
-            if json_mode:
-                _print_json_result(
-                    {
-                        "status": "cancelled",
-                        "run_id": run_id,
-                        "run_dir": str(trace_dir),
-                        "reason": "Interrupted",
-                    }
-                )
-            else:
-                print("\nInterrupted")
-            return common.EXIT_RUN_FAILED
-        if json_mode:
-            _print_json_result(result)
-            return _result_exit_code(result)
-        _print_result(result, common.time.perf_counter() - start, no_rich=True)
-        return _result_exit_code(result)
-
-    common.console.print(f"[dim]Continue {run_id}:[/dim] {prompt[:120]}\n")
+    if not json_mode:
+        if no_rich:
+            print(f"Continue {run_id}: {prompt[:120]}\n")
+        else:
+            common.console.print(f"[dim]Continue {run_id}:[/dim] {prompt[:120]}\n")
     start = common.time.perf_counter()
-    try:
-        dashboard = rail.RailRunDashboard(prompt, max_iter)
-        with common.Live(dashboard.render(), console=common.console, refresh_per_second=6, transient=True) as live:
-            dashboard.live = live
-            result = _run_agent(
-                prompt,
-                run_dir_override=str(trace_dir),
-                max_iter=max_iter,
-                dashboard=dashboard,
-                session_id=session_id,
-            )
-            dashboard.finish(result, common.time.perf_counter() - start)
-    except KeyboardInterrupt:
-        common.console.print("\n[yellow]Interrupted[/yellow]")
+    result = _execute_prompt(
+        prompt, max_iter, session_id=session_id, start=start, json_mode=json_mode,
+        no_rich=no_rich, run_id=run_id, run_dir=str(trace_dir),
+    )
+    if result is None:
         return common.EXIT_RUN_FAILED
-    _print_result(result, common.time.perf_counter() - start)
+    if json_mode:
+        _print_json_result(result)
+    else:
+        _print_result(result, common.time.perf_counter() - start, no_rich=no_rich)
     return _result_exit_code(result)
 
 

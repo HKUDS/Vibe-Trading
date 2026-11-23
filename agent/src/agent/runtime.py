@@ -5,14 +5,14 @@ from __future__ import annotations
 import logging
 import threading
 import time as _time
+import traceback
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 from src.agent.loop_conversation import ConversationState
 from src.agent.loop_driver import IterationSteps
-from src.agent.loop_state import TurnSetup, TurnState
+from src.agent.loop_state import TurnState
 from src.agent.loop_watchdog import StallWatchdog
-from src.agent.turn_completion import complete_turn, fail_turn
 from src.agent.tools import ToolRegistry
 from src.agent.tuning import (
     _llm_timeout_seconds,
@@ -32,13 +32,14 @@ from src.kernel.loop import run_loop
 from src.kernel.state import RunActivity
 from src.product.artifacts import ToolDelivery, write_run_manifest
 from src.product.context import ContextBuilder
+from src.product.data_window import UserDataWindow
 from src.product.goals import GoalBudget
 from src.product.identity.ledger import IdentityLedger
+from src.product.outcome import finish_outcome
 from src.product.pacing import TurnPacing
 from src.product.resources.hooks import HookDecision
 from src.product.resources.memory import WorkspaceMemory
-from src.product.tool_execution import ToolExecution
-from src.product.tool_execution_context import ToolEnvironment
+from src.product.tool_execution import ToolEnvironment, ToolExecution
 from src.product.tool_invocation import ToolInvocation
 from src.product.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
 from src.product.tool_replay import ToolReplay
@@ -46,11 +47,12 @@ from src.product.usage import UsageLedger
 from src.product.verification import _verification_ledger
 from src.product.write_directives import WriteTargetState
 from src.providers.chat import ChatLLM
-from src.providers.response import reported_model_source
+from src.providers.response import ProviderStreamError, reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.session.compaction import ContextCompactor
 from src.session.request import SessionRequest
 from src.tools.background_tools import get_background_manager
+from src.tools.redaction import redact_text
 
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
@@ -77,7 +79,7 @@ class AgentRuntime:
         local_thread_path: Path | None = None,
         pacing_type: type[TurnPacing] = TurnPacing,
     ) -> None:
-        """Initialize AgentRuntime.
+        """Compose a turn runtime.
 
         Args:
             registry: Tool registry.
@@ -86,27 +88,11 @@ class AgentRuntime:
             event_callback: Event callback (event_type, data).
             max_iterations: Maximum research iterations, plus one text-only answer retry.
             persistent_memory: PersistentMemory for cross-session recall.
-            cancel_event: Optional cancellation flag to share with long-running
-                tools (e.g. ``run_swarm``). The host session owns the event so a
-                user stop reaches both the loop and the tools it is blocked in;
-                ``None`` keeps the loop self-contained (CLI and tests).
-            background_manager: Scoped handle over the background task table.
-                Must be the same handle the registry bound to its background
-                tools, so this loop drains the completions of its own tasks and
-                never another conversation's. Falls back to the handle the
-                registry recorded, and only then to an unowned one.
-            thread_recorder: The conversation's sink for this turn
-                (``src.session.runtime.TurnRecorder``). It receives every item
-                the model sees, carries the identity records and loaded tool
-                names earlier turns left, and brings their offloaded tool
-                results into this run. ``None`` (CLI, tests) records nothing
-                and starts every run fresh, as before.
-            queued_inputs: Source of user messages sent while this turn runs
-                (``src.session.pending_inputs.QueuedInputDelivery``). Its
-                ``deliver()`` records each one in the thread and returns the
-                user messages to append; the loop takes them only after a
-                tool batch finished, before the next model call. ``None``
-                takes none.
+            cancel_event: Host-owned flag shared with long-running tools.
+            background_manager: Scoped handle shared with the registry's tools.
+            thread_recorder: Durable item sink carrying identity, tools and
+                offloaded results across turns. Optional for standalone runs.
+            queued_inputs: User input source drained between tool batches.
             system_prompt: A host-supplied prompt with a fixed tool catalog.
             local_thread_path: A private durable thread for an isolated task.
             pacing_type: Turn delivery policy selected by the caller.
@@ -124,15 +110,11 @@ class AgentRuntime:
         runtime_snapshot = getattr(llm, "runtime_snapshot", None)
         if not isinstance(runtime_snapshot, LLMRuntimeSnapshot):
             runtime_cfg = get_env_config().llm
+            model = getattr(llm, "model_name", None) or runtime_cfg.langchain_model_name
             runtime_snapshot = LLMRuntimeSnapshot(
                 provider=runtime_cfg.langchain_provider.strip().lower() or "openai",
-                configured_model=(
-                    getattr(llm, "model_name", None)
-                    or runtime_cfg.langchain_model_name
-                ).strip(),
-                reasoning_effort=(
-                    runtime_cfg.langchain_reasoning_effort.strip().lower()
-                ),
+                configured_model=model.strip(),
+                reasoning_effort=runtime_cfg.langchain_reasoning_effort.strip().lower(),
             )
         self._llm_runtime = runtime_snapshot
         self.memory = memory or WorkspaceMemory()
@@ -197,12 +179,7 @@ class AgentRuntime:
         return self.activity.cancel.is_set() or self.goals.stop_reason is not None
 
     def cancel(self) -> None:
-        """Cancel the current loop.
-
-        Sets a thread-safe flag polled at every iteration boundary, per LLM
-        stream chunk, and between tool batches, so a running turn stops at the
-        next cooperative checkpoint instead of only at the next iteration.
-        """
+        """Request cooperative cancellation and stop owned background work."""
         self.activity.cancel.set()
         self._run_hook("Stop", {"session_id": self.tool_env.session_id})
         # Stop must reach commands the current or an earlier turn spawned, not
@@ -211,11 +188,7 @@ class AgentRuntime:
             self._background_manager.cancel_all()
 
     def run(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
-        """Run the ReAct loop synchronously.
-
-        Binds ``session_id`` as the active LLM session for the whole run so
-        provider adapters that need a stable per-conversation identity
-        (OpenCode Go's ``x-opencode-session``) can read it at request time.
+        """Run a turn with its provider session ID bound through cleanup.
 
         Args:
             user_message: User message.
@@ -275,11 +248,10 @@ class AgentRuntime:
         self.activity.start()
         self._conversation.turn_messages = None
         self._conversation.delta = []
-        setup = self._prepare_turn(user_message, history, session_id)
-        if setup.denied_result is not None:
-            return setup.denied_result
-        state = setup.state
-        assert state is not None
+        state = self._prepare_turn(user_message, history, session_id)
+        if isinstance(state, dict):
+            return state
+        turn = None
         try:
             pacing = self._pacing_type(self._conversation, self._llm_runtime.provider, self.llm, self.max_iterations, self.goals)
             steps = IterationSteps(
@@ -300,19 +272,35 @@ class AgentRuntime:
                 steps.ports(), self.run_limits(), self.activity.cancel, self._emit,
             )
         except Exception as exc:
-            return fail_turn(
-                exc, setup, activity=self.activity, conversation=self._conversation,
-                tool_env=self.tool_env, usage=self.usage.summary["totals"],
-                max_iterations=self.max_iterations, logger=logger,
+            reason = redact_text(exc)
+            logger.error("AgentRuntime error: %s", redact_text(traceback.format_exc()))
+            code = "provider_stream_error" if isinstance(exc, ProviderStreamError) else "agent_loop_error"
+            state.trace.write({"type": "end", "iter": self.activity.iteration, "status": "error",
+                               "reason": reason, "iterations": state.iteration})
+            state.state_store.mark_failure(state.run_dir, reason)
+            usage = self.usage.summary["totals"]
+            result = {"status": "failed", "error_code": code, "reason": reason,
+                      "run_dir": str(state.run_dir), "run_id": state.run_dir.name,
+                      "content": "", "iterations": state.iteration, "max_iterations": self.max_iterations}
+        else:
+            result = finish_outcome(
+                state, iterations=turn.iterations, activity=self.activity, runtime=self._llm_runtime,
+                max_iterations=self.max_iterations, budget_reason=self.goals.stop_reason,
+                waiting_user=self.delivery.waiting_user is not None, pending_write=self._write_targets.pending,
             )
-        return complete_turn(
-            setup, turn=turn, activity=self.activity, runtime=self._llm_runtime,
-            max_iterations=self.max_iterations, budget_reason=self.goals.stop_reason,
-            waiting_user=self.delivery.waiting_user is not None, pending_write=self._write_targets.pending,
-            conversation=self._conversation, tool_env=self.tool_env,
-        )
+            usage = turn.usage
+        self._conversation.end_turn(self.tool_env, usage)
+        if turn is not None:
+            if state.trace._runtime.require_durable_items:
+                result["stop_reason"] = turn.reason
+                result["content_filter_count"] = state.content_filter_count
+            recorder = self._conversation.thread
+            items = recorder._runtime.thread.turn_items(recorder.turn_id)
+            result["tool_count"] = sum(item.type == "tool_result" for item in items)
+        self.activity.done.set()
+        return result
 
-    def _prepare_turn(self, user_message: str, history: Optional[list[ModelMessage]], session_id: str) -> TurnSetup:
+    def _prepare_turn(self, user_message: str, history: Optional[list[ModelMessage]], session_id: str) -> TurnState | dict[str, Any]:
         """Build run resources and per-turn state before iteration."""
         if isinstance(self.registry, DeferredToolRegistry):
             self.registry.reset_exposure()
@@ -354,18 +342,17 @@ class AgentRuntime:
             if self._hooks is not None:
                 self._hooks.set_audit_sink(self._conversation.thread)
 
+        trace = self._conversation.thread
         state_store.save_request(
             run_dir,
             user_message,
             {
                 "session_id": session_id,
                 "session_workspace": self.memory.session_workspace,
-                "turn_id": self._conversation.thread.turn_id,
+                "turn_id": trace.turn_id,
             },
         )
-        if self._conversation.thread is not None:
-            self._conversation.thread.prepare_workspace(run_dir)
-        from src.product.data_window import UserDataWindow
+        trace.prepare_workspace(run_dir)
 
         self.tool_env.data_window = UserDataWindow.parse(user_message)
         # Authorization carried from an earlier turn comes only from the
@@ -375,14 +362,12 @@ class AgentRuntime:
         self.tool_env.identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,
-            history=(self._conversation.thread.user_history if self._local_thread_path is None else None),
+            history=(trace.user_history if self._local_thread_path is None else None),
             contextual_identity_constraints=(
                 get_env_config().agent_tuning.vibe_contextual_identity_constraints
             ),
-            seed_prompt_symbols=self._conversation.thread is None or (
-                self._conversation.thread.queued_input_id is None and self._conversation.thread.answer_to_question_id is None
-            ),
-            restored_state=(self._conversation.thread.identity_state if self._local_thread_path is None else None),
+            seed_prompt_symbols=trace.queued_input_id is None and trace.answer_to_question_id is None,
+            restored_state=(trace.identity_state if self._local_thread_path is None else None),
         )
 
         context = ContextBuilder(self.registry, self.memory,
@@ -402,60 +387,49 @@ class AgentRuntime:
             recorded_user = {"role": "user", "content": llm_user_message}
             messages = [{"role": "system", "content": self._system_prompt}, *(history or [recorded_user])]
         self._conversation.turn_messages = messages
-        if self._conversation.thread is not None:
-            # Before any model call: the user message exactly as it is sent,
-            # agent-state and recalled-memory envelopes included, so a later
-            # replay reproduces the request byte for byte.
-            self._conversation.thread.start(
-                prompt=user_message,
-                message=recorded_user,
-                model=self._llm_runtime.configured_model or None,
-                provider=self._llm_runtime.provider or None,
-            )
-            self._conversation.sync_state(self.tool_env)
+        # Persist the exact enriched prompt for later replay.
+        trace.start(
+            prompt=user_message,
+            message=recorded_user,
+            model=self._llm_runtime.configured_model or None,
+            provider=self._llm_runtime.provider or None,
+        )
+        self._conversation.sync_state(self.tool_env)
         self._run_hook(
             "SessionStart",
-            {"session_id": session_id, "attempt_id": getattr(self._conversation.thread, "turn_id", "")},
+            {"session_id": session_id, "attempt_id": trace.turn_id},
         )
         write_run_manifest(run_dir, messages, self.registry, self.activity.iteration)
-        trace = self._conversation.thread
         prompt_hook = self._run_hook(
             "UserPromptSubmit",
-            {"session_id": session_id, "prompt": user_message, "attempt_id": getattr(self._conversation.thread, "turn_id", "")},
+            {"session_id": session_id, "prompt": user_message, "attempt_id": trace.turn_id},
         )
         if prompt_hook is not None and prompt_hook.denied:
             reason = prompt_hook.reason or "UserPromptSubmit hook denied the prompt"
             trace.write({"type": "end", "iter": self.activity.iteration, "status": "failed", "reason": reason})
             state_store.mark_failure(run_dir, reason)
             self._conversation.end_turn(self.tool_env, self.usage.summary["totals"])
-            return TurnSetup(
-                run_dir=run_dir, trace=trace, state_store=state_store,
-                denied_result={
-                    "status": "failed", "error_code": "hook_denied", "reason": reason,
-                    "run_dir": str(run_dir), "run_id": run_dir.name, "content": "",
-                    "iterations": 0, "max_iterations": self.max_iterations,
-                },
-            )
+            return {
+                "status": "failed", "error_code": "hook_denied", "reason": reason,
+                "run_dir": str(run_dir), "run_id": run_dir.name, "content": "",
+                "iterations": 0, "max_iterations": self.max_iterations,
+            }
 
         self.goals = GoalBudget(self._emit)
         self.goals.start(session_id, active_goal_id)
         self.usage.begin_turn(self.llm, self.goals)
         mid_turn_nudge_rounds = _mid_turn_nudge_rounds()
 
-        # Zombie-run watchdog: fail a run that makes no forward progress
-        # (no LLM completion, no tool result) for the stall timeout instead
-        # of leaving it "running" forever with no state.json. Heartbeats do
-        # not count as progress - a hung tool keeps emitting them.
+        # Only completed requests and tool results advance the watchdog.
         stall_timeout = _stall_timeout_seconds()
         self._watchdog.start(trace, run_dir, state_store, stall_timeout)
 
-        state = TurnState(
+        return TurnState(
             view=LoopContext(messages, self._llm_runtime, schemas), run_dir=run_dir, trace=trace, context=context,
             user_message=user_message,
             run_started_wall=run_started_wall, session_id=session_id,
-            mid_turn_nudge_rounds=mid_turn_nudge_rounds,
+            mid_turn_nudge_rounds=mid_turn_nudge_rounds, state_store=state_store,
         )
-        return TurnSetup(state=state, run_dir=run_dir, trace=trace, state_store=state_store)
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""

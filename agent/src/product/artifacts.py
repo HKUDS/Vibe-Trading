@@ -11,7 +11,7 @@ from src.kernel import events as vocabulary
 from src.product.context import ContextBuilder
 from src.product.result_artifacts import deliver_tool_result
 from src.product.tool_progress import ToolProgress
-from src.product.tool_results import _archive_backtest_result, _failure_code, _is_tool_success
+from src.product.tool_results import _archive_backtest_result, _failure_code, _is_tool_success, parse_tool_payload
 from src.tools._arguments import normalize_tool_run_dir
 from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
 
@@ -230,11 +230,7 @@ class ToolDelivery:
         result = redact_tool_result(result)
         # Image bytes belong in artifacts, never in the canonical result or
         # its metadata. Keep one reference-only payload for all later sinks.
-        try:
-            parsed = json.loads(result)
-        except (TypeError, ValueError):
-            parsed = None
-        payload = parsed if isinstance(parsed, dict) else None
+        payload = parse_tool_payload(result)
         image_refs = []
         if payload is not None and isinstance(payload.get("images"), list):
             payload["images"] = [
@@ -329,22 +325,7 @@ class ToolDelivery:
 
 
 def write_run_manifest(trace_dir: Path, messages: list, registry, iteration: int) -> None:
-    """Record what methodology produced this run, beside its trace.
-
-    Answers "under what system prompt, which skills, and which tool set was
-    that number produced" -- the question a reproducibility review asks and
-    that nothing in this repo could previously answer. Written once per run
-    as ``run_manifest.json`` in the run directory.
-
-    The system-prompt hash transitively covers every skill injected at
-    context-build time, because those skills ARE part of the prompt string.
-    Skills pulled mid-run via ``load_skill`` are not, and appear in the
-    trace instead; the manifest says so rather than implying coverage it
-    does not have.
-
-    The prompt itself is never stored -- only its hash. The prompt can carry
-    user memory and workspace content, and this file is a provenance record,
-    not a second copy of the conversation.
+    """Record the prompt hash, tool catalog and package versions for reproducibility.
 
     Args:
         trace_dir: Directory holding this run's trace.

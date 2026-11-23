@@ -209,14 +209,10 @@ def build_result_dict(
     return result
 
 
-def finish_outcome(setup, *, iterations, activity, runtime, max_iterations, budget_reason, waiting_user, pending_write):
+def finish_outcome(state, *, iterations, activity, runtime, max_iterations, budget_reason, waiting_user, pending_write):
     """Commit the terminal status and event before the recorder flushes the turn."""
-    state = setup.state
-    assert state is not None
-    run_dir = setup.run_dir
-    trace = setup.trace
-    state_store = setup.state_store
-    assert run_dir is not None and trace is not None and state_store is not None
+    run_dir = state.run_dir
+    state_store = state.state_store
     # Determine final status. The reason is also propagated into the
     # returned dict so SessionService can surface a meaningful UI
     # message instead of "Execution failed: unknown" (issue #114).
@@ -254,7 +250,7 @@ def finish_outcome(setup, *, iterations, activity, runtime, max_iterations, budg
         # pre-extraction code flagged it degraded only for this case.
         state.released_fallback = True
 
-    trace.write(build_end_event(outcome, activity.iteration, iterations))
+    state.trace.write(build_end_event(outcome, activity.iteration, iterations))
 
     return build_result_dict(
         outcome,

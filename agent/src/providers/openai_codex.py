@@ -208,18 +208,6 @@ def _load_codex_oauth_provider() -> Any:
 
 
 @dataclass
-class CodexToolCall:
-    """Internal tool-call representation compatible with ChatLLM parsing."""
-
-    id: str
-    name: str
-    arguments: dict[str, Any]
-
-    def as_langchain_tool_call(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "args": self.arguments}
-
-
-@dataclass
 class CodexAIMessage:
     """Small LangChain-like message object used by ChatLLM."""
 
@@ -707,12 +695,11 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
                 buf = tool_buffers.get(call_id) or {}
                 args_raw = buf.get("arguments") or item.get("arguments") or "{}"
                 item_id = buf.get("id") or item.get("id")
-                tool = CodexToolCall(
-                    id=f"{call_id}|{item_id}" if item_id else call_id,
-                    name=buf.get("name") or item.get("name") or "",
-                    arguments=_decode_tool_args(args_raw),
-                )
-                yield CodexAIMessage(tool_calls=[tool.as_langchain_tool_call()])
+                yield CodexAIMessage(tool_calls=[{
+                    "id": f"{call_id}|{item_id}" if item_id else call_id,
+                    "name": buf.get("name") or item.get("name") or "",
+                    "args": _decode_tool_args(args_raw),
+                }])
         elif event_type == "response.completed":
             response = event.get("response") or {}
             status = response.get("status")

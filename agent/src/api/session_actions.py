@@ -16,7 +16,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from src.api.goal_routes import _get_goal_store
-from src.api.session_http import ModelSelectionResponse, SessionResponse, existing_session, model_selection_response
+from src.api.session_http import (
+    ModelSelectionResponse,
+    SessionResponse,
+    existing_session,
+    model_selection_response,
+    session_service,
+)
 from src.session.input_rules import MAX_MESSAGE_CHARS
 from src.session.pending_inputs import PendingInputLimitError
 from src.session.models import SessionBusyError
@@ -149,23 +155,12 @@ def register_session_submissions(app: FastAPI, host) -> None:
         HOW the session was authorised, which is the part that becomes an
         identity once an identity provider is wired in.
         """
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         config = await _validated_session_config(request.config)
         session = svc.create_session(
             title=request.title, config=config, owner=principal
         )
-        return SessionResponse(
-            session_id=session.session_id,
-            title=session.title,
-            status=session.status.value,
-            created_at=session.created_at,
-            updated_at=session.updated_at,
-            last_attempt_id=session.last_attempt_id,
-            forked_from_session_id=session.forked_from_session_id,
-            forked_from_turn_id=session.forked_from_turn_id,
-        )
+        return SessionResponse.model_validate(session)
 
     @app.post("/sessions/{session_id}/messages", dependencies=[Depends(host.require_auth)])
     async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
@@ -178,9 +173,7 @@ def register_session_submissions(app: FastAPI, host) -> None:
         same validation and size limit apply either way.
         """
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         try:
             result = await svc.send_message(
                 session_id=session_id,
@@ -210,9 +203,7 @@ def register_session_actions(app: FastAPI, host) -> None:
     async def fork_session(session_id: str, request: ForkSessionRequest):
         """Create an independent conversation copied through one turn."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         try:
             session = svc.fork_session(
                 session_id, request.turn_id, title=request.title.strip()
@@ -221,24 +212,13 @@ def register_session_actions(app: FastAPI, host) -> None:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return SessionResponse(
-            session_id=session.session_id,
-            title=session.title,
-            status=session.status.value,
-            created_at=session.created_at,
-            updated_at=session.updated_at,
-            last_attempt_id=session.last_attempt_id,
-            forked_from_session_id=session.forked_from_session_id,
-            forked_from_turn_id=session.forked_from_turn_id,
-        )
+        return SessionResponse.model_validate(session)
 
     @app.delete("/sessions/{session_id}", dependencies=[Depends(host.require_auth)])
     async def delete_session(session_id: str):
         """Delete a session."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         try:
             deleted = svc.delete_session(session_id)
         except SessionBusyError as exc:
@@ -252,12 +232,7 @@ def register_session_actions(app: FastAPI, host) -> None:
     async def update_session(session_id: str, req: UpdateSessionRequest):
         """Update session fields (e.g. title)."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        session = svc.store.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        svc, session = existing_session(host, session_id)
         if req.title is not None:
             session.title = req.title
         session.updated_at = datetime.now(timezone.utc).isoformat()
@@ -311,12 +286,7 @@ def register_session_actions(app: FastAPI, host) -> None:
         is empty or still the auto-set first-prompt prefix from create time.
         """
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        session = svc.store.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        svc, session = existing_session(host, session_id)
 
         messages = svc.get_messages(session_id, limit=6)
         first_user = next(
@@ -385,9 +355,7 @@ def register_session_actions(app: FastAPI, host) -> None:
     ):
         """Compact replayed session history when no turn or queue is active."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         try:
             return await svc.compact_session(session_id, request.focus if request else "")
         except SessionBusyError as exc:
@@ -415,9 +383,7 @@ def register_session_actions(app: FastAPI, host) -> None:
     async def cancel_session(session_id: str):
         """Cancel the in-flight agent loop for this session."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         cancelled = svc.cancel_current(session_id)
         # A stop keeps the messages queued behind it; say which are waiting.
         pending = svc.list_pending_inputs(session_id)

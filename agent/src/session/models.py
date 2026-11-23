@@ -322,15 +322,13 @@ class Attempt:
         Args:
             summary: Execution summary.
         """
-        self.status = AttemptStatus.COMPLETED
-        self.completed_at = _utc_now_iso()
+        self._mark_terminal(AttemptStatus.COMPLETED)
         if summary:
             self.summary = summary
 
     def mark_waiting_user(self, summary: Optional[str] = None) -> None:
         """Pause the attempt while a structured question awaits an answer."""
-        self.status = AttemptStatus.WAITING_USER
-        self.completed_at = _utc_now_iso()
+        self._mark_terminal(AttemptStatus.WAITING_USER)
         if summary:
             self.summary = summary
 
@@ -340,8 +338,7 @@ class Attempt:
         Args:
             error: Error message.
         """
-        self.status = AttemptStatus.FAILED
-        self.completed_at = _utc_now_iso()
+        self._mark_terminal(AttemptStatus.FAILED)
         self.error = redact_text(error)
 
     def mark_cancelled(self, reason: str = "") -> None:
@@ -355,8 +352,7 @@ class Attempt:
         Args:
             reason: Optional free-text reason (usually ``"cancelled by user"``).
         """
-        self.status = AttemptStatus.CANCELLED
-        self.completed_at = _utc_now_iso()
+        self._mark_terminal(AttemptStatus.CANCELLED)
         if reason:
             self.error = redact_text(reason)
 
@@ -366,10 +362,13 @@ class Attempt:
         Args:
             reason: Optional explanation of the interruption.
         """
-        self.status = AttemptStatus.INTERRUPTED
-        self.completed_at = _utc_now_iso()
+        self._mark_terminal(AttemptStatus.INTERRUPTED)
         if reason:
             self.error = redact_text(reason)
+
+    def _mark_terminal(self, status: AttemptStatus) -> None:
+        self.status = status
+        self.completed_at = _utc_now_iso()
 
 
 class SessionBusyError(RuntimeError):

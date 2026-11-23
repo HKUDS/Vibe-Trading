@@ -561,6 +561,15 @@ def _normalize_mcp_value(value: common.Any) -> common.Any:
     return value
 
 
+def _remote_payload(result: dict[str, common.Any]) -> tuple[common.Any, common.Any]:
+    """Unwrap remote connector data and preserve its optional advisory."""
+    data = _normalize_mcp_value(result.get("data"))
+    guide = result.get("guide")
+    if isinstance(data, dict) and "data" in data and "guide" in data:
+        return _normalize_mcp_value(data.get("data")), data.get("guide") or guide
+    return data, guide
+
+
 def _flatten_account_fields(
     data: dict[str, common.Any],
     prefix: str = "",
@@ -668,16 +677,7 @@ def _print_connector_account(result: dict[str, common.Any]) -> int:
     if not rows and split:
         return _print_connector_account_mapping(result, split)
     if not rows:
-        # Not the broker_sdk flat shape — try the remote-MCP nested shape.
-        # Robinhood's tool result double-wraps: result["data"] unwraps to
-        # {"data": <actual account fields>, "guide": "<advisory text>"},
-        # not the fields directly — drill one more level in when present.
-        wrapper = _normalize_mcp_value(result.get("data"))
-        raw_data = wrapper
-        guide = result.get("guide")
-        if isinstance(wrapper, dict) and "data" in wrapper and "guide" in wrapper:
-            raw_data = _normalize_mcp_value(wrapper.get("data"))
-            guide = wrapper.get("guide") or guide
+        raw_data, guide = _remote_payload(result)
         if isinstance(raw_data, dict):
             currency = raw_data.get("currency", "")
             account_label = result.get("account_number") or accounts
@@ -769,15 +769,7 @@ def cmd_connector_positions(
         return common.EXIT_SUCCESS
     rows = result.get("positions", [])
     if not rows:
-        # Not the broker_sdk flat shape — try the remote-MCP nested shape
-        # (same double-wrap as account: result["data"] -> {"data": {"positions":
-        # [...], "next": ...}, "guide": "..."}).
-        wrapper = _normalize_mcp_value(result.get("data"))
-        inner = wrapper
-        guide = result.get("guide")
-        if isinstance(wrapper, dict) and "data" in wrapper and "guide" in wrapper:
-            inner = _normalize_mcp_value(wrapper.get("data"))
-            guide = wrapper.get("guide") or guide
+        inner, guide = _remote_payload(result)
         remote_positions = inner.get("positions") if isinstance(inner, dict) else None
         if remote_positions:
             account_label = result.get("account_number") or "(none)"
@@ -1144,72 +1136,38 @@ def _dispatch_connector(args: common.argparse.Namespace) -> int:
             account=args.account,
             clear=args.clear,
         )
-    if sub == "check":
+    if sub in {"check", "account", "positions", "orders", "quote", "history"}:
         options = {
             "host": args.host,
             "port": args.port,
             "client_id": args.client_id,
             "account": args.account,
         }
-        if args.connection_id is not None:
-            options["connection_id"] = args.connection_id
-        return cmd_connector_check(args.profile, **options)
-    if sub == "account":
-        return cmd_connector_account(
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            **({"connection_id": args.connection_id} if getattr(args, "connection_id", None) else {}),
-        )
-    if sub == "positions":
-        return cmd_connector_positions(
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            **({"connection_id": args.connection_id} if getattr(args, "connection_id", None) else {}),
-        )
-    if sub == "orders":
-        return cmd_connector_orders(
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            include_executions=args.include_executions,
-        )
-    if sub == "quote":
-        return cmd_connector_quote(
-            args.symbol,
-            args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            exchange=args.exchange,
-            currency=args.currency,
-            sec_type=args.sec_type,
-        )
-    if sub == "history":
+        if sub == "check":
+            if args.connection_id is not None:
+                options["connection_id"] = args.connection_id
+            return cmd_connector_check(args.profile, **options)
+        if sub in {"account", "positions"}:
+            if getattr(args, "connection_id", None):
+                options["connection_id"] = args.connection_id
+            handler = cmd_connector_account if sub == "account" else cmd_connector_positions
+            return handler(args.profile, **options)
+        if sub == "orders":
+            return cmd_connector_orders(args.profile, include_executions=args.include_executions, **options)
+
+        options.update(exchange=args.exchange, currency=args.currency, sec_type=args.sec_type)
+        if sub == "quote":
+            return cmd_connector_quote(args.symbol, args.profile, **options)
         return cmd_connector_history(
             args.symbol,
             args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
-            exchange=args.exchange,
-            currency=args.currency,
-            sec_type=args.sec_type,
             duration=args.duration,
             bar_size=args.bar_size,
             what_to_show=args.what_to_show,
             use_rth=not args.no_rth,
             period=args.period,
             limit=args.bar_limit,
+            **options,
         )
     if sub == "authorize":
         return cmd_connector_authorize(args.profile)

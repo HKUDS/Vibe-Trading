@@ -10,17 +10,9 @@ from typing import Any, Dict
 from src.agent.tuning import _heartbeat_interval_s, _tool_timeout_seconds
 from src.kernel.progress import HeartbeatTimer, _set_emitter
 from src.kernel.tool_runner import wait_for_tool
-from src.product.tool_results import _is_tool_success
+from src.product.tool_results import _is_tool_success, parse_tool_payload
 from src.product.resources.hooks import HookManager
 from src.tools.redaction import redact_payload, redact_tool_result
-
-
-def _parse_tool_payload(result: str) -> dict | None:
-    try:
-        value = json.loads(result)
-    except (TypeError, ValueError):
-        return None
-    return value if isinstance(value, dict) else None
 
 
 @dataclass(frozen=True)
@@ -149,7 +141,7 @@ class ToolInvocation:
                 key = self.replay._identical_call_key(tool_name, normalized)
         if key is not None and key in cache:
             cached = cache[key]
-            payload = _parse_tool_payload(cached)
+            payload = parse_tool_payload(cached)
             if payload is not None:
                 return json.dumps({**payload, "_vibe_repeat": True}, ensure_ascii=False), 0
             return f"{cached}\n\n[Repeat: prior successful read]", 0
@@ -172,7 +164,7 @@ class ToolInvocation:
         )
 
         if self.stop_on_unknown is not None or key is not None:
-            payload = _parse_tool_payload(result) or {}
+            payload = parse_tool_payload(result) or {}
             if payload.get("outcome") == "unknown":
                 if self.stop_on_unknown is not None:
                     self.stop_on_unknown()

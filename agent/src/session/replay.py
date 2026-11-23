@@ -20,28 +20,18 @@ from src.tools.redaction import redact_text
 TRAIL_ARGUMENT_CHARS = 200
 TRAIL_PREVIEW_CHARS = 200
 
-# One note per stopped turn, after that turn's last item. Wrapped in
-# ``<system>`` like the loop's other user-role injections.
-STOPPED_TURN_NOTES: Dict[str, str] = {
-    "cancelled": (
-        "<system>The user stopped the previous turn before it finished. Tool "
-        "results recorded above for that turn are still valid and can be used. "
+# Keep these user-role notices after the last item of the affected turn.
+STOPPED_TURN_NOTES = {
+    status: (
+        f"<system>{opening} Tool results recorded above for that turn are still valid and can be used. "
         "A tool call marked interrupted may have partly run; check its effect "
         "before repeating anything it could have changed.</system>"
-    ),
-    "interrupted": (
-        "<system>The previous turn was interrupted (the service stopped) before "
-        "it finished. Tool results recorded above for that turn are still valid "
-        "and can be used. A tool call marked interrupted may have partly run; "
-        "check its effect before repeating anything it could have changed."
-        "</system>"
-    ),
-    "failed": (
-        "<system>The previous turn ended with an error before it finished. Tool "
-        "results recorded above for that turn are still valid and can be used. "
-        "A tool call marked interrupted may have partly run; check its effect "
-        "before repeating anything it could have changed.</system>"
-    ),
+    )
+    for status, opening in {
+        "cancelled": "The user stopped the previous turn before it finished.",
+        "interrupted": "The previous turn was interrupted (the service stopped) before it finished.",
+        "failed": "The previous turn ended with an error before it finished.",
+    }.items()
 }
 
 
@@ -205,7 +195,7 @@ def replay_with_seqs(
             if item.turn_id == open_turn:
                 open_turn = None
             continue
-        if item.seq <= start_after or item.type in {"compaction", "state"}:
+        if item.seq <= start_after:
             continue
         effective = message_by_seq.get(item.seq)
         if effective is not None:

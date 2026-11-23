@@ -34,8 +34,6 @@ class _PathState:
 
 _PATH_STATES: Dict[str, _PathState] = {}
 _PATH_STATES_LOCK = threading.Lock()
-_FILE_LOCKS: Dict[str, threading.Lock] = {}
-_FILE_LOCKS_LOCK = threading.Lock()
 
 
 def _path_state(path: Path) -> _PathState:
@@ -45,15 +43,6 @@ def _path_state(path: Path) -> _PathState:
         if state is None:
             state = _PATH_STATES[key] = _PathState()
         return state
-
-
-def _file_lock(path: Path) -> threading.Lock:
-    key = os.path.normcase(os.path.abspath(path))
-    with _FILE_LOCKS_LOCK:
-        lock = _FILE_LOCKS.get(key)
-        if lock is None:
-            lock = _FILE_LOCKS[key] = threading.Lock()
-        return lock
 
 
 def _encode_record(record: Mapping[str, Any]) -> bytes:
@@ -136,23 +125,21 @@ class ThreadLog:
     @contextmanager
     def _writer_lock(self):
         """Open the log and serialize appends across processes when supported."""
-        process_lock = _file_lock(self.path)
-        with process_lock:
-            created = not self.path.exists()
-            with self.path.open("a+b") as log:
+        created = not self.path.exists()
+        with self.path.open("a+b") as log:
+            if fcntl is not None:
+                fcntl.flock(log.fileno(), fcntl.LOCK_EX)
+            try:
+                if created and os.name != "nt":
+                    directory_fd = os.open(self.path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
+                yield log
+            finally:
                 if fcntl is not None:
-                    fcntl.flock(log.fileno(), fcntl.LOCK_EX)
-                try:
-                    if created and os.name != "nt":
-                        directory_fd = os.open(self.path.parent, os.O_RDONLY)
-                        try:
-                            os.fsync(directory_fd)
-                        finally:
-                            os.close(directory_fd)
-                    yield log
-                finally:
-                    if fcntl is not None:
-                        fcntl.flock(log.fileno(), fcntl.LOCK_UN)
+                    fcntl.flock(log.fileno(), fcntl.LOCK_UN)
 
     def _sync_seq(self, state: _PathState) -> bool:
         """Re-derive ``last_seq`` when the file is not as this process left it.

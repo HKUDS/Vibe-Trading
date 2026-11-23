@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelSelectionResponse(BaseModel):
@@ -21,7 +21,10 @@ class ModelSelectionResponse(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    """Session record."""
+    """Public fields of a session record."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     session_id: str
     title: str
     status: str
@@ -32,11 +35,17 @@ class SessionResponse(BaseModel):
     forked_from_turn_id: Optional[str] = None
 
 
-def existing_session(host, session_id: str):
-    """Return (service, session) or raise 404."""
+def session_service(host):
+    """Return the session service or raise 501."""
     svc = host._get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
+    return svc
+
+
+def existing_session(host, session_id: str):
+    """Return (service, session) or raise 404."""
+    svc = session_service(host)
     session = svc.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")

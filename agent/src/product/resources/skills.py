@@ -1,15 +1,4 @@
-"""SkillsLoader: loads scenario guides from the skills/ directory.
-
-Uses progressive disclosure at two levels:
-- System prompt only injects one-line summaries (get_descriptions).
-- Full docs loaded on demand (get_content, called by the load_skill tool).
-- Inside one document, :func:`split_sections` maps the heading structure so the
-  load_skill tool can hand back a skeleton plus one section at a time instead of
-  a blind character page. Measured on the bundled corpus: 35 of the 88 skills
-  do not fit a single tool result, and ``tushare`` delivers 9.1% of its 102,890
-  characters in the first page — sequential paging means the agent must read ten
-  more pages to reach a section it could have named.
-"""
+"""Load skill summaries, full documents and individually addressable sections."""
 
 from __future__ import annotations
 
@@ -40,27 +29,6 @@ class Skill:
     body: str = ""
     dir_path: Optional[Path] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def load_support_file(self, filename: str) -> Optional[str]:
-        """Load a supporting file on demand.
-
-        Args:
-            filename: File name (e.g. examples.md).
-
-        Returns:
-            File content or None.
-        """
-        if not self.dir_path:
-            return None
-        path = self.dir_path / filename
-        if not path.exists():
-            return None
-        try:
-            return path.read_text(encoding="utf-8")
-        except Exception:
-            return None
-
-
 
 def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
     """Load a skill from a directory.
@@ -118,11 +86,7 @@ class SkillsLoader:
         self._load()
 
     def _load(self) -> None:
-        """Load all skill subdirectories from user and bundled directories.
-
-        User skills are loaded first so they override bundled skills with the same name
-        (e.g. after patch_skill copies and modifies a bundled skill).
-        """
+        """Load user skills first so they override bundled skills of the same name."""
         seen_names: set[str] = set()
         for directory in (self._user_skills_dir, self.skills_dir):
             if not directory or not directory.exists():

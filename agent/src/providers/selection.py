@@ -158,21 +158,16 @@ def credential_status(option: LLMProviderOption, api_key: str) -> tuple[bool, Op
             return bool(get_openai_codex_login_status()), None
         except Exception:
             return False, None
-    if option.auth_type == "gh_cli":
+    if option.auth_type in {"gh_cli", "claude_cli"}:
         try:
-            from src.providers.copilot_auth import get_copilot_auth_status
+            if option.auth_type == "gh_cli":
+                from src.providers.copilot_auth import get_copilot_auth_status as login_status
+            else:
+                from src.providers.claude_cli import get_claude_cli_auth_status as login_status
 
-            authenticated, auth_status = get_copilot_auth_status()
+            authenticated, auth_status = login_status()
         except Exception:
-            authenticated, auth_status = False, ""
-        return authenticated, auth_status if authenticated else None
-    if option.auth_type == "claude_cli":
-        try:
-            from src.providers.claude_cli import get_claude_cli_auth_status
-
-            authenticated, auth_status = get_claude_cli_auth_status()
-        except Exception:
-            authenticated, auth_status = False, ""
+            return False, None
         return authenticated, auth_status if authenticated else None
     return is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS), None
 

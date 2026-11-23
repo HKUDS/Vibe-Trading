@@ -8,11 +8,17 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.api.session_http import ModelSelectionResponse, SessionResponse, existing_session, model_selection_response
+from src.api.session_http import (
+    ModelSelectionResponse,
+    SessionResponse,
+    existing_session,
+    model_selection_response,
+    session_service,
+)
 from src.session.thread_display import display_page
 
 
@@ -187,44 +193,16 @@ def register_session_reads(app: FastAPI, host) -> None:
     @app.get("/sessions", response_model=List[SessionResponse], dependencies=[Depends(host.require_auth)])
     async def list_sessions(limit: int = Query(50, ge=1, le=200)):
         """List sessions."""
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         sessions = svc.list_sessions(limit=limit)
-        return [
-            SessionResponse(
-                session_id=s.session_id,
-                title=s.title,
-                status=s.status.value,
-                created_at=s.created_at,
-                updated_at=s.updated_at,
-                last_attempt_id=s.last_attempt_id,
-                forked_from_session_id=s.forked_from_session_id,
-                forked_from_turn_id=s.forked_from_turn_id,
-            )
-            for s in sessions
-        ]
+        return [SessionResponse.model_validate(session) for session in sessions]
 
     @app.get("/sessions/{session_id}", response_model=SessionResponse, dependencies=[Depends(host.require_auth)])
     async def get_session(session_id: str):
         """Get one session by id."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        session = svc.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        return SessionResponse(
-            session_id=session.session_id,
-            title=session.title,
-            status=session.status.value,
-            created_at=session.created_at,
-            updated_at=session.updated_at,
-            last_attempt_id=session.last_attempt_id,
-            forked_from_session_id=session.forked_from_session_id,
-            forked_from_turn_id=session.forked_from_turn_id,
-        )
+        _, session = existing_session(host, session_id)
+        return SessionResponse.model_validate(session)
 
     @app.get(
         "/sessions/{session_id}/model",
@@ -248,9 +226,7 @@ def register_session_reads(app: FastAPI, host) -> None:
     async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
         """List messages for a session."""
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        svc = session_service(host)
         messages = svc.get_messages(session_id, limit=limit)
         return [
             MessageResponse(
@@ -305,12 +281,7 @@ def register_session_reads(app: FastAPI, host) -> None:
         and completed items are replayed from ``thread.jsonl``.
         """
         host._validate_path_param(session_id, "session_id")
-        svc = host._get_session_service()
-        if not svc:
-            raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        session = svc.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        svc, session = existing_session(host, session_id)
 
         header_id = request.headers.get("Last-Event-ID")
         event_id = header_id or last_event_id

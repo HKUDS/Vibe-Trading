@@ -76,6 +76,10 @@ class PendingInput:
     claimed_by: Optional[str] = None
     claimed_after_seq: Optional[int] = None
 
+    def unclaimed(self) -> "PendingInput":
+        """Clear both fields of this input's durable claim."""
+        return replace(self, claimed_by=None, claimed_after_seq=None)
+
     def public(self) -> Dict[str, Any]:
         """Return the client view of the input.
 
@@ -268,7 +272,7 @@ class PendingInputQueue:
         with self._lock(session_id):
             items = self._read(session_id)
             released = [
-                replace(item, claimed_by=None, claimed_after_seq=None)
+                item.unclaimed()
                 if item.input_id == input_id else item
                 for item in items
             ]
@@ -325,7 +329,7 @@ class PendingInputQueue:
                 elif _was_delivered(item, thread_items, turn_prompt):
                     delivered.append(item)
                 else:
-                    kept.append(replace(item, claimed_by=None, claimed_after_seq=None))
+                    kept.append(item.unclaimed())
             self._write(session_id, kept)
             return delivered
 

@@ -7,6 +7,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from copy import copy
+from functools import partial
 from typing import Any, Optional
 
 from pydantic import PrivateAttr
@@ -15,13 +16,16 @@ from src.providers.adapters.anthropic import (
     _ANTHROPIC_TEMPERATURE_UNSUPPORTED,
     _is_anthropic_temperature_unsupported_error,
 )
-from src.providers.adapters.common import _default_async_client_is_instance_owned, _endpoint_model
+from src.providers.adapters.common import (
+    _default_async_client_is_instance_owned, _endpoint_model, retry_async_stream, retry_stream,
+)
 from src.providers.adapters.responses import (
     _RESPONSES_REQUIRED,
     _is_responses_required_error,
     _ResponsesAsyncClient,
     _ResponsesSyncClient,
 )
+from src.providers.messages import _tool_call_thought_signature_maps
 from src.providers.registry import get_provider_capabilities
 from src.providers.request_guards import (
     _OPENCODE_SESSION_HEADER,
@@ -276,24 +280,7 @@ if ChatOpenAI is not None:
                 msg.additional_kwargs["tool_call_thought_signatures"] = signatures
 
         def _convert_input(self, input: Any) -> Any:  # type: ignore[override]
-            """Re-attach Gemini thought signatures dropped by dict->message conversion.
-
-            The AgentRuntime replays history as OpenAI-format dicts, stamping the
-            signature into ``tool_calls[i].extra_content.google.thought_signature``
-            (providers.messages ``attach_tool_call_thought_signatures``). LangChain's
-            ``_convert_dict_to_message`` discards ``extra_content`` entirely, so by
-            the time ``_get_request_payload`` runs the signature is gone and Gemini
-            rejects the next turn with a ``missing thought_signature`` 400.
-
-            ``_convert_input`` is the single chokepoint both ``invoke`` and
-            ``stream`` call once at entry, while ``input`` is still raw dicts. Here
-            we lift the signatures back onto the converted ``AIMessage`` in the
-            same ``additional_kwargs["tool_call_thought_signatures"]`` shape the
-            in-memory (#176) path produces, so the existing ``_signature_maps`` /
-            ``_inject_tool_call_thought_signatures`` machinery handles both paths
-            identically. The ``isinstance(raw, dict)`` guard makes it a no-op when
-            re-invoked on already-converted ``BaseMessage`` objects (idempotent).
-            """
+            """Restore Gemini signatures before LangChain drops dict metadata."""
             prompt_value = super()._convert_input(input)
             if not self._capabilities().gemini_thought_signatures:
                 return prompt_value
@@ -313,26 +300,8 @@ if ChatOpenAI is not None:
 
         @classmethod
         def _signature_maps(cls, message: Any) -> tuple[dict[str, str], dict[int, str]]:
-            by_id: dict[str, str] = {}
-            by_index: dict[int, str] = {}
+            by_id, by_index = _tool_call_thought_signature_maps(message)
             additional_kwargs = getattr(message, "additional_kwargs", {})
-
-            entries = additional_kwargs.get("tool_call_thought_signatures", [])
-            if isinstance(entries, dict):
-                entries = [entries]
-            if isinstance(entries, list):
-                for entry in entries:
-                    if not isinstance(entry, dict):
-                        continue
-                    signature = entry.get("thought_signature")
-                    if not signature:
-                        continue
-                    if entry.get("id"):
-                        by_id[str(entry["id"])] = signature
-                    index = entry.get("index")
-                    if isinstance(index, int):
-                        by_index[index] = signature
-
             raw_tool_calls = additional_kwargs.get("tool_calls")
             if isinstance(raw_tool_calls, list):
                 for index, tool_call in enumerate(raw_tool_calls):
@@ -471,101 +440,57 @@ if ChatOpenAI is not None:
             return self._remember_temperature_unsupported(exc) or self._remember_responses_required(exc)
 
         def _stream(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
-            """Route Responses streams through the mapping-compatible adapter."""
             if self._use_responses_api({**kwargs, **self.model_kwargs}):
                 cloned = copy(self)
                 cloned.root_client = _ResponsesSyncClient(self.root_client)
                 inner = super(ChatOpenAIWithReasoning, cloned)._stream(*args, **kwargs)
             else:
                 inner = self._stream_with_usage_fallback(*args, **kwargs)
-            # The 400 arrives before the first chunk, so restarting the stream
-            # cannot duplicate output — but that is a property of the provider,
-            # not of this code. Enforce it here instead of assuming it: once a
-            # chunk has been emitted the error is re-raised, because replaying
-            # the stream would emit those chunks a second time.
-            emitted = False
-            try:
-                for chunk in inner:
-                    emitted = True
-                    yield chunk
-            except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-                if emitted or not self._recoverable_rejection(exc):
-                    raise
-                yield from self._stream(*args, **kwargs)
+            yield from retry_stream(lambda: inner, self._recoverable_rejection, partial(self._stream, *args, **kwargs))
+
+        def _remember_stream_usage_unsupported(self, exc: Exception) -> bool:
+            if not _is_stream_usage_unsupported_error(exc):
+                return False
+            logger.warning(
+                "Endpoint rejects stream usage; streaming without stream_options for %s",
+                str(self.model_name),
+            )
+            _STREAM_USAGE_UNSUPPORTED.add(_endpoint_model(self))
+            return True
 
         def _stream_with_usage_fallback(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
-            # stream_usage=True is set at build time so streamed calls report
-            # real token counts (issue #1224); an endpoint that rejects
-            # stream_options is remembered and retried without it.
-            model = str(self.model_name)
+            stream = super()._stream
+
+            def without_usage():
+                return stream(*args, stream_usage=False, **kwargs)
+
             if _endpoint_model(self) in _STREAM_USAGE_UNSUPPORTED:
-                yield from super()._stream(*args, stream_usage=False, **kwargs)
-                return
-            emitted = False
-            try:
-                for chunk in super()._stream(*args, **kwargs):
-                    emitted = True
-                    yield chunk
-                return
-            except Exception as exc:  # noqa: BLE001 - classified below
-                if emitted or not _is_stream_usage_unsupported_error(exc):
-                    raise
-            logger.warning(
-                "Endpoint rejects stream usage; streaming without stream_options for %s",
-                model,
-            )
-            _STREAM_USAGE_UNSUPPORTED.add(_endpoint_model(self))
-            yield from super()._stream(*args, stream_usage=False, **kwargs)
+                yield from without_usage()
+            else:
+                yield from retry_stream(partial(stream, *args, **kwargs), self._remember_stream_usage_unsupported, without_usage)
 
         async def _astream_with_usage_fallback(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
-            # stream_usage=True is set at build time so streamed calls report
-            # real token counts (issue #1224); an endpoint that rejects
-            # stream_options is remembered and retried without it.
-            model = str(self.model_name)
-            if _endpoint_model(self) in _STREAM_USAGE_UNSUPPORTED:
-                async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
-                    yield chunk
-                return
-            emitted = False
-            try:
-                async for chunk in super()._astream(*args, **kwargs):
-                    emitted = True
-                    yield chunk
-                return
-            except Exception as exc:  # noqa: BLE001 - classified below
-                if emitted or not _is_stream_usage_unsupported_error(exc):
-                    raise
-            logger.warning(
-                "Endpoint rejects stream usage; streaming without stream_options for %s",
-                model,
+            stream = super()._astream
+
+            def without_usage():
+                return stream(*args, stream_usage=False, **kwargs)
+
+            inner = (
+                without_usage() if _endpoint_model(self) in _STREAM_USAGE_UNSUPPORTED
+                else retry_async_stream(partial(stream, *args, **kwargs), self._remember_stream_usage_unsupported, without_usage)
             )
-            _STREAM_USAGE_UNSUPPORTED.add(_endpoint_model(self))
-            async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
+            async for chunk in inner:
                 yield chunk
 
         async def _astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
-            """Async route matching ``_stream`` for Responses compatibility."""
             if self._use_responses_api({**kwargs, **self.model_kwargs}):
                 cloned = copy(self)
                 cloned.root_async_client = _ResponsesAsyncClient(self.root_async_client)
                 inner = super(ChatOpenAIWithReasoning, cloned)._astream(*args, **kwargs)
             else:
                 inner = self._astream_with_usage_fallback(*args, **kwargs)
-            # The 400 arrives before the first chunk, so restarting the stream
-            # cannot duplicate output — but that is a property of the provider,
-            # not of this code. Enforce it here instead of assuming it: once a
-            # chunk has been emitted the error is re-raised, because replaying
-            # the stream would emit those chunks a second time.
-            emitted = False
-            try:
-                async for chunk in inner:
-                    emitted = True
-                    yield chunk
-            except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-                if emitted or not self._recoverable_rejection(exc):
-                    raise
-                async for chunk in self._astream(*args, **kwargs):
-                    yield chunk
+            async for chunk in retry_async_stream(lambda: inner, self._recoverable_rejection, partial(self._astream, *args, **kwargs)):
+                yield chunk
 
         def _convert_chunk_to_generation_chunk(  # type: ignore[override]
             self,

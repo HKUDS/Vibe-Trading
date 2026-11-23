@@ -182,12 +182,7 @@ class ContextBuilder:
         self._persistent_memory = persistent_memory
 
     def build_system_prompt(self, user_message: str = "") -> str:
-        """Build system prompt.
-
-        Injects one-line skill summaries via get_descriptions, while full docs
-        are loaded on demand by load_skill. Persistent memory is frozen at
-        session start. Volatile date and workspace state are added to the
-        user-message envelope in :meth:`build_messages`.
+        """Build the stable prompt from skill summaries, static instructions and the memory snapshot.
 
         Args:
             user_message: User message (kept for API compatibility).
@@ -233,33 +228,8 @@ class ContextBuilder:
             strategy_discovery_routing=routing,
         )
 
-    @staticmethod
-    def _count_data_sources() -> int:
-        """Count registered backtest data sources for the system prompt.
-
-        Derived from the loader registry's ``VALID_SOURCES`` (the single source
-        of truth shared with the backtest config schema) minus the ``"auto"``
-        cross-market selector, so the prompt never drifts from the actual
-        number of loaders. Falls back to a static count if the import fails.
-        """
-        try:
-            from backtest.loaders.registry import VALID_SOURCES
-
-            return len(VALID_SOURCES - {"auto"})
-        except Exception:  # noqa: BLE001 - prompt count must never break startup
-            return 18
-
     def build_messages(self, user_message: str, history: Optional[list[ModelMessage]] = None) -> list[ModelMessage]:
-        """Build full message list.
-
-        Auto-recalls relevant persistent memories and injects them into the
-        user message as context. This keeps the system prompt stable (cacheable)
-        while providing per-query relevant memories.
-
-        Volatile workspace state (run_dir, tool counters) is injected the same
-        way: run_dir changes on every run and counters change on every tool
-        call, so rendering them into the system prompt invalidated the provider
-        prefix cache on every turn (issue #1707).
+        """Put volatile workspace state and memory recall in the user message to preserve the prompt cache.
 
         Args:
             user_message: User message.
