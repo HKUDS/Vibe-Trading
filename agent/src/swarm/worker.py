@@ -950,6 +950,8 @@ def _run_worker_impl(
         _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
         return finish(WorkerStatus.completed, summary, iteration + 1, warning_iterations=iteration + 1)
 
+    successful_reads: dict[tuple[str, str], str] = {}
+
     def run_tools(response: LLMResponse) -> Continue | Stop:
         # Append assistant message with tool calls
         messages.append(
@@ -973,6 +975,7 @@ def _run_worker_impl(
                           "arguments": _preview_tool_arguments(tc.arguments), **mcp_meta}},
             )
             tc_start = time.monotonic()
+            read_key = None
             tool = registry.get(tc.name)
             args, run_dir_refusal = _tool_arguments(tool, tc.arguments, artifact_dir)
 
@@ -1014,13 +1017,20 @@ def _run_worker_impl(
                     elif stop_requested():
                         break
                     else:
-                        result = registry.execute(tc.name, prepared.arguments)
-                        if prepared.post_result is not None:
-                            prepared.post_result(result, "ok")
-            # The model and persisted conversation need the same protection as
-            # event previews, before truncation can cut a credential envelope.
+                        if getattr(tool, "is_readonly", False) is True:
+                            read_key = (tc.name, json.dumps(prepared.arguments, sort_keys=True))
+                        if read_key in successful_reads:
+                            result = _repeat_read_result(successful_reads[read_key])
+                            read_key = None
+                        else:
+                            result = registry.execute(tc.name, prepared.arguments)
+                            if prepared.post_result is not None:
+                                prepared.post_result(result, "ok")
+            # Redact before storing or previewing any tool payload.
             result = redact_tool_result(result)
             result_is_error = _is_error_result(result)
+            if read_key is not None and not result_is_error:
+                successful_reads[read_key] = result
             tc_elapsed = time.monotonic() - tc_start
             _emit(
                 event_callback,
@@ -1209,6 +1219,18 @@ _UNPARSED_TOOL_MARKERS = (
     "<tool_sep>",
     "tool\u2581sep",
 )
+def _repeat_read_result(result: str) -> str:
+    """Identify reused evidence while retaining its original payload."""
+    try:
+        payload = json.loads(result)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        payload["_vibe_repeat"] = True
+        return json.dumps(payload, ensure_ascii=False)
+    return f"{result}\n\n[Repeat: prior successful read]"
+
+
 def _is_error_result(result: str) -> bool:
     """Did a tool call return a top-level error envelope?
 

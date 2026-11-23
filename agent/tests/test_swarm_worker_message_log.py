@@ -24,6 +24,8 @@ import src.swarm.worker as worker_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
+from src.swarm.presets import build_run_from_preset
+from src.tools import web_reader_tool
 from src.swarm.artifacts import agent_artifact_dir
 from src.swarm.worker import run_worker
 
@@ -133,6 +135,72 @@ def _run_worker_to_terminal(
         run_dir=tmp_path,
         event_callback=lambda event: None,
     )
+
+
+@pytest.mark.parametrize("readonly,initial_status", [(True, "ok"), (True, "error"), (False, "ok")])
+def test_worker_reuses_only_successful_identical_reads(tmp_path, monkeypatch, readonly, initial_status):
+    invocations = []
+
+    def execute(self, **kwargs):
+        invocations.append(kwargs)
+        status = initial_status if len(invocations) == 1 else "ok"
+        return json.dumps({"status": status, "data": [len(invocations)]})
+
+    monkeypatch.setattr(_ProbeTool, "is_readonly", readonly)
+    monkeypatch.setattr(_ProbeTool, "execute", execute)
+    model = _ScriptedLLM()
+    model._responses[0].tool_calls.extend([
+        ToolCallRequest("call-2", "market_probe", {"window": 7, "symbol": "BTC-USDT"}),
+        ToolCallRequest("call-3", "market_probe", {"window": 8, "symbol": "BTC-USDT"}),
+    ])
+    result = _run_worker_to_terminal(tmp_path, monkeypatch, llm_factory=lambda: model)
+    assert result.status == "completed", result.error
+    artifact_dir = agent_artifact_dir(tmp_path, "analyst", "task")
+    messages = json.loads((artifact_dir / "messages.json").read_text())
+    results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
+    assert len(results) == 3
+    if readonly and initial_status == "ok":
+        assert len(invocations) == 2
+        assert results[1] == {"status": "ok", "data": [1], "_vibe_repeat": True}
+    else:
+        assert len(invocations) == 3
+        assert results[1] == {"status": "ok", "data": [2]}
+    assert invocations[-1]["window"] == 8
+
+
+def test_credit_research_rate_node_reuses_read_url_result(tmp_path, monkeypatch):
+    url = "https://example.com/central-bank-calendar"
+    result_json = {"status": "ok", "url": url, "content": "Next announcement: November 23."}
+    fetches = []
+
+    def read(url, *, no_cache):
+        fetches.append((url, no_cache))
+        return json.dumps(result_json)
+
+    def request(call_id):
+        return LLMResponse(
+            tool_calls=[ToolCallRequest(call_id, "read_url", {"url": url})],
+            finish_reason="tool_calls",
+        )
+
+    model = _ScriptedLLM()
+    model._responses[:1] = [request("first"), request("repeat")]
+    monkeypatch.setattr(web_reader_tool, "read_url", read)
+    monkeypatch.setattr(worker_mod, "ChatLLM", lambda *args, **kwargs: model)
+    preset = build_run_from_preset("credit_research_team", {"target": "AAPL", "market": "US"})
+    task = next(task for task in preset.tasks if task.id == "task-rate")
+    agent = next(agent for agent in preset.agents if agent.id == task.agent_id)
+    result = run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
+        agent_spec=agent, task=task, upstream_summaries={},
+        user_vars=preset.user_vars, run_dir=tmp_path,
+    )
+    assert result.status == "completed", result.error
+    assert fetches == [(url, False)]
+    artifact_dir = agent_artifact_dir(tmp_path, agent.id, task.id)
+    messages = json.loads((artifact_dir / "messages.json").read_text())
+    results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
+    assert results == [result_json, {**result_json, "_vibe_repeat": True}]
 
 
 def test_completed_run_persists_the_message_log(
