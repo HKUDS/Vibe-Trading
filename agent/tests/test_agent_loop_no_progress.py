@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,7 +69,7 @@ class DiscoveryLLM:
 
 
 def build_loop(tmp_path: Path, tool: DiscoveryTool, llm: DiscoveryLLM):
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     events = []
     loop = AgentRuntime(

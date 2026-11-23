@@ -12,6 +12,9 @@ fallback workflows.
 
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
+
 from typing import Any, Optional
 
 from rich.console import Console
@@ -161,7 +164,10 @@ def cmd_compact(ctx: Any = None, *args: str) -> int:
 
         store = _session_store()
         result = asyncio.run(
-            SessionService(store=store, event_bus=EventBus(), runs_dir=get_runs_dir())
+            SessionService(
+                policy=ToolPolicy.from_config(get_env_config()),
+                store=store, event_bus=EventBus(), runs_dir=get_runs_dir(),
+            )
             .compact_session(session_id, " ".join(args))
         )
     except Exception as exc:  # noqa: BLE001 - keep the REPL alive on refusal

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import os
+from dataclasses import replace
+
+from src.product.tool_policy import ToolPolicy
+
 
 from fastapi import HTTPException
 
@@ -63,7 +66,13 @@ def _get_session_service():
     except RuntimeError:
         pass
 
+    from src.providers.settings import _ensure_dotenv
+
+    shell_tools_enabled = get_env_config().api.vibe_trading_enable_shell_tools
+    _ensure_dotenv()
+    policy = replace(ToolPolicy.from_config(get_env_config()), shell_tools_enabled=shell_tools_enabled)
     _session_service = SessionService(
+        policy=policy,
         store=store,
         event_bus=event_bus,
         runs_dir=runs_dir,

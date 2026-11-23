@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 
 import mcp_server
 import src.swarm.runtime as rt
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 from src.swarm.store import SwarmStore
 from src.swarm.task_store import TaskStore
@@ -186,7 +188,7 @@ def test_http_retry_route_resume_rejects_completed_run(tmp_path, monkeypatch):
 
     monkeypatch.setattr(swarm_routes, "_get_swarm_runtime", lambda: type("R", (), {"_store": store})())
     monkeypatch.setattr(
-        api_server, "_shell_tools_enabled_for_request", lambda request: False
+        api_server, "_shell_tools_enabled_for_request", lambda request, **kwargs: False
     )
 
     resp = client.post("/swarm/runs/r-http-done/retry?resume=true")
@@ -215,6 +217,7 @@ def test_http_retry_route_resume_query_plumbs_resume_from(tmp_path, monkeypatch)
 
     class _FakeRuntime:
         _store = store
+        policy = ToolPolicy.from_config(get_env_config())
 
         def start_run(self, preset_name, variables, **kwargs):
             nonlocal call_count
@@ -226,7 +229,7 @@ def test_http_retry_route_resume_query_plumbs_resume_from(tmp_path, monkeypatch)
 
     monkeypatch.setattr(swarm_routes, "_get_swarm_runtime", lambda: _FakeRuntime())
     monkeypatch.setattr(
-        api_server, "_shell_tools_enabled_for_request", lambda request: False
+        api_server, "_shell_tools_enabled_for_request", lambda request, **kwargs: False
     )
 
     resp = client.post("/swarm/runs/r-http/retry?resume=true")

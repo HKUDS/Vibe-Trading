@@ -6,6 +6,12 @@ provider, broker or market-data source.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+
+
 import copy
 import json
 import threading
@@ -111,7 +117,7 @@ def run_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def parent_registry(child_llm: ScriptedLLM, *tools: BaseTool, cancel_event=None, **spawn_kwargs: Any) -> ToolRegistry:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for tool in tools:
         registry.register(tool)
     registry.register(
@@ -197,13 +203,13 @@ def test_a_file_the_child_writes_is_readable_by_the_parent(run_root: Path) -> No
     child_llm = ScriptedLLM(
         [call("write_file", path="notes.md", content="child findings"), answer("Wrote notes.md.")]
     )
-    registry = parent_registry(child_llm, WriteFileTool())
+    registry = parent_registry(child_llm, WriteFileTool(roots=FileRoots.from_config(get_env_config().api)))
 
     payload = json.loads(registry.get("spawn_agent").execute(task="Write notes.md.", run_dir=str(run_root)))
 
     assert payload["status"] == "ok"
     read = json.loads(
-        ReadFileTool().execute(path=f"{payload['relative_run_dir']}/notes.md", run_dir=str(run_root))
+        ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=f"{payload['relative_run_dir']}/notes.md", run_dir=str(run_root))
     )
     assert read["content"].strip().endswith("child findings")
 
@@ -229,7 +235,7 @@ def test_child_progress_carries_tool_names_and_statuses_only(run_root: Path) -> 
 def test_a_child_cannot_spawn_or_run_a_swarm(run_root: Path) -> None:
     child_llm = ScriptedLLM([call("spawn_agent", task="nested"), answer("Could not nest.")])
     registry = parent_registry(child_llm)
-    registry.register(SwarmTool())
+    registry.register(SwarmTool(policy=ToolPolicy.from_config(get_env_config())))
     spawned: list[str] = []
     original = SpawnAgentTool.execute
 
@@ -268,6 +274,7 @@ def test_child_registry_enumeration_has_no_order_path_under_either_shell_configu
 
     memory = PersistentMemory(memory_dir=tmp_path / "memory")
     parent = build_registry(
+        policy=ToolPolicy.from_config(get_env_config()),
         include_shell_tools=include_shell_tools,
         session_id="PARENT-SESSION",
         event_callback=parent_callback,
@@ -405,7 +412,7 @@ def _remote_tool(name: str, annotations: Any) -> BaseTool:
 def test_only_an_mcp_tool_declared_read_only_reaches_the_child(tmp_path: Path) -> None:
     from mcp.types import ToolAnnotations
 
-    parent = ToolRegistry()
+    parent = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for tool in (
         _remote_tool("quotes", ToolAnnotations(readOnlyHint=True)),
         _remote_tool("submit", ToolAnnotations(readOnlyHint=False)),
@@ -518,7 +525,7 @@ def test_a_child_that_cannot_start_is_a_tool_error(run_root: Path) -> None:
     def no_llm():
         raise RuntimeError("no provider configured")
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(SpawnAgentTool(registry, llm_factory=no_llm))
 
     payload = json.loads(registry.get("spawn_agent").execute(task="Anything.", run_dir=str(run_root)))
@@ -552,7 +559,7 @@ def test_child_iteration_cap_comes_from_config(run_root: Path, monkeypatch: pyte
 
 
 def test_task_is_required(run_root: Path) -> None:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(SpawnAgentTool(registry, llm_factory=lambda: ScriptedLLM([])))
 
     payload = json.loads(registry.get("spawn_agent").execute(task="  ", run_dir=str(run_root)))
@@ -579,7 +586,7 @@ def test_build_registry_hands_spawn_agent_its_registry_cancel_event_and_session(
         return None
 
     cancel = threading.Event()
-    registry = build_registry(cancel_event=cancel, session_id="S-BUILD", event_callback=sink)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), cancel_event=cancel, session_id="S-BUILD", event_callback=sink)
     tool = registry.get("spawn_agent")
 
     assert isinstance(tool, SpawnAgentTool)
@@ -632,7 +639,7 @@ def test_a_child_cannot_read_or_change_the_parents_research_goal(run_root: Path,
 
     goal = start_goal("S1")
     goal_tools = [
-        cls(default_session_id="S1", event_callback=parent_callback)
+        cls(default_session_id="S1", event_callback=parent_callback, roots=FileRoots.from_config(get_env_config().api))
         for cls in (GetResearchGoalTool, UpdateResearchGoalStatusTool)
     ]
     child_llm = ScriptedLLM([
@@ -745,7 +752,7 @@ def test_a_child_cannot_write_outside_its_workspace(
     parent_req.write_text('{"prompt": "PARENT"}', encoding="utf-8")
     arguments = {k: v.replace("{parent}", str(run_root)) for k, v in arguments.items()}
     child_llm = ScriptedLLM([call("write_file", content="OVERWRITTEN", **arguments), answer("Tried.")])
-    registry = parent_registry(child_llm, WriteFileTool())
+    registry = parent_registry(child_llm, WriteFileTool(roots=FileRoots.from_config(get_env_config().api)))
 
     payload = json.loads(registry.get("spawn_agent").execute(task="Write req.json.", run_dir=str(run_root)))
 

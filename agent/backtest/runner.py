@@ -8,6 +8,8 @@ Supports ``engine`` for backtest engine (daily/options, default daily).
 Usage: ``python -m backtest.runner <run_dir>``
 """
 
+from src.tools.path_utils import FileRoots
+
 import ast
 import copy
 import importlib.util
@@ -1502,9 +1504,12 @@ def main(run_dir: Path) -> None:
     # import ``signal_engine.py`` from anywhere on disk; the AST scrubber
     # below blocks executable top-level statements but a method body still
     # runs on instantiation. See ``safe_run_dir`` for the policy.
+    from src.config.accessor import get_env_config
     from src.tools.path_utils import safe_run_dir
+
+    roots = FileRoots.from_config(get_env_config().api)
     try:
-        run_dir = safe_run_dir(str(run_dir))
+        run_dir = safe_run_dir(str(run_dir), roots=roots)
     except ValueError as exc:
         print(json.dumps({"error": str(exc)}))
         sys.exit(1)
@@ -1560,7 +1565,7 @@ def main(run_dir: Path) -> None:
         print(json.dumps({"error": f"SignalEngine interface error: {exc}"}))
         sys.exit(1)
 
-    fetch_result = fetch_data_map(config)
+    fetch_result = fetch_data_map(config, roots=roots)
     data_map = fetch_result.data_map
     codes = fetch_result.codes
     source = fetch_result.source
@@ -2080,7 +2085,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
     return merged
 
 
-def fetch_data_map(config: dict) -> DataFetchResult:
+def fetch_data_map(config: dict, *, roots: FileRoots) -> DataFetchResult:
     """Fetch and sanitize bars through the canonical loader registry.
 
     This is the shared entry point for backtest execution and reconstruction
@@ -2104,7 +2109,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     if config.get("frozen_data_manifest"):
         from backtest.frozen import load_frozen_frames
 
-        frames, manifest = load_frozen_frames(config["frozen_data_manifest"], config)
+        frames, manifest = load_frozen_frames(config["frozen_data_manifest"], config, roots=roots)
         return DataFetchResult(
             frames, list(frames), config.get("source", "auto"),
             _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),

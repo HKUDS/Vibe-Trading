@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import json
 import re
@@ -54,6 +56,7 @@ class GroundingLedger(
     def __init__(
         self,
         *,
+        roots: FileRoots,
         run_dir: Path,
         user_message: str,
         history: Sequence[Mapping[str, Any]] | None = None,
@@ -71,6 +74,7 @@ class GroundingLedger(
             contextual_identity_constraints: Whether explicit market words in
                 the original conversation may narrow resolver candidates.
         """
+        self.file_roots = roots
         self.run_dir = Path(run_dir)
         self.user_message = user_message
         self.resolution_context = ResolutionContext.from_messages(

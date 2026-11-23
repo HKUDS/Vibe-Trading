@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any, Callable
 
@@ -51,7 +58,7 @@ def _agent(llm: _CapturingLLM, run_dir: Path) -> AgentRuntime:
 
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=2,
         persistent_memory=pm,
@@ -148,6 +155,7 @@ def test_agent_loop_continues_active_covered_goal_to_force_audit(tmp_path: Path,
     )
     criterion = store.list_criteria(goal.goal_id)[0]
     store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,

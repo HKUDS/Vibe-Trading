@@ -11,6 +11,10 @@ session is misread as a manual rename and keeps its raw truncated prompt
 forever (CONTRIBUTING.md:36-37).
 """
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.recording_helpers import seed_message
 
 import asyncio
@@ -73,6 +77,7 @@ def wrapped_prompt_routes(tmp_path, monkeypatch):
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: index)
     monkeypatch.setattr("src.session.search.get_shared_index", lambda: index)
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -80,6 +85,9 @@ def wrapped_prompt_routes(tmp_path, monkeypatch):
     from src.providers import chat
 
     class OwnedTitleProvider:
+        def __init__(self, *, policy):
+            self.policy = policy
+
         def chat(self, messages, timeout):
             return SimpleNamespace(content=GENERATED_TITLE)
 

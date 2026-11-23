@@ -12,6 +12,10 @@ Two general failures of the numeric gate, each reproduced on ``main`` before the
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -39,7 +43,7 @@ def _figures(*rows: str) -> str:
 
 
 def _ledger(tmp_path: Path, payload: dict, tool: str = "risk_tool") -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analizá el riesgo")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analizá el riesgo")
     ledger.ingest_tool_result(
         tool_name=tool,
         arguments={},
@@ -163,7 +167,7 @@ def test_live_shape_links_localized_prose_to_precise_declarations() -> None:
 
 def test_spanish_grouped_tool_values_survive_the_grounding_gate(tmp_path: Path) -> None:
     """The live Argentina-report shape: localized grouping plus a rounded ratio."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analizá PAMP.BA")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analizá PAMP.BA")
     ledger.ingest_tool_result(
         tool_name="technical_indicators",
         arguments={"symbol": "PAMP.BA"},
@@ -377,7 +381,7 @@ def test_declaration_matching_follows_the_digits_written(
 
 def test_an_integer_keeps_the_previous_behaviour(tmp_path: Path) -> None:
     """An integer's precision is unknown ("6,700" may be rounded to hundreds): the flat band still applies."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="precio")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="precio")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["AAPL.US"]},

@@ -8,6 +8,8 @@ key path because ChatGPT OAuth tokens are not OpenAI API keys.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import asyncio
 import base64
 import hashlib
@@ -454,7 +456,7 @@ def _convert_user_message(content: Any) -> dict[str, Any]:
     return {"role": "user", "content": [{"type": "input_text", "text": ""}]}
 
 
-def _convert_tool_output(content: Any) -> Any:
+def _convert_tool_output(content: Any, *, roots: FileRoots) -> Any:
     """Convert durable image references to Responses image input parts."""
     if not isinstance(content, list):
         return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
@@ -467,18 +469,17 @@ def _convert_tool_output(content: Any) -> Any:
         elif part.get("type") == "image_url":
             url = (part.get("image_url") or {}).get("url")
             try:
-                from src.config.paths import get_sessions_dir
                 from src.tools.path_utils import safe_document_path, safe_path
 
                 if not isinstance(url, str) or not url or "://" in url or url.startswith("data:"):
                     raise ValueError("tool images must reference local artifacts")
                 try:
-                    path = safe_document_path(url)
+                    path = safe_document_path(url, roots=roots)
                 except ValueError:
                     session_id = current_llm_session_id()
                     if not session_id:
                         raise
-                    session_root = safe_path(session_id, get_sessions_dir())
+                    session_root = safe_path(session_id, roots.runtime_root / "sessions")
                     workspace = safe_path("workspace", session_root)
                     path = safe_path(url, workspace)
                 mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
@@ -501,6 +502,7 @@ def _split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
 def _convert_messages(
     messages: list[dict[str, Any]],
     *,
+    roots: FileRoots,
     replay_reasoning: bool = True,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Convert loop messages into Responses ``instructions`` + ``input`` items.
@@ -574,7 +576,7 @@ def _convert_messages(
                 input_items.append(function_call)
         elif role == "tool":
             call_id, _ = _split_tool_call_id(msg.get("tool_call_id"))
-            output = _convert_tool_output(content)
+            output = _convert_tool_output(content, roots=roots)
             input_items.append({"type": "function_call_output", "call_id": call_id, "output": output})
     return system_prompt, input_items
 
@@ -749,6 +751,7 @@ class OpenAICodexLLM:
         self,
         *,
         model: str,
+        roots: FileRoots,
         temperature: float = 0.0,
         timeout: int = 120,
         tools: list[dict[str, Any]] | None = None,
@@ -758,6 +761,7 @@ class OpenAICodexLLM:
         if httpx is None:
             raise RuntimeError("OpenAI Codex OAuth requires httpx. Install dependencies first.")
         self.model = model
+        self.roots = roots
         self.temperature = temperature
         self.timeout = timeout
         self.tools = tools or []
@@ -767,6 +771,7 @@ class OpenAICodexLLM:
     def bind_tools(self, tools: list[dict[str, Any]]) -> "OpenAICodexLLM":
         return OpenAICodexLLM(
             model=self.model,
+            roots=self.roots,
             temperature=self.temperature,
             timeout=self.timeout,
             tools=tools,
@@ -782,7 +787,7 @@ class OpenAICodexLLM:
         replay_reasoning: bool = True,
     ) -> dict[str, Any]:
         system_prompt, input_items = _convert_messages(
-            messages, replay_reasoning=replay_reasoning
+            messages, roots=self.roots, replay_reasoning=replay_reasoning
         )
         body: dict[str, Any] = {
             "model": _strip_model_prefix(self.model),

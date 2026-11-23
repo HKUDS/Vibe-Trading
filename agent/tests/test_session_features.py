@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +22,7 @@ from src.session.thread import ThreadLog
 
 def _service(tmp_path: Path) -> SessionService:
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -88,7 +93,7 @@ def test_manual_compaction_uses_the_existing_summary_path_and_records_a_compacti
         async def aclose(self):
             return None
 
-    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda _config: FakeLLM())
+    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda _config, **kwargs: FakeLLM())
     result = asyncio.run(service.compact_session(session.session_id, "risk"))
 
     assert result["focus"] == "risk"
@@ -129,7 +134,7 @@ def test_manual_compaction_closes_resources_when_setup_fails(tmp_path, monkeypat
     Path(service.runs_dir).mkdir(parents=True, exist_ok=True)
     (Path(service.runs_dir) / "compactions").touch()
     llm = SimpleNamespace(aclose=AsyncMock(), runtime_snapshot=None)
-    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda config: llm)
+    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda config, **kwargs: llm)
     closed = []
     original_close = TurnRecorder.close
 

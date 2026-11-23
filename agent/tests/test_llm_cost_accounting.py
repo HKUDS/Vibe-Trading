@@ -1,5 +1,9 @@
 """Paid responses remain accounted for when compaction or Stop interrupts work."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.providers.adapters import deepseek as deepseek_adapter
 from src.providers.settings import resolve_config
 
@@ -34,7 +38,7 @@ def _agent(tmp_path, callback=None):
         chat=Mock(return_value=LLMResponse(content="Summary retained.", usage_metadata=USAGE)),
         stream_chat=Mock(return_value=LLMResponse(content="Done.", usage_metadata=USAGE)),
     )
-    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, event_callback=callback)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm, event_callback=callback)
     agent.memory.run_dir = str(tmp_path)
     return agent, llm
 

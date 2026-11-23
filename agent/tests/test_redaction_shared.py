@@ -18,6 +18,9 @@ from typing import Any
 
 import pytest
 
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
+
 from src.product.context import ContextBuilder
 from src.agent.runtime import AgentRuntime
 from tests.recording_helpers import recorder_at, records_at, run_recorded_tool
@@ -386,6 +389,7 @@ class _StubRegistry:
 
     def __init__(self, result: str) -> None:
         self._result = result
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get(self, tool_name: str) -> _Tool:
         del tool_name
@@ -394,6 +398,9 @@ class _StubRegistry:
     def execute(self, tool_name: str, args: dict[str, Any]) -> str:
         del tool_name, args
         return self._result
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def _run_one_tool_call(

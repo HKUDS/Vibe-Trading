@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+
+from src.product.tool_policy import ToolPolicy
+
 from typing import Any
 
 from rich.console import Console
@@ -93,6 +97,7 @@ def cmd_fork(ctx: Any = None, *args: str) -> int:
 
         turn_id, *title_parts = args
         session = SessionService(
+            policy=ToolPolicy.from_config(get_env_config()),
             store=_session_store(), event_bus=EventBus(), runs_dir=get_runs_dir()
         ).fork_session(session_id, turn_id, title=" ".join(title_parts))
         ctx.session_id = session.session_id

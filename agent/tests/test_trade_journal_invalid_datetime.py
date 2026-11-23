@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -19,7 +23,7 @@ def _analyze(tmp_path, monkeypatch, rows, mode="full", filter_expr="", excel=Fal
         frame.to_excel(path, index=False)
     else:
         frame.to_csv(path, index=False)
-    return json.loads(analyze_trade_journal(str(path), mode, filter_expr))
+    return json.loads(analyze_trade_journal(str(path), mode, filter_expr, roots=FileRoots.from_config(get_env_config().api)))
 
 
 def _row(dt, side="buy", symbol="AAPL"):

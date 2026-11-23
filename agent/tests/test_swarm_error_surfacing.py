@@ -13,6 +13,10 @@ Pre-fix: ``test_error_captured_*`` passes (capture was never broken);
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -30,7 +34,7 @@ from src.tools.swarm_tool import _format_result
 
 def _run(tmp_path: Path) -> SwarmRun:
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agent = SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0)
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="do x")
     run = SwarmRun(

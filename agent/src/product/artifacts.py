@@ -192,7 +192,10 @@ class ToolDelivery:
                 self.replay._successful_call_keys[tc.id] = recorded_key
             if tc.name == "backtest":
                 try:
-                    _archive_backtest_result(result, self.env.memory.run_dir, source_call_id=tc.id)
+                    _archive_backtest_result(
+                        result, self.env.memory.run_dir, source_call_id=tc.id,
+                        roots=self.env.registry.policy.file_roots,
+                    )
                 except OSError as exc:
                     logger.warning("Could not archive backtest output into active run: %s", exc)
             if tc.name in {"write_file", "edit_file"}:

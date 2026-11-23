@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from contextlib import closing
 
 from tests.provider_helpers import provider_server as provider_server
@@ -23,7 +27,7 @@ def test_model_inference_does_not_change_explicit_adapter_family(monkeypatch):
 
     monkeypatch.setattr(diagnostics, "resolve_config", lambda: route)
     monkeypatch.setattr(diagnostics, "_package_version", lambda _: "installed")
-    assert diagnostics.provider_diagnostics()["adapter"]["type"] == "openai-compatible"
+    assert diagnostics.provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))["adapter"]["type"] == "openai-compatible"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "openai_codex", "LANGCHAIN_MODEL_NAME": "test"}).backend == "openai_codex"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "github-copilot", "LANGCHAIN_MODEL_NAME": "test"}).backend == "copilot"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "unknown-legacy-relay", "LANGCHAIN_MODEL_NAME": "test"}).backend == "openai_compatible"
@@ -57,7 +61,7 @@ def test_settings_to_real_sdk_stream_and_tool_followup(tmp_path, monkeypatch, pr
         assert response.status_code == 200, response.text
         provider = next(p for p in response.json()["providers"] if p["name"] == "ollama")
         assert provider["backend"] == "openai_compatible"
-        with closing(ChatLLM()) as llm:
+        with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()))) as llm:
             assert_stream_tool_roundtrip(llm, "gateway-test")
     assert len(received) == 2
     assert all(path == "/v1/chat/completions" for path, _, _ in received)

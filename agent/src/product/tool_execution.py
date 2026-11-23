@@ -31,11 +31,9 @@ class ToolExecution:
         """Read the opted-in dependency without issuing a refused consumer call."""
         if self.env.identity is None or self._cancel_event.is_set():
             return None
-        from src.product.tool_policy import _deny_prefixes
-
         tool = self.env.registry.get(tc.name)
         field = getattr(tool, "identity_argument", None)
-        if not field or not self.replay._is_tool_readonly(tc.name) or tc.name.startswith(_deny_prefixes()):
+        if not field or not self.replay._is_tool_readonly(tc.name) or self.env.registry.policy.denies(tc.name):
             return None
         if self.env.registry.get("search_symbol") is None:
             return None
@@ -259,10 +257,8 @@ class ToolExecution:
                 self.env.identity is not None and tc.name == "search_symbol"
                 and getattr(tool_def, "reuse_session_identity", False)
             ):
-                from src.product.tool_policy import _deny_prefixes
-
                 reused = (
-                    None if tc.name.startswith(_deny_prefixes())
+                    None if self.env.registry.policy.denies(tc.name)
                     else self.env.identity.reusable_resolution(tc.arguments)
                 )
                 if reused is not None:

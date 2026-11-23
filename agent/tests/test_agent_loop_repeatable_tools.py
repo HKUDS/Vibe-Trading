@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,7 +82,7 @@ def test_repeatable_query_executes_again_with_different_arguments(
         return json.dumps({"status": "ok"})
 
     monkeypatch.setattr(tool, "execute", _execute)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=2)
 
@@ -132,7 +136,7 @@ def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path:
         return json.dumps({"status": "ok", "rows": ["x" * 200]})
 
     monkeypatch.setattr(tool, "execute", _execute)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=5)
 

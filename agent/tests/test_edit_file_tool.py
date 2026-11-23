@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -19,7 +23,7 @@ def run_dir(tmp_path: Path, monkeypatch) -> Path:
 
 def _edit(run_dir: Path, **kwargs) -> dict:
     """Run edit_file against ``notes.md`` in ``run_dir`` and parse the envelope."""
-    return json.loads(EditFileTool().execute(path="notes.md", run_dir=str(run_dir), **kwargs))
+    return json.loads(EditFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="notes.md", run_dir=str(run_dir), **kwargs))
 
 
 def _write(run_dir: Path, text: str) -> Path:
@@ -170,7 +174,7 @@ def test_path_outside_roots_is_still_refused(run_dir: Path, tmp_path_factory) ->
     outside = tmp_path_factory.mktemp("outside") / "secret.md"
     outside.write_text("keep keep", encoding="utf-8")
 
-    raw = EditFileTool().execute(
+    raw = EditFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(
         path=str(outside), old_text="keep", new_text="gone", replace_all=True, run_dir=str(run_dir)
     )
     body = json.loads(raw)

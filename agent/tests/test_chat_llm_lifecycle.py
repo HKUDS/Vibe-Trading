@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 
 import pytest
@@ -129,7 +133,7 @@ def test_close_respects_default_transport_ownership(monkeypatch, provider_server
         "LANGCHAIN_USE_RESPONSES_API": "false", "ANTHROPIC_MAX_TOKENS": "128",
         "MAX_RETRIES": "0", "TIMEOUT_SECONDS": "5",
     })
-    first, second = ChatLLM(snapshot=snapshot), ChatLLM(snapshot=snapshot)
+    first, second = ChatLLM(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot), ChatLLM(policy=ToolPolicy.from_config(get_env_config()), snapshot=snapshot)
     sync_attr, async_attr = ("_client", "_async_client") if provider == "anthropic" else ("root_client", "root_async_client")
     first_http = [getattr(first._llm, attr)._client for attr in (sync_attr, async_attr)]
     second_http = [getattr(second._llm, attr)._client for attr in (sync_attr, async_attr)]

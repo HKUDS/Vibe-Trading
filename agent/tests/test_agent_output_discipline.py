@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -26,7 +33,7 @@ pytestmark = pytest.mark.unit
 
 
 def _rendered_prompt() -> str:
-    return ContextBuilder(ToolRegistry(), WorkspaceMemory()).build_system_prompt("anything")
+    return ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory()).build_system_prompt("anything")
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +116,7 @@ class TestOutputPrinciplesCannotBeOverriddenBySession:
         assert "}" not in block
 
     def test_the_block_is_identical_for_different_user_messages(self) -> None:
-        builder = ContextBuilder(ToolRegistry(), WorkspaceMemory())
+        builder = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory())
         blocks = [
             builder.build_system_prompt(message)
             .split("## Output Principles", 1)[1]
@@ -156,7 +163,7 @@ _GROUNDED_ANSWER = "AAPL.US（yahoo，USD）2026-08-03 收盘价 212.5。"
 def _ledger(tmp_path: Path, *, tool: str = "get_market_data", result: str = _MARKET_BARS,
             message: str = "AAPL.US 收盘价是多少？") -> GroundingLedger:
     """A ledger that has retrieved one AAPL.US quote through *tool*."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=message)
     arguments = {"symbols": ["AAPL.US"], "source": "yahoo"} if tool == "get_market_data" else {"symbol": "AAPL.US"}
     ledger.ingest_tool_result(
         tool_name=tool, arguments=arguments, result=result, call_id="quote", success=True
@@ -320,6 +327,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
         literal string would reject a fully grounded answer.
         """
         ledger = GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=tmp_path,
             user_message="Summarize AAPL's latest annual filing.",
         )
@@ -347,6 +355,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
     ) -> None:
         """A genuine SEC USD metric should support a referenced dollar claim."""
         ledger = GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=tmp_path,
             user_message="Analyze HE.US debt from its June 2026 filing.",
         )
@@ -402,6 +411,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
     ) -> None:
         """Incorrect values and nonmonetary units cannot support USD claims."""
         ledger = GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=tmp_path,
             user_message="Analyze HE.US financial statements.",
         )
@@ -463,6 +473,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
     ) -> None:
         """SEC financial claims must preserve the source currency."""
         ledger = GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=tmp_path,
             user_message="Analyze HE.US financial statements.",
         )
@@ -509,6 +520,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
     ) -> None:
         """A real SEC figure cannot be attributed to a different call."""
         ledger = GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=tmp_path,
             user_message="Analyze HE.US debt.",
         )
@@ -552,6 +564,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
     ) -> None:
         """Only the root a succeeding call actually passed in is licensed."""
         ledger = GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=tmp_path,
             user_message="Summarize AAPL's latest annual filing.",
         )
@@ -607,7 +620,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
         assert [issue["code"] for issue in result.issues] == []
 
     def test_prose_with_no_symbols_and_no_evidence_is_untouched(self, tmp_path: Path) -> None:
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="什么是夏普比率？")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="什么是夏普比率？")
 
         result = ledger.validate_final_answer(
             "夏普比率衡量单位风险的超额收益，通常以 252 个交易日年化。"
@@ -627,7 +640,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
         ends in fabricated quotes, so the strictness is kept and the model is
         handed one round trip to source the figure or call it not retrieved.
         """
-        ledger = GroundingLedger(run_dir=tmp_path, user_message="A股宽基指数有哪些")
+        ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="A股宽基指数有哪些")
 
         result = ledger.validate_final_answer(
             "000300.SH 覆盖 300.0 只成分股。"

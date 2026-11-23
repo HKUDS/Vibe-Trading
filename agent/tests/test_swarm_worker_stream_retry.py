@@ -10,6 +10,10 @@ existing failure path.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -129,6 +133,7 @@ def _run(monkeypatch, tmp_path: Path, llm: _FlakyChatLLM) -> WorkerResult:
         patch.object(worker_mod, "ChatLLM", llm),
     ):
         return run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},

@@ -11,6 +11,10 @@ This module centralizes the data shaping needed by the frontend workbench:
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 import csv
 import json
 from datetime import datetime, timedelta
@@ -476,7 +480,7 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
             start_date=fetch_start_date,
             end_date=end_date,
         )
-        data_map = fetch_data_map(fetch_config).data_map
+        data_map = fetch_data_map(fetch_config, roots=FileRoots.from_config(get_env_config().api)).data_map
     except Exception as exc:
         print(f"[WARN] reconstruct_price_series: DataLoader failed ({exc})")
         return []

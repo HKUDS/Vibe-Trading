@@ -1,5 +1,9 @@
 """Guidance reaches actual agent surfaces without changing execution contracts."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 
@@ -15,7 +19,7 @@ from src.tools.mcp import MCPRemoteTool, MCPRemoteToolSpec
 
 
 def test_main_system_message_contains_policy_and_no_direct_fetch_exception():
-    builder = ContextBuilder(ToolRegistry(), WorkspaceMemory())
+    builder = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory())
     messages = builder.build_messages("Use Python and an external MCP for this research.")
     prompt = messages[0]["content"]
     assert messages[0]["role"] == "system"

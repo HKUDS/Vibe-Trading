@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 
 import src.tools.swarm_tool as swarm_tool
@@ -50,7 +54,7 @@ def test_ambiguous_continuation_does_not_fallback_to_equity_team() -> None:
 
 def test_swarm_tool_rejects_ambiguous_continuation_before_starting_run() -> None:
     payload = json.loads(
-        swarm_tool.SwarmTool().execute(
+        swarm_tool.SwarmTool(policy=ToolPolicy.from_config(get_env_config())).execute(
             prompt="Continue and finish report. Continue from 'Trim 25% of position if price r'."
         )
     )

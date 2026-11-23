@@ -1,5 +1,12 @@
 """Observed files remain usable by shell-free computation and downstream roles."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import hashlib
 import json
 from pathlib import Path
@@ -35,9 +42,9 @@ def test_full_market_file_to_real_gpd_and_missing_bar_returns(tmp_path):
     rows = [{"trade_date": str(d.date()), "close": float(p)}
             for d, p in zip(pd.bdate_range("2024-01-01", periods=600), prices)]
     rows[50]["close"] = None
-    response = json.loads(persist_calculation_result(json.dumps({"NVDA.US": rows}), tmp_path))
+    response = json.loads(persist_calculation_result(json.dumps({"NVDA.US": rows}), tmp_path, roots=FileRoots.from_config(get_env_config().api)))
     path = response["_result_file"]["path"]
-    result = json.loads(QuantlibCallTool().execute(
+    result = json.loads(QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
         action="call", module="risk", function="fit_gpd_tail", run_dir=str(tmp_path),
         kwargs={"returns": reference(path, pointer="/NVDA.US", column="close",
                                      index="trade_date", transform="pct_change")}))
@@ -54,7 +61,7 @@ def test_sampled_rows_are_not_reinterpreted_as_consecutive_prices(tmp_path, poin
     path = tmp_path / "sampled.json"
     path.write_text(json.dumps({"X": {"truncated": True, "data": [{"close": 10}, {"close": 11}]}}))
     with pytest.raises(ValueError, match="max_rows=0"):
-        resolve_data_refs(reference(path, pointer=pointer, column="close", transform="pct_change"), str(tmp_path), [])
+        resolve_data_refs(reference(path, pointer=pointer, column="close", transform="pct_change"), str(tmp_path), [], roots=FileRoots.from_config(get_env_config().api))
 
 
 def test_data_boundaries_hashes_csv_and_pointer_escaping(tmp_path):
@@ -65,21 +72,21 @@ def test_data_boundaries_hashes_csv_and_pointer_escaping(tmp_path):
     (root / "escape.json").symlink_to(outside)
     for path in (outside, root / "escape.json"):
         with pytest.raises(ValueError, match="escapes"):
-            resolve_data_refs(reference(path), str(root), [])
+            resolve_data_refs(reference(path), str(root), [], roots=FileRoots.from_config(get_env_config().api))
     file = root / "prices.csv"
     file.write_text("date,close\n2026-11-11,173.73\n2026-11-12,166.19\n")
     sources = []
-    assert resolve_data_refs(reference(file, column="close", index="date", select="last"), str(root), sources) == 166.19
+    assert resolve_data_refs(reference(file, column="close", index="date", select="last"), str(root), sources, roots=FileRoots.from_config(get_env_config().api)) == 166.19
     assert "2026-11-12" in sources[0]["selected_index"]
     with pytest.raises(ValueError, match="changed"):
-        resolve_data_refs(reference(file, sha256="0" * 64), str(root), [])
+        resolve_data_refs(reference(file, sha256="0" * 64), str(root), [], roots=FileRoots.from_config(get_env_config().api))
     file = root / "quote.json"
     file.write_text('{"BRK/B~USD": {"close": 450}}')
-    assert resolve_data_refs(reference(file, pointer="/BRK~1B~0USD/close"), str(root), []) == 450
+    assert resolve_data_refs(reference(file, pointer="/BRK~1B~0USD/close"), str(root), [], roots=FileRoots.from_config(get_env_config().api)) == 450
 
 
 def test_large_quantlib_output_is_saved_before_presentation_limits(tmp_path):
-    receipt = json.loads(QuantlibCallTool().execute(
+    receipt = json.loads(QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
         action="call", module="risk", function="drawdown_series", run_dir=str(tmp_path),
         kwargs={"equity": list(np.linspace(100, 200, 6000))}))
     saved = json.loads(Path(receipt["_result_file"]["path"]).read_text())
@@ -130,7 +137,7 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     source = agent_artifact_dir(tmp_path, "bull", "bull")
     source.mkdir(parents=True)
     raw = json.dumps({"NVDA.US": [{"trade_date": "2026-11-12", "close": 166.19}]})
-    receipt = json.loads(persist_calculation_result(raw, source))
+    receipt = json.loads(persist_calculation_result(raw, source, roots=FileRoots.from_config(get_env_config().api)))
     # Simulate an unchanged saved log copied from a different run.
     receipt["_result_file"]["path"] = "/old/run/result.json"
     messages = [{"role": "assistant", "tool_calls": [{"id": "q1", "function": {
@@ -141,7 +148,7 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     note = prepare_handoff(tmp_path, risk, risk_dir)
     assert "not fresh" in note
     from src.tools.read_file_tool import ReadFileTool
-    page = json.loads(ReadFileTool().execute(path="upstream/index-parts/1.txt", run_dir=str(risk_dir)))
+    page = json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="upstream/index-parts/1.txt", run_dir=str(risk_dir)))
     assert page["status"] == "ok"
     assert "get_market_data" in page["content"]
     pm_dir = agent_artifact_dir(tmp_path, "pm", "pm")
@@ -151,7 +158,7 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     assert entries[0]["source_task"] == "bull"
     copied = pm_dir / entries[0]["path"]
     assert hashlib.sha256(copied.read_bytes()).hexdigest() == entries[0]["sha256"]
-    assert resolve_data_refs(reference(copied, pointer="/NVDA.US", column="close", select="last"), str(pm_dir), []) == 166.19
+    assert resolve_data_refs(reference(copied, pointer="/NVDA.US", column="close", select="last"), str(pm_dir), [], roots=FileRoots.from_config(get_env_config().api)) == 166.19
     # Retry is stable; no duplicated evidence or new freshness claim.
     assert prepare_handoff(tmp_path, risk, risk_dir) == note
 
@@ -160,8 +167,8 @@ def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path)
     from src.product.result_artifacts import deliver_tool_result
     from src.agent.tools import ToolRegistry
     from src.tools.read_file_tool import ReadFileTool
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)))
     raw = OptionsPayoffTool().execute(
         legs=[{"option_type": "call", "strike": 180, "qty": -1, "premium": 3.55}],
         underlying_qty=1, entry_spot=166.19, expiry_days=7, spot_points=501,
@@ -171,5 +178,5 @@ def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path)
     assert receipt["summary"] == json.loads(raw)["summary"]
     ref = receipt["_result_file"]
     assert (tmp_path / ref["relative_path"]).read_text() == raw
-    page = json.loads(ReadFileTool().execute(path=ref["parts_relative_dir"] + "/1.txt", run_dir=str(tmp_path)))
+    page = json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=ref["parts_relative_dir"] + "/1.txt", run_dir=str(tmp_path)))
     assert page["status"] == "ok"

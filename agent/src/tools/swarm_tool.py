@@ -6,6 +6,8 @@ Blocks synchronously until the run completes and returns a JSON summary.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import json
 import logging
 import re
@@ -506,6 +508,7 @@ class SwarmTool(BaseTool):
     def __init__(
         self,
         *,
+        policy: ToolPolicy,
         include_shell_tools: bool = False,
         event_callback: Any | None = None,
         session_id: str | None = None,
@@ -523,6 +526,7 @@ class SwarmTool(BaseTool):
                 Polled while waiting on the run so a user stop ends the wait
                 instead of leaving the tool blocked for the whole budget.
         """
+        self.policy = policy
         self.include_shell_tools = include_shell_tools
         self._event_callback = event_callback
         self._session_id = session_id
@@ -570,6 +574,7 @@ class SwarmTool(BaseTool):
         from src.config.accessor import get_env_config
 
         runtime = SwarmRuntime(
+            policy=self.policy,
             store=store,
             max_workers=get_env_config().swarm.swarm_max_workers,
             agent_config=agent_config,

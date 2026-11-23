@@ -31,6 +31,10 @@ which carry no config authority.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import logging
 from pathlib import Path
@@ -173,6 +177,7 @@ def test_run_swarm_variables_are_template_data_only_never_config(
             self,
             *,
             store: Any,
+            policy: ToolPolicy,
             agent_config: AgentConfig | None = None,
             max_workers: int = 4,
         ) -> None:
@@ -304,7 +309,7 @@ class _StubChatLLM:
 def _stub_llm_factory(responses: list[LLMResponse]):
     stub = _StubChatLLM(responses)
 
-    def _factory(model_name=None):
+    def _factory(model_name=None, *, policy):
         return stub
 
     _factory.stub = stub  # type: ignore[attr-defined]
@@ -385,6 +390,7 @@ def test_unknown_mcp_server_tool_drops_cleanly_with_attack_shaped_variables(
         caplog.at_level(logging.WARNING),
     ):
         result = run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=SwarmAgentSpec(
                 id="kb_analyst",
                 role="Analyst",

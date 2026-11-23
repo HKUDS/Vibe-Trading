@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
+
 from tests.provider_helpers import chat_with_adapter
 
 from src.providers import settings as _provider_configuration
@@ -249,7 +252,7 @@ def test_real_adapter_request_payload_carries_both_breakpoints() -> None:
     pytest.importorskip("langchain_anthropic")
     with patch.dict(os.environ, _ANTHROPIC_ENV, clear=True):
         reset_env_config()
-        client = ChatLLM()
+        client = ChatLLM(policy=ToolPolicy.from_config(get_env_config()))
         messages = [{"role": "system", "content": "S" * 5000}, {"role": "user", "content": "hi"}]
         tools = [{"type": "function", "function": {"name": "read_file", "description": "d", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}}]
         bound = client._llm.bind_tools(tools)
@@ -267,7 +270,7 @@ def test_real_adapter_payload_has_no_cache_markers_when_flag_off() -> None:
     pytest.importorskip("langchain_anthropic")
     with patch.dict(os.environ, {**_ANTHROPIC_ENV, "VIBE_TRADING_ANTHROPIC_PROMPT_CACHE": "0"}, clear=True):
         reset_env_config()
-        client = ChatLLM()
+        client = ChatLLM(policy=ToolPolicy.from_config(get_env_config()))
         messages = [{"role": "system", "content": "S" * 5000}, {"role": "user", "content": "hi"}]
         prepared, call_kwargs = client._prompt_cache_request(messages)
         payload = client._llm._get_request_payload(prepared, **call_kwargs)
@@ -280,7 +283,7 @@ def test_real_adapter_payload_has_no_cache_markers_without_a_system_prompt() -> 
     pytest.importorskip("langchain_anthropic")
     with patch.dict(os.environ, _ANTHROPIC_ENV, clear=True):
         reset_env_config()
-        client = ChatLLM()
+        client = ChatLLM(policy=ToolPolicy.from_config(get_env_config()))
         messages = [{"role": "user", "content": "summarize " + "x" * 5000}]
         prepared, call_kwargs = client._prompt_cache_request(messages)
         payload = client._llm._get_request_payload(prepared, **call_kwargs)

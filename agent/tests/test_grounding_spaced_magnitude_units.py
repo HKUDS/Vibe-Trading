@@ -1,4 +1,8 @@
 """Horizontal spacing must not change the meaning of a monetary amount."""
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import json
 
 import pytest
@@ -9,7 +13,7 @@ from evals.grounding.figures import magnitude_suffix
 
 @pytest.mark.parametrize("space", [" ", "\t", "\u00a0", "\u202f", "\u3000"])
 def test_spaced_money_matches_the_same_observation(tmp_path, space):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report revenue")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report revenue")
     ledger.ingest_tool_result(tool_name="financial_data", arguments={}, call_id="c1", success=True,
                               result=json.dumps({"revenue": {"amount": 1_234_000_000}}))
     answer = f"营业收入为12.34{space}亿元。\n```figures\n12.34亿元 | observed | 营业收入 | c1::revenue.amount\n```"

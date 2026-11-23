@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from pathlib import Path
 from unittest.mock import patch
@@ -20,7 +24,7 @@ from src.swarm.store import SwarmStore
 
 
 def _runtime(tmp_path: Path) -> SwarmRuntime:
-    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"))
+    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"), policy=ToolPolicy.from_config(get_env_config()))
 
 
 def _agent(max_retries: int = 2) -> SwarmAgentSpec:

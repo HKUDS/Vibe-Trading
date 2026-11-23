@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools.path_utils import safe_path as _safe_path
 from src.tools.path_utils import safe_run_dir as _safe_run_dir
 from src.tools.path_utils import session_workspace_for_run
@@ -79,7 +79,7 @@ def _skill_relative_matches(file_path: str, skills_dir: Path) -> list[tuple[str,
     return matches
 
 
-class ReadFileTool(BaseTool):
+class ReadFileTool(FileBoundTool, BaseTool):
     """Read file contents with optional line limit."""
 
     name = "read_file"
@@ -121,9 +121,9 @@ class ReadFileTool(BaseTool):
         allowed_roots = []
         if run_dir:
             try:
-                run_root = _safe_run_dir(str(run_dir))
+                run_root = _safe_run_dir(str(run_dir), roots=self.roots)
                 allowed_roots.append(run_root)
-                workspace = session_workspace_for_run(run_root)
+                workspace = session_workspace_for_run(run_root, roots=self.roots)
                 if workspace is not None:
                     workspace.mkdir(parents=True, exist_ok=True)
                     allowed_roots.append(workspace)
@@ -141,7 +141,7 @@ class ReadFileTool(BaseTool):
             allowed_roots.append(skills_dir.resolve())
 
         # Add configured extra file roots (VIBE_TRADING_ALLOWED_FILE_ROOTS)
-        for extra_root in allowed_file_roots():
+        for extra_root in allowed_file_roots(roots=self.roots):
             if extra_root not in allowed_roots:
                 allowed_roots.append(extra_root)
 

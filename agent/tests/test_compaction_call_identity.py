@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from itertools import count
 from types import SimpleNamespace
@@ -31,7 +35,7 @@ class _Query(BaseTool):
 @pytest.fixture
 def harness(tmp_path):
     tool = _Query()
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     agent = AgentRuntime(
         registry=registry,

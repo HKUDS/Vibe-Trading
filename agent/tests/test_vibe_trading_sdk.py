@@ -7,6 +7,8 @@ index are replaced, the way the session-service tests already do it.
 
 from __future__ import annotations
 
+
+
 import asyncio
 import json
 import os
@@ -130,14 +132,15 @@ def kernel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(agent_loop, "RUNS_DIR", root / "runs")
     monkeypatch.setattr(agent_loop, "SESSIONS_DIR", root / "sessions")
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
-    state = SimpleNamespace(root=root, scripts=[], tool_calls=[], registry_args=[])
+    state = SimpleNamespace(root=root, scripts=[], tool_calls=[], registry_args=[], provider_policies=[])
 
-    def _chat_llm() -> _ScriptedLLM:
+    def _chat_llm(*, policy) -> _ScriptedLLM:
+        state.provider_policies.append(policy)
         return _ScriptedLLM(state.scripts.pop(0))
 
     def _build_registry(**kwargs: Any) -> ToolRegistry:
         state.registry_args.append(kwargs)
-        registry = ToolRegistry()
+        registry = ToolRegistry(policy=kwargs["policy"])
         registry.register(_ProbeTool(state.tool_calls))
         return registry
 
@@ -166,6 +169,20 @@ def _tool_then_answer(**kwargs: Any) -> list:
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_sdk_passes_one_configured_policy_to_the_provider_and_registry(kernel, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "forbidden_")
+    kernel.scripts.append([lambda **kwargs: _reply("Complete.")])
+
+    async def scenario():
+        async with Client() as client:
+            return await client.run("Probe policy")
+
+    assert _run(scenario()).status == "completed"
+    policy = kernel.registry_args[0]["policy"]
+    assert policy is kernel.provider_policies[0]
+    assert policy.denies("forbidden_probe")
 
 
 def test_run_end_to_end_returns_the_stored_answer(kernel) -> None:

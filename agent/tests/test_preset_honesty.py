@@ -15,6 +15,10 @@ that no granted tool can compute — which stays a review obligation.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import re
 from pathlib import Path
 
@@ -46,7 +50,7 @@ def tool_identifiers() -> list[str]:
     # Only snake_case names are unambiguous identifiers. Bare tool names that
     # are also ordinary English words — sentiment, pattern, backtest, remember —
     # appear throughout the prose and would make this gate pure noise.
-    return sorted(name for name in build_registry().tool_names if "_" in name)
+    return sorted(name for name in build_registry(policy=ToolPolicy.from_config(get_env_config())).tool_names if "_" in name)
 
 
 def _nodes(presets):
@@ -97,7 +101,7 @@ def test_every_granted_tool_resolves(presets):
         if not requested:
             continue
         resolved = set(
-            build_swarm_registry(requested, include_shell_tools=True).tool_names
+            build_swarm_registry(requested, include_shell_tools=True, policy=ToolPolicy.from_config(get_env_config())).tool_names
         )
         unresolved.extend(
             f"{filename}:{node_id} -> {tool}"

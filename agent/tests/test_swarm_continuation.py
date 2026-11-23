@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 
@@ -14,6 +18,7 @@ from src.swarm.worker import _run_worker_impl, agent_artifact_dir
 class Registry:
     def __init__(self):
         self.calls = 0
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get_definitions(self):
         return []
@@ -24,6 +29,9 @@ class Registry:
     def execute(self, name, arguments):
         self.calls += 1
         return json.dumps({"status": "ok", "revenue_usd": 26000000000})
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class Provider:
@@ -49,6 +57,7 @@ def run(tmp_path, registry, monkeypatch, provider, **kwargs):
         tmp_path,
         llm=provider,
         **kwargs,
+        policy=ToolPolicy.from_config(get_env_config()),
     )
 
 
@@ -180,7 +189,7 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     for task in tasks:
         current.save_task(task)
     summaries = {}
-    SwarmRuntime(store)._apply_resume_overlay(resumed, store.run_dir(resumed.id), current, prior, summaries)
+    SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(resumed, store.run_dir(resumed.id), current, prior, summaries)
     assert summaries == {"a": "Revenue $26B"}
     assert current.load_task("b").status == TaskStatus.pending
     copied = agent_artifact_dir(store.run_dir(resumed.id), "b", "b")
@@ -193,7 +202,7 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     for task in tasks:
         current.save_task(task)
     kept = {}
-    SwarmRuntime(store)._apply_resume_overlay(changed, store.run_dir(changed.id), current, prior, kept)
+    SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(changed, store.run_dir(changed.id), current, prior, kept)
     assert not kept
     assert not (agent_artifact_dir(store.run_dir(changed.id), "b", "b") / checkpoint.FILENAME).exists()
 
@@ -234,7 +243,7 @@ def test_agent_tool_resumes_original_run_without_rerouting(tmp_path, monkeypatch
         return next_run
 
     monkeypatch.setattr("src.swarm.runtime.SwarmRuntime.start_run", start)
-    result = json.loads(SwarmTool().execute(prompt="Continue the unfinished work", resume_run_id=prior.id))
+    result = json.loads(SwarmTool(policy=ToolPolicy.from_config(get_env_config())).execute(prompt="Continue the unfinished work", resume_run_id=prior.id))
     assert calls == [("investment_committee", {"target": "NVDA", "market": "US"}, "original")]
     assert result["run_id"] == "resumed"
     assert result["final_report"] == "Hold."

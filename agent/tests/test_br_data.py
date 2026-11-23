@@ -6,6 +6,10 @@ width, CVM ``;`` CSVs, BCB JSON, Tesouro CSV). No network.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import io
 import json
 import zipfile
@@ -309,7 +313,7 @@ def test_br_quotes_keep_per_symbol_brl_evidence(store, tmp_path):
     args = {'action': 'quotes', 'tickers': ['TEST3', 'MOCK4'],
             'start_date': '2025-01-03', 'end_date': '2025-01-03'}
     payload = BrMarketDataTool().execute(**args)
-    ledger = GroundingLedger(run_dir=tmp_path, user_message='Compare TEST3.SA and MOCK4.SA prices')
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message='Compare TEST3.SA and MOCK4.SA prices')
     ledger.ingest_tool_result(tool_name='get_br_market_data', arguments=args,
                              result=payload, call_id='b3', success=True)
     closes = [r for r in ledger._evidence if r.field == 'close']
@@ -321,7 +325,7 @@ def test_br_quotes_keep_per_symbol_brl_evidence(store, tmp_path):
     assert not ledger.validate_final_answer('Source: b3_cotahist. TEST3.SA closed at BRL 20.00.').valid
     malformed = json.loads(payload)
     malformed['data']['currency'] = 'USD'
-    refused = GroundingLedger(run_dir=tmp_path/'refused', user_message='TEST3.SA price')
+    refused = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path/'refused', user_message='TEST3.SA price')
     refused.ingest_tool_result(tool_name='get_br_market_data', arguments=args,
                               result=json.dumps(malformed), call_id='bad', success=True)
     assert not refused._evidence

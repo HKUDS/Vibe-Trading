@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 
@@ -12,7 +16,7 @@ from src.swarm.store import SwarmStore
 
 def test_partial_upstream_reaches_synthesis_with_actual_status(tmp_path, monkeypatch):
     store = SwarmStore(base_dir=tmp_path)
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     seen = []
 
     def worker(agent_spec, upstream_summaries, **kwargs):
@@ -52,7 +56,7 @@ def test_partial_upstream_reaches_synthesis_with_actual_status(tmp_path, monkeyp
 
 def test_user_cancellation_never_dispatches_remaining_roles(tmp_path, monkeypatch):
     store = SwarmStore(base_dir=tmp_path)
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     cancel = threading.Event()
     calls = []
 

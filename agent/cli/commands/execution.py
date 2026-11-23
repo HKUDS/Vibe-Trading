@@ -265,6 +265,8 @@ def _run_agent(
             is a privileged surface action (commit), never a tool the model can
             call (SPEC.md Consent §2).
     """
+    from src.config.accessor import get_env_config
+    from src.product.tool_policy import ToolPolicy
     from src.tools import build_registry
     from src.providers.selection import ModelSelectionError
     from src.session.model_selection import (
@@ -439,12 +441,14 @@ def _run_agent(
     background = get_background_manager().for_scope(background_scope)
     cancel_event = common.threading.Event()
 
+    policy = ToolPolicy.from_config(get_env_config())
     try:
-        llm = chat_llm_for_stored_session(common.SESSIONS_DIR, session_id)
+        llm = chat_llm_for_stored_session(common.SESSIONS_DIR, session_id, policy=policy)
     except ModelSelectionError as exc:
         return unavailable_selection_result(exc)
 
     registry = build_registry(
+        policy=policy,
         persistent_memory=pm,
         include_shell_tools=True,
         agent_config=agent_config,

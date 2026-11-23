@@ -11,6 +11,8 @@ to be silently excluded from the registry.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import importlib
 import logging
 import pkgutil
@@ -20,8 +22,7 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from src.agent.tools import BaseTool, ToolRegistry
-from src.tools.sandbox import SandboxSettings
+from src.agent.tools import BaseTool, FileBoundTool, ToolRegistry
 
 if TYPE_CHECKING:
     from src.product.resources.hooks import HookManager
@@ -119,6 +120,7 @@ def session_bound_tool_classes() -> frozenset[type[BaseTool]]:
 
 def build_registry(
     *,
+    policy: ToolPolicy,
     persistent_memory: "PersistentMemory | None" = None,
     include_shell_tools: bool = False,
     agent_config: "AgentConfig | None" = None,
@@ -132,7 +134,6 @@ def build_registry(
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
     host_tools: list[BaseTool] | None = None,
     hook_manager: HookManager | None = None,
-    sandbox_settings: SandboxSettings | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
 
@@ -197,8 +198,8 @@ def build_registry(
 
     session_injected_classes = session_bound_tool_classes()
     classes = _discover_subclasses()
-    registry = ToolRegistry()
-    sandbox = sandbox_settings or SandboxSettings.from_env()
+    registry = ToolRegistry(policy=policy)
+    sandbox = policy.sandbox
     registry.sandbox = sandbox
     registry.hooks = hook_manager or load_hooks()
 
@@ -229,10 +230,14 @@ def build_registry(
             elif cls in (BackgroundRunTool, CheckBackgroundTool, CancelBackgroundTool):
                 registry.register(cls(background=bg))
             elif cls in session_injected_classes:
-                registry.register(cls(default_session_id=session_id, event_callback=event_callback))
+                kwargs = {"roots": policy.file_roots} if issubclass(cls, FileBoundTool) else {}
+                registry.register(cls(default_session_id=session_id, event_callback=event_callback, **kwargs))
+            elif cls.name == "analyze_image":
+                registry.register(cls(policy=policy))
             elif cls is SwarmTool:
                 registry.register(
                     cls(
+                        policy=policy,
                         include_shell_tools=include_shell_tools,
                         event_callback=event_callback,
                         session_id=session_id,
@@ -250,6 +255,8 @@ def build_registry(
                         event_callback=event_callback,
                     )
                 )
+            elif issubclass(cls, FileBoundTool):
+                registry.register(cls(roots=policy.file_roots))
             elif cls.name == "bash":
                 registry.register(cls(sandbox=sandbox))
             else:
@@ -368,6 +375,7 @@ def build_registry(
 def build_filtered_registry(
     tool_names: list[str],
     *,
+    policy: ToolPolicy,
     include_shell_tools: bool = False,
     skill_allowlist: list[str] | None = None,
     background_manager: Any | None = None,
@@ -393,6 +401,7 @@ def build_filtered_registry(
         ToolRegistry containing only the requested tools.
     """
     full = build_registry(
+        policy=policy,
         include_shell_tools=include_shell_tools,
         background_manager=background_manager,
         background_scope=background_scope,
@@ -408,6 +417,7 @@ def build_filtered_registry(
 def build_swarm_registry(
     tool_names: list[str],
     *,
+    policy: ToolPolicy,
     agent_config: "AgentConfig | None" = None,
     include_shell_tools: bool = False,
     skill_allowlist: list[str] | None = None,
@@ -453,6 +463,7 @@ def build_swarm_registry(
         tool_names,
     )
     full = build_registry(
+        policy=policy,
         agent_config=swarm_agent_config,
         include_shell_tools=include_shell_tools,
         background_manager=background_manager,
@@ -506,7 +517,7 @@ def _filter_registry(
     skill_allowlist: list[str] | None = None,
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
-    filtered = ToolRegistry(policy=full.check_policy)
+    filtered = ToolRegistry(policy=full.policy)
     filtered.background = getattr(full, "background", None)
     filtered.hooks = getattr(full, "hooks", None)
     for name in tool_names:

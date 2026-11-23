@@ -7,6 +7,10 @@ Covers ``scaffold_signal_engine`` (contract-correct stub generation) and
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import importlib.util
 import inspect
 import json
@@ -59,7 +63,7 @@ def _run_dir(base: Path) -> Path:
 
 def test_scaffold_requires_hypothesis_id(isolated_env: Path) -> None:
     result = json.loads(
-        ScaffoldSignalEngineTool().execute(
+        ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id="", run_dir=str(_run_dir(isolated_env))
         )
     )
@@ -70,7 +74,7 @@ def test_scaffold_requires_hypothesis_id(isolated_env: Path) -> None:
 def test_scaffold_requires_run_dir(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     result = json.loads(
-        ScaffoldSignalEngineTool().execute(hypothesis_id=hyp_id, run_dir="")
+        ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api)).execute(hypothesis_id=hyp_id, run_dir="")
     )
     assert result["status"] == "error"
     assert "run_dir is required" in result["error"]
@@ -79,7 +83,7 @@ def test_scaffold_requires_run_dir(isolated_env: Path) -> None:
 def test_scaffold_rejects_path_outside_run_roots(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     result = json.loads(
-        ScaffoldSignalEngineTool().execute(
+        ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id=hyp_id, run_dir="/etc/evil_run"
         )
     )
@@ -89,7 +93,7 @@ def test_scaffold_rejects_path_outside_run_roots(isolated_env: Path) -> None:
 
 def test_scaffold_unknown_hypothesis(isolated_env: Path) -> None:
     result = json.loads(
-        ScaffoldSignalEngineTool().execute(
+        ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id="hyp_missing", run_dir=str(_run_dir(isolated_env))
         )
     )
@@ -101,7 +105,7 @@ def test_scaffold_writes_contract_correct_stub(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
     result = json.loads(
-        ScaffoldSignalEngineTool().execute(
+        ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id=hyp_id, run_dir=str(run_dir)
         )
     )
@@ -145,7 +149,7 @@ def test_scaffold_writes_contract_correct_stub(isolated_env: Path) -> None:
 def test_scaffold_refuses_overwrite_by_default(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
-    tool = ScaffoldSignalEngineTool()
+    tool = ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api))
     first = json.loads(tool.execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
     assert first["status"] == "ok"
 
@@ -181,7 +185,7 @@ def test_scaffold_false_or_invalid_overwrite_keeps_existing_file(
 ) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
-    tool = ScaffoldSignalEngineTool()
+    tool = ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api))
     first = json.loads(tool.execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
     signal_path = Path(first["signal_engine_path"])
     signal_path.write_text("# user edits\n", encoding="utf-8")
@@ -198,7 +202,7 @@ def test_scaffold_false_or_invalid_overwrite_keeps_existing_file(
 def test_scaffold_string_true_overwrite_replaces_file(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
-    tool = ScaffoldSignalEngineTool()
+    tool = ScaffoldSignalEngineTool(roots=FileRoots.from_config(get_env_config().api))
     first = json.loads(tool.execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
     signal_path = Path(first["signal_engine_path"])
     signal_path.write_text("# user edits\n", encoding="utf-8")
@@ -228,7 +232,7 @@ def _write_run_card(run_dir: Path, metrics: dict | None) -> None:
 def test_link_requires_run_dir(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir="")
+        LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(hypothesis_id=hyp_id, run_dir="")
     )
     assert result["status"] == "error"
     assert "run_dir is required" in result["error"]
@@ -238,7 +242,7 @@ def test_link_missing_run_card(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(
+        LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id=hyp_id, run_dir=str(run_dir)
         )
     )
@@ -251,7 +255,7 @@ def test_link_corrupt_run_card(isolated_env: Path) -> None:
     run_dir = _run_dir(isolated_env)
     (run_dir / "run_card.json").write_text("{not json", encoding="utf-8")
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(
+        LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id=hyp_id, run_dir=str(run_dir)
         )
     )
@@ -263,7 +267,7 @@ def test_link_unknown_hypothesis(isolated_env: Path) -> None:
     run_dir = _run_dir(isolated_env)
     _write_run_card(run_dir, {"sharpe": 1.2})
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(
+        LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id="hyp_missing", run_dir=str(run_dir)
         )
     )
@@ -277,7 +281,7 @@ def test_link_extracts_metrics_and_links(isolated_env: Path) -> None:
     _write_run_card(run_dir, {"sharpe": 1.42, "total_return": 0.31})
 
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(
+        LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id=hyp_id, run_dir=str(run_dir), notes="phase3 link"
         )
     )
@@ -300,7 +304,7 @@ def test_link_absent_metrics_degrades_with_warning(isolated_env: Path) -> None:
     _write_run_card(run_dir, None)  # no metrics key
 
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(
+        LinkAutopilotBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             hypothesis_id=hyp_id, run_dir=str(run_dir)
         )
     )

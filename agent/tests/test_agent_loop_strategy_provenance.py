@@ -1,3 +1,10 @@
+
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -52,7 +59,7 @@ def test_strategy_file_write_on_a_constructed_loop_records_the_configured_model(
     from src.agent.tools import ToolRegistry
 
     loop = AgentRuntime(
-        registry=ToolRegistry(),
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=None,
         memory=WorkspaceMemory(run_dir=str(tmp_path)),
     )
@@ -116,8 +123,8 @@ def test_real_tool_execution_uses_each_responses_model(
         model_name="configured-model",
         stream_chat=lambda *args, **kwargs: next(turns),
     )
-    registry = ToolRegistry()
-    registry.register(WriteFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)))
     loop = AgentRuntime(
         registry=registry,
         llm=llm,

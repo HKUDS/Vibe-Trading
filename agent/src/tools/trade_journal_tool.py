@@ -11,6 +11,8 @@ Strategy extraction → backtest bridge still pending (Phase 4c).
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 import logging
 import math
@@ -22,7 +24,7 @@ from typing import Any
 import pandas as pd
 
 from backtest.engines._market_hooks import code_currency
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools.path_utils import safe_user_path
 from src.tools.trade_journal_parsers import (
     parse_file,
@@ -672,7 +674,7 @@ def _json_safe(value: Any) -> Any:
 _ANALYSIS_TYPES = frozenset({"full", "profile", "behavior", "strategy"})
 
 
-def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_expr: str = "") -> str:
+def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_expr: str = "", *, roots: FileRoots) -> str:
     """Parse a trade journal and return a JSON analysis.
 
     Args:
@@ -699,7 +701,7 @@ def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_ex
             ensure_ascii=False,
         )
     try:
-        path = safe_user_path(file_path)
+        path = safe_user_path(file_path, roots=roots)
     except ValueError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     if not path.exists():
@@ -784,7 +786,7 @@ def _pick_dominant_market(df: pd.DataFrame) -> str:
     return df["market"].value_counts().idxmax()
 
 
-class TradeJournalTool(BaseTool):
+class TradeJournalTool(FileBoundTool, BaseTool):
     """Trade journal analyzer tool (registered via auto-discovery)."""
 
     name = "analyze_trade_journal"
@@ -824,4 +826,5 @@ class TradeJournalTool(BaseTool):
             file_path=kwargs["file_path"],
             analysis_type=kwargs.get("analysis_type") or "full",
             filter_expr=kwargs.get("filter_expr", ""),
+            roots=self.roots,
         )

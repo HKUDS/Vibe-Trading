@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import json
 import logging
 import shutil
@@ -503,6 +505,8 @@ def run_worker(
     agent_config: AgentConfig | None = None,
     cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
+    *,
+    policy: ToolPolicy,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
 
@@ -535,7 +539,7 @@ def run_worker(
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
     """
-    llm = ChatLLM(model_name=agent_spec.model_name)
+    llm = ChatLLM(model_name=agent_spec.model_name, policy=policy)
     result = None
     try:
         result = _run_worker_impl(
@@ -545,6 +549,7 @@ def run_worker(
             user_vars=user_vars,
             run_dir=run_dir,
             llm=llm,
+            policy=policy,
             event_callback=event_callback,
             include_shell_tools=include_shell_tools,
             grounding_block=grounding_block,
@@ -580,6 +585,7 @@ def _run_worker_impl(
     agent_config: AgentConfig | None = None,
     *,
     llm: ChatLLM,
+    policy: ToolPolicy,
     cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
 ) -> WorkerResult:
@@ -630,6 +636,7 @@ def _run_worker_impl(
     background_scope = background.scope
     registry = build_swarm_registry(
         agent_spec.tools,
+        policy=policy,
         agent_config=agent_config,
         include_shell_tools=include_shell_tools,
         skill_allowlist=agent_spec.skills or None,

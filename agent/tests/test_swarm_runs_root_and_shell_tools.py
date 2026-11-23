@@ -14,6 +14,10 @@ could not execute their own scripts.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import logging
 import threading
 
@@ -27,12 +31,13 @@ import src.swarm.runtime as rt
 def test_swarm_runs_root_is_an_allowed_run_root():
     """Whatever swarm_runs_root() returns MUST be inside the sandbox
     allow-list, otherwise every worker run_dir is rejected."""
-    allowed = {p.resolve() for p in path_utils._allowed_run_roots()}
+    allowed = {p.resolve() for p in path_utils._allowed_run_roots(roots=ToolPolicy.from_config(get_env_config()).file_roots)}
     assert swarm_runs_root().resolve() in allowed
 
 
 def test_default_run_roots_uses_single_source():
-    assert swarm_runs_root() in path_utils._default_run_roots()
+    roots = ToolPolicy.from_config(get_env_config()).file_roots
+    assert swarm_runs_root() in path_utils._default_run_roots(roots)
 
 
 def test_swarm_runs_root_stable_and_swarm_scoped():
@@ -43,13 +48,13 @@ def test_swarm_runs_root_stable_and_swarm_scoped():
 
 # ---- P03-B: filtered registry must keep / not silently drop tools ----------
 def test_filtered_registry_keeps_bash_when_shell_enabled():
-    reg = build_filtered_registry(["bash", "read_file", "write_file", "load_skill"], include_shell_tools=True)
+    reg = build_filtered_registry(["bash", "read_file", "write_file", "load_skill"], include_shell_tools=True, policy=ToolPolicy.from_config(get_env_config()))
     assert "bash" in reg.tool_names
 
 
 def test_filtered_registry_warns_when_requested_tool_dropped(caplog):
     with caplog.at_level(logging.WARNING):
-        reg = build_filtered_registry(["bash", "read_file", "write_file"], include_shell_tools=False)
+        reg = build_filtered_registry(["bash", "read_file", "write_file"], include_shell_tools=False, policy=ToolPolicy.from_config(get_env_config()))
     assert "bash" not in reg.tool_names
     assert any("bash" in r.message and r.levelno >= logging.WARNING for r in caplog.records), (
         "dropping a requested tool must be logged, not silent"
@@ -69,7 +74,7 @@ def test_execute_run_propagates_include_shell_tools(tmp_path, monkeypatch):
     monkeypatch.setattr(rt, "run_worker", fake_worker)
 
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agent = SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0)
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="do x")
     run = SwarmRun(id="r", preset_name="demo", created_at="2026-01-01T00:00:00Z", agents=[agent], tasks=[task])

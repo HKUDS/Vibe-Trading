@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import numpy as np
@@ -378,7 +382,7 @@ def envelope(frame):
 
 
 def test_quantlib_tool_lists_calls_and_serializes_both_transforms():
-    tool = QuantlibCallTool()
+    tool = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api))
     listing = json.loads(tool.execute(action="list", module="neutralization"))
     assert {item["name"] for item in listing["functions"]} == {
         "neutralize_factor",

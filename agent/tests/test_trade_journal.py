@@ -8,6 +8,10 @@ filtering, and the analyze_trade_journal error/dispatch paths).
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -651,7 +655,7 @@ def test_apply_filter_empty_expr_is_noop() -> None:
 
 
 def test_analyze_missing_file(allow_tmp: Path) -> None:
-    result = json.loads(analyze_trade_journal(str(allow_tmp / "does_not_exist_12345.csv")))
+    result = json.loads(analyze_trade_journal(str(allow_tmp / "does_not_exist_12345.csv"), roots=FileRoots.from_config(get_env_config().api)))
     assert result["status"] == "error"
     assert "not found" in result["error"].lower()
 
@@ -659,7 +663,7 @@ def test_analyze_missing_file(allow_tmp: Path) -> None:
 def test_analyze_unsupported_extension(allow_tmp: Path) -> None:
     bad = allow_tmp / "trades.txt"
     bad.write_text("whatever", encoding="utf-8")
-    result = json.loads(analyze_trade_journal(str(bad)))
+    result = json.loads(analyze_trade_journal(str(bad), roots=FileRoots.from_config(get_env_config().api)))
     assert result["status"] == "error"
     assert "extension" in result["error"].lower()
 
@@ -676,7 +680,7 @@ def _write_full_journal(tmp_path: Path) -> Path:
 
 
 def test_analyze_full_includes_profile_and_behavior(allow_tmp: Path) -> None:
-    result = json.loads(analyze_trade_journal(str(_write_full_journal(allow_tmp))))
+    result = json.loads(analyze_trade_journal(str(_write_full_journal(allow_tmp)), roots=FileRoots.from_config(get_env_config().api)))
     assert result["status"] == "ok"
     assert result["total_records"] == 2
     assert "profile" in result
@@ -699,7 +703,7 @@ def test_analyze_reports_pnl_for_a_capitalized_aliased_journal(allow_tmp: Path) 
         encoding="utf-8",
     )
 
-    result = json.loads(analyze_trade_journal(str(csv)))
+    result = json.loads(analyze_trade_journal(str(csv), roots=FileRoots.from_config(get_env_config().api)))
 
     assert result["status"] == "ok"
     assert result["format_detected"] == "generic"
@@ -711,7 +715,7 @@ def test_analyze_reports_pnl_for_a_capitalized_aliased_journal(allow_tmp: Path) 
 
 def test_analyze_strategy_is_pending_placeholder(allow_tmp: Path) -> None:
     result = json.loads(
-        analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="strategy")
+        analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="strategy", roots=FileRoots.from_config(get_env_config().api))
     )
     assert result["status"] == "ok"
     assert result["strategy_features"]["status"] == "pending"
@@ -722,7 +726,7 @@ def test_analyze_strategy_is_pending_placeholder(allow_tmp: Path) -> None:
 
 def test_analyze_profile_only(allow_tmp: Path) -> None:
     result = json.loads(
-        analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="profile")
+        analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="profile", roots=FileRoots.from_config(get_env_config().api))
     )
     assert result["status"] == "ok"
     assert "profile" in result
@@ -738,7 +742,7 @@ def test_analyze_with_filter(allow_tmp: Path) -> None:
         encoding="utf-8",
     )
     result = json.loads(
-        analyze_trade_journal(str(csv), filter_expr="symbol=AAPL")
+        analyze_trade_journal(str(csv), filter_expr="symbol=AAPL", roots=FileRoots.from_config(get_env_config().api))
     )
     assert result["status"] == "ok"
     assert result["total_records"] == 1
@@ -749,7 +753,7 @@ def test_analyze_with_inverted_date_filter_returns_error_envelope(allow_tmp: Pat
     """An inverted date range must surface as an error envelope, not a raw raise."""
     result = json.loads(
         analyze_trade_journal(
-            str(_write_full_journal(allow_tmp)), filter_expr="2026-03 to 2026-01"
+            str(_write_full_journal(allow_tmp)), filter_expr="2026-03 to 2026-01", roots=FileRoots.from_config(get_env_config().api)
         )
     )
     assert result["status"] == "error"

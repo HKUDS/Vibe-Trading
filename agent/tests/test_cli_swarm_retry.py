@@ -80,7 +80,7 @@ def test_swarm_retry_passes_prior_run_only_for_resume(
             return prior
 
     class FakeRuntime:
-        def __init__(self, *, store, agent_config) -> None:
+        def __init__(self, *, store, agent_config, policy=None) -> None:
             captured["store"] = store
             captured["agent_config"] = agent_config
 

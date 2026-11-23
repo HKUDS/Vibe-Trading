@@ -45,7 +45,6 @@ from src.api.security import (  # noqa: F401, E402
     _configured_api_key,
     _consume_sse_ticket,
     _default_gateway_ips,
-    _env_shell_tools_enabled,
     _host_without_port,
     _is_allowed_loopback_host,
     _is_local_client,

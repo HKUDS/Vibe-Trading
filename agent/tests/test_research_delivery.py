@@ -1,4 +1,8 @@
 """Research delivery preserves the model's answer without a prose gate."""
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import pytest
 
 from src.agent.runtime import AgentRuntime
@@ -37,7 +41,7 @@ class AnswerModel:
 def test_final_answer_is_delivered_verbatim(tmp_path, monkeypatch, answer, stream):
     events = []
     llm = AnswerModel(answer, stream=stream)
-    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, max_iterations=3,
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm, max_iterations=3,
                       event_callback=lambda event, data: events.append((event, data)))
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -68,11 +72,12 @@ def test_stream_does_not_pause_at_a_number_or_fence():
 def test_worker_delivers_without_tools_files_or_risk_table(tmp_path, monkeypatch, answer):
     llm = AnswerModel(answer)
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: llm)
-    monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry())
+    monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
     result = worker.run_worker(
         SwarmAgentSpec(id="pm", role="PM", system_prompt="Decide.", tools=["get_market_data"]),
         SwarmTask(id="decision", agent_id="pm", prompt_template="Use the supplied report."),
         {"report": "Revenue USD 96.22B."}, {}, tmp_path,
+        policy=ToolPolicy.from_config(get_env_config()),
     )
     assert result.status == "completed"
     assert result.summary == answer
@@ -88,10 +93,11 @@ def test_worker_delivers_without_tools_files_or_risk_table(tmp_path, monkeypatch
 def test_worker_actual_delivery_failure_is_not_success(tmp_path, monkeypatch, reason, answer, expected):
     llm = AnswerModel(answer, finish_reason=reason)
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: llm)
-    monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry())
+    monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
     result = worker.run_worker(
         SwarmAgentSpec(id="pm", role="PM", system_prompt="Decide."),
         SwarmTask(id="decision", agent_id="pm", prompt_template="Review."), {}, {}, tmp_path,
+        policy=ToolPolicy.from_config(get_env_config()),
     )
     assert result.status == expected
     assert result.summary == answer
@@ -100,7 +106,7 @@ def test_worker_actual_delivery_failure_is_not_success(tmp_path, monkeypatch, re
 @pytest.mark.parametrize("reason", ["length", "max_tokens"])
 def test_agent_preserves_truncated_text_without_success(tmp_path, reason):
     llm = AnswerModel("The position should be", finish_reason=reason)
-    agent = AgentRuntime(registry=ToolRegistry(), llm=llm, max_iterations=3)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm, max_iterations=3)
     agent.memory.run_dir = str(tmp_path / "run")
     result = agent.run("Summarize the supplied research.")
     assert result["status"] == "failed"
@@ -115,10 +121,11 @@ def test_worker_iteration_exhaustion_keeps_partial_output(tmp_path, monkeypatch)
             return LLMResponse(content="I am still working on the calculation.",
                                tool_calls=[ToolCallRequest("c1", "missing_tool", {})])
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: WorkingModel(""))
-    monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry())
+    monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
     result = worker.run_worker(
         SwarmAgentSpec(id="pm", role="PM", system_prompt="Decide.", max_iterations=1),
         SwarmTask(id="decision", agent_id="pm", prompt_template="Review."), {}, {}, tmp_path,
+        policy=ToolPolicy.from_config(get_env_config()),
     )
     assert result.status == "incomplete"
     assert "iteration limit" in result.error
@@ -130,7 +137,7 @@ def test_truncated_tool_call_is_never_executed(tmp_path, monkeypatch):
         def stream_chat(self, messages, **kwargs):
             return LLMResponse(content="Partial analysis", finish_reason="length",
                                tool_calls=[ToolCallRequest("c1", "missing_tool", {})])
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     def forbidden(*args, **kwargs):
         pytest.fail("a truncated response cannot execute tools")
     monkeypatch.setattr(registry, "execute", forbidden)

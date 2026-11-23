@@ -18,6 +18,10 @@ are skipped, but a tool call already executing is not interrupted.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -31,7 +35,7 @@ from src.swarm.task_store import TaskStore
 
 def _make_run(tmp_path: Path):
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agents = [SwarmAgentSpec(id="a", role="x", system_prompt="x", max_retries=0)]
     tasks = [SwarmTask(id="t1", agent_id="a", prompt_template="do x")]
     run = SwarmRun(

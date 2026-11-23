@@ -9,6 +9,10 @@ an HTTP request arriving at that moment does.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import copy
 import json
@@ -115,14 +119,14 @@ class _Harness:
 
         def build_registry(**kwargs: Any) -> ToolRegistry:
             self.registry_kwargs.append(kwargs)
-            registry = ToolRegistry()
+            registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
             registry.register(lookup)
             return registry
 
         monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
         monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
         monkeypatch.setattr("src.tools.build_registry", build_registry)
-        monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: self.llm)
+        monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: self.llm)
         monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
         monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
         monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
@@ -133,6 +137,7 @@ class _Harness:
         bus = EventBus()
         bus.add_listener(self.events.append)
         self.service = SessionService(
+            policy=ToolPolicy.from_config(get_env_config()),
             store=SessionStore(self.tmp_path / "sessions"), event_bus=bus, runs_dir=self.tmp_path / "runs",
         )
         return self.service
@@ -471,6 +476,7 @@ def test_restart_keeps_a_waiting_input_and_settles_an_interrupted_delivery(tmp_p
 def test_send_route_queues_a_busy_session_with_the_same_limits(tmp_path, monkeypatch):
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"), event_bus=EventBus(), runs_dir=tmp_path / "runs",
     )
     monkeypatch.setattr(api_server, "_get_session_service", lambda: service)

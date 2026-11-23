@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -29,6 +33,7 @@ def test_symbol_keyed_metric_paths(path: str, expected: str | None) -> None:
 
 def _ledger(tmp_path, payload):
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="Compare instrument-level risk contributions across venues",
     )

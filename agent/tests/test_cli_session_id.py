@@ -8,6 +8,10 @@ while the run still reported success. The same omission affected
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import cli.commands.common as _cmd_common
 import cli.commands.execution as _cmd_execution
 import cli.commands.sessions as _cmd_sessions
@@ -52,7 +56,7 @@ def _capture_session_ids(monkeypatch) -> list:
 
 def test_goal_tool_fails_without_a_session_id() -> None:
     """Pin the reported symptom: no host session means every goal call errors."""
-    result = StartResearchGoalTool(default_session_id=None).execute(objective="x")
+    result = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id=None).execute(objective="x")
     assert '"session_id is required"' in result
 
 
@@ -71,7 +75,7 @@ def test_injected_session_id_makes_the_goal_tool_work(sessions_dir, tmp_path) ->
     session_id = _cmd_execution._ensure_session_id("backtest SPY")
     store = GoalStore(db_path=tmp_path / "goals.db")
 
-    result = StartResearchGoalTool(default_session_id=session_id, store=store).execute(
+    result = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id=session_id, store=store).execute(
         objective="Backtest a 20/50-day moving average crossover on SPY"
     )
 

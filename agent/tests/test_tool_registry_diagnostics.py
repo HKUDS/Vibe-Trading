@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import logging
 
@@ -7,7 +11,7 @@ from src.agent.tools import ToolRegistry
 
 
 def test_missing_tool_reports_matching_import_failure() -> None:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.record_import_failure(
         "options_pricing_tool",
         "ImportError: No module named 'scipy'",
@@ -31,7 +35,7 @@ def test_build_registry_surfaces_aggregate_failure_warning(monkeypatch, caplog) 
         {"options_pricing_tool": "ImportError: missing optional dependency"},
     )
     with caplog.at_level(logging.WARNING, logger="src.tools"):
-        registry = tools_module.build_registry()
+        registry = tools_module.build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     assert registry.import_failures == {
         "options_pricing_tool": "ImportError: missing optional dependency"

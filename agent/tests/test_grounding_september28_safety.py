@@ -1,5 +1,9 @@
 """Safety boundaries while combining symbol, ref and locale fixes."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 
 import pytest
@@ -19,7 +23,7 @@ def test_ambiguous_zero_list_does_not_change_other_figures(prefix):
 def test_rounding_does_not_widen_the_existing_evidence_policy(tmp_path: Path, written, accepted):
     import json
 
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report the ratio")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report the ratio")
     ledger.ingest_tool_result(
         tool_name="technical_indicators",
         arguments={},
@@ -39,7 +43,7 @@ def test_internal_pipe_in_ref_stays_exact():
 def _two_symbol_metrics(tmp_path):
     import json
 
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report AAPL.US and MSFT.US metrics")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report AAPL.US and MSFT.US metrics")
     for symbol, call_id, value in [("AAPL.US", "a", 0.0157), ("MSFT.US", "b", 0.0399)]:
         ledger.ingest_tool_result(
             tool_name="factor_analysis",
@@ -73,7 +77,7 @@ def test_unframed_ref_ending_in_pipe_is_not_truncated():
 def test_pipe_field_requires_exact_call_when_values_disagree(tmp_path):
     import json
 
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report metrics")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report metrics")
     for call_id, value in [("a", 1.57), ("b", 3.99)]:
         ledger.ingest_tool_result(
             tool_name="technical_indicators",

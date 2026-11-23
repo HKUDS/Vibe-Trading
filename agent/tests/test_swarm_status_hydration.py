@@ -18,6 +18,10 @@ Coverage map:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 import os
@@ -495,7 +499,7 @@ def test_runtime_layer_boundary_sync_writes_run_json(tmp_path, monkeypatch):
     """After a layer finishes, run.json must show the layer's terminal task
     statuses without needing hydrate."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store, max_workers=1)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, max_workers=1)
     run = _base_run("r-layer", timeout=5, retries=0)
     store.create_run(run)
 
@@ -843,7 +847,7 @@ def test_swarm_tool_forwards_started_and_live_events(monkeypatch):
             return loaded
 
     class FakeRuntime:
-        def __init__(self, store, max_workers=4, agent_config=None):
+        def __init__(self, store, max_workers=4, agent_config=None, policy=None):
             self._store = store
 
         def start_run(self, preset, variables, live_callback=None, include_shell_tools=False):
@@ -866,7 +870,7 @@ def test_swarm_tool_forwards_started_and_live_events(monkeypatch):
     monkeypatch.setattr("src.swarm.store.SwarmStore", FakeStore)
     monkeypatch.setattr("src.swarm.runtime.SwarmRuntime", FakeRuntime)
 
-    tool = swarm_tool.SwarmTool(event_callback=lambda etype, data: captured.append((etype, data)))
+    tool = swarm_tool.SwarmTool(policy=ToolPolicy.from_config(get_env_config()), event_callback=lambda etype, data: captured.append((etype, data)))
     payload = json.loads(tool.execute(prompt="analyze AAPL"))
 
     assert payload["run_id"] == "r-web-chat"
@@ -896,7 +900,7 @@ def test_swarm_tool_without_session_callback_preserves_plain_runtime(monkeypatch
             return loaded
 
     class FakeRuntime:
-        def __init__(self, store, max_workers=4, agent_config=None):
+        def __init__(self, store, max_workers=4, agent_config=None, policy=None):
             self._store = store
 
         def start_run(self, preset, variables, live_callback=None, include_shell_tools=False):
@@ -910,7 +914,7 @@ def test_swarm_tool_without_session_callback_preserves_plain_runtime(monkeypatch
     monkeypatch.setattr("src.swarm.store.SwarmStore", FakeStore)
     monkeypatch.setattr("src.swarm.runtime.SwarmRuntime", FakeRuntime)
 
-    payload = json.loads(swarm_tool.SwarmTool().execute(prompt="analyze AAPL"))
+    payload = json.loads(swarm_tool.SwarmTool(policy=ToolPolicy.from_config(get_env_config())).execute(prompt="analyze AAPL"))
 
     assert payload["run_id"] == "r-no-session"
     assert payload["status"] == "running"

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import json
-import os
 import sqlite3
 import threading
 import uuid
@@ -602,6 +603,7 @@ class GoalStore:
     def append_evidence(
         self,
         *,
+        roots: FileRoots,
         session_id: str,
         goal_id: str,
         expected_goal_id: str,
@@ -637,7 +639,7 @@ class GoalStore:
 
             now = _now_iso()
             freshness_status = "fresh" if evidence.data_as_of else "unknown"
-            verification_status = self._verification_status(evidence)
+            verification_status = self._verification_status(evidence, roots=roots)
             self._conn.execute(
                 """
                 INSERT INTO goal_evidence (
@@ -843,11 +845,11 @@ class GoalStore:
         return goal
 
     @staticmethod
-    def _verification_status(evidence: EvidenceInput) -> str:
+    def _verification_status(evidence: EvidenceInput, *, roots: FileRoots) -> str:
         """Return whether evidence has a traceable local artifact/run source."""
         if evidence.artifact_path:
             try:
-                artifact = safe_document_path(evidence.artifact_path)
+                artifact = safe_document_path(evidence.artifact_path, roots=roots)
             except ValueError:
                 artifact = None
             if artifact and artifact.is_file():
@@ -855,7 +857,7 @@ class GoalStore:
                     return "verified"
         if evidence.run_id:
             try:
-                run_dir = safe_run_id(evidence.run_id)
+                run_dir = safe_run_id(evidence.run_id, roots=roots)
             except ValueError:
                 run_dir = None
             if run_dir and run_dir.is_dir():

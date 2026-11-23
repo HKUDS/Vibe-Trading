@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools._arguments import boolean_argument
 from src.config.paths import get_runs_dir
 from src.hypotheses import HypothesisRegistry
@@ -417,7 +417,7 @@ class SignalEngine:
 '''
 
 
-class ScaffoldSignalEngineTool(BaseTool):
+class ScaffoldSignalEngineTool(FileBoundTool, BaseTool):
     """Write a contract-correct ``signal_engine.py`` stub for a hypothesis.
 
     The backtest runner requires a ``SignalEngine`` class that is
@@ -476,7 +476,7 @@ class ScaffoldSignalEngineTool(BaseTool):
             from src.tools.path_utils import safe_run_dir
 
             try:
-                run_path = safe_run_dir(run_dir_raw)
+                run_path = safe_run_dir(run_dir_raw, roots=self.roots)
             except ValueError as exc:
                 return json.dumps(
                     {"status": "error", "error": str(exc)}, ensure_ascii=False
@@ -539,7 +539,7 @@ class ScaffoldSignalEngineTool(BaseTool):
             return _error(exc)
 
 
-class LinkAutopilotBacktestTool(BaseTool):
+class LinkAutopilotBacktestTool(FileBoundTool, BaseTool):
     """Read run_card.json metrics and link the run to a hypothesis.
 
     After a backtest completes, its metrics live in ``run_card.json``. The
@@ -595,7 +595,7 @@ class LinkAutopilotBacktestTool(BaseTool):
             from src.tools.path_utils import safe_run_dir
 
             try:
-                run_path = safe_run_dir(run_dir_raw)
+                run_path = safe_run_dir(run_dir_raw, roots=self.roots)
             except ValueError as exc:
                 return json.dumps(
                     {"status": "error", "error": str(exc)}, ensure_ascii=False

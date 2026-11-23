@@ -8,6 +8,10 @@ than through a full ``run()``: a zombie run writes no ``state.json`` and no
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 import time
@@ -37,7 +41,7 @@ class _FastEvent(threading.Event):
 @pytest.fixture()
 def loop_and_run_dir(tmp_path: Path) -> tuple[AgentRuntime, Path]:
     """Build an AgentRuntime with a real run directory and a fast done-event."""
-    agent = AgentRuntime(registry=ToolRegistry(), llm=SimpleNamespace(), max_iterations=1)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=SimpleNamespace(), max_iterations=1)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)

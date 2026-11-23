@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import json
 import logging
@@ -13,7 +15,7 @@ from src.tools.redaction import redact_tool_result
 logger = logging.getLogger(__name__)
 
 
-def persist_calculation_result(result: str, run_dir: str | Path | None, *, export_csv: bool = False) -> str:
+def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots: FileRoots, export_csv: bool = False) -> str:
     """Keep a JSON observation addressable by calculation tools and file readers.
 
     Args:
@@ -32,7 +34,7 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, expor
     result = redact_tool_result(result)
     payload = json.loads(result)
     try:
-        root = safe_run_dir(str(run_dir))
+        root = safe_run_dir(str(run_dir), roots=roots)
         digest = hashlib.sha256(result.encode()).hexdigest()
         folder = root / 'tool-results' / digest
         path = folder / 'result.json'
@@ -156,7 +158,7 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     try:
         readable = isinstance(registry.get('bash'), BashTool)
         if not readable and isinstance(registry.get('read_file'), ReadFileTool):
-            safe_run_dir(str(run_dir))
+            safe_run_dir(str(run_dir), roots=registry.policy.file_roots)
             readable = True
     except (AttributeError, KeyError, ValueError):
         readable = False

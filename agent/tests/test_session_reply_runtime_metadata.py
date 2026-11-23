@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 from pathlib import Path
 
@@ -25,6 +29,7 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
     store = SessionStore(tmp_path / "sessions")
     event_bus = EventBus()
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=store, event_bus=event_bus, runs_dir=tmp_path / "runs"
     )
     session = Session(title="runtime metadata")

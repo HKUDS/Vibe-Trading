@@ -11,6 +11,10 @@ Registries here are real ``ToolRegistry`` instances populated with minimal
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import re
 from pathlib import Path
@@ -55,7 +59,7 @@ class _StubTool(BaseTool):
 
 
 def _registry_with(names) -> ToolRegistry:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for name in names:
         registry.register(_StubTool(name))
     return registry
@@ -86,7 +90,7 @@ class TestToolsRegistered:
             )
             is False
         )
-        assert sd_guard.tools_registered(ToolRegistry()) is False
+        assert sd_guard.tools_registered(ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))) is False
 
 
 @requires_guard
@@ -110,7 +114,7 @@ class TestRoutingBlock:
             ), f"routing block must be empty when {missing} is unregistered, got {block!r}"
 
     def test_block_empty_on_empty_registry(self) -> None:
-        assert sd_guard.routing_block(ToolRegistry()) == ""
+        assert sd_guard.routing_block(ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))) == ""
 
     def test_never_raises_on_garbage_registry(self) -> None:
         # The contract pins "never raises on garbage registry (object())".
@@ -153,7 +157,7 @@ class TestSkillMdNamesOnlyRegisteredTools:
 
         text = SKILL_MD_PATH.read_text(encoding="utf-8")
         tokens = set(_TOOL_TOKEN_RE.findall(text))
-        registered = set(build_registry().tool_names)
+        registered = set(build_registry(policy=ToolPolicy.from_config(get_env_config())).tool_names)
 
         intersection = tokens & registered
         assert intersection == set(EXPECTED_FOUR_TOOLS), (

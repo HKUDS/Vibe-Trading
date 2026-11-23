@@ -1,6 +1,10 @@
 """CLI swarm runtime commands and their helpers."""
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+
+from src.product.tool_policy import ToolPolicy
+
 from cli.commands import common
 
 def _truncate_swarm_vars_preview(value: str) -> str:
@@ -318,7 +322,7 @@ def cmd_swarm_run_live(preset: str, vars_json: common.Optional[str] = None) -> c
 
     store = SwarmStore(base_dir=common.SWARM_DIR)
     agent_config = load_swarm_agent_config()
-    runtime = SwarmRuntime(store=store, agent_config=agent_config)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, agent_config=agent_config)
     common._agent_color_map.clear()
 
     common.console.print(f"\n[dim]Starting swarm:[/dim] [cyan]{preset}[/cyan]")
@@ -372,7 +376,7 @@ def cmd_swarm_retry_live(run_id: str, resume: bool = False) -> common.Optional[i
         )
         return common.EXIT_USAGE_ERROR
 
-    runtime = SwarmRuntime(store=store, agent_config=load_swarm_agent_config())
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, agent_config=load_swarm_agent_config())
     common._agent_color_map.clear()
     action = "Resuming swarm" if resume else "Retrying swarm"
     common.console.print(f"\n[dim]{action}:[/dim] [cyan]{reconciled.preset_name}[/cyan]")
@@ -595,7 +599,7 @@ def cmd_swarm_cancel(run_id: str) -> None:
     from src.swarm.store import SwarmStore
 
     store = SwarmStore(base_dir=common.SWARM_DIR)
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
 
     if runtime.cancel_run(run_id):
         common.console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")

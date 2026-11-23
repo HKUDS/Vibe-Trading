@@ -7,6 +7,8 @@ LLM provider failure is critical (blocks startup).
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import List, Optional
@@ -61,7 +63,7 @@ def _check_llm_provider() -> CheckResult:
         )
 
     _sync_provider_env()
-    diagnostics = provider_diagnostics()
+    diagnostics = provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))
     from src.providers.settings import resolve_config
     base_url = resolve_config().base_url
     proxy_label = ",".join(sorted(diagnostics.get("proxy", {}).keys())) or "none"

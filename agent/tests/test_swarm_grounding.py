@@ -7,6 +7,10 @@ markdown formatter are pure-function tests.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from datetime import date
 from unittest.mock import MagicMock
@@ -300,7 +304,7 @@ def test_worker_prompt_data_citation_rule_targets_aggregator_roles() -> None:
 def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatch) -> None:
     """Regression: _execute_layer must receive the run-level grounding block."""
     store = MagicMock()
-    runtime = SwarmRuntime(store=store, max_workers=1)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, max_workers=1)
     run_dir = tmp_path / "run"
     task_store = TaskStore(run_dir)
     agent = _spec()

@@ -154,7 +154,8 @@ class AgentRuntime:
         self.goals = GoalBudget(self._emit)
         self.usage = UsageLedger(self.llm, self._emit, self.activity, self.goals, self.memory)
         self._write_targets = WriteTargetState(
-            self.memory, runtime_snapshot, reported_model_source(runtime_snapshot, None)
+            self.memory, runtime_snapshot, reported_model_source(runtime_snapshot, None),
+            registry=self.registry,
         )
         self.tool_env = ToolEnvironment(self.registry, self.memory)
         self.replay = ToolReplay(self.tool_env)

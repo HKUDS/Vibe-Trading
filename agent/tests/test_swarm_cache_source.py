@@ -20,6 +20,10 @@ extended contract:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -252,6 +256,9 @@ _PROVIDER_USAGE = {
 class _Registry:
     """Registry stand-in exposing one no-op tool."""
 
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
+
     def get_definitions(self) -> list[dict]:
         """Return the single scripted tool definition."""
         return [_TOOL_DEF]
@@ -263,6 +270,9 @@ class _Registry:
     def execute(self, name: str, args: dict) -> str:
         """Return a benign JSON envelope for any dispatch."""
         return '{"ok": true, "data": {}}'
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedLLM:
@@ -326,6 +336,7 @@ def _drive_worker(
         patch.object(worker_mod, "ChatLLM", llm),
     ):
         return run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},
@@ -444,7 +455,7 @@ def test_provider_then_estimated_total_stays_estimated(tmp_path) -> None:
 
 
 def _runtime(tmp_path: Path) -> SwarmRuntime:
-    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"))
+    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"), policy=ToolPolicy.from_config(get_env_config()))
 
 
 def _run_with_retries(

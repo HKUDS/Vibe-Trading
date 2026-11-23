@@ -8,6 +8,10 @@ wiring needs its own tests rather than relying on the unit tests of each half.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import pathlib
 import tempfile
 
@@ -23,6 +27,7 @@ from src.session.store import SessionStore
 def _service(root: pathlib.Path) -> SessionService:
     """Build a SessionService against a throwaway runtime root."""
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(root / "sessions"),
         event_bus=EventBus(),
         runs_dir=root / "runs",

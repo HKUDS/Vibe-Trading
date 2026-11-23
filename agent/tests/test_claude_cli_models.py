@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import subprocess
 from types import SimpleNamespace
@@ -124,7 +128,7 @@ def test_effort_reaches_the_cli_only_when_it_is_a_cli_level(
     set_replies, calls = fake_cli
     set_replies({"payload": payload({"action": "final", "content": "ok"})})
 
-    claude_cli.ClaudeCliLLM(reasoning_effort=effort).invoke(
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), reasoning_effort=effort).invoke(
         [{"role": "user", "content": "hi"}]
     )
 
@@ -161,7 +165,7 @@ def test_build_llm_normalises_reasoning_effort(monkeypatch, raw) -> None:
     use_provider(monkeypatch)
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", raw)
 
-    assert llm.build_llm().reasoning_effort == "high"
+    assert llm.build_llm(policy=ToolPolicy.from_config(get_env_config())).reasoning_effort == "high"
 
 
 def test_build_llm_passes_reasoning_effort_through_bind_tools(monkeypatch) -> None:
@@ -170,7 +174,7 @@ def test_build_llm_passes_reasoning_effort_through_bind_tools(monkeypatch) -> No
     use_provider(monkeypatch)
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", "xhigh")
 
-    model = llm.build_llm()
+    model = llm.build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert model.reasoning_effort == "xhigh"
     assert model.bind_tools([tool("get_market_data")]).reasoning_effort == "xhigh"

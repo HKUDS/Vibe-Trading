@@ -5,6 +5,10 @@ Every value is synthetic.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -37,6 +41,7 @@ def reuse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     current.mkdir()
     return (
         GroundingLedger(
+            roots=FileRoots.from_config(get_env_config().api),
             run_dir=current, user_message="profundizá el backtest anterior"
         ),
         prior,
@@ -46,7 +51,7 @@ def reuse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _read(
     ledger: GroundingLedger, run_dir: Path, artifact: str, call_id: str, **kwargs
 ) -> dict:
-    result = read_run_artifact(str(run_dir), artifact, **kwargs)
+    result = read_run_artifact(str(run_dir), artifact, **kwargs, roots=FileRoots.from_config(get_env_config().api))
     ledger.ingest_tool_result(
         tool_name="read_run_artifact",
         arguments={"run_dir": str(run_dir), "artifact": artifact},

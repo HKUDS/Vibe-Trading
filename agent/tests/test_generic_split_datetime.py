@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -77,7 +81,7 @@ def test_split_csv_preserves_net_winners_and_date_filters(
         encoding="utf-8",
     )
 
-    result = json.loads(analyze_trade_journal(str(path), "profile"))
+    result = json.loads(analyze_trade_journal(str(path), "profile", roots=FileRoots.from_config(get_env_config().api)))
     assert result["status"] == "ok"
     assert result["format_detected"] == "generic"
     assert result["date_range"] == "2026-01-01 ~ 2026-01-06"
@@ -91,7 +95,7 @@ def test_split_csv_preserves_net_winners_and_date_filters(
     assert [r["hold_days"] for r in profile["roundtrips_sample"]] == [0.75, 1.04, 1.04]
 
     filtered = json.loads(
-        analyze_trade_journal(str(path), "profile", "2026-01 to 2026-01")
+        analyze_trade_journal(str(path), "profile", "2026-01 to 2026-01", roots=FileRoots.from_config(get_env_config().api))
     )
     assert filtered["total_records"] == 6
     assert filtered["profile"]["win_rate"] == 0.6667

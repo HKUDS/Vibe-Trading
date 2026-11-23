@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -252,7 +256,7 @@ def _prompt(monkeypatch, minute: int = 0, launch_dir=None) -> str:
     monkeypatch.setattr(
         ctx, "datetime", _Frozen(datetime(2026, 11, 1, 12, minute, tzinfo=timezone.utc))
     )
-    builder = ContextBuilder(ToolRegistry(), WorkspaceMemory(), instruction_launch_dir=launch_dir)
+    builder = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory(), instruction_launch_dir=launch_dir)
     return builder.build_system_prompt("hi")
 
 

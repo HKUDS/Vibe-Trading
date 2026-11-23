@@ -7,6 +7,10 @@ instead of silently comparing raw against adjusted series.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import pandas as pd
 import pytest
 
@@ -365,7 +369,7 @@ def test_fetch_data_map_warns_on_mixed_caliber_basket(
             "start_date": "2024-01-01",
             "end_date": "2024-01-03",
             "interval": "1D",
-        }
+        }, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert result.caliber_warning is not None
@@ -393,7 +397,7 @@ def test_fetch_data_map_silent_on_single_caliber(
             "start_date": "2024-01-01",
             "end_date": "2024-01-03",
             "interval": "1D",
-        }
+        }, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert result.caliber_warning is None
@@ -423,7 +427,7 @@ def test_fetch_data_map_warns_on_additive_caliber(
             "start_date": "2024-01-01",
             "end_date": "2024-01-03",
             "interval": "1D",
-        }
+        }, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert result.caliber_warning is not None
@@ -449,10 +453,10 @@ def test_fetch_data_map_does_not_call_an_index_additive(
     monkeypatch.setattr(runner, "LOADER_REGISTRY", {})
     config = {"source": "auto", "start_date": "2024-01-01", "end_date": "2024-01-03", "interval": "1D"}
 
-    index_only = runner.fetch_data_map({**config, "codes": ["000300.SH"]})
+    index_only = runner.fetch_data_map({**config, "codes": ["000300.SH"]}, roots=FileRoots.from_config(get_env_config().api))
     assert index_only.caliber_warning is None
 
-    both = runner.fetch_data_map({**config, "codes": ["000300.SH", "600519.SH"]})
+    both = runner.fetch_data_map({**config, "codes": ["000300.SH", "600519.SH"]}, roots=FileRoots.from_config(get_env_config().api))
     assert both.caliber_warning is not None
     assert "additive price adjustment in this run: 600519.SH (tencent)." in both.caliber_warning
     assert "mixed price calibers" in both.caliber_warning
@@ -474,7 +478,7 @@ def test_fetch_data_map_reports_both_warnings_when_they_apply(
             "start_date": "2024-01-01",
             "end_date": "2024-01-03",
             "interval": "1D",
-        }
+        }, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert result.caliber_warning is not None

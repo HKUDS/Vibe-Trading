@@ -22,6 +22,10 @@ itself closing on everything.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import pathlib
 import tempfile
 
@@ -33,6 +37,7 @@ from evals.grounding import GroundingLedger
 def _has_issues(text: str) -> bool:
     """Validate a final answer with no tool evidence at all."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=pathlib.Path(tempfile.mkdtemp()),
         user_message="analyze",
         history=None,

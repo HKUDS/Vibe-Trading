@@ -9,6 +9,10 @@ retryable failures (capped exponential) and honors the provider's
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import src.agent.tuning as _owner_tuning
 
 import types
@@ -40,6 +44,9 @@ FINAL_TEXT = (
 class _EmptyRegistry:
     """Minimal stand-in for the swarm ToolRegistry (execute returns ok)."""
 
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
+
     def get_definitions(self) -> list[dict]:
         """Return an empty tool-definition list."""
         return []
@@ -51,6 +58,9 @@ class _EmptyRegistry:
     def get(self, name: str):
         """Return no tool metadata."""
         return None
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedWorkerLLM:
@@ -161,6 +171,7 @@ def _run_worker(
         patch.object(worker_mod, "ChatLLM", llm),
     ):
         result = worker_mod.run_worker(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},
@@ -368,7 +379,7 @@ def _run_loop(
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_MAX_DELAY_S", 8.0, raising=False)
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(
             (lambda event_type, data: events.append((data.get("kind", event_type), data)))
@@ -504,7 +515,7 @@ def test_loop_cancel_during_retry_delay_returns_without_waiting_it_out(
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_MAX_DELAY_S", 30.0, raising=False)
     pm = PersistentMemory()
     agent = AgentRuntime(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=3,
         persistent_memory=pm,

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
+
 from tests.provider_helpers import chat_with_adapter
 
 import json
@@ -17,7 +20,6 @@ from src.agent.tools import BaseTool, ToolRegistry
 from tests.recording_helpers import recorder_at, run_recorded_tools
 from src.config.accessor import get_env_config, reset_env_config
 from src.providers.diagnostics import provider_diagnostics
-from src.product.tool_policy import bash_policy, policy_status
 from src.product import tool_policy
 from tests.module_os_helpers import patch_module_os
 
@@ -120,7 +122,7 @@ class _FakeBashTool(BaseTool):
 
 
 def _agent(tool: BaseTool, tmp_path) -> AgentRuntime:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     agent = AgentRuntime(
         registry=registry,
@@ -190,8 +192,8 @@ def test_generic_values_override_legacy_aliases(monkeypatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "custom_")
     reset_env_config()
 
-    assert bash_policy() == "python-only"
-    assert policy_status() == {
+    assert ToolPolicy.from_config(get_env_config()).bash_policy() == "python-only"
+    assert ToolPolicy.from_config(get_env_config()).status(legacy_defaults=False) == {
         "deny_tool_prefixes": ["custom_"],
         "deny_tool_prefixes_source": "VIBE_TRADING_DENY_TOOL_PREFIXES",
         "bash_policy": "python-only",
@@ -204,8 +206,8 @@ def test_legacy_values_remain_the_fallback(monkeypatch) -> None:
     monkeypatch.setenv("CLAUDE_CLI_DENY_TOOL_PREFIXES", "legacy_")
     reset_env_config()
 
-    assert policy_status()["deny_tool_prefixes"] == ["legacy_"]
-    assert policy_status()["bash_policy"] == "off"
+    assert ToolPolicy.from_config(get_env_config()).status(legacy_defaults=False)["deny_tool_prefixes"] == ["legacy_"]
+    assert ToolPolicy.from_config(get_env_config()).status(legacy_defaults=False)["bash_policy"] == "off"
 
 
 def test_invalid_generic_policy_names_the_generic_variable(monkeypatch) -> None:
@@ -213,7 +215,7 @@ def test_invalid_generic_policy_names_the_generic_variable(monkeypatch) -> None:
     reset_env_config()
 
     with pytest.raises(RuntimeError, match="VIBE_TRADING_BASH_POLICY"):
-        bash_policy()
+        ToolPolicy.from_config(get_env_config()).bash_policy()
 
 
 def test_provider_doctor_exposes_only_the_active_nonsecret_policy(monkeypatch) -> None:
@@ -223,7 +225,7 @@ def test_provider_doctor_exposes_only_the_active_nonsecret_policy(monkeypatch) -
     monkeypatch.setenv("VIBE_TRADING_BASH_POLICY", "off")
     reset_env_config()
 
-    diagnostics = provider_diagnostics()
+    diagnostics = provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))
 
     assert diagnostics["tool_policy"] == {
         "deny_tool_prefixes": ["custom_"],
@@ -238,7 +240,7 @@ def test_unconfigured_non_claude_provider_keeps_its_previous_tool_surface():
     llm = _RecordingLLM()
     _chat(llm).chat([{"role": "user", "content": "x"}], tools=[_tool("trading_place_order")])
     assert [t["function"]["name"] for t in llm.bound_tools] == ["trading_place_order"]
-    assert bash_policy() == "off"
+    assert ToolPolicy.from_config(get_env_config()).bash_policy() == "off"
 
 
 def test_all_filtered_tools_do_not_bind_an_empty_schema(shared_policy):
@@ -250,7 +252,7 @@ def test_all_filtered_tools_do_not_bind_an_empty_schema(shared_policy):
 
 def test_direct_registry_execution_cannot_bypass_policy(shared_policy):
     tool = _FakeBashTool("trading_place_order")
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     result = json.loads(registry.execute(tool.name, {}))
     assert result["status"] == "error"
@@ -286,11 +288,13 @@ def test_mcp_tools_that_bypass_the_registry_still_honour_the_deny_list(monkeypat
         async with Client(mcp_server.mcp) as client:
             return {tool.name for tool in await client.list_tools()}
 
+    monkeypatch.setattr(mcp_server, "_registry", None)
     unfiltered = asyncio.run(listed())
     assert {"backtest", "web_search"} <= unfiltered
 
     monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "backtest,web_")
     reset_env_config()
+    monkeypatch.setattr(mcp_server, "_registry", None)
     filtered = asyncio.run(listed())
     assert not {name for name in filtered if name.startswith(("backtest", "web_"))}
     assert filtered == {name for name in unfiltered if not name.startswith(("backtest", "web_"))}

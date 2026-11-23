@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.providers.adapters import anthropic as anthropic_adapter
 from src.providers.adapters import openai as openai_adapter
 from src.providers import request_guards
@@ -368,7 +372,7 @@ def test_build_anthropic_uses_messages_api_proxy() -> None:
             "import_module",
             return_value=SimpleNamespace(ChatAnthropic=_FakeChatAnthropic),
         ):
-            result = build_llm()
+            result = build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert isinstance(result, _FakeChatAnthropic)
     assert captured["model"] == "claude-sonnet-4-6[1M]"
@@ -730,7 +734,7 @@ class TestMinimaxTemperature:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
         assert (
             captured["temperature"] == 0.01
         ), "MiniMax temperature must be clamped to 0.01 when 0.0 is configured"
@@ -755,7 +759,7 @@ class TestMinimaxTemperature:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
         assert captured["temperature"] == 0.7
 
 
@@ -786,7 +790,7 @@ class TestDisableHttpProxy:
                 return_value=(sync_client, async_client),
             ) as build_clients:
                 with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                    build_llm()
+                    build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
         build_clients.assert_called_once_with()
         assert captured["http_client"] is sync_client
@@ -811,7 +815,7 @@ class TestDisableHttpProxy:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
         assert "http_client" not in captured
         assert "http_async_client" not in captured
@@ -861,7 +865,7 @@ class TestKimiTemperature:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
         return captured["temperature"]
 
     def test_kimi_k3_temperature_forced_to_one(self) -> None:
@@ -899,7 +903,7 @@ class TestReasoningEffortPassthrough:
 
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
         return captured
 
     def test_effort_unset_leaves_extra_body_none(self) -> None:
@@ -996,7 +1000,7 @@ class TestKimiCodingProvider:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
         return captured
 
     def test_kimi_for_coding_temperature_forced_to_one(self) -> None:
@@ -1076,7 +1080,7 @@ class TestGetLlmCredentials:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
         assert captured["base_url"] == "http://localhost:11434/v1"
 

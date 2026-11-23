@@ -14,6 +14,10 @@ recording fake registries; the real store/facade are never constructed.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 
@@ -63,10 +67,14 @@ class _RecordingRegistry:
     def __init__(self, canned='{"status": "ok", "recorded": true}'):
         self.calls = []
         self.canned = canned
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def execute(self, name, params):
         self.calls.append((name, dict(params)))
         return self.canned
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 @requires_sd_mcp
@@ -129,7 +137,7 @@ class TestDelegation:
     ) -> None:
         # A registry that lacks the tool (e.g. facade import failed) must
         # still answer with a parseable error envelope.
-        monkeypatch.setattr(mcp_server, "_get_registry", lambda: ToolRegistry())
+        monkeypatch.setattr(mcp_server, "_get_registry", lambda: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
         fn = _unwrapped("list_strategies")
         result = fn()
         payload = json.loads(result)

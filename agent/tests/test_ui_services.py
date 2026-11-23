@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,7 +67,7 @@ def test_reconstruct_price_series_uses_central_fetch_router(
         index=pd.DatetimeIndex([pd.Timestamp("2026-01-01")]),
     )
 
-    def fake_fetch_data_map(config: dict) -> SimpleNamespace:
+    def fake_fetch_data_map(config: dict, *, roots) -> SimpleNamespace:
         routed_configs.append(config)
         return SimpleNamespace(data_map={"BTC-USDT": frame})
 
@@ -103,7 +107,7 @@ def test_fetch_data_map_uses_registry_for_nonlegacy_source(
     }
     original = dict(config)
 
-    result = runner.fetch_data_map(config)
+    result = runner.fetch_data_map(config, roots=FileRoots.from_config(get_env_config().api))
 
     assert config == original
     assert calls == [
@@ -143,7 +147,7 @@ def test_fetch_data_map_does_not_expose_config_mutables_to_loader(
         "extra_fields": ["amount"],
     }
 
-    runner.fetch_data_map(config)
+    runner.fetch_data_map(config, roots=FileRoots.from_config(get_env_config().api))
 
     assert config["extra_fields"] == ["amount"]
 
@@ -170,7 +174,7 @@ def test_fetch_data_map_delegates_auto_routing(
         "interval": "1D",
     }
 
-    result = runner.fetch_data_map(config)
+    result = runner.fetch_data_map(config, roots=FileRoots.from_config(get_env_config().api))
 
     assert calls == [(["AAPL.US"], config, "1D")]
     assert result.source == "auto"
@@ -346,7 +350,7 @@ def test_explicit_fetch_falls_back_only_for_missing_symbols(
             "start_date": "2026-01-01",
             "end_date": "2026-01-02",
             "source": "primary",
-        }
+        }, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert list(result.data_map) == ["AAPL.US", "MSFT.US"]
@@ -386,7 +390,7 @@ def test_fetch_stops_when_fallbacks_leave_symbols_missing(
                 **config,
                 "codes": ["AAPL.US", "MSFT.US"],
                 "source": "primary",
-            }
+            }, roots=FileRoots.from_config(get_env_config().api)
         )
 
 

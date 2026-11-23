@@ -6,6 +6,10 @@ Session/run/upload history must live under the runtime root
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import cli.commands.common as _cmd_common
 
 from pathlib import Path
@@ -190,8 +194,8 @@ def test_sandbox_roots_follow_home_override(
     root = tmp_path / "state-root"
     monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
 
-    file_roots = allowed_file_roots()
-    write_roots = allowed_write_roots()
+    file_roots = allowed_file_roots(roots=FileRoots.from_config(get_env_config().api))
+    write_roots = allowed_write_roots(roots=FileRoots.from_config(get_env_config().api))
 
     assert (root / "uploads").resolve() in file_roots
     assert (root / "runs").resolve() in file_roots

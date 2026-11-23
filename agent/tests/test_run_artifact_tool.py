@@ -10,6 +10,10 @@ byte-budget shrink loop.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import csv
 import hashlib
 import json
@@ -98,7 +102,7 @@ def _write_run_card(run_dir: Path, entries: list[dict]) -> None:
 def test_downsample_caps_points_and_pins_first_last(run_dir: Path, monkeypatch) -> None:
     monkeypatch.setattr(run_artifact_tool, "_BYTE_BUDGET", 120_000)
     env = json.loads(
-        read_run_artifact(str(run_dir), "equity", format="downsample", max_rows=1000)
+        read_run_artifact(str(run_dir), "equity", format="downsample", max_rows=1000, roots=FileRoots.from_config(get_env_config().api))
     )
     assert set(env) == ROWS_ENVELOPE_KEYS
     assert len(env["rows"]) <= 1000
@@ -119,7 +123,7 @@ def test_downsample_caps_points_and_pins_first_last(run_dir: Path, monkeypatch) 
 def test_downsample_returns_everything_when_total_fits(run_dir: Path) -> None:
     _write_csv(run_dir / "artifacts" / "trades.csv", ["a"], [["1"], ["2"], ["3"]])
     env = json.loads(
-        read_run_artifact(str(run_dir), "trades", format="downsample", max_rows=100)
+        read_run_artifact(str(run_dir), "trades", format="downsample", max_rows=100, roots=FileRoots.from_config(get_env_config().api))
     )
     assert env["rows"] == [[1], [2], [3]]
     assert env["downsample"]["stride"] == 1
@@ -136,7 +140,7 @@ def test_offset_paging_walk_is_lossless(run_dir: Path) -> None:
     offset = 0
     for _ in range(20):  # 3821 / 500 -> 8 pages; hard stop guards a loop bug
         env = json.loads(
-            read_run_artifact(str(run_dir), "equity", offset=offset, max_rows=500)
+            read_run_artifact(str(run_dir), "equity", offset=offset, max_rows=500, roots=FileRoots.from_config(get_env_config().api))
         )
         assert env["offset"] == offset
         gathered.extend(env["rows"])
@@ -153,7 +157,7 @@ def test_offset_paging_walk_is_lossless(run_dir: Path) -> None:
 
 def test_offset_past_end_returns_empty_page(run_dir: Path) -> None:
     env = json.loads(
-        read_run_artifact(str(run_dir), "equity", offset=EQUITY_ROWS + 100)
+        read_run_artifact(str(run_dir), "equity", offset=EQUITY_ROWS + 100, roots=FileRoots.from_config(get_env_config().api))
     )
     assert env["rows"] == []
     assert env["returned_rows"] == 0
@@ -162,7 +166,7 @@ def test_offset_past_end_returns_empty_page(run_dir: Path) -> None:
 
 
 def test_negative_offset_rejected(run_dir: Path) -> None:
-    env = json.loads(read_run_artifact(str(run_dir), "equity", offset=-1))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", offset=-1, roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
 
 
@@ -171,9 +175,9 @@ def test_max_rows_clamped(run_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     _write_csv(
         run_dir / "artifacts" / "trades.csv", ["n"], [[str(i)] for i in range(5200)]
     )
-    tiny = json.loads(read_run_artifact(str(run_dir), "trades", max_rows=0))
+    tiny = json.loads(read_run_artifact(str(run_dir), "trades", max_rows=0, roots=FileRoots.from_config(get_env_config().api)))
     assert tiny["returned_rows"] == 1
-    huge = json.loads(read_run_artifact(str(run_dir), "trades", max_rows=10**6))
+    huge = json.loads(read_run_artifact(str(run_dir), "trades", max_rows=10**6, roots=FileRoots.from_config(get_env_config().api)))
     assert huge["returned_rows"] == 5000
     assert huge["truncated"] is True
     assert huge["next_offset"] == 5000
@@ -199,7 +203,7 @@ def test_max_rows_clamped(run_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     ],
 )
 def test_non_whitelisted_artifacts_rejected(run_dir: Path, artifact: str) -> None:
-    env = json.loads(read_run_artifact(str(run_dir), artifact))
+    env = json.loads(read_run_artifact(str(run_dir), artifact, roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert set(env) == {"ok", "error", "hint"}
     assert env["hint"]
@@ -209,7 +213,7 @@ def test_run_dir_outside_allowed_roots_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
-    env = json.loads(read_run_artifact(str(tmp_path.parent / "elsewhere"), "equity"))
+    env = json.loads(read_run_artifact(str(tmp_path.parent / "elsewhere"), "equity", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert "run roots" in env["error"]
 
@@ -218,7 +222,7 @@ def test_symlink_escape_rejected(run_dir: Path, tmp_path: Path) -> None:
     secret = tmp_path / "secret.csv"
     secret.write_text("a\n1\n", encoding="utf-8")
     (run_dir / "artifacts" / "trades.csv").symlink_to(secret)
-    env = json.loads(read_run_artifact(str(run_dir), "trades"))
+    env = json.loads(read_run_artifact(str(run_dir), "trades", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
 
 
@@ -233,7 +237,7 @@ def test_manifest_listed_json_artifact_resolves(run_dir: Path) -> None:
         json.dumps(payload), encoding="utf-8"
     )
     _write_run_card(run_dir, [_manifest_entry(run_dir, "artifacts/validation.json")])
-    env = json.loads(read_run_artifact(str(run_dir), "artifacts/validation.json"))
+    env = json.loads(read_run_artifact(str(run_dir), "artifacts/validation.json", roots=FileRoots.from_config(get_env_config().api)))
     assert set(env) == {"artifact", "run_dir", "json", "size_bytes"}
     assert env["artifact"] == "artifacts/validation.json"
     assert env["json"] == payload
@@ -247,11 +251,11 @@ def test_manifest_listed_csv_artifact_resolves(run_dir: Path) -> None:
     )
     entry = _manifest_entry(run_dir, "artifacts/rebalance_notes.csv")
     _write_run_card(run_dir, [entry])
-    env = json.loads(read_run_artifact(str(run_dir), "artifacts/rebalance_notes.csv"))
+    env = json.loads(read_run_artifact(str(run_dir), "artifacts/rebalance_notes.csv", roots=FileRoots.from_config(get_env_config().api)))
     assert env["columns"] == ["date", "note"]
     assert env["rows"] == [["2024-01-02", "held"]]
     meta = json.loads(
-        read_run_artifact(str(run_dir), "artifacts/rebalance_notes.csv", format="meta")
+        read_run_artifact(str(run_dir), "artifacts/rebalance_notes.csv", format="meta", roots=FileRoots.from_config(get_env_config().api))
     )
     assert meta["sha256"] == entry["sha256"]
     assert meta["manifest_size_bytes"] == entry["size_bytes"]
@@ -260,7 +264,7 @@ def test_manifest_listed_csv_artifact_resolves(run_dir: Path) -> None:
 def test_relative_path_not_in_manifest_refused(run_dir: Path) -> None:
     _write_csv(run_dir / "artifacts" / "extra.csv", ["a"], [["1"]])
     _write_run_card(run_dir, [])  # a card exists but lists nothing
-    env = json.loads(read_run_artifact(str(run_dir), "artifacts/extra.csv"))
+    env = json.loads(read_run_artifact(str(run_dir), "artifacts/extra.csv", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert set(env) == {"ok", "error", "hint"}
     assert "manifest" in env["hint"]
@@ -276,7 +280,7 @@ def test_tampered_manifest_escape_entries_refused(
     _write_run_card(
         run_dir, [{"path": tampered, "size_bytes": 4, "sha256": "deadbeef"}]
     )
-    env = json.loads(read_run_artifact(str(run_dir), tampered))
+    env = json.loads(read_run_artifact(str(run_dir), tampered, roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert set(env) == {"ok", "error", "hint"}
 
@@ -287,7 +291,7 @@ def test_tampered_manifest_absolute_path_refused(run_dir: Path, tmp_path: Path) 
     _write_run_card(
         run_dir, [{"path": str(secret), "size_bytes": 4, "sha256": "deadbeef"}]
     )
-    env = json.loads(read_run_artifact(str(run_dir), str(secret)))
+    env = json.loads(read_run_artifact(str(run_dir), str(secret), roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
 
 
@@ -298,7 +302,7 @@ def test_manifest_symlink_entry_escaping_run_dir_refused(
     secret.write_text("a\n1\n", encoding="utf-8")
     (run_dir / "artifacts" / "link.csv").symlink_to(secret)
     _write_run_card(run_dir, [_manifest_entry(run_dir, "artifacts/link.csv")])
-    env = json.loads(read_run_artifact(str(run_dir), "artifacts/link.csv"))
+    env = json.loads(read_run_artifact(str(run_dir), "artifacts/link.csv", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
 
 
@@ -306,23 +310,23 @@ def test_manifest_listed_non_served_suffix_refused(run_dir: Path) -> None:
     (run_dir / "code").mkdir(parents=True, exist_ok=True)
     (run_dir / "code" / "signal_engine.py").write_text("print(1)\n", encoding="utf-8")
     _write_run_card(run_dir, [_manifest_entry(run_dir, "code/signal_engine.py")])
-    env = json.loads(read_run_artifact(str(run_dir), "code/signal_engine.py"))
+    env = json.loads(read_run_artifact(str(run_dir), "code/signal_engine.py", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert "read_file" in env["hint"]
 
 
 def test_aliases_work_without_run_card(run_dir: Path) -> None:
     assert not (run_dir / "run_card.json").exists()
-    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta"))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta", roots=FileRoots.from_config(get_env_config().api)))
     assert env["total_rows"] == EQUITY_ROWS
     assert "sha256" not in env and "manifest_size_bytes" not in env
 
 
 def test_aliases_work_with_corrupt_run_card(run_dir: Path) -> None:
     (run_dir / "run_card.json").write_text("{oops not json", encoding="utf-8")
-    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta"))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta", roots=FileRoots.from_config(get_env_config().api)))
     assert env["total_rows"] == EQUITY_ROWS
-    refused = json.loads(read_run_artifact(str(run_dir), "artifacts/equity.csv"))
+    refused = json.loads(read_run_artifact(str(run_dir), "artifacts/equity.csv", roots=FileRoots.from_config(get_env_config().api)))
     assert refused["ok"] is False
     assert "manifest" in refused["hint"]
 
@@ -330,7 +334,7 @@ def test_aliases_work_with_corrupt_run_card(run_dir: Path) -> None:
 def test_meta_exposes_manifest_sha256(run_dir: Path) -> None:
     entry = _manifest_entry(run_dir, "artifacts/equity.csv")
     _write_run_card(run_dir, [entry])
-    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta"))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta", roots=FileRoots.from_config(get_env_config().api)))
     assert env["sha256"] == entry["sha256"]
     assert env["manifest_size_bytes"] == entry["size_bytes"]
     assert env["size_bytes"] == (run_dir / "artifacts" / "equity.csv").stat().st_size
@@ -342,7 +346,7 @@ def test_meta_exposes_manifest_sha256(run_dir: Path) -> None:
 
 
 def test_rows_are_structured_arrays_not_raw_csv(run_dir: Path) -> None:
-    payload = read_run_artifact(str(run_dir), "equity", max_rows=50)
+    payload = read_run_artifact(str(run_dir), "equity", max_rows=50, roots=FileRoots.from_config(get_env_config().api))
     assert "day00000,100000.0" not in payload  # no raw CSV line survives
     env = json.loads(payload)
     assert env["columns"] == EQUITY_COLUMNS
@@ -367,7 +371,7 @@ def test_numeric_coercion(run_dir: Path) -> None:
             ["0", "2.0", "x", "Infinity", "-Infinity", "null"],
         ],
     )
-    env = json.loads(read_run_artifact(str(run_dir), "metrics"))
+    env = json.loads(read_run_artifact(str(run_dir), "metrics", roots=FileRoots.from_config(get_env_config().api)))
     assert env["rows"][0] == [42, 3.14, None, None, None, "hello"]
     assert env["rows"][1] == [-7, 100000.0, None, None, None, "1_000"]
     assert env["rows"][2] == [0, 2.0, "x", None, None, "null"]
@@ -379,7 +383,7 @@ def test_numeric_coercion(run_dir: Path) -> None:
 
 
 def test_meta_format(run_dir: Path) -> None:
-    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta"))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", format="meta", roots=FileRoots.from_config(get_env_config().api)))
     assert set(env) == {"artifact", "run_dir", "path", "columns", "total_rows", "size_bytes"}
     assert env["artifact"] == "equity"
     assert env["columns"] == EQUITY_COLUMNS
@@ -388,7 +392,7 @@ def test_meta_format(run_dir: Path) -> None:
 
 
 def test_unknown_format_rejected(run_dir: Path) -> None:
-    env = json.loads(read_run_artifact(str(run_dir), "equity", format="yaml"))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", format="yaml", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
 
 
@@ -400,7 +404,7 @@ def test_unknown_format_rejected(run_dir: Path) -> None:
 def test_columns_projection(run_dir: Path) -> None:
     env = json.loads(
         read_run_artifact(
-            str(run_dir), "equity", columns=["equity", "date"], max_rows=10
+            str(run_dir), "equity", columns=["equity", "date"], max_rows=10, roots=FileRoots.from_config(get_env_config().api)
         )
     )
     assert env["columns"] == ["equity", "date"]
@@ -410,7 +414,7 @@ def test_columns_projection(run_dir: Path) -> None:
 
 def test_unknown_column_lists_valid_columns(run_dir: Path) -> None:
     env = json.loads(
-        read_run_artifact(str(run_dir), "equity", columns=["equity", "nope"])
+        read_run_artifact(str(run_dir), "equity", columns=["equity", "nope"], roots=FileRoots.from_config(get_env_config().api))
     )
     assert env["ok"] is False
     assert "nope" in env["error"]
@@ -427,7 +431,7 @@ def test_byte_budget_shrinks_rows_page_honestly(
     run_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(run_artifact_tool, "_BYTE_BUDGET", 3000)
-    payload = read_run_artifact(str(run_dir), "equity", max_rows=1000)
+    payload = read_run_artifact(str(run_dir), "equity", max_rows=1000, roots=FileRoots.from_config(get_env_config().api))
     assert len(payload) <= 3000
     env = json.loads(payload)  # never broken JSON
     assert 0 < env["returned_rows"] < 1000
@@ -438,7 +442,7 @@ def test_byte_budget_shrinks_rows_page_honestly(
     # The advertised resume point serves a valid next page.
     follow = json.loads(
         read_run_artifact(
-            str(run_dir), "equity", offset=env["next_offset"], max_rows=1000
+            str(run_dir), "equity", offset=env["next_offset"], max_rows=1000, roots=FileRoots.from_config(get_env_config().api)
         )
     )
     assert follow["rows"][0] == _expected_row(env["next_offset"])
@@ -449,7 +453,7 @@ def test_byte_budget_restrides_downsample(
 ) -> None:
     monkeypatch.setattr(run_artifact_tool, "_BYTE_BUDGET", 3000)
     payload = read_run_artifact(
-        str(run_dir), "equity", format="downsample", max_rows=1000
+        str(run_dir), "equity", format="downsample", max_rows=1000, roots=FileRoots.from_config(get_env_config().api)
     )
     assert len(payload) <= 3000
     env = json.loads(payload)
@@ -464,7 +468,7 @@ def test_byte_budget_never_breaks_json_at_floor(
     run_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(run_artifact_tool, "_BYTE_BUDGET", 10)
-    env = json.loads(read_run_artifact(str(run_dir), "equity", max_rows=100))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", max_rows=100, roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert "budget" in env["error"]
 
@@ -480,7 +484,7 @@ def test_ohlcv_code_maps_to_artifacts_file(run_dir: Path) -> None:
         ["date", "open", "close"],
         [["2024-01-02", "100.5", "101.25"]],
     )
-    env = json.loads(read_run_artifact(str(run_dir), "ohlcv:600519.SH"))
+    env = json.loads(read_run_artifact(str(run_dir), "ohlcv:600519.SH", roots=FileRoots.from_config(get_env_config().api)))
     assert env["artifact"] == "ohlcv:600519.SH"
     assert env["columns"] == ["date", "open", "close"]
     assert env["rows"] == [["2024-01-02", 100.5, 101.25]]
@@ -495,7 +499,7 @@ def test_run_card_returns_parsed_json_regardless_of_format(run_dir: Path) -> Non
     card = {"run_id": "abc", "metrics": {"sharpe": 1.25}, "tags": ["x"]}
     (run_dir / "run_card.json").write_text(json.dumps(card), encoding="utf-8")
     for fmt in ("rows", "downsample", "meta"):
-        env = json.loads(read_run_artifact(str(run_dir), "run_card", format=fmt))
+        env = json.loads(read_run_artifact(str(run_dir), "run_card", format=fmt, roots=FileRoots.from_config(get_env_config().api)))
         assert set(env) == {"artifact", "run_dir", "json", "size_bytes"}
         assert env["json"] == card
         assert env["size_bytes"] == (run_dir / "run_card.json").stat().st_size
@@ -503,7 +507,7 @@ def test_run_card_returns_parsed_json_regardless_of_format(run_dir: Path) -> Non
 
 def test_corrupt_run_card_rejected(run_dir: Path) -> None:
     (run_dir / "run_card.json").write_text("{oops not json", encoding="utf-8")
-    env = json.loads(read_run_artifact(str(run_dir), "run_card"))
+    env = json.loads(read_run_artifact(str(run_dir), "run_card", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert set(env) == {"ok", "error", "hint"}
 
@@ -514,7 +518,7 @@ def test_corrupt_run_card_rejected(run_dir: Path) -> None:
 
 
 def test_missing_artifact_has_hint(run_dir: Path) -> None:
-    env = json.loads(read_run_artifact(str(run_dir), "trades"))
+    env = json.loads(read_run_artifact(str(run_dir), "trades", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert env["hint"]
     assert "not found" in env["error"]
@@ -525,7 +529,7 @@ def test_manifest_listed_but_missing_on_disk_has_hint(run_dir: Path) -> None:
         run_dir,
         [{"path": "artifacts/validation.json", "size_bytes": 2, "sha256": "deadbeef"}],
     )
-    env = json.loads(read_run_artifact(str(run_dir), "artifacts/validation.json"))
+    env = json.loads(read_run_artifact(str(run_dir), "artifacts/validation.json", roots=FileRoots.from_config(get_env_config().api)))
     assert env["ok"] is False
     assert "not found" in env["error"]
 
@@ -536,7 +540,7 @@ def test_manifest_listed_but_missing_on_disk_has_hint(run_dir: Path) -> None:
 
 
 def test_success_envelope_carries_no_ok_field(run_dir: Path) -> None:
-    env = json.loads(read_run_artifact(str(run_dir), "equity", max_rows=5))
+    env = json.loads(read_run_artifact(str(run_dir), "equity", max_rows=5, roots=FileRoots.from_config(get_env_config().api)))
     assert "ok" not in env and "status" not in env
     assert set(env) == ROWS_ENVELOPE_KEYS
     assert env["downsample"] is None
@@ -544,7 +548,7 @@ def test_success_envelope_carries_no_ok_field(run_dir: Path) -> None:
 
 
 def test_tool_class_contract(run_dir: Path) -> None:
-    tool = RunArtifactTool()
+    tool = RunArtifactTool(roots=FileRoots.from_config(get_env_config().api))
     assert tool.name == "read_run_artifact"
     assert tool.is_readonly is True
     assert tool.repeatable is True
@@ -568,27 +572,27 @@ def test_tool_class_contract(run_dir: Path) -> None:
 
 def test_default_page_survives_actual_agent_delivery_cap(run_dir):
     from src.config.limits import TOOL_RESULT_LIMIT, truncate_tool_result
-    payload = read_run_artifact(str(run_dir), "equity")
+    payload = read_run_artifact(str(run_dir), "equity", roots=FileRoots.from_config(get_env_config().api))
     assert len(payload) <= TOOL_RESULT_LIMIT
     assert truncate_tool_result(payload) == payload
     first = json.loads(payload)
     assert first["path"] == str(run_dir / "artifacts/equity.csv")
-    next_page = json.loads(read_run_artifact(str(run_dir), "equity", offset=first["next_offset"]))
+    next_page = json.loads(read_run_artifact(str(run_dir), "equity", offset=first["next_offset"], roots=FileRoots.from_config(get_env_config().api)))
     assert next_page["rows"][0] == _expected_row(first["returned_rows"])
 
 
 def test_oversized_json_is_an_actionable_error(run_dir):
     from src.config.limits import TOOL_RESULT_LIMIT
     (run_dir / "run_card.json").write_text(json.dumps({"body": "x" * TOOL_RESULT_LIMIT}))
-    payload = read_run_artifact(str(run_dir), "run_card")
+    payload = read_run_artifact(str(run_dir), "run_card", roots=FileRoots.from_config(get_env_config().api))
     assert len(payload) <= TOOL_RESULT_LIMIT
     assert json.loads(payload)["ok"] is False
 
 
 def test_oversized_row_requires_projection(run_dir):
     _write_csv(run_dir / "artifacts/trades.csv", ["code", "note"], [["000001", "x" * 20000]])
-    assert json.loads(read_run_artifact(str(run_dir), "trades"))["ok"] is False
-    projected = json.loads(read_run_artifact(str(run_dir), "trades", columns=["code"]))
+    assert json.loads(read_run_artifact(str(run_dir), "trades", roots=FileRoots.from_config(get_env_config().api)))["ok"] is False
+    projected = json.loads(read_run_artifact(str(run_dir), "trades", columns=["code"], roots=FileRoots.from_config(get_env_config().api)))
     assert projected["rows"] == [["000001"]]
 
 
@@ -600,9 +604,9 @@ def test_shape_and_page_do_not_coerce_unselected_rows(run_dir, monkeypatch):
         count += 1
         return original(value)
     monkeypatch.setattr(run_artifact_tool, "_coerce_value", coercion)
-    read_run_artifact(str(run_dir), "equity", format="meta")
+    read_run_artifact(str(run_dir), "equity", format="meta", roots=FileRoots.from_config(get_env_config().api))
     assert count == 0
-    read_run_artifact(str(run_dir), "equity", max_rows=3)
+    read_run_artifact(str(run_dir), "equity", max_rows=3, roots=FileRoots.from_config(get_env_config().api))
     assert count == 3 * len(EQUITY_COLUMNS)
 
 
@@ -611,7 +615,7 @@ def test_oversized_json_meta_reports_size_without_content(run_dir):
     from src.config.limits import TOOL_RESULT_LIMIT
     card = run_dir / "run_card.json"
     card.write_text(json.dumps({"body": "x" * TOOL_RESULT_LIMIT}))
-    result = json.loads(read_run_artifact(str(run_dir), "run_card", format="meta"))
+    result = json.loads(read_run_artifact(str(run_dir), "run_card", format="meta", roots=FileRoots.from_config(get_env_config().api)))
     assert result["size_bytes"] == card.stat().st_size
     assert result["content_omitted"] is True
     assert result["format"] == "json"

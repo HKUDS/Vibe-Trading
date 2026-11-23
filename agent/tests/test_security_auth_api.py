@@ -6,6 +6,9 @@ import ipaddress
 from types import SimpleNamespace
 
 import pytest
+
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
 from fastapi.testclient import TestClient
 
 import api_server
@@ -567,13 +570,13 @@ def test_session_event_stream_accepts_single_use_ticket_for_browser_eventsource(
 def test_shell_tools_disabled_for_loopback_api_request_by_default() -> None:
     request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
 
-    assert not api_server._shell_tools_enabled_for_request(request)
+    assert not api_server._shell_tools_enabled_for_request(request, policy=ToolPolicy.from_config(get_env_config()))
 
 
 def test_shell_tools_disabled_for_remote_api_request_by_default() -> None:
     request = SimpleNamespace(client=SimpleNamespace(host="203.0.113.10"))
 
-    assert not api_server._shell_tools_enabled_for_request(request)
+    assert not api_server._shell_tools_enabled_for_request(request, policy=ToolPolicy.from_config(get_env_config()))
 
 
 def test_shell_tools_api_request_accepts_explicit_opt_in(
@@ -582,7 +585,7 @@ def test_shell_tools_api_request_accepts_explicit_opt_in(
     request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
     monkeypatch.setenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", "1")
 
-    assert api_server._shell_tools_enabled_for_request(request)
+    assert api_server._shell_tools_enabled_for_request(request, policy=ToolPolicy.from_config(get_env_config()))
 
 
 def test_dns_rebound_swarm_run_does_not_enable_shell_tools_by_default(

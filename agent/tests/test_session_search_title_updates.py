@@ -1,5 +1,9 @@
 """Shipping rename routes must keep search's conversation labels current."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.recording_helpers import seed_message
 
 import asyncio
@@ -25,6 +29,7 @@ def owned_title_routes(tmp_path, monkeypatch):
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: index)
     monkeypatch.setattr("src.session.search.get_shared_index", lambda: index)
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -66,6 +71,9 @@ def test_registered_title_route_updates_actual_search(
         from src.providers import chat
 
         class OwnedTitleProvider:
+            def __init__(self, *, policy):
+                self.policy = policy
+
             def chat(self, messages, timeout):
                 return SimpleNamespace(content=title)
 
@@ -117,6 +125,9 @@ def test_auto_title_wait_preserves_live_session_updates(
     provider_closed = threading.Event()
 
     class OwnedTitleProvider:
+        def __init__(self, *, policy):
+            self.policy = policy
+
         def chat(self, messages, timeout):
             provider_started.set()
             assert provider_release.wait(3)

@@ -5,6 +5,10 @@ The LLM call is mocked; the only real I/O is a tiny PNG written to tmp_path.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -22,7 +26,7 @@ _PNG_BYTES = bytes.fromhex(
 
 @pytest.fixture()
 def tool() -> AnalyzeImageTool:
-    return AnalyzeImageTool()
+    return AnalyzeImageTool(policy=ToolPolicy.from_config(get_env_config()))
 
 
 @pytest.fixture()

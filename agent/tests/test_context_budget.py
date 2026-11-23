@@ -11,6 +11,10 @@ loses nothing, and a small window still compacts before it overflows.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import logging
 import re
@@ -241,7 +245,7 @@ def _run(tmp_path: Path, monkeypatch, *, provider: str, model: str, payload_char
         monkeypatch.setenv("VIBE_TRADING_CONTEXT_WINDOW", str(env_window))
     reset_env_config()
     tool = FilingTool(payload_chars)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     llm = ComparisonLLM(model, CODES, overflow_above=overflow_above)
     loop = AgentRuntime(registry=registry, llm=llm, max_iterations=30)
@@ -329,7 +333,7 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "openai-codex/gpt-6-sol")
     reset_env_config()
     tool = FilingTool(4_000)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     events: list[tuple[str, dict]] = []
     loop = AgentRuntime(registry=registry, llm=CompactingLLM("openai-codex/gpt-6-sol", CODES[:4]),

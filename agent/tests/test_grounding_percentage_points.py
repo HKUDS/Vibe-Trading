@@ -18,6 +18,10 @@ number and whichever language it is written in.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import pathlib
 import tempfile
 
@@ -35,6 +39,7 @@ def _shapes(text: str) -> list[str]:
 def _verdict(text: str) -> bool:
     """Validate a fundamentals answer against a run with no market evidence."""
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=pathlib.Path(tempfile.mkdtemp()),
         user_message="compare the gross margins",
     )

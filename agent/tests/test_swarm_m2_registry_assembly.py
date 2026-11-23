@@ -26,6 +26,10 @@ builder, not the adapter or transport.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -80,6 +84,7 @@ def test_build_swarm_registry_includes_local_and_remote_tools_when_both_whitelis
         registry = build_swarm_registry(
             ["read_file", "mcp_kb_search"],
             agent_config=cfg,
+            policy=ToolPolicy.from_config(get_env_config()),
         )
 
     names = registry.tool_names
@@ -121,6 +126,7 @@ def test_build_swarm_registry_drops_whitelisted_tool_when_server_excludes_it(
             registry = build_swarm_registry(
                 ["mcp_kb_search"],
                 agent_config=cfg,
+                policy=ToolPolicy.from_config(get_env_config()),
             )
 
     assert "mcp_kb_search" not in registry.tool_names
@@ -148,6 +154,7 @@ def test_build_swarm_registry_without_agent_config_drops_mcp_tools(caplog) -> No
         registry = build_swarm_registry(
             ["mcp_kb_search"],
             agent_config=None,
+            policy=ToolPolicy.from_config(get_env_config()),
         )
 
     assert "mcp_kb_search" not in registry.tool_names
@@ -187,6 +194,7 @@ def test_build_swarm_registry_filters_remote_tools_outside_agent_whitelist() -> 
         registry = build_swarm_registry(
             ["mcp_kb_search"],
             agent_config=cfg,
+            policy=ToolPolicy.from_config(get_env_config()),
         )
 
     assert "mcp_kb_search" in registry.tool_names
@@ -212,6 +220,7 @@ def test_build_swarm_registry_discovers_only_servers_named_by_whitelist() -> Non
         registry = build_swarm_registry(
             ["mcp_kb_search"],
             agent_config=cfg,
+            policy=ToolPolicy.from_config(get_env_config()),
         )
 
     assert "mcp_kb_search" in registry.tool_names
@@ -240,6 +249,7 @@ def test_build_swarm_registry_preserves_collision_hash_prefix_after_pruning() ->
         registry = build_swarm_registry(
             [requested_tool],
             agent_config=cfg,
+            policy=ToolPolicy.from_config(get_env_config()),
         )
 
     assert registry.tool_names == [requested_tool]
@@ -255,6 +265,7 @@ def test_build_swarm_registry_skips_mcp_discovery_for_local_only_whitelist() -> 
         registry = build_swarm_registry(
             ["read_file"],
             agent_config=cfg,
+            policy=ToolPolicy.from_config(get_env_config()),
         )
 
     assert "read_file" in registry.tool_names
@@ -279,6 +290,7 @@ def test_build_swarm_registry_with_empty_mcp_servers_is_local_only() -> None:
     registry = build_swarm_registry(
         ["read_file"],
         agent_config=cfg,
+        policy=ToolPolicy.from_config(get_env_config()),
     )
 
     assert "read_file" in registry.tool_names

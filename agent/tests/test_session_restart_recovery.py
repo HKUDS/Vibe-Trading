@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 from pathlib import Path
 
@@ -25,7 +29,7 @@ class _DummyIndex:
 
 def _service(store: SessionStore, runs_dir: Path, monkeypatch) -> SessionService:
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
-    return SessionService(store=store, event_bus=EventBus(), runs_dir=runs_dir)
+    return SessionService(policy=ToolPolicy.from_config(get_env_config()), store=store, event_bus=EventBus(), runs_dir=runs_dir)
 
 
 def test_stream_checkpoint_tracks_deltas_and_resets(tmp_path: Path) -> None:

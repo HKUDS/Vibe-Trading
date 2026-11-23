@@ -56,7 +56,7 @@ import math
 from enum import Enum
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 
 __all__ = ["ALLOWED_MODULES", "QuantlibCallTool"]
 
@@ -267,7 +267,7 @@ def _encode(value: Any, budget: _Budget) -> Any:
     return str(value)
 
 
-class QuantlibCallTool(BaseTool):
+class QuantlibCallTool(FileBoundTool, BaseTool):
     """Call any public function of the tested finance-math layer."""
 
     name = "quantlib_call"
@@ -448,7 +448,7 @@ class QuantlibCallTool(BaseTool):
         try:
             from src.tools.data_refs import resolve_data_refs
             sources: list[dict] = []
-            resolved = resolve_data_refs(raw_kwargs, run_dir, sources)
+            resolved = resolve_data_refs(raw_kwargs, run_dir, sources, roots=self.roots)
             decoded = {str(k): _decode(v) for k, v in resolved.items()}
         except ValueError as exc:
             return self._error(f"bad argument envelope: {exc}")
@@ -483,7 +483,7 @@ class QuantlibCallTool(BaseTool):
                 "narrow the inputs or request a summary statistic instead"
             )
         from src.product.result_artifacts import persist_calculation_result
-        return persist_calculation_result(json.dumps(payload, ensure_ascii=False), run_dir)
+        return persist_calculation_result(json.dumps(payload, ensure_ascii=False), run_dir, roots=self.roots)
 
     @staticmethod
     def _error(message: str, **extra: Any) -> str:

@@ -11,6 +11,10 @@ agent's own sandbox.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -141,7 +145,7 @@ class _ScriptedLLM:
 def _run_worker_with(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool: BaseTool, arguments: dict
 ):
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -153,6 +157,7 @@ def _run_worker_with(
     )
     events = []
     run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",
@@ -221,6 +226,7 @@ def test_worker_kernel_binds_the_whitelisted_tools_to_configured_hooks(tmp_path,
     monkeypatch.setattr(worker_mod, "run_loop", capture_kernel)
     events = []
     result = run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst", role="Analyst", system_prompt="Run the probe.",
             tools=["write_file"], max_iterations=2,

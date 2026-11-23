@@ -24,12 +24,14 @@ wrapped into the standard ``{"status": "error", ...}`` envelope.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 
 logger = logging.getLogger(__name__)
 
@@ -373,28 +375,19 @@ class GetStrategyEvidenceTool(BaseTool):
 PATH_OUTSIDE_ALLOWED_ROOTS = "path-outside-allowed-roots"
 
 
-def _allowed_refresh_run_roots() -> list[Path]:
+def _allowed_refresh_run_roots(*, file_roots: FileRoots) -> list[Path]:
     """Roots a refresh run_dir may live inside (plan D7).
 
-    The runtime runs root (``get_runtime_root()/"runs"``, honouring
-    ``VIBE_TRADING_HOME``) plus any operator-configured
-    ``VIBE_TRADING_ALLOWED_RUN_ROOTS`` entries. Environment access goes
-    through the config accessor (never ``os.environ`` directly — the
-    repository's AST CI gate forbids that here); any config-layer failure
-    degrades to the runtime runs root only.
+    Include the host's runtime runs directory and its configured extra run roots.
     """
     roots: list[Path] = []
     try:
-        from src.config.paths import get_runtime_root
-
-        runtime_runs = (get_runtime_root() / "runs").resolve()
+        runtime_runs = (file_roots.runtime_root / "runs").resolve()
         roots.append(runtime_runs)
     except Exception:  # noqa: BLE001 — config layer optional for this package
         logger.debug("runtime runs root unavailable", exc_info=True)
     try:
-        from src.config.accessor import get_env_config
-
-        raw = get_env_config().api.vibe_trading_allowed_run_roots or ""
+        raw = file_roots.runs
         for item in raw.split(","):
             item = item.strip()
             if not item:
@@ -412,7 +405,7 @@ def _run_dir_allowed(run_dir: Path, roots: list[Path]) -> bool:
     return any(run_dir.is_relative_to(root) for root in roots)
 
 
-def _manifest_path_allowed(resolved: Path) -> bool:
+def _manifest_path_allowed(resolved: Path, *, roots: FileRoots) -> bool:
     """Whether a resolved manifest path sits inside a trusted root.
 
     Defense-in-depth (the run_dir entries inside are containment-checked
@@ -422,18 +415,16 @@ def _manifest_path_allowed(resolved: Path) -> bool:
     config-layer failure degrades to the runtime root only, never to "allow
     everything".
     """
-    roots: list[Path] = []
+    permitted: list[Path] = []
     try:
-        from src.config.paths import get_runtime_root
-
-        roots.append(get_runtime_root().resolve())
+        permitted.append(roots.runtime_root.resolve())
     except Exception:  # noqa: BLE001 — config layer optional for this package
         logger.debug("runtime root unavailable", exc_info=True)
-    roots.extend(_allowed_refresh_run_roots())
-    return any(resolved.is_relative_to(root) for root in roots)
+    permitted.extend(_allowed_refresh_run_roots(file_roots=roots))
+    return any(resolved.is_relative_to(root) for root in permitted)
 
 
-def load_manifest(path: str | Path) -> list:
+def load_manifest(path: str | Path, *, roots: FileRoots) -> list:
     """Read a refresh manifest file and return its run-spec entry list.
 
     Two shapes are accepted (plan §4.6): a JSON object with a ``runs`` array
@@ -456,7 +447,7 @@ def load_manifest(path: str | Path) -> list:
         raise ValueError(
             f"manifest path {manifest_path} could not be resolved: {exc}"
         ) from exc
-    if not _manifest_path_allowed(resolved_manifest):
+    if not _manifest_path_allowed(resolved_manifest, roots=roots):
         raise ValueError(
             f"manifest path {manifest_path} is outside the runtime root and "
             "the allowed run roots; place the manifest under one of them "
@@ -493,7 +484,7 @@ def load_manifest(path: str | Path) -> list:
 
 
 def validate_refresh_entries(
-    entries: list,
+    entries: list, *, roots: FileRoots,
 ) -> tuple[list[dict], list[dict]]:
     """Split raw manifest entries into rebuild-ready specs and skip records.
 
@@ -509,7 +500,7 @@ def validate_refresh_entries(
         ``(specs, skipped)`` — specs ready for ``rebuild_evidence`` and the
         skip records for the envelope.
     """
-    roots = _allowed_refresh_run_roots()
+    roots = _allowed_refresh_run_roots(file_roots=roots)
     specs: list[dict] = []
     skipped: list[dict] = []
     for index, entry in enumerate(entries):
@@ -582,6 +573,7 @@ def validate_refresh_entries(
 
 def refresh_strategy_evidence_core(
     *,
+    roots: FileRoots,
     manifest_path: str | None = None,
     runs: list | None = None,
     scope: str = "all",
@@ -610,7 +602,7 @@ def refresh_strategy_evidence_core(
             "refresh_strategy_evidence requires exactly one of manifest_path " "or runs"
         )
     if manifest_path is not None:
-        entries = load_manifest(manifest_path)
+        entries = load_manifest(manifest_path, roots=roots)
     else:
         if not isinstance(runs, list):
             raise ValueError(
@@ -621,7 +613,7 @@ def refresh_strategy_evidence_core(
 
     if scope not in {"all", "strategies"}:
         raise ValueError("scope must be all or strategies")
-    specs, skipped = validate_refresh_entries(entries)
+    specs, skipped = validate_refresh_entries(entries, roots=roots)
     from src.strategy_discovery.adaptation_workflow import validate_adapted_run
 
     validated = []
@@ -653,7 +645,7 @@ def refresh_strategy_evidence_core(
     return result
 
 
-class RefreshStrategyEvidenceTool(BaseTool):
+class RefreshStrategyEvidenceTool(FileBoundTool, BaseTool):
     """Rebuild the disposable strategy-evidence cache from run artifacts."""
 
     name = "refresh_strategy_evidence"
@@ -715,7 +707,7 @@ class RefreshStrategyEvidenceTool(BaseTool):
             )
         try:
             result = refresh_strategy_evidence_core(
-                manifest_path=manifest_path, runs=runs, scope=kwargs.get("scope", "all")
+                manifest_path=manifest_path, runs=runs, scope=kwargs.get("scope", "all"), roots=self.roots
             )
         except ValueError as exc:
             return _err(str(exc))

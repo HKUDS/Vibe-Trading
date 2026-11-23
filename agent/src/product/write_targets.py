@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 import logging
 from pathlib import Path
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 def record_written_target(
     arguments: Mapping[str, Any],
     *,
+    roots: FileRoots,
     written_files: set[str],
     run_dir: str | None,
     llm_runtime: Any,
@@ -52,7 +55,7 @@ def record_written_target(
         try:
             from src.tools.path_utils import safe_run_dir
 
-            candidate = safe_run_dir(str(candidate))
+            candidate = safe_run_dir(str(candidate), roots=roots)
             config = json.loads((candidate / "config.json").read_text(encoding="utf-8"))
             token = config["strategy_adaptation"]["token"]
             if not isinstance(token, str) or candidate.name != f"adaptation-{token}":

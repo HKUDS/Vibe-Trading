@@ -6,6 +6,10 @@ made it into the returned text at all.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 
@@ -48,7 +52,7 @@ def test_one_page_ocr_success_one_page_ocr_failure_reports_degraded(tmp_path, mo
     monkeypatch.setattr(doc_reader_tool, "_ocr_image_array", fake_ocr)
 
     result = json.loads(
-        doc_reader_tool.DocReaderTool().execute(file_path=str(path), min_text_per_page=5000)
+        doc_reader_tool.DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path=str(path), min_text_per_page=5000)
     )
 
     assert result["status"] == "ok"
@@ -65,7 +69,7 @@ def test_all_pages_ocr_success_still_reports_good(tmp_path, monkeypatch):
     monkeypatch.setattr(doc_reader_tool, "_ocr_image_array", lambda img: "Recognized text")
 
     result = json.loads(
-        doc_reader_tool.DocReaderTool().execute(file_path=str(path), min_text_per_page=5000)
+        doc_reader_tool.DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path=str(path), min_text_per_page=5000)
     )
 
     assert result["status"] == "ok"

@@ -12,6 +12,10 @@ because mocked tests cannot see upstream login-policy or endpoint changes.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import os
 import sys
 import types
@@ -201,7 +205,7 @@ class TestProvenance:
                 "start_date": "2024-04-01",
                 "end_date": "2024-04-30",
                 "source": "pykrx",
-            }
+            }, roots=FileRoots.from_config(get_env_config().api)
         )
         assert list(result.data_map) == ["005930.KS"]
         assert result.effective_sources == ["yahoo"]
@@ -231,7 +235,7 @@ class TestProvenance:
                 "start_date": "2024-04-01",
                 "end_date": "2024-04-30",
                 "source": "auto",
-            }
+            }, roots=FileRoots.from_config(get_env_config().api)
         )
         # _detect_source maps .KS -> pykrx, which is exactly the stale guess.
         assert runner._detect_source("005930.KS") == "pykrx"

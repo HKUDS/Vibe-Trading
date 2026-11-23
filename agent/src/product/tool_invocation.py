@@ -31,18 +31,17 @@ def prepare_tool_call(
     name: str,
     arguments: dict[str, Any],
     *,
-    check_policy: Callable[[str, dict], tuple[bool, str, dict]] | None,
+    check_policy: Callable[[str, dict], tuple[bool, str, dict]],
     hooks: HookManager | None,
     call_id: str,
     session_id: str,
 ) -> PreparedToolCall | ToolRefusal:
     """Apply the mandatory policy before allowing a hook to add a refusal."""
-    if callable(check_policy):
-        allowed, reason, arguments = check_policy(name, arguments)
-        if not allowed:
-            return ToolRefusal(reason, json.dumps(
-                {"status": "error", "skipped": True, "error": reason}, ensure_ascii=False,
-            ))
+    allowed, reason, arguments = check_policy(name, arguments)
+    if not allowed:
+        return ToolRefusal(reason, json.dumps(
+            {"status": "error", "skipped": True, "error": reason}, ensure_ascii=False,
+        ))
     if hooks is None:
         return PreparedToolCall(arguments)
 
@@ -95,7 +94,7 @@ class ToolInvocation:
         order_tool = self._is_order_tool(tool_name)
         prepared = prepare_tool_call(
             tool_name, args,
-            check_policy=getattr(self.env.registry, "check_policy", None),
+            check_policy=self.env.registry.check_policy,
             hooks=self.hooks or getattr(self.env.registry, "hooks", None),
             call_id=call_id, session_id=self.env.session_id,
         )

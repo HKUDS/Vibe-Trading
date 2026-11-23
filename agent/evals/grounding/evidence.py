@@ -1149,7 +1149,7 @@ class _EvidenceMixin:
         from src.tools.path_utils import safe_run_dir
 
         try:
-            directory = safe_run_dir(str(raw_dir))
+            directory = safe_run_dir(str(raw_dir), roots=self.file_roots)
         except ValueError:
             return
         card, metrics = directory / "run_card.json", directory / "artifacts" / "metrics.csv"

@@ -10,6 +10,10 @@ same two files.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -103,7 +107,7 @@ def _run_worker_to_terminal(
 ):
     """Run the real worker on a scripted model until it stops."""
     monkeypatch.setattr(worker_mod, "_STREAM_RETRY_DELAY_S", 0.0)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ProbeTool())
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -112,6 +116,7 @@ def _run_worker_to_terminal(
         worker_mod, "ChatLLM", lambda *args, **kwargs: (llm_factory or _ScriptedLLM)()
     )
     return run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 
@@ -75,7 +79,7 @@ def test_every_tool_in_the_request_body_is_non_strict():
         "parameters": {"type": "object", "properties": {}},
     }
     body = (
-        OpenAICodexLLM(model="openai-codex/gpt-6-sol")
+        OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model="openai-codex/gpt-6-sol")
         .bind_tools([TOOL, bare])
         ._body([{"role": "user", "content": "hi"}], stream=True)
     )

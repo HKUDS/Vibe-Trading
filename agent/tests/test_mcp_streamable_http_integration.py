@@ -13,6 +13,10 @@ entire path:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +62,7 @@ def test_remote_streamable_http_tool_appears_in_registry(tmp_path: Path) -> None
     ) as server:
         cfg_path = _make_agent_json(tmp_path, "fake_http", port=server.port)
         agent_config = load_agent_config(config_path=cfg_path)
-        registry = build_registry(agent_config=agent_config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
         assert "mcp_fake_http_echo" in registry.tool_names, server.diagnostics()
 
@@ -76,7 +80,7 @@ def test_remote_streamable_http_tool_is_callable_and_returns_expected_result(tmp
     ) as server:
         cfg_path = _make_agent_json(tmp_path, "fake_http", port=server.port)
         agent_config = load_agent_config(config_path=cfg_path)
-        registry = build_registry(agent_config=agent_config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
         echo_tool = registry.get("mcp_fake_http_echo")
         assert echo_tool is not None, f"mcp_fake_http_echo not found in registry\n{server.diagnostics()}"
@@ -98,7 +102,7 @@ def test_enabled_tools_filter_limits_remote_streamable_http_tools(tmp_path: Path
     ) as server:
         cfg_path = _make_agent_json(tmp_path, "fake_http", port=server.port, enabledTools=["echo"])
         agent_config = load_agent_config(config_path=cfg_path)
-        registry = build_registry(agent_config=agent_config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
         mcp_names = [name for name in registry.tool_names if name.startswith("mcp_fake_http_")]
         assert "mcp_fake_http_echo" in mcp_names, server.diagnostics()
@@ -123,7 +127,7 @@ def test_unreachable_streamable_http_server_does_not_block_local_tools(tmp_path:
         agent_config = load_agent_config(config_path=cfg_path)
 
         warnings: list[str] = []
-        registry = build_registry(agent_config=agent_config, warn_callback=warnings.append)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config, warn_callback=warnings.append)
 
         local_names = registry.tool_names
         assert any("load_skill" in name or "web_search" in name or "backtest" in name for name in local_names), (

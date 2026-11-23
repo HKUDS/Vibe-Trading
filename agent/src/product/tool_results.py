@@ -3,6 +3,8 @@ and archive completed backtests."""
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 import logging
 import re
@@ -146,7 +148,7 @@ def _previously_archived(target: Path) -> set[str]:
 
 
 def _archive_backtest_result(
-    result: str, active_run_dir: str | None, *, source_call_id: str | None = None
+    result: str, active_run_dir: str | None, *, roots: FileRoots, source_call_id: str | None = None
 ) -> bool:
     """Copy a successful detached backtest into the active, reportable run.
 
@@ -192,8 +194,8 @@ def _archive_backtest_result(
     if not source_value:
         return False
     try:
-        source = safe_run_dir(str(source_value))
-        target = safe_run_dir(str(active_run_dir))
+        source = safe_run_dir(str(source_value), roots=roots)
+        target = safe_run_dir(str(active_run_dir), roots=roots)
     except ValueError:
         logger.warning("Refusing to archive backtest output from outside the allowed run roots")
         return False

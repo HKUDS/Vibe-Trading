@@ -1,5 +1,9 @@
 """Factor combination round-trips through the real registry and MCP protocol."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 
@@ -11,7 +15,7 @@ from src.tools import build_registry
 
 
 def test_factor_combination_without_shell_tools_over_mcp(monkeypatch):
-    registry = build_registry(include_shell_tools=False)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=False)
     monkeypatch.setattr(mcp_server, "_registry", registry)
     rng = np.random.default_rng(2210)
     dates = ["2026-10-19", "2026-10-20", "2026-10-21"]

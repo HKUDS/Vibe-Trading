@@ -1,5 +1,9 @@
 """Credentials in shell-style results never reach model requests or caches."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 from types import SimpleNamespace
@@ -33,7 +37,7 @@ class _CredentialResult(BaseTool):
 def test_main_model_context_and_deterministic_replay_are_scrubbed(tmp_path):
     secret = 'fixture-only-private-value'
     tool = _CredentialResult(secret)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
     agent.memory.run_dir = str(tmp_path)
@@ -50,7 +54,7 @@ def test_main_model_context_and_deterministic_replay_are_scrubbed(tmp_path):
 def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, monkeypatch):
     secret = 'fixture-only-worker-private-value'
     tool = _CredentialResult(secret)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     seen = []
 
@@ -67,6 +71,7 @@ def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
     result = worker.run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read evidence.',
                                   tools=[tool.name], max_iterations=3),
         task=SwarmTask(id='t', agent_id='analyst', prompt_template='Read the evidence.'),

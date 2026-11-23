@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 import json
 import os
 import re
@@ -41,7 +45,7 @@ def catalog() -> dict:
             if not root.is_dir() or root.name.startswith("study-"):
                 continue
             try:
-                source_run(str(root))
+                source_run(str(root), roots=FileRoots.from_config(get_env_config().api))
                 if any(
                     not (root / relative).resolve().is_relative_to(root.resolve())
                     for relative in ("config.json", "code/signal_engine.py", "req.json", "thread.jsonl")
@@ -83,7 +87,7 @@ def create_job(action: str, payload: dict[str, Any]) -> dict:
         raise ValueError("unknown research action")
     request = REQUEST_MODELS[action].model_validate(payload)
     if hasattr(request, "run_dir"):
-        root = source_run(request.run_dir)
+        root = source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api))
         if not root.is_dir():
             raise ValueError("source run does not exist")
     identifier = uuid.uuid4().hex
@@ -174,9 +178,9 @@ def execute_job(identifier: str) -> dict:
             from evals.harness.suite import replay_run
 
             result = replay_run(
-                source_run(request.run_dir),
+                source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api)),
                 request.case_ids,
-                source_run(request.trace_dir) if request.trace_dir else None,
+                source_run(request.trace_dir, roots=FileRoots.from_config(get_env_config().api)) if request.trace_dir else None,
             )
         _write(root / "report.json", result)
         state.update(status="completed", result=result)

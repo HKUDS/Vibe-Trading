@@ -1,4 +1,11 @@
 """Final PM arithmetic and shell-free calculations from the real-review regression."""
+
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import json
 
 import pytest
@@ -10,7 +17,7 @@ import src.swarm.worker as worker
 def test_real_preset_tools_available_without_shell():
     run = build_run_from_preset('investment_committee', {'target': 'NVDA', 'market': 'US'})
     for spec in run.agents:
-        registry = worker.build_swarm_registry(spec.tools, include_shell_tools=False)
+        registry = worker.build_swarm_registry(spec.tools, include_shell_tools=False, policy=ToolPolicy.from_config(get_env_config()))
         assert registry.get('bash') is None
         assert registry.get('quantlib_call') is not None
         assert registry.get('technical_indicators') is not None
@@ -27,7 +34,7 @@ def test_real_preset_tools_available_without_shell():
 def test_mc_summary_reaches_shell_free_tool_without_large_matrix():
     from src.tools.quantlib_tool import QuantlibCallTool
     from src.quantlib.risk import monte_carlo_gbm, analyze_mc_results
-    tool = QuantlibCallTool()
+    tool = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api))
     args = dict(s0=100, mu=.03, sigma=.25, n_steps=63, n_paths=10000, seed=13)
     response = json.loads(tool.execute(action='call', module='risk', function='monte_carlo_summary', kwargs=args))
     assert response['ok'], response

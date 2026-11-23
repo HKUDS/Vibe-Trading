@@ -1,3 +1,7 @@
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import numpy as np
 import pytest
 from src.quantlib.credit import cds_price
@@ -22,7 +26,7 @@ def test_quantlib_tool_prices_final_coupon_stub():
     from src.tools.quantlib_tool import QuantlibCallTool
 
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="credit",
             function="cds_price",

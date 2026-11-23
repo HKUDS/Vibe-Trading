@@ -19,6 +19,10 @@ Every value here is synthetic; no market data lives in the repository.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -70,7 +74,7 @@ def _ledger_with_upload(tmp_path: Path) -> tuple[GroundingLedger, Path]:
     uploads.mkdir()
     document = uploads / "ar2025.pdf"
     document.write_text(REPORT, encoding="utf-8")
-    return GroundingLedger(run_dir=run_dir, user_message="读一下这份年报，总结经营情况"), document
+    return GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=run_dir, user_message="读一下这份年报，总结经营情况"), document
 
 
 def _declared(prose: str, *lines: str) -> str:
@@ -168,7 +172,7 @@ def test_a_document_this_run_wrote_is_not_evidence(tmp_path: Path) -> None:
 
 def test_a_document_inside_the_run_directory_is_not_evidence(tmp_path: Path) -> None:
     """The ledger's own artifacts must not launder themselves through the reader."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="读一下这份年报")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="读一下这份年报")
     document = tmp_path / "report.md"
     document.write_text(REPORT, encoding="utf-8")
     _read_document(ledger, document, "doc-1")

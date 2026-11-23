@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 
@@ -8,7 +12,6 @@ import pytest
 
 from tests.test_readonly_replay_after_microcompact import _Context, _Registry, _Trace, _loop
 from evals.grounding import GroundingLedger
-from src.agent.runtime import AgentRuntime
 from src.tools.technical_indicator_tool import TechnicalIndicatorTool
 
 
@@ -73,7 +76,7 @@ def test_indicator_replay_preserves_dated_evidence_and_refreshes(monkeypatch, tm
     assert restored["latest_date"] == original["latest_date"]
     assert restored["indicators"] == original["indicators"]
 
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Show AAPL.US prices by date")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Show AAPL.US prices by date")
     ledger.ingest_tool_result(tool_name="technical_indicators", arguments=args,
                               result=json.dumps(restored), call_id="call-2", success=True)
     evidence = json.loads((tmp_path / "artifacts" / "grounding_evidence.json").read_text())

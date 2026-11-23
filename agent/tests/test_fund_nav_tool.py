@@ -8,6 +8,10 @@ except where the real resolver is exercised against a stubbed transport.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from typing import Any
 
@@ -260,7 +264,7 @@ class TestGroundingEvidence:
             },
         }
         for tool in ("get_fund_nav", "unrelated_tool"):
-            ledger = GroundingLedger(run_dir=tmp_path / tool, user_message="Read fund NAV")
+            ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path / tool, user_message="Read fund NAV")
             ledger.ingest_tool_result(
                 tool_name=tool,
                 arguments={"funds": ["110022"]},

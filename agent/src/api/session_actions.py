@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+
+
 import asyncio
 import json
 import logging
@@ -183,7 +185,7 @@ def register_session_submissions(app: FastAPI, host) -> None:
             result = await svc.send_message(
                 session_id=session_id,
                 content=payload.content,
-                include_shell_tools=host._shell_tools_enabled_for_request(http_request),
+                include_shell_tools=host._shell_tools_enabled_for_request(http_request, policy=svc.policy),
                 queue_if_busy=True,
             )
         except (SessionBusyError, PendingInputLimitError) as exc:
@@ -344,7 +346,7 @@ def register_session_actions(app: FastAPI, host) -> None:
         def _generate() -> str:
             from src.providers.chat import ChatLLM
 
-            llm = ChatLLM()
+            llm = ChatLLM(policy=svc.policy)
             try:
                 response = llm.chat([{"role": "user", "content": prompt}], timeout=30)
                 return (getattr(response, "content", "") or "").strip()

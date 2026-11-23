@@ -11,6 +11,10 @@ registry for a recording fake, so nothing reaches SEC / Polymarket / arXiv.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 import importlib
@@ -123,7 +127,7 @@ def test_mirrored_tool_names_match_the_agent_side_registry() -> None:
     """
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     for name in MIRRORED_TOOL_NAMES:
         assert (
@@ -208,7 +212,7 @@ def test_no_unexpected_mutating_tool_is_exposed_via_mcp() -> None:
     """
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     exposed_mutating = {
         name
@@ -261,7 +265,7 @@ class _RecordingRegistry(ToolRegistry):
     """Stand-in for the local tool registry that records the forwarded call."""
 
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(policy=ToolPolicy.from_config(get_env_config()))
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def execute(self, name: str, params: dict[str, Any]) -> str:
@@ -303,7 +307,8 @@ def test_direct_mcp_tool_uses_policy_then_hooks(monkeypatch, outcome) -> None:
             raise RuntimeError("probe failed with api_key=sample-private-value")
         return {"title": "probe", "api_key": "sample-private-value"}
 
-    registry = ToolRegistry(policy=policy)
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    monkeypatch.setattr(registry, "check_policy", policy)
     registry.hooks = SimpleNamespace(run=hook)
     monkeypatch.setattr(mod, "_registry", registry)
     monkeypatch.setattr(mod, "_goal_store", SimpleNamespace(get_current_snapshot=get_snapshot))
@@ -339,11 +344,12 @@ def test_key_gated_diagnostic_uses_the_parent_registry_policy(monkeypatch) -> No
         def execute(self, **kwargs):
             pytest.fail("denied diagnostic tool executed")
 
-    registry = ToolRegistry(policy=lambda name, params: (False, "policy refused", params))
+    monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "diagnostic_")
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     monkeypatch.setattr(mod, "_registry", registry)
     monkeypatch.setattr(mod, "_key_gated_tool_classes", lambda: {DiagnosticTool.name: DiagnosticTool})
     result = json.loads(mod._execute_key_gated(DiagnosticTool.name, {}))
-    assert result == {"status": "error", "skipped": True, "error": "policy refused"}
+    assert result == {"status": "error", "skipped": True, "error": "diagnostic_probe is disabled by the active tool policy"}
 
 
 def test_mirrored_call_reaches_the_registry_with_clean_params(monkeypatch) -> None:

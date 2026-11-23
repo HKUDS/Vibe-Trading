@@ -58,7 +58,7 @@ def _start_process(command: str, *, sandbox: SandboxSettings | None = None) -> s
     argv: str | list[str] = command
     shell = True
     if sandbox is not None and sandbox.enabled:
-        cwd = Path(sandbox.runtime_root or Path.home() / ".vibe-trading") / "workspace"
+        cwd = sandbox.runtime_root / "workspace"
         cwd.mkdir(parents=True, exist_ok=True)
         argv, profile = sandbox_command(command, cwd, sandbox)
         shell = False
@@ -633,8 +633,8 @@ class BackgroundRunTool(BaseTool):
     }, "required": ["command"]}
     is_readonly = False
 
-    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
-        self.background = background if background is not None else get_background_manager()
+    def __init__(self, background: BackgroundManager) -> None:
+        self.background = background
 
     def execute(self, **kw: Any) -> str:
         return self.background.run(kw["command"])
@@ -652,8 +652,8 @@ class CheckBackgroundTool(BaseTool):
     }, "required": []}
     repeatable = True
 
-    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
-        self.background = background if background is not None else get_background_manager()
+    def __init__(self, background: BackgroundManager) -> None:
+        self.background = background
 
     def execute(self, **kw: Any) -> str:
         return self.background.check(kw.get("task_id"))
@@ -679,8 +679,8 @@ class CancelBackgroundTool(BaseTool):
     }
     is_readonly = False
 
-    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
-        self.background = background if background is not None else get_background_manager()
+    def __init__(self, background: BackgroundManager) -> None:
+        self.background = background
 
     def execute(self, **kw: Any) -> str:
         return self.background.cancel(kw["task_id"])

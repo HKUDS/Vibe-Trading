@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import json
 import time
 from pathlib import Path
@@ -15,6 +18,9 @@ from tests.recording_helpers import recorder_at, run_recorded_tools
 
 
 class _SlowRegistry:
+
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
     class _Tool:
         is_readonly = True
 
@@ -25,6 +31,9 @@ class _SlowRegistry:
         time.sleep(1.0)
         return '{"status":"ok"}'
 
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
+
 
 class _SlowWriteRegistry:
     class _Tool:
@@ -32,6 +41,7 @@ class _SlowWriteRegistry:
 
     def __init__(self) -> None:
         self.completed = False
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get(self, tool_name: str) -> object:
         return self._Tool()
@@ -40,6 +50,9 @@ class _SlowWriteRegistry:
         time.sleep(0.08)
         self.completed = True
         return '{"status":"ok"}'
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _SlowOrderRegistry(_SlowWriteRegistry):

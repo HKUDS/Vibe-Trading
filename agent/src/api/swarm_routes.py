@@ -5,6 +5,10 @@ Mounted by ``agent/api_server.py`` via ``register_swarm_routes(app, ...)``.
 
 from __future__ import annotations
 
+from src.config.accessor import get_env_config
+
+from src.product.tool_policy import ToolPolicy
+
 import json
 from typing import Any, Awaitable, Callable
 
@@ -31,7 +35,7 @@ def _get_swarm_runtime():
     # Boot-time / operator-trusted: REST API callers cannot influence the
     # config path. See docs/2026-05-25_swarm_mcp_tools_roadmap.md.
     agent_config = load_swarm_agent_config()
-    _swarm_runtime = SwarmRuntime(store=store, agent_config=agent_config)
+    _swarm_runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, agent_config=agent_config)
     return _swarm_runtime
 
 
@@ -70,9 +74,9 @@ def register_swarm_routes(
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         h._validate_path_param(value, kind)
 
-    def _host_shell_tools_enabled_for_request(request: Request) -> bool:
+    def _host_shell_tools_enabled_for_request(request: Request, policy: ToolPolicy) -> bool:
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
-        return h._shell_tools_enabled_for_request(request)
+        return h._shell_tools_enabled_for_request(request, policy=policy)
 
     # --- Routes ---
 
@@ -98,7 +102,7 @@ def register_swarm_routes(
             run = runtime.start_run(
                 preset_name,
                 user_vars,
-                include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                include_shell_tools=_host_shell_tools_enabled_for_request(http_request, runtime.policy),
             )
             return {"id": run.id, "status": run.status.value, "preset_name": run.preset_name}
         except FileNotFoundError as e:
@@ -276,7 +280,7 @@ def register_swarm_routes(
             new_run = runtime.start_run(
                 reconciled.preset_name,
                 reconciled.user_vars or {},
-                include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                include_shell_tools=_host_shell_tools_enabled_for_request(http_request, runtime.policy),
                 resume_from=reconciled if resume else None,
             )
             return {

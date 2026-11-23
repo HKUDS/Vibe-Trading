@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -15,7 +19,7 @@ PATH = "data.summary.total_return"
 
 
 def _ledger(tmp_path: Path, values: dict[str, float]) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report the total return")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report the total return")
     for call_id, value in values.items():
         ledger.ingest_tool_result(
             tool_name="report_tool",
@@ -129,7 +133,7 @@ def test_corrected_percent_or_decimal_preserves_existing_unit_matching(
 def test_candidates_do_not_offer_a_field_of_the_wrong_kind(
     tmp_path: Path, field: str, written: str
 ) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report the value")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report the value")
     ledger.ingest_tool_result(
         tool_name="report_tool",
         arguments={},
@@ -145,7 +149,7 @@ def test_candidates_do_not_offer_a_field_of_the_wrong_kind(
 
 
 def test_candidates_remain_scoped_to_the_declared_symbol(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report summary metrics")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report summary metrics")
     for call_id, symbol, value in (
         ("call_aapl", "AAPL.US", 12.5),
         ("call_msft", "MSFT.US", 12.5),
@@ -170,7 +174,7 @@ def test_candidates_remain_scoped_to_the_declared_symbol(tmp_path: Path) -> None
 def test_alias_with_an_explicit_index_never_offers_a_sibling(
     tmp_path: Path, path: str
 ) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report the values")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report the values")
     ledger.ingest_tool_result(
         tool_name="report_tool",
         arguments={},
@@ -205,7 +209,7 @@ def test_incomplete_or_container_refs_get_no_scalar_hint(tmp_path: Path, ref: st
 
 @pytest.mark.parametrize("written", ["12.5%", "$0.125"])
 def test_analysis_only_candidates_preserve_the_figure_kind(tmp_path: Path, written: str) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report the tail risk")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report the tail risk")
     ledger.ingest_tool_result(
         tool_name="quantlib_call",
         arguments={"action": "call", "function": "historical_var"},

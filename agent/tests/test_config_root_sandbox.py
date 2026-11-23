@@ -124,7 +124,9 @@ def test_sandbox_home_keeps_child_processes_importable() -> None:
     code = (
         "import json, pandas, numpy;"
         "from src.tools import build_registry;"
-        "names = build_registry().tool_names;"
+        "from src.config.accessor import get_env_config;"
+        "from src.product.tool_policy import ToolPolicy;"
+        "names = build_registry(policy=ToolPolicy.from_config(get_env_config())).tool_names;"
         "print(json.dumps({'count': len(names), 'has': 'options_pricing' in names}))"
     )
     env = os.environ.copy()

@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,7 +106,7 @@ def _ledger(
     indicators: bool = True,
     **extra_indicators: Any,
 ) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=message)
     if market:
         ledger.ingest_tool_result(
             tool_name="get_market_data",
@@ -460,7 +467,7 @@ def _tool_call(call_id: str, tool_name: str, **arguments: Any) -> SimpleNamespac
 def _run(
     tmp_path: Path, llm: _ScriptedLLM, *, max_iterations: int, session_id: str = ""
 ) -> tuple[dict[str, Any], list[tuple[str, dict[str, Any]]], AgentRuntime]:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResolverTool(_resolver_payload()))
     registry.register(_MarketTool(_market_payload()))
     events: list[tuple[str, dict[str, Any]]] = []
@@ -517,7 +524,7 @@ def _wide_ledger(tmp_path: Path) -> GroundingLedger:
     0.5% of almost any two-decimal number — so the endpoints are sparse and
     far apart on purpose.
     """
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="请分析 562500.SS 的回撤")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="请分析 562500.SS 的回撤")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": [SYMBOL]},
@@ -740,7 +747,7 @@ def test_a_declared_ref_is_what_separates_an_indicator_from_a_close(
 
 def _two_symbol_ledger(tmp_path: Path) -> GroundingLedger:
     """Prices for two symbols, an indicator for one of them only."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="对比 562500.SH 和 600519.SH")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="对比 562500.SH 和 600519.SH")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["562500.SH", "600519.SH"]},
@@ -805,7 +812,7 @@ def test_an_unregistered_tools_leaf_never_grounds_a_price(tmp_path: Path) -> Non
     admitted it. Names are no longer read — a tool has to be registered, leaf
     by leaf, before any of its output can answer a price claim.
     """
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="请分析 562500.SS")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="请分析 562500.SS")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": [SYMBOL]},
@@ -1155,7 +1162,7 @@ class _ChunkedLLM:
 def _stream(tmp_path: Path, content: str) -> tuple[dict[str, Any], str, AgentRuntime]:
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentRuntime(
-        registry=ToolRegistry(),
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=_ChunkedLLM(content),
         max_iterations=3,
         event_callback=lambda event, data: events.append((event, data)),
@@ -1215,7 +1222,7 @@ class _NoteTool(BaseTool):
 
 def test_a_held_back_line_in_a_tool_call_turn_is_shown(tmp_path: Path) -> None:
     """The last line could only have become a fence while the turn was streaming."""
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_NoteTool("ok"))
     llm = _ScriptedLLM(
         [

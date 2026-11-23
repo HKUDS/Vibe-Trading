@@ -42,10 +42,12 @@ import json
 import logging
 import threading
 import time
+from copy import copy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
-from src.agent.tools import BaseTool, ToolRegistry
+from src.agent.tools import BaseTool, FileBoundTool, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +224,9 @@ class _WorkspaceTool(BaseTool):
             tool: The parent's tool instance; its bindings stay the parent's.
             workspace: The child's run directory, resolved.
         """
+        if isinstance(tool, FileBoundTool):
+            tool = copy(tool)
+            tool.roots = replace(tool.roots, confined_writes=workspace)
         self._tool = tool
         self._workspace = workspace
         self.name = tool.name
@@ -243,13 +248,10 @@ class _WorkspaceTool(BaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         """Run the wrapped tool with run_dir and write roots held to the workspace."""
-        from src.tools.path_utils import confined_write_roots
-
         args, refusal = _confine_run_dir(kwargs, self._workspace)
         if refusal is not None:
             return _error("outside_subagent_workspace", refusal)
-        with confined_write_roots(self._workspace):
-            return self._tool.execute(**args)
+        return self._tool.execute(**args)
 
 
 def child_registry(parent: ToolRegistry, workspace: Path) -> ToolRegistry:
@@ -263,11 +265,11 @@ def child_registry(parent: ToolRegistry, workspace: Path) -> ToolRegistry:
 
     Returns:
         The parent's tools minus every tool :func:`child_exclusion` names.
-        The instances are shared, so their policies, roots and bindings stay
-        the parent's apart from that confinement.
+        File-bound tools carry a scoped copy of the parent's file policy.
+        Other bindings stay with the parent's tool instances.
     """
     root = Path(workspace).resolve()
-    child = ToolRegistry(policy=parent.check_policy)
+    child = ToolRegistry(policy=parent.policy)
     child.hooks = getattr(parent, "hooks", None)
     child.sandbox = getattr(parent, "sandbox", None)
     for name in parent.tool_names:
@@ -492,7 +494,11 @@ class SpawnAgentTool(BaseTool):
         try:
             # Outside an agent loop there is no parent run: the child is an
             # ordinary run of its own.
-            base = safe_run_dir(str(parent_dir)) / SUBAGENT_DIRNAME if parent_dir else get_runs_dir()
+            if parent_dir:
+                parent_root = safe_run_dir(str(parent_dir), roots=self._registry.policy.file_roots)
+                base = parent_root / SUBAGENT_DIRNAME
+            else:
+                base = get_runs_dir()
         except ValueError as exc:
             return _error("outside_run_roots", str(exc))
         child_dir = RunStateStore().create_run_dir(base)
@@ -595,7 +601,7 @@ class SpawnAgentTool(BaseTool):
         else:
             from src.providers.chat import ChatLLM
 
-            llm = ChatLLM()
+            llm = ChatLLM(policy=self._registry.policy)
         # The child gets no background tools; its loop still needs a handle to
         # drain, and a private, empty one means ending or cancelling the child
         # cancels nothing of the parent's and drains none of its notifications.

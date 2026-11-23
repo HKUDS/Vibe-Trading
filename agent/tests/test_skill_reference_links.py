@@ -20,6 +20,10 @@ bundled skill docs only.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import re
 from pathlib import Path
@@ -89,7 +93,7 @@ def _read(path: str) -> dict:
     Returns:
         Parsed JSON response from ReadFileTool.execute.
     """
-    return json.loads(ReadFileTool().execute(path=path))
+    return json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=path))
 
 
 def _all_links() -> List[Tuple[str, str]]:

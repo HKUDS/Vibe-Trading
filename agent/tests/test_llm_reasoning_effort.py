@@ -18,6 +18,10 @@ Responses API for endpoints that support it.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.providers.adapters import anthropic as anthropic_adapter
 from src.providers.adapters import deepseek as deepseek_adapter
 from src.providers.adapters import openai as openai_adapter
@@ -110,7 +114,7 @@ def _capture_kwargs(env: dict[str, str]) -> dict[str, Any]:
 
     with patch.dict(os.environ, env, clear=True):
         with patch.object(openai_adapter, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
-            build_llm()
+            build_llm(policy=ToolPolicy.from_config(get_env_config()))
     return captured
 
 
@@ -413,7 +417,7 @@ class TestMoonshotKimiK31Scoping:
 
         def diagnostics(model: str) -> dict[str, Any]:
             with patch.dict(os.environ, self._env(LANGCHAIN_MODEL_NAME=model), clear=True):
-                return provider_diagnostics()
+                return provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))
 
         k31 = diagnostics("kimi-k3.1-pro")
         k2 = diagnostics("kimi-k2-0905-preview")
@@ -455,7 +459,7 @@ class TestAnthropicNativeProvider:
 
         with patch.dict(os.environ, env, clear=True):
             with patch.object(anthropic_adapter, "_make_temperature_safe_anthropic", lambda _: _FakeChatAnthropic):
-                build_llm()
+                build_llm(policy=ToolPolicy.from_config(get_env_config()))
         return captured
 
     def _env(self, **overrides: str) -> dict[str, str]:
@@ -555,7 +559,7 @@ class TestAnthropicNativeProvider:
                     "_make_temperature_safe_anthropic",
                     lambda _: _OldChatAnthropic,
                 ):
-                    build_llm()
+                    build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
         assert "reasoning_effort" not in captured
         assert captured["temperature"] == 0.0

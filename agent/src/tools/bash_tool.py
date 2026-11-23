@@ -21,7 +21,7 @@ _DEFAULT_TIMEOUT = 120
 
 def _sandbox_workspace(cwd: Any, sandbox: SandboxSettings) -> Path:
     """Choose a runtime-owned writable workspace for sandboxed commands."""
-    root = Path(sandbox.runtime_root or Path.home() / ".vibe-trading").expanduser().resolve()
+    root = sandbox.runtime_root.expanduser().resolve()
     default = root / "workspace"
     if not cwd:
         return default
@@ -95,8 +95,8 @@ class BashTool(BaseTool):
     repeatable = True
     is_readonly = False
 
-    def __init__(self, sandbox: SandboxSettings | None = None) -> None:
-        """Create a shell tool with optional per-registry sandbox settings."""
+    def __init__(self, sandbox: SandboxSettings) -> None:
+        """Create a shell tool with per-registry sandbox settings."""
         self.sandbox = sandbox
 
     def execute(self, **kwargs: Any) -> str:
@@ -137,7 +137,7 @@ class BashTool(BaseTool):
                 ensure_ascii=False,
             )
 
-        sandbox = self.sandbox or SandboxSettings.from_env()
+        sandbox = self.sandbox
         profile: Path | None = None
         argv: str | list[str] = command
         shell = True

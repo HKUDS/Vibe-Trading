@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pandas as pd
@@ -43,6 +47,6 @@ def test_tool_reports_an_unsupported_filter_as_an_error(tmp_path, monkeypatch) -
         encoding="utf-8",
     )
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
-    payload = json.loads(analyze_trade_journal(str(path), "profile", "ticker=AAPL"))
+    payload = json.loads(analyze_trade_journal(str(path), "profile", "ticker=AAPL", roots=FileRoots.from_config(get_env_config().api)))
     assert payload["status"] == "error"
     assert "unsupported filter" in payload["error"]

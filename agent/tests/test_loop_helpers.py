@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import src.product.tool_results as _owner_tool_results
 
 import json
@@ -440,7 +447,7 @@ class TestArchiveBacktestResult:
         (source / "config.json").write_text("{}\n", encoding="utf-8")
 
         archived = _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(source)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(source)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert archived is True
@@ -477,13 +484,13 @@ class TestArchiveBacktestResult:
 
         first = _backtest("run-a", "extra.csv")
         assert _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(first)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(first)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
         assert (active / "artifacts" / "extra.csv").is_file()
 
         second = _backtest("run-b", None)
         assert _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(second)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(second)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         # run-a's file is gone; run-b's output is what the run reports.
@@ -524,7 +531,7 @@ class TestArchiveBacktestResult:
         )
 
         assert _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(source)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(source)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert victim.read_text(encoding="utf-8") == "keep me\n"
@@ -535,7 +542,7 @@ class TestArchiveBacktestResult:
         source.mkdir()
 
         archived = _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(source)}), str(tmp_path / "active")
+            json.dumps({"status": "ok", "run_dir": str(source)}), str(tmp_path / "active"), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert archived is False
@@ -560,7 +567,7 @@ class TestArchiveBacktestResult:
         monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(allowed))
 
         archived = _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(outside)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(outside)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert archived is False
@@ -593,7 +600,7 @@ def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
     from src.agent.runtime import AgentRuntime
     from src.agent.tools import ToolRegistry
 
-    agent = AgentRuntime(registry=ToolRegistry(), llm=None)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=None)
     now = time.time()
     target = str(tmp_path / "plan.md")
     msg = f"please update {target}"
@@ -608,7 +615,7 @@ def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
     assert agent._write_targets.pending(msg, now) == ""
 
     # A bash-style write (mtime newer than run start) also counts.
-    agent2 = AgentRuntime(registry=ToolRegistry(), llm=None)
+    agent2 = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=None)
     p = tmp_path / "bash_plan.md"
     p.write_text("x", encoding="utf-8")
     os.utime(p, (now, now))

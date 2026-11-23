@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from pathlib import Path
 
@@ -59,7 +63,7 @@ def test_actual_delivery_errors():
 # ---- runtime integrity ----------------------------------------------------
 def _run(tmp_path: Path, worker_result: WorkerResult) -> SwarmRun:
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agent = SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0)
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="do x")
     run = SwarmRun(id="r", preset_name="demo", created_at="2026-01-01T00:00:00Z", agents=[agent], tasks=[task])
@@ -254,7 +258,7 @@ def test_tool_result_event_status_and_evidence_credit_agree(
     expected_event_status: str,
     expected_worker_status: str,
 ) -> None:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool(result, raises=raises))
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -263,6 +267,7 @@ def test_tool_result_event_status_and_evidence_credit_agree(
 
     events: list[SwarmEvent] = []
     worker_result = run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",
@@ -324,7 +329,7 @@ def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
     """A successful run must close the per-task ChatLLM exactly once."""
     import src.swarm.worker as worker_mod
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool("done", raises=False))
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -340,6 +345,7 @@ def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
     )
 
     worker_result = run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",
@@ -362,7 +368,7 @@ def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) ->
     """close() must fire even when the run dies on a tool exception."""
     import src.swarm.worker as worker_mod
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool("boom", raises=True))
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -378,6 +384,7 @@ def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) ->
     )
 
     worker_result = run_worker(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -62,7 +66,7 @@ def test_csv_ties_do_not_turn_winning_pairs_into_losers(
         encoding="utf-8",
     )
 
-    result = json.loads(analyze_trade_journal(str(path), "profile"))
+    result = json.loads(analyze_trade_journal(str(path), "profile", roots=FileRoots.from_config(get_env_config().api)))
     assert result["status"] == "ok"
     profile = result["profile"]
     # Each source pair earns (5 - 2)=3 or (10 - 2)=8, repeated five times.

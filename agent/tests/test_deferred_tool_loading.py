@@ -1,5 +1,9 @@
 """Deferred schemas retain discoverability, exact contracts, and execution gates."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -27,7 +31,7 @@ class ExampleTool(BaseTool):
 
 
 def registry():
-    source = ToolRegistry()
+    source = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for index in range(18):
         source.register(ExampleTool(f"read_observation_{index}"))
     return source

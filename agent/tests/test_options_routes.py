@@ -15,6 +15,10 @@ convention in ``test_alpha_compare_api.py``.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import math
 from typing import Any
@@ -297,7 +301,7 @@ def test_surface_diagnostics_matches_the_readonly_tool_result() -> None:
     request = _surface_diagnostics_body(spot=100)
     response = _client().post("/options/volatility-surface/diagnostics", json=request)
     tool = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call",
             module="volatility",
             function="diagnose_iv_surface",

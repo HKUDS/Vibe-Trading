@@ -1,5 +1,12 @@
 """Exercise the reported failures through the worker and shadow runner paths."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import hashlib
 import json
 from pathlib import Path
@@ -47,7 +54,7 @@ def _committee_role(role):
 @pytest.mark.parametrize("partial_call", [False, True])
 def test_worker_truncation_after_successful_data_call(tmp_path, monkeypatch, reason, partial_call):
     calls = []
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ObservationTool(calls))
     request = ToolCallRequest(id="c1", name="get_market_data", arguments={})
     llm = _Replies([
@@ -61,7 +68,7 @@ def test_worker_truncation_after_successful_data_call(tmp_path, monkeypatch, rea
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: llm)
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: registry)
     spec, task = _committee_role("risk_officer")
-    result = run_worker(spec, task, {}, {"target": "NVDA", "market": "US"}, tmp_path)
+    result = run_worker(spec, task, {}, {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
     assert result.status == ("completed" if reason == "stop" else "token_limit")
     assert len(calls) == 1  # Never execute a truncated response's partial call.
     if reason != "stop":
@@ -83,8 +90,8 @@ def test_committee_pm_delivery_does_not_grade_supplied_reports(tmp_path, monkeyp
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: _Replies([
         LLMResponse(content=answer, tool_calls=[], finish_reason="stop"),
     ]))
-    monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry())
-    result = run_worker(spec, task, upstream, {"target": "NVDA", "market": "US"}, tmp_path)
+    monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
+    result = run_worker(spec, task, upstream, {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
     assert result.status == expected
 
 
@@ -93,9 +100,9 @@ def test_data_role_can_use_supplied_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: _Replies([
         LLMResponse(content="Hold the current exposure based on the supplied reports.", tool_calls=[], finish_reason="stop"),
     ]))
-    monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry())
+    monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
     result = run_worker(spec, task, {k: "A complete upstream report." for k in task.input_from},
-                        {"target": "NVDA", "market": "US"}, tmp_path)
+                        {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
     assert result.status == "completed"
 
 
@@ -103,7 +110,7 @@ def test_data_role_can_use_supplied_evidence(tmp_path, monkeypatch):
 def test_formatted_revenue_keeps_its_evidence_reference(tmp_path, value, expected):
     from evals.grounding import GroundingLedger
 
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report revenue")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report revenue")
     ledger.ingest_tool_result(tool_name="financial_data", arguments={}, call_id="c1", success=True,
                               result=json.dumps({"revenue": 96221000000}))
     answer = f"Revenue was {value}.\n```figures\n{value} | observed | Revenue | c1::revenue\n```"
@@ -152,7 +159,7 @@ def test_shadow_zero_trades_preserves_requested_cash(tmp_path, monkeypatch, capi
         manifest.write_text(json.dumps({"schema_version": 1, "interval": "1D", "frames": frames}))
         config["frozen_data_manifest"] = str(manifest)
         (directory / "config.json").write_text(json.dumps(config))
-        payload = run_backtest(run_dir)
+        payload = run_backtest(run_dir, roots=FileRoots.from_config(get_env_config().api))
         assert json.loads(payload)["status"] == "ok", payload
         return payload
 

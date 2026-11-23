@@ -30,9 +30,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 
 from src.config.accessor import get_env_config
 from src.product.tool_policy import (
-    bash_policy,
-    offered_tools,
-    screen_calls,
+    ToolPolicy,
     tool_name,
 )
 
@@ -392,6 +390,7 @@ def _native_attempt_reason(payload: dict[str, Any]) -> str:
 
 def _decide(
     *,
+    policy: ToolPolicy,
     model: str,
     effort: str = "",
     messages: list[Any],
@@ -406,7 +405,7 @@ def _decide(
     decision past ``timeout``.
     """
     deadline = time.monotonic() + timeout
-    offered = offered_tools(tools, legacy_defaults=True)
+    offered = policy.offered_tools(tools, legacy_defaults=True)
     offered_names = {tool_name(t) for t in offered}
     system, user_input = _render(messages)
     allow_tools = bool(offered)
@@ -480,7 +479,7 @@ def _decide(
             )
             failure = "final answers kept arriving without content"
             continue
-        accepted, notes = screen_calls(calls, offered_names, legacy_defaults=True)
+        accepted, notes = policy.screen_calls(calls, offered_names, legacy_defaults=True)
         if not notes:
             decision.content = str(output.get("content") or "")
             decision.tool_calls = [
@@ -511,6 +510,7 @@ class ClaudeCliLLM:
     def __init__(
         self,
         *,
+        policy: ToolPolicy,
         model: str = DEFAULT_MODEL,
         timeout: int = 120,
         reasoning_effort: str = "",
@@ -531,7 +531,8 @@ class ClaudeCliLLM:
             RuntimeError: ``CLAUDE_CLI_BASH_POLICY`` is not a known policy, so
                 the error surfaces before a paid turn rather than after one.
         """
-        bash_policy(legacy_defaults=True)
+        policy.bash_policy(legacy_defaults=True)
+        self.policy = policy
         self.environment = None if environment is None else dict(environment)
         self.model = model
         self.timeout = timeout
@@ -548,6 +549,7 @@ class ClaudeCliLLM:
             A new instance with the same model, timeout and reasoning effort.
         """
         return ClaudeCliLLM(
+            policy=self.policy,
             model=self.model,
             timeout=self.timeout,
             reasoning_effort=self.reasoning_effort,
@@ -587,6 +589,7 @@ class ClaudeCliLLM:
             The final answer, or the tool calls to execute next.
         """
         decision = _decide(
+            policy=self.policy,
             model=self.model,
             effort=self.reasoning_effort,
             messages=messages,
@@ -619,6 +622,7 @@ class ClaudeCliLLM:
         def run() -> None:
             try:
                 decision = _decide(
+                    policy=self.policy,
                     model=self.model,
                     effort=self.reasoning_effort,
                     messages=messages,
