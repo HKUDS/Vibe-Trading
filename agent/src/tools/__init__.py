@@ -508,6 +508,7 @@ def _filter_registry(
     """Project a full registry down to a whitelist with consistent drop logging."""
     filtered = ToolRegistry(policy=full.check_policy)
     filtered.background = getattr(full, "background", None)
+    filtered.hooks = getattr(full, "hooks", None)
     for name in tool_names:
         tool = full.get(name)
         if tool:

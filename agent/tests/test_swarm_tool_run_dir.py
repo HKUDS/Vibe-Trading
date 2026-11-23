@@ -196,3 +196,41 @@ def test_worker_refuses_an_escaping_run_dir_without_calling_the_tool(
     results = [e for e in events if e.type == "item.completed"]
     assert results and results[0].data["item"]["status"] == "error"
     assert "workspace" in json.dumps(results[0].data["item"]["content"])
+
+
+def test_worker_kernel_binds_the_whitelisted_tools_to_configured_hooks(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    hooks_path = tmp_path / "hooks.json"
+    monkeypatch.setenv("VIBE_TRADING_HOOKS_FILE", str(hooks_path))
+    hooks_path.write_text(json.dumps({
+        "PreToolUse": [{"matcher": "write_file", "command": "printf deny"}],
+    }))
+    monkeypatch.setattr(
+        worker_mod, "ChatLLM",
+        lambda **kwargs: _ScriptedLLM("write_file", {"path": "probe.md", "content": "probe"}),
+    )
+    kernel_runs = []
+    kernel = worker_mod.run_loop
+
+    def capture_kernel(*args, **kwargs):
+        outcome = kernel(*args, **kwargs)
+        kernel_runs.append(outcome)
+        return outcome
+
+    monkeypatch.setattr(worker_mod, "run_loop", capture_kernel)
+    events = []
+    result = run_worker(
+        agent_spec=SwarmAgentSpec(
+            id="analyst", role="Analyst", system_prompt="Run the probe.",
+            tools=["write_file"], max_iterations=2,
+        ),
+        task=SwarmTask(id="task", agent_id="analyst", prompt_template="Run the probe."),
+        upstream_summaries={}, user_vars={}, run_dir=tmp_path, event_callback=events.append,
+    )
+    assert [run.iterations for run in kernel_runs] == [2]
+    assert result.status == "completed"
+    assert not list(tmp_path.rglob("probe.md"))
+    item, = (event.data["item"] for event in events if event.type == "item.completed")
+    assert item["status"] == "error"
+    assert "hook_denied" in item["content"]

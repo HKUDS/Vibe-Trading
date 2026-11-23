@@ -16,6 +16,11 @@ def run_loop(
     final_retry = False
     reason = "max_iterations"
     while count < limits.max_iterations or final_retry:
+        if ports.before_cancel_check is not None:
+            stop = ports.before_cancel_check(count)
+            if stop:
+                reason = stop.reason
+                break
         if cancel.is_set():
             ports.on_cancel()
             reason = "cancelled"
@@ -40,7 +45,7 @@ def run_loop(
             continue
 
         finish_reason = getattr(response, "finish_reason", None)
-        if finish_reason in {"length", "max_tokens"}:
+        if finish_reason in limits.partial_finish_reasons:
             ports.record_partial(response, finish_reason)
             reason = finish_reason
             break

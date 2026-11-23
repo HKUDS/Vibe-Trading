@@ -119,6 +119,7 @@ class LoopContext:
 @dataclass(frozen=True)
 class RunLimits:
     max_iterations: int
+    partial_finish_reasons: frozenset[str] = frozenset({"length", "max_tokens"})
 
 
 @dataclass(frozen=True)
@@ -138,7 +139,11 @@ class LoopResult:
 
 @dataclass(frozen=True)
 class LoopPorts:
-    """Bound host operations. The scheduler owns the loop counters."""
+    """Bound host operations. The scheduler owns the loop counters.
+
+    A host may bind a boundary check that runs before cancellation and
+    receives the number of iterations already started.
+    """
 
     before_iteration: Callable[[LoopContext], Stop | None]
     prepare_request: Callable[[LoopContext, Iteration], Stop | None]
@@ -150,6 +155,7 @@ class LoopPorts:
     on_cancel: Callable[[], None]
     read_delta: Callable[[], list[ModelMessage]]
     read_usage: Callable[[], dict[str, int]]
+    before_cancel_check: Callable[[int], Stop | None] | None = None
 
 
 @dataclass(frozen=True)

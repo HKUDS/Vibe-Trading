@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from asyncio import to_thread
 from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
@@ -89,13 +90,7 @@ logger = logging.getLogger(__name__)
 
 
 class _ToolPolicyMiddleware(Middleware):
-    """Apply the tool deny-list to every MCP tool.
-
-    The registry refuses denied names, but many MCP tools call their code
-    directly; screening here covers those and keeps denied tools out of the
-    advertised list. Like the registry check, a convenience filter, not a
-    security boundary.
-    """
+    """Bind registry policy, tool hooks and public result redaction to MCP calls."""
 
     async def on_list_tools(self, context: Any, call_next: Any) -> Any:
         from src.product.tool_policy import _deny_prefixes
@@ -104,17 +99,34 @@ class _ToolPolicyMiddleware(Middleware):
         return [tool for tool in await call_next(context) if not tool.name.startswith(prefixes)]
 
     async def on_call_tool(self, context: Any, call_next: Any) -> Any:
-        from src.product.tool_policy import _deny_prefixes
-
-        name = context.message.name
-        if name.startswith(_deny_prefixes()):
-            raise ToolError(f"{name} is disabled by the active tool policy")
+        from src.product.tool_invocation import ToolRefusal, prepare_tool_call
         from src.tools.redaction import RESULT_SINK, redact_payload, redact_tool_result
+
+        registry = await to_thread(_get_registry)
+        request = context.fastmcp_context
+        has_request = request is not None and request.request_context is not None
+        name = context.message.name
+        arguments = context.message.arguments or {}
+        prepared = await to_thread(
+            prepare_tool_call, name, arguments,
+            check_policy=registry.check_policy, hooks=getattr(registry, "hooks", None),
+            call_id=request.request_id if has_request else "",
+            session_id=request.session_id if has_request else "",
+        )
+        if isinstance(prepared, ToolRefusal):
+            raise ToolError(redact_tool_result(prepared.reason, preserve_format=True))
+
+        if prepared.arguments != arguments:
+            message = context.message.model_copy(update={"arguments": prepared.arguments})
+            context = context.copy(message=message)
 
         try:
             result = await call_next(context)
         except Exception as exc:
             safe_error = redact_tool_result(str(exc), preserve_format=True)
+            if prepared.post_result is not None:
+                error_result = json.dumps({"status": "error", "error": safe_error})
+                await to_thread(prepared.post_result, error_result, "error")
             if safe_error != str(exc):
                 raise ToolError(safe_error) from None
             raise
@@ -127,6 +139,11 @@ class _ToolPolicyMiddleware(Middleware):
         structured = redact_payload(result.structured_content, sink=RESULT_SINK)
         if isinstance(structured, dict) and isinstance(structured.get("result"), str):
             structured["result"] = redact_tool_result(structured["result"], preserve_format=True)
+        if prepared.post_result is not None:
+            text = "\n".join(block.text for block in content if block.type == "text")
+            if not text and structured is not None:
+                text = json.dumps(structured, ensure_ascii=False)
+            await to_thread(prepared.post_result, text, "ok")
         return result.model_copy(update={
             "content": content,
             "structured_content": structured,
@@ -2327,7 +2344,11 @@ def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
     tool_cls = _key_gated_tool_classes().get(name)
     if tool_cls is None:
         return registry.execute(name, params)
-    return tool_cls().execute(**params)
+    from src.agent.tools import ToolRegistry
+
+    diagnostic_registry = ToolRegistry(policy=registry.check_policy)
+    diagnostic_registry.register(tool_cls())
+    return diagnostic_registry.execute(name, params)
 
 
 @mcp.tool
