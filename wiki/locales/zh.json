@@ -113,5 +113,9 @@
   "notFound.heading": "此页面不存在",
   "notFound.intro": "此网址不属于本站，你可以从以下入口继续浏览：",
   "notFound.docsHint": "安装、配置和运行",
-  "notFound.sourcePrompt": "在找源代码？"
+  "notFound.sourcePrompt": "在找源代码？",
+  "home.enterprise.label": "企业部署与定制",
+  "home.enterprise.eyebrow": "企业",
+  "home.enterprise.title": "把研究基础设施放在你自己的边界内。",
+  "home.enterprise.text": "支持部署在你们自己的行情数据、数据源、券商或 OMS 连接器之上。把你的需求写到 <a href=\"mailto:naiqin.hognnq@dtzhejiang.com?subject=Vibe-Trading%20enterprise%20deployment\">naiqin.hognnq@dtzhejiang.com</a>；这个地址直达维护者，只用于答复部署与研究问题，本页内容不构成投资建议。"
 }

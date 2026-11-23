@@ -548,7 +548,8 @@ pre {
   background: var(--surface-2);
 }
 
-.safety-band {
+.safety-band,
+.enterprise-band {
   display: grid;
   grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
   gap: 24px;
@@ -557,7 +558,8 @@ pre {
   border-bottom: 1px solid var(--line);
 }
 
-.safety-band p:last-child {
+.safety-band p:last-child,
+.enterprise-band p:last-child {
   margin: 0;
   color: var(--muted);
   font-size: 1.08rem;
@@ -669,7 +671,8 @@ pre {
   }
 
   .section-head,
-  .safety-band {
+  .safety-band,
+  .enterprise-band {
     grid-template-columns: 1fr;
   }
 
