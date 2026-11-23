@@ -12,8 +12,9 @@ from typing import Any, Callable, NamedTuple, Protocol
 from src.agent.runtime import AgentRuntime
 from src.config.schema import AgentConfig
 from src.data_gateway.guidance import DATA_ACCESS_POLICY
-from src.kernel.contracts import LLMResponse
+from src.kernel.contracts import LLMResponse, Stop
 from src.kernel.progress import HeartbeatTimer
+from src.product.pacing import TurnPacing
 from src.product.identity.ledger import agent_authored_request
 from src.product.resources.instructions import build_instruction_block
 from src.product.resources.memory import WorkspaceMemory
@@ -22,9 +23,9 @@ from src.product.tool_policy import ToolPolicy
 from src.product.usage import _normalize_llm_usage
 from src.providers.chat import ChatLLM
 from src.providers.response import ProviderStreamError
-from src.session.replay import replay
+from src.session.replay import STOPPED_TURN_NOTES, replay
 from src.session.thread import ThreadLog
-from src.swarm.artifacts import agent_artifact_dir, collect_artifacts
+from src.swarm.artifacts import agent_artifact_dir, collect_artifacts, node_thread
 from src.swarm.evidence_handoff import prepare_handoff
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
 from src.tools import build_swarm_registry
@@ -347,13 +348,6 @@ def _resolve_summary(artifact_dir: Path, fallback: str) -> str:
 
 
 UNKNOWN_TOOL_OUTCOME = "A node tool's outcome is unknown. Check task artifacts and any external side effects before retrying."
-CHILD_THREAD = "thread.jsonl"
-
-
-def node_thread(run_dir: Path, agent_id: str, task_id: str) -> Path:
-    """Locate the canonical thread outside the model's task workspace."""
-    workspace = agent_artifact_dir(run_dir, agent_id, task_id)
-    return run_dir / "nodes" / workspace.parent.name / workspace.name / CHILD_THREAD
 
 
 def unknown_outcome(items) -> bool:
@@ -496,10 +490,55 @@ class NodeEvents:
         elif kind == "item.completed" and data["live_id"] in self.calls:
             iteration, remote = self.calls.pop(data["live_id"])
             self.emit(kind, {"kind": subtype, "live_id": f"tool:{item['tool_call_id']}",
-                             "item": {**item, "iteration": iteration, **remote}})
+                             "item": {key: value for key, value in item.items()
+                                      if key not in {"artifact", "cached"}} | {"iteration": iteration, **remote}})
         elif data.get("heartbeat") and subtype == "tool.progress":
             iteration, _ = self.calls.get(data.get("live_id"), (0, {}))
             self.emit("task_heartbeat", {**data["progress"], "phase": "tool", "iteration": iteration})
+
+
+class NodePacing(TurnPacing):
+    """Retain task delivery rules while using the product execution loop."""
+
+    def write_directives(self, state, writes):
+        wrap_at = max(1, int(self.max_iterations * 0.8))
+        if state.iteration == wrap_at + 1:
+            remaining = self.max_iterations - wrap_at
+            self.conversation.inject(
+                state.view.messages,
+                f"[SYSTEM] You have {remaining} iterations remaining. "
+                "Finish the most useful remaining work and deliver your conclusions, "
+                "available results and any unresolved limitations in your final response. "
+                "Create a file only if the user requested one or it improves the deliverable.",
+            )
+
+    def handle(self, state, response):
+        state.final_content = response.content or ""
+        self._release(state, stream_finish=False)
+        return Stop("final_answer")
+
+
+def _node_history(items, run_dir: Path):
+    """Continue saved task input with paths rebased into the resumed workspace."""
+    if not items:
+        return None
+    original_root = next(
+        (str(Path(item.get("workspace")).parents[2]) for item in reversed(items)
+         if item.type == "state" and item.get("workspace")),
+        str(run_dir),
+    )
+    first_user = next((item.seq for item in items if item.type == "user"), None)
+    messages = [
+        message for message in replay(item for item in items if item.type != "user" or item.seq == first_user)
+        if message.get("content") not in STOPPED_TURN_NOTES.values()
+    ]
+    for message in messages:
+        if isinstance(message.get("content"), str):
+            message["content"] = message["content"].replace(original_root, str(run_dir))
+    messages.append({"role": "user", "content":
+        "Continue the interrupted task from the saved work. Reuse available observations and files; "
+        "finish the remaining request. The prior response was incomplete."})
+    return messages
 
 
 class TemplateVars(dict):
@@ -525,8 +564,13 @@ def _node_result(result, stop, model, items, workspace, emit, *, resumed):
         summary = _resolve_summary(workspace, summary)
         error = None
         emit("worker_cancelled", {"iterations": iterations})
-    elif status == "success":
+    elif status == "success" or result.get("stop_reason") == "final_answer":
         summary = summary if summary or resumed else _resolve_summary(workspace, summary)
+        error = _delivery_error(summary)
+        status = "incomplete" if error else "completed"
+        emit(f"worker_{status}", {"iterations": iterations, **({"reason": error} if error else {})})
+    elif not error and status == "failed" and not summary:
+        summary = "" if resumed else _resolve_summary(workspace, "")
         error = _delivery_error(summary)
         status = "incomplete" if error else "completed"
         emit(f"worker_{status}", {"iterations": iterations, **({"reason": error} if error else {})})
@@ -593,7 +637,7 @@ def run_node(
     if note:
         system += "\n\n" + note
 
-    history = [message for message in replay(previous) if message["role"] != "system"]
+    history = _node_history(previous, run_dir)
     if history:
         emit("worker_resumed", {"messages": len(history) + 1})
     llm = ChatLLM(model_name=agent_spec.model_name, policy=policy)
@@ -605,9 +649,11 @@ def run_node(
             event_callback=NodeEvents(emit, registry), cancel_event=stop,
             max_iterations=agent_spec.max_iterations or _default_max_iterations(),
             background_manager=background, system_prompt=system, local_thread_path=thread_path,
+            pacing_type=NodePacing,
         )
         model.current_iteration = lambda: child.activity.iteration
         child.invocation.stop_on_unknown = stop.set
+        child.delivery.preview_limit = 203
         with agent_authored_request():
             result = child.run(prompt, history=history or None)
     finally:
@@ -615,7 +661,7 @@ def run_node(
     status, summary, iterations, error = _node_result(
         result, stop, model, thread.read(), workspace, emit, resumed=bool(history),
     )
-    private = {"req.json", "state.json", "llm_usage.json", "run_manifest.json", "identity_evidence.json"}
+    private = {"req.json", "state.json", "llm_usage.json", "run_manifest.json", "artifacts/identity_evidence.json"}
     reserved = {str(workspace.relative_to(run_dir) / name) for name in private}
     artifacts = [path for path in collect_artifacts(run_dir, workspace) if path not in reserved]
     return WorkerResult(status=status, summary=summary, iterations=iterations, error=error,

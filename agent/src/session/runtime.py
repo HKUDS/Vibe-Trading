@@ -358,6 +358,8 @@ class TurnRecorder:
                 item = self._runtime.thread.append(item_type, self.turn_id, **payload)
             except (OSError, ThreadItemError) as exc:
                 self.degraded = True
+                if self._runtime.require_durable_items:
+                    raise
                 logger.warning(
                     "Could not record %s item for turn %s: %s", item_type, self.turn_id, exc,
                     exc_info=True,
@@ -382,7 +384,7 @@ class SessionRuntime:
         state: Folded ``state`` items (identity, loaded_tools, workspace).
     """
 
-    def __init__(self, thread: ThreadLog, session_id: str) -> None:
+    def __init__(self, thread: ThreadLog, session_id: str, *, require_durable_items: bool = False) -> None:
         """Open the runtime and rebuild its state from the thread.
 
         Args:
@@ -391,6 +393,7 @@ class SessionRuntime:
         """
         self.session_id = session_id
         self.thread = thread
+        self.require_durable_items = require_durable_items
         self.workspace_path = thread.path.parent / "workspace"
         self.workspace_path.mkdir(parents=True, exist_ok=True)
         self.state: Dict[str, Any] = {}

@@ -69,6 +69,12 @@ def agent_artifact_dir(run_dir: Path, agent_id: str, task_id: str) -> Path:
     return artifact_dir
 
 
+def node_thread(run_dir: Path, agent_id: str, task_id: str) -> Path:
+    """Locate the canonical thread outside the model's task workspace."""
+    workspace = agent_artifact_dir(run_dir, agent_id, task_id)
+    return run_dir / "nodes" / workspace.parent.name / workspace.name / "thread.jsonl"
+
+
 def clear_agent_artifacts(artifact_dir: Path) -> None:
     """Remove *artifact_dir* and everything in it, before a retry attempt.
 
