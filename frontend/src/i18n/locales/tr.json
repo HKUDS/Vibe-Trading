@@ -2784,6 +2784,7 @@
     "failed": "Başarısız",
     "report": "Araştırma raporu",
     "download": "JSON indir",
+    "downloadOosCsv": "Örneklem dışı portföy değeri CSV",
     "scenario": "Senaryo",
     "return": "Getiri",
     "drawdown": "Düşüş",
