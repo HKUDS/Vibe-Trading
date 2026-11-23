@@ -8,50 +8,17 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from src.tools.redaction import redact_text
+from src.providers.registry import provider_names
 
 
 _PUBLIC_METADATA_MAX_LENGTH = 128
 _REDACTED_METADATA = "[redacted]"
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
-_PUBLIC_PROVIDERS = frozenset(
-    {
-        "anthropic",
-        "claude-cli",
-        "dashscope",
-        "deepseek",
-        "gemini",
-        "glm",
-        "groq",
-        "iflytek",
-        "kimi",
-        "kimi-coding",
-        "mimo",
-        "minimax",
-        "modelscope",
-        "moonshot",
-        "nvidia",
-        "nvidia-nim",
-        "ollama",
-        "openai",
-        "openai-codex",
-        "openai_codex",
-        "opencode",
-        "opencode-go",
-        "opencode-zen",
-        "openrouter",
-        "qwen",
-        "siliconflow-cn",
-        "siliconflow-global",
-        "spark",
-        "zai",
-        "zhipu",
-    }
-)
+_PUBLIC_PROVIDERS = provider_names() | {"openai_codex"}
 _MODEL_ENDPOINT_PREFIX = re.compile(
     r"^(?:/|localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|\[[0-9a-f:.]+\]|[^/:]+\.[a-z]{2,}|[^/:]+(?=:[0-9]+(?:/|$)))(?::[0-9]+)?(?:/|$)|^[^/]+/(?:api|v[0-9]+(?:alpha|beta)?[0-9]*)(?:/|$)",
     re.IGNORECASE,
@@ -188,7 +155,6 @@ class SwarmAgentSpec(BaseModel):
         timeout_seconds: Worker timeout in seconds.
         model_name: Override default model; None uses global config.
         max_retries: Maximum retry attempts on failure.
-        evidence_mode: Whether completed upstream reports can supply evidence.
     """
 
     id: str
@@ -200,7 +166,6 @@ class SwarmAgentSpec(BaseModel):
     timeout_seconds: int = 300
     model_name: str | None = None
     max_retries: int = 2
-    evidence_mode: Literal["auto", "upstream"] = "auto"
 
 
 class SwarmTask(BaseModel):
@@ -317,6 +282,7 @@ class SwarmRun(BaseModel):
     created_at: str
     completed_at: str | None = None
     final_report: str | None = None
+    report_is_partial: bool = False
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     cache_read_tokens: int = 0

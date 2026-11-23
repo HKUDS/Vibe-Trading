@@ -1,8 +1,13 @@
 """Regression tests for local settings API endpoints."""
 
 from __future__ import annotations
+from src.providers import settings as provider_settings
 
+import json
 import os
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -41,6 +46,32 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(api_server, "_baostock_installed", lambda: False)
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     return TestClient(api_server.app, client=("127.0.0.1", 50000))
+
+
+@contextmanager
+def _model_list_server(payload, received):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            received.append((self.path, self.headers.get("Authorization")))
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
 
 
 def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
@@ -98,7 +129,8 @@ def test_list_llm_models_uses_unsaved_form_values(
 ) -> None:
     observed: dict[str, str] = {}
 
-    async def fake_list(provider, *, base_url: str, api_key: str):
+    async def fake_list(provider, *, base_url: str, api_key: str, disable_proxy: bool):
+        del disable_proxy
         observed.update(provider=provider.name, base_url=base_url, api_key=api_key)
         return settings_routes.LLMModelsResponse(
             provider=provider.name,
@@ -144,8 +176,8 @@ def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
     )
     observed: list[tuple[str, str]] = []
 
-    async def fake_list(provider, *, base_url: str, api_key: str):
-        del provider
+    async def fake_list(provider, *, base_url: str, api_key: str, disable_proxy: bool):
+        del provider, disable_proxy
         observed.append((base_url, api_key))
         return settings_routes.LLMModelsResponse(
             provider="deepseek",
@@ -170,6 +202,51 @@ def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
         ("https://api.deepseek.com/v1", "stored-secret-key"),
         ("https://models.example.test/v1", ""),
     ]
+
+
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize(("disable_proxy", "expected_direct"), [("1", True), ("0", False)])
+def test_model_discovery_direct_option_bypasses_environment_proxy(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    disable_proxy: str, expected_direct: bool, exported: bool,
+) -> None:
+    if exported:
+        monkeypatch.setenv("VIBE_TRADING_DISABLE_HTTP_PROXY", disable_proxy)
+        (tmp_path / ".env").write_text("")
+    else:
+        monkeypatch.delenv("VIBE_TRADING_DISABLE_HTTP_PROXY", raising=False)
+        (tmp_path / ".env").write_text(f"VIBE_TRADING_DISABLE_HTTP_PROXY={disable_proxy}\n")
+    provider_received = []
+    proxy_received = []
+    with _model_list_server({"data": [{"id": "direct-model"}]}, provider_received) as provider_url:
+        with _model_list_server({"data": [{"id": "proxied-model"}]}, proxy_received) as proxy_url:
+            for name in ("HTTP_PROXY", "http_proxy"):
+                monkeypatch.setenv(name, proxy_url)
+            for name in ("NO_PROXY", "no_proxy"):
+                monkeypatch.delenv(name, raising=False)
+
+            response = client.post(
+                "/settings/llm/models",
+                json={
+                    "provider": "openrouter",
+                    "base_url": provider_url,
+                    "api_key": "private-fixture-key",
+                },
+            )
+
+    assert response.status_code == 200
+    if expected_direct:
+        assert proxy_received == []
+        assert provider_received == [("/models", "Bearer private-fixture-key")]
+        expected_model, unexpected_model = "direct-model", "proxied-model"
+    else:
+        assert provider_received == []
+        assert len(proxy_received) == 1
+        assert proxy_received[0][0].endswith("/models")
+        assert proxy_received[0][1] == "Bearer private-fixture-key"
+        expected_model, unexpected_model = "proxied-model", "direct-model"
+    assert expected_model in response.json()["models"]
+    assert unexpected_model not in response.json()["models"]
 
 
 @pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx"])
@@ -254,20 +331,24 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
     assert "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1" in env_text
 
 
+@pytest.mark.parametrize("provider,key", [
+    ("deepseek", "DEEPSEEK_API_KEY"), ("opencode", "OPENCODE_API_KEY"), ("novita", "NOVITA_API_KEY"),
+])
 def test_desktop_secure_mode_never_persists_injected_llm_key(
     client: TestClient,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    key: str,
 ) -> None:
     monkeypatch.setenv("VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS", "1")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "dpapi-decrypted-key")
+    monkeypatch.setenv(key, "dpapi-decrypted-key")
 
     response = client.put(
         "/settings/llm",
         json={
-            "provider": "deepseek",
-            "model_name": "deepseek-chat",
-            "base_url": "https://api.deepseek.com/v1",
+            "provider": provider,
+            "model_name": "test-model",
         },
     )
 
@@ -275,7 +356,7 @@ def test_desktop_secure_mode_never_persists_injected_llm_key(
     assert response.json()["api_key_configured"] is True
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "dpapi-decrypted-key" not in env_text
-    assert "DEEPSEEK_API_KEY=" in env_text
+    assert f"{key}=" in env_text
 
 
 @pytest.mark.parametrize(
@@ -351,7 +432,7 @@ def test_settings_write_permission_error_is_actionable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        api_server,
+        provider_settings,
         "_write_env_values",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("denied")),
     )
@@ -610,7 +691,7 @@ def test_atomic_write_secret_is_crash_safe(
 ) -> None:
     """A crash during the replace must not corrupt or truncate the secret file,
     nor leave a stray temp file holding the secret behind."""
-    from src.api import helpers
+    from src.config import dotenv as helpers
 
     target = tmp_path / ".env"
     target.write_text("OLD=1\n", encoding="utf-8")
@@ -631,7 +712,7 @@ def test_atomic_write_secret_is_crash_safe(
 
 def test_atomic_write_secret_creates_0600_file(tmp_path: Path) -> None:
     """Fresh secret files are created owner-only via the atomic path."""
-    from src.api import helpers
+    from src.config import dotenv as helpers
 
     target = tmp_path / ".env"
     helpers._atomic_write_secret(target, "KEY=value\n")
@@ -645,7 +726,7 @@ def test_atomic_write_secret_supports_platforms_without_fchmod(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Windows must be able to persist Web UI settings without ``os.fchmod``."""
-    from src.api import helpers
+    from src.config import dotenv as helpers
 
     monkeypatch.delattr(helpers.os, "fchmod", raising=False)
     target = tmp_path / ".env"
@@ -685,9 +766,9 @@ def test_get_data_source_settings_lists_default_source_orders(
     entries = response.json()["source_orders"]
     orders = {entry["market"]: entry for entry in entries}
     assert set(orders) == {
-        "a_share", "us_equity", "hk_equity", "india_equity", "kr_equity",
-        "ca_equity", "ar_equity", "br_equity", "vietnam_equity", "uk_equity", "crypto", "futures",
-        "fund", "macro", "forex", "index",
+        "a_share", "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity",
+        "ca_equity", "ar_equity", "br_equity", "vietnam_equity", "uk_equity", "taiwan_equity", "europe_equity",
+        "crypto", "futures", "fund", "macro", "forex", "index",
     }
     a_share = orders["a_share"]
     assert a_share["env_var"] == "MARKET_DATA_ORDER_A_SHARE"
@@ -715,7 +796,7 @@ def test_update_source_orders_persists_and_hot_applies(
                     "market": "a_share",
                     "order": [
                         "tushare", "tencent", "eastmoney",
-                        "baostock", "akshare", "local",
+                        "baostock", "yahoo", "akshare", "local",
                     ],
                 },
             ],
@@ -754,7 +835,7 @@ def test_update_source_orders_reset_clears_override(
                     "market": "a_share",
                     "order": [
                         "tushare", "tencent", "eastmoney",
-                        "baostock", "akshare", "local",
+                        "baostock", "yahoo", "akshare", "local",
                     ],
                 },
             ],
@@ -812,18 +893,18 @@ def test_update_source_orders_rejects_unknown_market(
 def test_claude_cli_model_list_skips_base_url_checks_and_reports_effort_levels(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.providers import claude_cli_models
+    from src.providers import claude_cli
 
     observed: dict[str, bool] = {}
 
     def fake_list(*, refresh: bool = False):
         observed["refresh"] = refresh
         return [
-            claude_cli_models.ClaudeCliModel("claude-sonnet-4-6", ("low", "medium", "high", "max")),
-            claude_cli_models.ClaudeCliModel("claude-haiku-4-5-20251001", ()),
+            claude_cli.ClaudeCliModel("claude-sonnet-4-6", ("low", "medium", "high", "max")),
+            claude_cli.ClaudeCliModel("claude-haiku-4-5-20251001", ()),
         ]
 
-    monkeypatch.setattr(claude_cli_models, "list_claude_cli_models", fake_list)
+    monkeypatch.setattr(claude_cli, "list_claude_cli_models", fake_list)
     response = client.post(
         "/settings/llm/models", json={"provider": "claude-cli", "refresh": True}
     )
@@ -846,12 +927,12 @@ def test_claude_cli_model_list_skips_base_url_checks_and_reports_effort_levels(
 def test_claude_cli_model_list_falls_back_when_cli_is_unavailable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.providers import claude_cli_models
+    from src.providers import claude_cli
 
     def failing_list(*, refresh: bool = False):
         raise RuntimeError("claude model list unavailable")
 
-    monkeypatch.setattr(claude_cli_models, "list_claude_cli_models", failing_list)
+    monkeypatch.setattr(claude_cli, "list_claude_cli_models", failing_list)
     response = client.post("/settings/llm/models", json={"provider": "claude-cli"})
 
     assert response.status_code == 200

@@ -13,6 +13,82 @@ from src.tools.redaction import redact_tool_result
 logger = logging.getLogger(__name__)
 
 
+def persist_calculation_result(result: str, run_dir: str | Path | None, *, export_csv: bool = False) -> str:
+    """Keep a JSON observation addressable by calculation tools and file readers.
+
+    Args:
+        result: Full JSON result, before any presentation truncation.
+        run_dir: Authorized workspace; omission retains the original response.
+        export_csv: Also save normalized market bars as a CSV from these rows.
+
+    Returns:
+        Result with a file reference, or a bounded receipt for a large result.
+        Persistence errors remain visible without discarding the calculation.
+    """
+    if not run_dir:
+        return result
+    from src.tools.path_utils import safe_run_dir
+
+    result = redact_tool_result(result)
+    payload = json.loads(result)
+    try:
+        root = safe_run_dir(str(run_dir))
+        digest = hashlib.sha256(result.encode()).hexdigest()
+        folder = root / 'tool-results' / digest
+        path = folder / 'result.json'
+        _write_original(path, result, root)
+        parts = save_result_parts(result, folder / 'parts', root)
+        ref = {'path': str(path), 'sha256': digest, 'format': 'json',
+               'relative_path': str(path.relative_to(root)),
+               'parts_relative_dir': str((folder / 'parts').relative_to(root)),
+               'parts_dir': str(folder / 'parts'), 'part_count': len(parts)}
+    except (OSError, ValueError) as exc:
+        payload['_artifact_error'] = str(exc)
+        return json.dumps(payload, ensure_ascii=False)
+    payload['_result_file'] = ref
+    if export_csv:
+        from src.data_gateway.bar_artifact import export_bars_csv
+
+        try:
+            payload['_csv_file'] = export_bars_csv(payload, folder, root)
+        except (OSError, ValueError) as exc:
+            payload['_csv_error'] = str(exc)
+    encoded = json.dumps(payload, ensure_ascii=False)
+    if len(encoded) <= TOOL_RESULT_LIMIT:
+        return encoded
+    receipt = {'_result_file': ref, '_delivery': (
+        'Full JSON saved. Pass a __data_ref__ argument to quantlib_call with path, '
+        'pointer (e.g. /NVDA.US), column=close, index=trade_date, transform=pct_change. '
+        'Inspect the saved JSON before requesting more data. Only if rows are explicitly sampled/truncated and consecutive bars are needed, fetch max_rows=0 for the bounded window. Read parts/1.txt onward for prose inspection.'
+    )}
+    for key in ('ok', 'status', 'module', 'function', 'input_sources'):
+        if key in payload:
+            receipt[key] = payload[key]
+    for key in ('_csv_file', '_csv_error', '_data_layout', '_request_window'):
+        if key in payload:
+            receipt[key] = payload[key]
+    if isinstance(payload.get('_summary'), dict):
+        candidate = {**receipt, '_summary': payload['_summary'], '_delivery': (
+            'Full bars saved at _result_file. _summary contains observed counts, endpoints, '
+            'sequence checks, statistics and provenance; it does not assert calendar completeness. '
+            'Use that summary directly for a snapshot. Read the artifact for calculations needing '
+            'other fields or individual bars; no refetch is needed.'
+        )}
+        # Preserve the existing receipt discriminator for MCP consumers: no
+        # _preview means the inline response itself contains the full payload.
+        candidate['_preview'] = json.dumps(payload['_summary'], ensure_ascii=False)[:200]
+        for key in ('_unresolved', '_diagnostics', '_recovery', 'complete'):
+            if key in payload:
+                candidate[key] = payload[key]
+        if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT:
+            return json.dumps(candidate, ensure_ascii=False)
+        receipt['_summary_omitted'] = 'Summary exceeds the tool envelope; read the saved artifact.'
+    receipt['_preview'] = result[:1000] + '\n...\n' + result[-1000:]
+    if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT:
+        receipt.pop('input_sources', None)
+    return json.dumps(receipt, ensure_ascii=False)
+
+
 def _write_original(path: Path, content: str, root: Path) -> None:
     """Save immutable content inside the workspace, or refuse a changed path."""
     if not path.resolve().is_relative_to(root):
@@ -107,11 +183,14 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     receipt = {
         '_result_file': {'path': str(path), 'sha256': digest,
                          'format': 'json' if is_json else 'text',
+                         'relative_path': str(path.relative_to(root)),
+                         'parts_relative_dir': str((folder / 'parts').relative_to(root)),
                          'characters': len(result), 'parts_dir': str(folder / 'parts'),
                          'part_count': part_count},
         '_delivery': (
             'The complete tool result is saved in this task workspace. Load the JSON '
-            'file directly in a calculation script, or use read_file on parts/1.txt '
+            'file with a quantlib_call __data_ref__ argument. For read_file, use the exact '
+            'parts_relative_dir + /1.txt path relative to your current task workspace, '
             'through part_count in order. Do not refetch data because this preview '
             'is shortened. Source row limits/sampling still apply: inspect the '
             'original result coverage before calculating; saving does not fill missing rows.'
@@ -121,6 +200,14 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
         for key in ('status', 'ok', '_provenance', '_unresolved', '_diagnostics'):
             if key in payload:
                 receipt[key] = payload[key]
+    # Keep compact calculation bases visible beside the file reference. Curves
+    # and large tables stay intact in the artifact rather than hiding the basis.
+    if isinstance(payload, dict):
+        for key in ('calculation_basis', 'comparisons', 'expiry_scenarios', 'summary', 'inputs'):
+            if key in payload:
+                candidate = {**receipt, key: payload[key]}
+                if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT // 2:
+                    receipt[key] = payload[key]
     # Bound the receipt too. Source metadata stays in the complete artifact if
     # it alone is larger than the delivery budget; no false absence is implied.
     if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT // 2:

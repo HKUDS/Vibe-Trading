@@ -7,12 +7,14 @@ the ``alpha_routes.py`` slice pattern.
 Routes (auth via the caller-supplied ``require_auth`` dependency):
 
 - ``POST /options/payoff``  — multi-leg expiry payoff + spot/IV scenario analysis
+- ``POST /options/strategy-compare`` — shared-grid comparison for two to four strategies
 - ``POST /options/volatility-surface``: observed/interpolated IV grid
+- ``POST /options/volatility-surface/diagnostics``: observed-strike model-price checks
 - ``GET  /options/chain``   — US-listed options chain for one expiration (Yahoo)
 
-Both routes are thin HTTP wrappers around the existing agent tools
-(``OptionsPayoffTool`` / ``OptionsChainTool``) so validation and math stay
-identical to the MCP surface — no formula is reimplemented here.
+The routes delegate to existing agent tools and quantlib functions so pricing,
+interpolation and diagnostics share the MCP implementation. No formula is
+reimplemented here.
 
 ``POST /options/payoff`` returns the tool's envelope verbatim plus one additive
 top-level ``greeks`` object: portfolio Greeks at entry (sum of ``qty * greek``
@@ -42,14 +44,17 @@ import json
 import logging
 from typing import Annotated, Any, Awaitable, Callable, Literal
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, field_validator
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.quantlib.options import bs_greeks
-from src.quantlib.volatility import implied_volatility_surface
+from src.quantlib.volatility import diagnose_iv_surface, implied_volatility_surface
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.options_payoff_tool import OptionsPayoffTool, _coerce_legs
+from src.tools.options_strategy_compare_tool import OptionsStrategyCompareTool
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +98,53 @@ class PayoffLeg(BaseModel):
         return v
 
 
+class PayoffAlternative(BaseModel):
+    """Named leg set; all pricing assumptions come from the parent request."""
+
+    model_config = {"extra": "forbid"}
+    label: str = Field(..., min_length=1)
+    legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+
+
 class PayoffRequest(BaseModel):
     """POST /options/payoff body — mirrors ``OptionsPayoffTool.parameters``."""
 
     legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+    label: str = "base"
+    alternatives: list[PayoffAlternative] = Field(default_factory=list, max_length=5)
+    entry_spot: float = Field(..., gt=0)
+    expiry_days: float = Field(..., ge=0)
+    risk_free_rate: float = Field(0.05)
+    volatility: float = Field(0.3, gt=0)
+    multiplier: float = Field(1.0, gt=0)
+    underlying_qty: float = Field(0.0, allow_inf_nan=False)
+    price_as_of: str | None = None
+    commission_rate: float = Field(0.001, ge=0, lt=1)
+    spot_min: float | None = Field(None, ge=0)
+    spot_max: float | None = Field(None, gt=0)
+    spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=_MAX_SPOT_POINTS)
+    expiry_spot_values: list[Annotated[float, Field(ge=0, allow_inf_nan=False)]] | None = Field(None, min_length=1, max_length=_MAX_SPOT_POINTS)
+    scenario_iv_values: (
+        list[Annotated[float, Field(gt=0)]] | None
+    ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
+
+
+class StrategyDefinition(BaseModel):
+    """One named strategy in a shared-grid comparison."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=64)
+    legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+
+
+class StrategyCompareRequest(BaseModel):
+    """POST /options/strategy-compare body, mirrored from the accepted tool schema."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    strategies: list[StrategyDefinition] = Field(..., min_length=2, max_length=4)
+    baseline_index: int = Field(0, ge=0, strict=True)
     entry_spot: float = Field(..., gt=0)
     expiry_days: float = Field(..., ge=0)
     risk_free_rate: float = Field(0.05)
@@ -105,7 +153,7 @@ class PayoffRequest(BaseModel):
     commission_rate: float = Field(0.001, ge=0, lt=1)
     spot_min: float | None = Field(None, ge=0)
     spot_max: float | None = Field(None, gt=0)
-    spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=_MAX_SPOT_POINTS)
+    spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=201)
     scenario_iv_values: (
         list[Annotated[float, Field(gt=0)]] | None
     ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
@@ -128,6 +176,46 @@ class VolatilitySurfaceRequest(BaseModel):
     expiries: list[float] | None = Field(None, min_length=1, max_length=400)
 
 
+class DiagnosticSurfaceObservation(SurfaceObservation):
+    """Finite JSON numbers without coercing strings or booleans."""
+
+    model_config = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")
+
+
+class SurfaceDiagnosticsRequest(BaseModel):
+    """Observed IV slices and explicit European call model assumptions."""
+
+    model_config = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")
+
+    observations: list[DiagnosticSurfaceObservation] = Field(
+        ..., min_length=1, max_length=400
+    )
+    spot: float = Field(..., gt=0)
+    risk_free_rate: float = 0.0
+    dividend_yield: float = 0.0
+
+
+class _SurfaceDiagnosticsRoute(APIRoute):
+    """Keep rejected non-finite inputs out of the diagnostic error response."""
+
+    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
+        """Return the typed handler with JSON-safe validation errors."""
+        handler = super().get_route_handler()
+
+        async def validate(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                # Raw inputs/context can contain infinity from a JSON exponent.
+                detail = [
+                    {key: error[key] for key in ("loc", "msg", "type")}
+                    for error in exc.errors()
+                ]
+                return JSONResponse(status_code=422, content={"detail": detail})
+
+        return validate
+
+
 def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
     """Project the validated request onto the tool's execute() kwargs.
 
@@ -137,14 +225,20 @@ def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
     """
     params: dict[str, Any] = {
         "legs": [leg.model_dump(exclude_none=True) for leg in payload.legs],
+        "label": payload.label,
+        "alternatives": [item.model_dump(exclude_none=True) for item in payload.alternatives],
         "entry_spot": payload.entry_spot,
         "expiry_days": payload.expiry_days,
         "risk_free_rate": payload.risk_free_rate,
         "volatility": payload.volatility,
         "multiplier": payload.multiplier,
+        "underlying_qty": payload.underlying_qty,
+        "price_as_of": payload.price_as_of,
         "commission_rate": payload.commission_rate,
         "spot_points": payload.spot_points,
     }
+    if payload.expiry_spot_values is not None:
+        params["expiry_spot_values"] = payload.expiry_spot_values
     if payload.spot_min is not None:
         params["spot_min"] = payload.spot_min
     if payload.spot_max is not None:
@@ -166,6 +260,7 @@ def _portfolio_greeks(payload: PayoffRequest) -> dict[str, float]:
     legs = _coerce_legs([leg.model_dump(exclude_none=True) for leg in payload.legs])
     time_to_expiry = payload.expiry_days / 365.0
     totals = {key: 0.0 for key in _GREEK_KEYS}
+    totals["delta"] = payload.underlying_qty
     for leg in legs:
         greeks = bs_greeks(
             S=payload.entry_spot,
@@ -195,7 +290,7 @@ def register_options_routes(
 
     Args:
         app: The host FastAPI app.
-        require_auth: Header-auth dependency for both endpoints.
+        require_auth: Header-auth dependency for all options endpoints.
 
     For backwards compatibility, when the dependency callable is not passed
     explicitly we resolve it from the host ``api_server`` module via
@@ -211,6 +306,10 @@ def register_options_routes(
                 "pass require_auth explicitly"
             )
         require_auth = host.require_auth
+
+    from src.data_gateway.api import register_gateway_routes
+
+    register_gateway_routes(app, require_auth)
 
     # -----------------------------------------------------------------------
     # POST /options/payoff
@@ -238,6 +337,29 @@ def register_options_routes(
         return envelope
 
     # -----------------------------------------------------------------------
+    # POST /options/strategy-compare
+    # -----------------------------------------------------------------------
+
+    @app.post("/options/strategy-compare", dependencies=[Depends(require_auth)])
+    async def options_strategy_compare(payload: StrategyCompareRequest) -> Response:
+        """Compare named strategies through the same tool as Agent and MCP."""
+        tool = OptionsStrategyCompareTool()
+        try:
+            raw = await asyncio.to_thread(
+                tool.execute, **payload.model_dump(exclude_none=True)
+            )
+            envelope = json.loads(raw)
+        except Exception:  # noqa: BLE001 — never leak a stack frame to clients
+            logger.exception("options strategy comparison failed")
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "error": "strategy comparison failed"},
+            )
+        if envelope.get("status") != "ok":
+            return JSONResponse(status_code=400, content=envelope)
+        return envelope
+
+    # -----------------------------------------------------------------------
     # POST /options/volatility-surface
     # -----------------------------------------------------------------------
 
@@ -248,13 +370,42 @@ def register_options_routes(
         try:
             return await asyncio.to_thread(implied_volatility_surface, **params)
         except ValueError as exc:
-            return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+            return JSONResponse(
+                status_code=400, content={"ok": False, "error": str(exc)}
+            )
         except Exception:  # noqa: BLE001
             logger.exception("options volatility surface computation failed")
             return JSONResponse(
                 status_code=502,
                 content={"ok": False, "error": "volatility surface computation failed"},
             )
+
+    diagnostics = APIRouter(route_class=_SurfaceDiagnosticsRoute)
+
+    @diagnostics.post(
+        "/options/volatility-surface/diagnostics", dependencies=[Depends(require_auth)]
+    )
+    async def options_surface_diagnostics(
+        payload: SurfaceDiagnosticsRequest,
+    ) -> Response:
+        """Check original observed slices without changing the interpolation grid."""
+        try:
+            result = await asyncio.to_thread(
+                diagnose_iv_surface, **payload.model_dump()
+            )
+            return JSONResponse(content=result)
+        except ValueError as exc:
+            return JSONResponse(
+                status_code=400, content={"ok": False, "error": str(exc)}
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("options surface diagnostics failed")
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "error": "surface diagnostics failed"},
+            )
+
+    app.include_router(diagnostics)
 
     # -----------------------------------------------------------------------
     # GET /options/chain
@@ -264,6 +415,7 @@ def register_options_routes(
     async def options_chain(
         ticker: str | None = Query(None, max_length=64),
         expiration: int | None = Query(None),
+        near_spot_count: int | None = Query(None, ge=1, le=60),
     ) -> Response:
         """Wrap ``OptionsChainTool`` (Yahoo network I/O, run in a thread)."""
         if ticker is None or not ticker.strip():
@@ -273,6 +425,8 @@ def register_options_routes(
         kwargs: dict[str, Any] = {"ticker": ticker}
         if expiration is not None:
             kwargs["expiration"] = expiration
+        if near_spot_count is not None:
+            kwargs["near_spot_count"] = near_spot_count
         tool = OptionsChainTool()
         try:
             raw = await asyncio.to_thread(tool.execute, **kwargs)

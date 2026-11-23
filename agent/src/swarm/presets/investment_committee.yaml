@@ -44,7 +44,7 @@ agents:
       7. **Main risk to the bull case** — Honestly list 2–3 scenarios that would invalidate the bull thesis
 
       Use factor_analysis for quant support; use load_skill for frameworks.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis,
+    tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, get_market_data, factor_analysis,
             get_financial_statements, get_fund_flow, get_margin_trading, get_research_reports,
             get_stock_news]
     skills: [technical-basic, fundamental-filter, yfinance, earnings-revision, sentiment-analysis]
@@ -91,7 +91,7 @@ agents:
       - Correlation and beta vs market/industry
       - Macro headwinds: rates, FX, regulation
       Compute the risk numbers, do not assert them. From bars pulled with
-      `get_market_data`, in `bash`:
+      `get_market_data`, using `quantlib_call` (action=describe first, then action=call):
       `src.quantlib.risk.historical_var` / `parametric_var` / `historical_cvar`
       (confidence and horizon are arguments — state which you used),
       `max_drawdown_analysis(equity)` for the drawdown profile, and
@@ -114,8 +114,13 @@ agents:
       6. **Bear target prices** — Downside range from multiple mean reversion and earnings cuts
       7. **What would disprove the bear case** — Signals that would invalidate the bear thesis (i.e., bull-side rebuttal points)
 
+      Prefer portfolio_risk_xray for full-history VaR/ES, drawdown, volatility and
+      correlation; it fetches the complete sample without transcribing returns.
+      A single-symbol long-only basket is normalized to 100%, so its risk is
+      asset-level, not a 3% or 4% NAV position. State the basis explicitly.
+      Use technical_indicators for RSI, moving averages and volume statistics.
       Use factor_analysis for risk-factor views; use load_skill for risk frameworks.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis, get_options_chain,
+    tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, get_market_data, factor_analysis, get_options_chain,
             get_financial_statements, get_fund_flow, get_margin_trading, get_research_reports,
             get_stock_news]
     skills: [technical-basic, fundamental-filter, yfinance, risk-analysis, volatility]
@@ -154,20 +159,40 @@ agents:
       - Stop discipline: recommended stop levels and triggers
       - Hedges: options or related shorts to trim tail risk
 
-      Every number above is computed, not judged. Pull bars with `get_market_data`
-      and run, in `bash`:
+      Compute quantitative metrics from data; recommendations remain judgments with assumptions.
+      Pull bars with `get_market_data`
+      and compute with `quantlib_call` (describe the function before calling):
       - realised vol, ADV and correlation from the bars themselves
       - `src.quantlib.risk.historical_var` / `historical_cvar` for the loss levels,
         `fit_gpd_tail` for the black-swan tail, `max_drawdown_analysis` for drawdown
-      - `monte_carlo_gbm(...)` + `analyze_mc_results(...)` for the three stress
-        scenarios; report the seed and path count so the run is reproducible
+      - `monte_carlo_summary(...)` for the stress distribution (at least 10,000
+        paths); this returns statistics directly without an oversized path matrix.
+        Report drift/vol assumptions, horizon, seed and path count
+      Prefer portfolio_risk_xray for full-history VaR/ES, volatility, drawdown
+      and correlation. Its long-only weights are normalized to 100%; convert
+      asset-level losses to portfolio NAV using the stated position separately.
+      Use technical_indicators for computed indicators rather than estimating them.
+      With shell disabled, get_market_data(max_rows=0) saves the full JSON in
+      _result_file.path. For fit_gpd_tail pass kwargs.returns as
+      {"__data_ref__": {"path": "<that path>", "pointer": "/NVDA.US", "column": "close",
+      "index": "trade_date", "transform": "pct_change"}} (use the requested symbol).
+      This reads all observed bars directly; no script or manually copied array is needed.
+      Upstream evidence files can be used the same way. Check input_sources for coverage.
+      Use actual complete returns for GPD, never a sampled preview; when the
+      sample is too small, explicitly report that limitation. Do not substitute
+      simulated returns for observed returns. A current-session daily bar may
+      still be provisional: state its timestamp rather than calling it an official close.
       Name the sample window for each figure. If you could not retrieve bars, say
       the risk metrics are unavailable and give a qualitative review — an
       unsourced VaR or stop price is worse than none. Price the hedge you
       recommend — do not leave it as a shape. `options_payoff` takes the signed
       legs and returns entry debit/credit, analytic breakevens and bounded or
       unbounded max loss, which is what sizing a protective put or a collar
-      actually requires; `options_pricing` values a single leg. Source the
+      actually requires. Include underlying_qty=1 for a covered collar (shares equal
+      multiplier); default 0 is options-only. Supply entry_spot and price_as_of, and
+      use calculation_basis returns, which include option entry commission and name
+      the denominator. Carry that price/date and premium assumption into the handoff.
+      `options_pricing` values a single leg. Source the
       implied vol from `get_options_chain` when the name is US-listed, and when
       it is not, state the vol assumption you used and that it is an assumption.
       A hedge whose cost you did not compute is not a recommendation.
@@ -187,7 +212,7 @@ agents:
       7. **Risk conditions** — If approval is conditional, state prerequisites (e.g., wait for earnings)
 
       Stay independent; do not cheerlead either side; optimize portfolio-level risk.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_options_chain, options_pricing, options_payoff,
+    tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, get_market_data, get_options_chain, options_pricing, options_payoff,
             get_financial_statements, get_fund_flow, get_margin_trading, get_research_reports,
             get_stock_news]
     skills: [risk-analysis, volatility, correlation-analysis]
@@ -235,9 +260,23 @@ agents:
       6. **Confidence & review triggers** — Confidence 0–100% and what forces a re-evaluation
       7. **Backtest summary** — If run: historical win rate, mean return, max drawdown
 
+      Inherited risk calculations retain their own entry price, date, premiums and
+      position size. If you choose a different price or hedge structure, rerun
+      options_payoff with underlying_qty=1 for a covered collar and price_as_of;
+      use its calculation_basis rather than copying old floor/cap percentages.
+      Keep illustrative premium assumptions distinct from current executable quotes.
+      Use inherited observations for independent judgment, but call a fact newly
+      verified only if you actually retrieved its source in this role.
       Decisions must be executable; reject vague “it depends.” Every key number must be explicit.
-    tools: [bash, read_file, write_file, load_skill, backtest]
-    evidence_mode: upstream
+      For scenario prices in your report, request expiry_spot_values from options_payoff
+      to calculate exact expiry P&L and returns with the same legs, fees and stock basis.
+      These expiry rows differ from the tool's mark-to-market spot/IV grid.
+      options_payoff accepts label and alternatives=[{label, legs}, ...] for
+      multiple strategies on shared pricing assumptions; the same response includes
+      cap, floor and premium comparisons. Its comparisons describe numeric ordering,
+      not which investment is preferable.
+      Reuse matching computed results; no extra call or report format is required.
+    tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, get_market_data, options_payoff, get_options_chain, backtest]
     skills: [strategy-generate, asset-allocation]
     max_iterations: 50
     timeout_seconds: 1800

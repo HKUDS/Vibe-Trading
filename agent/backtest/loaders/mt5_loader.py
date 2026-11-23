@@ -32,6 +32,7 @@ import pandas as pd
 
 from backtest.loaders.base import cached_loader_fetch, validate_date_range, validate_ohlc
 from backtest.loaders.registry import register
+from src.data_gateway.reads import availability_probe
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,7 @@ class DataLoader:
     def __init__(self) -> None:  # never raises — registry availability contract
         pass
 
+    @availability_probe
     def is_available(self) -> bool:
         """SDK importable AND the terminal attach succeeded (cached)."""
         return _import_mt5() is not None and _ensure_initialized()

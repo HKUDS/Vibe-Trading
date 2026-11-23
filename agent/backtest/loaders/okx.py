@@ -21,6 +21,9 @@ Hardening (2026-07 local audit)
 
 from __future__ import annotations
 
+from src.data_gateway.reads import availability_probe
+from backtest.loaders.acquisition import remaining_timeout
+
 import logging
 import os
 import time
@@ -28,6 +31,17 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
+
+from backtest.loaders.acquisition import source_deadline
+from backtest.loaders.base import (
+    cached_loader_fetch,
+    check_budget,
+    positive_env_float,
+    positive_env_int,
+    retry_with_budget,
+    validate_date_range,
+)
+from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +60,7 @@ _INTERVAL_MAP = {
     "1D": "1D",
 }
 
-from backtest.loaders.base import (
-    cached_loader_fetch,
-    check_budget,
-    positive_env_float,
-    positive_env_int,
-    retry_with_budget,
-    validate_date_range,
-)
-from backtest.loaders.registry import register
+
 
 BASE_URL = "https://www.okx.com/api/v5"
 CANDLES_PATH = f"{BASE_URL}/market/candles"
@@ -106,6 +112,7 @@ class DataLoader:
     markets = {"crypto"}
     requires_auth = False
 
+    @availability_probe
     def is_available(self) -> bool:
         """Probe public candles with a short timeout (honours proxy env)."""
         try:
@@ -113,7 +120,7 @@ class DataLoader:
             resp = session.get(
                 CANDLES_PATH,
                 params={"instId": "BTC-USDT", "bar": "1D", "limit": "1"},
-                timeout=_OKX_PROBE_TIMEOUT,
+                timeout=remaining_timeout(_OKX_PROBE_TIMEOUT),
             )
             if resp.status_code != 200:
                 logger.warning("OKX probe HTTP %s", resp.status_code)
@@ -236,6 +243,12 @@ class DataLoader:
             endpoints = [CANDLES_PATH, HISTORY_CANDLES_PATH]
 
         last_error: Exception | None = None
+        earliest: Optional[pd.DataFrame] = None
+        bar_width = pd.Timedelta({
+            "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
+            "1H": "1h", "4H": "4h", "1D": "1d",
+        }.get(bar, "1d"))
+        requested_start = pd.Timestamp(start_ts, unit="ms")
         for endpoint in endpoints:
             try:
                 df = self._paginate(
@@ -248,7 +261,13 @@ class DataLoader:
                     max_pages,
                 )
                 if df is not None and not df.empty:
-                    return df
+                    if earliest is None or df.index.min() < earliest.index.min():
+                        earliest = df
+                    # Recent candles can be nonempty yet cover only their last
+                    # ~1,440 minute bars. Try history before accepting that tail.
+                    # One bar permits exchange alignment (daily bars are UTC+8).
+                    if df.index.min() < requested_start + bar_width:
+                        return df
             except Exception as exc:
                 last_error = exc
                 logger.warning(
@@ -258,6 +277,12 @@ class DataLoader:
                     exc,
                 )
 
+        if earliest is not None:
+            logger.warning(
+                "OKX partial start coverage for %s: requested %s, observed %s",
+                inst_id, requested_start, earliest.index.min(),
+            )
+            return earliest
         if last_error is not None:
             logger.warning("OKX empty/failed for %s: %s", inst_id, last_error)
         else:
@@ -277,6 +302,9 @@ class DataLoader:
         all_rows: list = []
         after = str(end_ts)
         deadline = time.monotonic() + _OKX_FETCH_BUDGET_S
+        inherited = source_deadline.get()
+        if inherited is not None:
+            deadline = min(deadline, inherited)
         label = f"OKX fetch for {inst_id} via {endpoint.rsplit('/', 1)[-1]}"
 
         for _ in range(max_pages):
@@ -289,10 +317,11 @@ class DataLoader:
             }
 
             def _do_request(params=params) -> dict:
+                check_budget(deadline, label)
                 resp = session.get(
                     endpoint,
                     params=params,
-                    timeout=_OKX_TIMEOUT,
+                    timeout=min(_OKX_TIMEOUT, max(0.001, deadline - time.monotonic())),
                 )
                 # Transient gateway / rate-limit → raise for retry_with_budget
                 if resp.status_code in {429, 500, 502, 503, 504}:

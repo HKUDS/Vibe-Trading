@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from backtest.loaders.eastmoney_client import datacenter_rejection, get_json, resolve_secid
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools.trade_journal_parsers import _qualify_a_share
 
@@ -204,6 +205,7 @@ class BlockTradesTool(BaseTool):
         "required": ["code"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Look up block trades for one symbol and return a JSON envelope.
 

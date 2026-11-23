@@ -32,7 +32,7 @@ configured `date_format`; an explicitly mapped date column takes precedence.
 
 **Fallback chains (by IP-ban risk):**
 
-- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `yahoo` · `akshare` · `tushare` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -274,7 +274,7 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>12 engines + options portfolio, cross-market composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>13 engines + options portfolio, cross-market composite</sub></summary>
 
 | Engine | Market | Notes |
 |--------|--------|-------|
@@ -285,11 +285,14 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 | **VietnamEquity** | Vietnam (HOSE) | long-only, T+2 settlement hold, ±7% band on the 10/50/100-VND tick grid, 100-share lots, 0.1% sell-side tax |
 | **BrazilEquity** | Brazil (B3) | BRL, B3 trading + settlement fees, configurable broker fee, 1- or 100-share lots, R$0.01 tick, shorting allowed |
 | **ArgentinaEquity** | Argentina (BYMA) | ARS, long-only; T+2 → T+1 (2024-05-27), settlement approximated from observed sessions; same-session sale netting; declared CEDEAR ratios and credit dates; explicit tick table/panel (`ar_tick_table`) or per-instrument tick |
+| **TaiwanEquity** | Taiwan (TWSE/TPEx) | long-only, no settlement hold, ±10% band on the tick grid, 1000-share lots, 0.1425% brokerage + 0.3% sell-side tax (0.1% for ETFs) |
 | **Crypto** | crypto spot / USD-M perps | funding settlements, execution/mark split |
 | **ChinaFutures** · **GlobalFutures** | futures | margin, contract multipliers |
 | **Forex** | FX / metals | via the `mt5` loader (local terminal) or the hosted `tickerall` loader (no terminal, any OS) |
 | **Composite** | cross-market | one shared capital pool across markets (`source="auto"`) |
 | **options_portfolio** | options | multi-leg, Greeks, payoff/scenario |
+
+KRX, TWSE/TPEx and HOSE backtests reject intraday intervals because their execution rules require a daily price reference. Intraday market data is available separately from loaders that support it.
 
 Benchmark selection honors `.SH`, `.SZ`, and `.BJ` A-share suffixes, plus Yahoo's `.SS` spelling for Shanghai, independently of the chosen loader, including offline local sources.
 
@@ -311,8 +314,13 @@ The turnover-aware optimizer measures allocation changes in signed position
 space: reversing a 50% long to a 50% short contributes 0.5 turnover, including
 both the close and the reopen. Its penalty and recorded allocation turnover
 include these reversals; execution-derived turnover remains a separate metric.
-Local data date ranges include the entire UTC end day, including subsecond
-timestamps; bars at the following midnight are excluded before aggregation.
+Local data date ranges include the entire end day. The default
+`timestamp_basis: utc` uses UTC timestamps, including subsecond timestamps.
+For a source with one bar per exchange session and dates written in the
+exchange timezone, set `timestamp_basis: session_date` on that source in
+`~/.vibe-trading/data-bridge/config.yaml`. For example, a daily bar labeled
+`2024-03-11 00:00:00+08:00` belongs to March 11 in this mode. Use a local date
+column when the database already returns timestamps converted to UTC.
 
 The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
 `BNB/USD`, `SOL/USD`, `ADA/USD`, and `DOGE/USD` as crypto. Fiat pairs such as
@@ -321,7 +329,7 @@ The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
 </details>
 
 <details>
-<summary><b>Quant Library</b> <sub>310 tested functions across 25 modules, callable from every transport</sub></summary>
+<summary><b>Quant Library</b> <sub>313 public exports across 26 modules, with read-only functions callable from every transport</sub></summary>
 
 `src/quantlib` holds one tested implementation of each piece of finance math the
 agent needs. Skills **import** these rather than carrying formulas inside
@@ -342,14 +350,12 @@ that is a bug, not a pattern.
 | `combination` | Optional walk-forward IC/ICIR-weighted composite of several factor panels, with per-factor and composite diagnostics; a caller-supplied weight table handles any other method. [Workflow and checklist](../agent/src/skills/factor-research/references/combination.md). |
 | `multipletesting` · `crossvalidation` | Deflated significance, purged CV; purged walk-forward splits omit folds with no training observations left after purging; Sharpe significance summaries reject non-finite inputs by name. |
 | `impact` | Market-impact models |
-| `volatility` | Heston (1993) stochastic-volatility pricing; Heston pricing requires finite inputs and a positive integration limit; invalid inputs return a domain error. |
+| `volatility` | Heston pricing, bounded IV-grid interpolation, and observed-slice European call model-price diagnostics for vertical spread bounds and butterfly convexity. Diagnostics expose coverage and numerical limits, not an arbitrage-free certificate. |
 | `portfolio` | Hierarchical Risk Parity allocation |
 | `copula` | Gaussian and Archimedean copulas |
 | `microstructure` | VPIN, Roll spread, Amihud illiquidity, Kyle's lambda |
 
-The read-only `quantlib_call` tool reaches all of it through one contract, so the
-finance math works on the CLI, the Web UI, the REST API and MCP — including
-deployments where `bash` is gated off. It is
+The read-only `quantlib_call` tool exposes 237 callable exports through one contract on the CLI, the Web UI, the REST API and MCP, including deployments where `bash` is gated off. The library inventory above also includes file exporters that this read-only tool deliberately refuses. It is
 structurally not a shell — module allowlist, `__all__`-only dispatch, `export_*`
 refused. Econometrics needs the `stats` extra
 (`pip install "vibe-trading-ai[stats]"`); those functions lazy-import and tell
@@ -419,7 +425,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 83 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 85 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
@@ -434,7 +440,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # Cross-session persistent memory
 │   │   │   └── persistent.py       #   file-based memory (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 122 auto-discovered agent tools
+│   │   ├── tools/                  # 124 auto-discovered agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── remember_tool.py    #   cross-session memory (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)
@@ -459,7 +465,7 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider abstraction
 │   │
 │   └── backtest/                   # Backtest engines
-│       ├── engines/                #   11 engines + composite cross-market engine + options_portfolio
+│       ├── engines/                #   12 engines + composite cross-market engine + options_portfolio
 │       ├── loaders/                #   28 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, india_broker, tickerall, gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains

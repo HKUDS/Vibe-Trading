@@ -80,10 +80,14 @@ class MarketDataTool(BaseTool):
     """Fetch normalized OHLCV data through repository loaders."""
 
     name = "get_market_data"
+    use_user_date_window = True
     description = (
-        "Fetch normalized OHLCV market data through the repository loader layer. "
-        "Use this for stock, ETF, index, or crypto price bars before writing raw "
-        "yfinance/OKX/Tushare scripts. Volume units are source- and market-dependent "
+        "Fetch normalized OHLCV market data through the unified data gateway. "
+        "Use this for stock, ETF, index, or crypto price bars rather than direct "
+        "yfinance/OKX/Tushare scripts; compute on the returned artifacts. "
+        "With a task workspace, the returned bars are also exported to CSV using Python by default, "
+        "with currencies/source metadata and a checked row count/checksum; no export script is needed. "
+        "Volume units are source- and market-dependent "
         "(A-share sources report board lots of 100 shares, HK/US sources report single "
         "shares); read the per-symbol _provenance.volume_unit field ('lots' / 'shares' / "
         "null=undeclared) before interpreting or comparing volume values. Price caliber "
@@ -97,21 +101,30 @@ class MarketDataTool(BaseTool):
     parameters = {
         "type": "object",
         "properties": {
+            "run_dir": {"type": "string", "description": "Workspace for a saved full JSON result usable by quantlib_call; injected by agent sessions."},
+            "export_csv": {
+                "type": "boolean", "default": True,
+                "description": "Default true when run_dir is available. Save a ready-to-use CSV from the same returned rows, with symbol, OHLCV, currency, source, adjustment and sampling flags. No extra fetch. Returns path, columns, rows and checksum. Sampling cap still applies; use max_rows=0 for all rows in a bounded window.",
+            },
             "codes": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
                     'Symbols such as ["AAPL.US"], ["700.HK"], ["TD.TO"], '
-                    '["PNG.V"], or ["BTC-USDT"].'
+                    '["PNG.V"], ["7203.T"] (Japan), ["SAP.DE"] (Europe), or ["BTC-USDT"].'
                 ),
             },
             "start_date": {
                 "type": "string",
-                "description": "Start date in YYYY-MM-DD format.",
+                "description": "Requested analysis start in YYYY-MM-DD. Explicit user ranges are enforced by the runtime; put necessary calculation history in warmup_start_date instead of padding this date.",
             },
             "end_date": {
                 "type": "string",
                 "description": "End date in YYYY-MM-DD format.",
+            },
+            "warmup_start_date": {
+                "type": "string",
+                "description": "Optional earlier YYYY-MM-DD for indicator/rolling-return warmup. Acquires and returns the prefix through end_date without changing the analysis start_date. Omit for close snapshots or CSV exports without lookback calculations. Existing sampling cap still applies.",
             },
             "source": {
                 "type": "string",
@@ -122,8 +135,8 @@ class MarketDataTool(BaseTool):
                     "and the market quotes opt-in, with no fallback in either direction. "
                     "Use 'longbridge' explicitly for US/HK OHLCV through the "
                     "Longbridge OpenAPI (requires Longbridge credentials). "
-                    "Free, no key: yfinance/yahoo (US/HK/Canada equities; "
-                    "Canada uses .TO/.V), okx/ccxt/binance "
+                    "Free, no key: yfinance/yahoo (US/HK/Japan/Canada equities; "
+                    "Japan uses .T, Canada uses .TO/.V), okx/ccxt/binance "
                     "(crypto), baostock/tencent/eastmoney/sina/akshare "
                     "(China A-shares), futu (HK/A via local FutuOpenD), stooq "
                     "(global EOD), pykrx (Korea KRX daily "
@@ -148,7 +161,7 @@ class MarketDataTool(BaseTool):
             },
             "max_rows": {
                 "type": "integer",
-                "description": "Per-symbol row cap. Use 0 only when the full series is required.",
+                "description": "Per-symbol output sampling cap, including saved JSON. For a bounded day of minute bars needed for calculations use 0 on the FIRST call; a small cap saves only sampled rows. Large downloads use history_data.",
                 "default": DEFAULT_MAX_ROWS,
             },
         },
@@ -191,6 +204,13 @@ class MarketDataTool(BaseTool):
                 f"start_date ({start_date}) must not be after end_date ({end_date})"
             )
 
+        warmup_start = kwargs.get("warmup_start_date")
+        if warmup_start is not None:
+            if not isinstance(warmup_start, str) or not _valid_iso_date(warmup_start):
+                return _error("warmup_start_date must be a YYYY-MM-DD date")
+            if warmup_start >= start_date:
+                return _error("warmup_start_date must precede the analysis start_date")
+
         source = kwargs.get("source", "auto")
         if source not in _SOURCE_ENUM:
             return _error(f"source must be one of {_SOURCE_ENUM}")
@@ -232,9 +252,24 @@ class MarketDataTool(BaseTool):
             # behavior here so both surfaces agree.
             max_rows = DEFAULT_MAX_ROWS
 
+        export_csv = kwargs.get("export_csv", True)
+        if not isinstance(export_csv, bool):
+            return _error("export_csv must be a boolean")
+        if export_csv and not kwargs.get("run_dir") and "export_csv" not in kwargs:
+            export_csv = False  # Direct legacy callers without an artifact workspace.
+        if export_csv:
+            from src.tools.path_utils import safe_run_dir
+
+            if not kwargs.get("run_dir"):
+                return _error("export_csv requires an authorized run_dir workspace")
+            try:
+                safe_run_dir(str(kwargs["run_dir"]))
+            except ValueError as exc:
+                return _error(str(exc))
+
         fetch_kwargs: dict[str, Any] = {
             "codes": codes,
-            "start_date": start_date,
+            "start_date": warmup_start or start_date,
             "end_date": end_date,
             "source": source,
             "interval": normalized_interval,
@@ -244,4 +279,26 @@ class MarketDataTool(BaseTool):
         loader_resolver = kwargs.get("loader_resolver")
         if loader_resolver is not None:
             fetch_kwargs["loader_resolver"] = loader_resolver
-        return fetch_market_data_json(**fetch_kwargs)
+        from src.agent.result_artifacts import persist_calculation_result
+        from src.data_gateway.bar_summary import summarize_bars
+
+        payload = json.loads(fetch_market_data_json(**fetch_kwargs))
+        if warmup_start or isinstance(kwargs.get("_user_date_window"), dict):
+            payload["_request_window"] = {
+                "analysis_start": start_date, "analysis_end": end_date,
+                "acquisition_start": warmup_start or start_date, "acquisition_end": end_date,
+                "warmup_start_date": warmup_start,
+            }
+            if isinstance(kwargs.get("_user_date_window"), dict):
+                payload["_request_window"]["normalization"] = kwargs["_user_date_window"]
+        summary = summarize_bars(payload, normalized_interval)
+        if summary:
+            payload["_summary"] = summary
+            payload["_data_layout"] = {
+                "symbol_values": "list of bar objects; sampled values are {rows, returned, truncated, data: [bar objects]}",
+                "metadata_keys": "underscore-prefixed; _provenance is keyed by symbol",
+                "bar_fields": ["trade_date", "open", "high", "low", "close", "volume"],
+            }
+        return persist_calculation_result(
+            json.dumps(payload, ensure_ascii=False), kwargs.get("run_dir"), export_csv=export_csv,
+        )

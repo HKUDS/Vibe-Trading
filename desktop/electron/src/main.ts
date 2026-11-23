@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import {
   app,
   BrowserWindow,
@@ -18,11 +21,19 @@ import {
   resolveDesktopLocale,
 } from "./locales";
 import { SecureCredentialStore } from "./secure-credentials";
+import { assertDataOutsideInstallation, checkDesktopUpdate, stageDesktopUpdate, DesktopRelease, DesktopUpdatePolicy } from "./update";
+import { UpdateRecoveryJournal, UpdateRecoveryResult } from "./update-recovery";
+import { assertVerifiedUpdateArtifactUnchanged, compareSemanticVersions } from "./update-verification";
 
 let mainWindow: BrowserWindow | undefined;
 let backend: BackendManager | undefined;
 let bootPromise: Promise<void> | undefined;
 let quitting = false;
+let updateBusy = false;
+let updateCandidate: DesktopRelease | undefined;
+let updateRecovery: UpdateRecoveryResult | undefined;
+let updateJournal: UpdateRecoveryJournal;
+let updatePolicy: DesktopUpdatePolicy;
 let desktopLocale: DesktopLocale = "en";
 let desktopMessages = getDesktopMessages(desktopLocale);
 const apiAuthKey = randomBytes(32).toString("base64url");
@@ -43,6 +54,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   void app.whenReady().then(ready).catch((error) => {
     dialog.showErrorBox(desktopMessages.startupFailureTitle, errorText(error));
+    app.quit();
   });
 }
 
@@ -53,6 +65,8 @@ async function ready(): Promise<void> {
   desktopMessages = getDesktopMessages(desktopLocale);
   nativeTheme.themeSource = "dark";
   app.setAppLogsPath();
+  updateJournal = new UpdateRecoveryJournal(path.join(app.getPath("userData"), "updates"));
+  updatePolicy = JSON.parse(readFileSync(path.join(app.getAppPath(), "package.json"), "utf8")).desktopUpdates;
   credentialStore = new SecureCredentialStore({ messages: desktopMessages });
   await credentialStore.initialize();
   createWindow();
@@ -117,6 +131,24 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
+  ipcMain.handle("desktop:check-update", async (event) => {
+    assertMainWindowSender(event.sender);
+    if (updateBusy) throw new Error("An update is already in progress");
+    updateCandidate = undefined;
+    const method = process.platform !== "win32" || !app.isPackaged ? "desktop-manual"
+      : !updatePolicy?.feedUrl ? "desktop-unconfigured" : "desktop";
+    if (method === "desktop") updateCandidate = await checkDesktopUpdate(updatePolicy);
+    return {
+      current_version: app.getVersion(), latest_version: updateCandidate?.version ?? null,
+      available: Boolean(updateCandidate && compareSemanticVersions(updateCandidate.version, app.getVersion()) > 0),
+      method, recovery: updateRecovery?.disposition ?? "none",
+    };
+  });
+  ipcMain.handle("desktop:install-update", async (event) => {
+    assertMainWindowSender(event.sender);
+    if (event.senderFrame !== mainWindow?.webContents.mainFrame) throw new Error("Desktop request rejected");
+    await installUpdate();
+  });
   ipcMain.on("desktop:retry", (event) => {
     assertMainWindowSender(event.sender);
     void boot();
@@ -157,6 +189,7 @@ async function showLoadingPage(): Promise<void> {
 }
 
 function boot(): Promise<void> {
+  if (updateBusy) return Promise.resolve();
   if (bootPromise) return bootPromise;
   bootPromise = bootInternal().finally(() => { bootPromise = undefined; });
   return bootPromise;
@@ -167,26 +200,41 @@ async function bootInternal(): Promise<void> {
   await backend?.stop();
   if (!mainWindow.webContents.getURL().startsWith("file:")) await showLoadingPage();
 
-  backend = new BackendManager({
-    appPath: app.getAppPath(),
-    resourcesPath: process.resourcesPath,
-    allowSourceDiscovery: !app.isPackaged,
-    logDirectory: app.getPath("logs"),
-    apiAuthKey,
-    messages: desktopMessages,
-    credentialEnvironment: requireCredentialStore().environment(),
-    onStatus: (message) => mainWindow?.webContents.send("desktop:status", message),
-    onUnexpectedExit: (message) => {
-      if (!quitting) void reportBootError(message);
-    },
-  });
+  // Do not start an old backend while a previously launched installer may
+  // still be replacing its files. Completion requires a healthy new backend.
+  const recovery = await updateJournal.recover(app.getVersion(), false).catch((error) => ({
+    disposition: "manual-intervention-required" as const, detail: errorText(error),
+  }));
+  updateRecovery = recovery.disposition === "none" ? undefined : recovery;
+  if (recovery.disposition === "manual-intervention-required") {
+    await reportBootError(recovery.detail ?? "Resolve the pending update before restarting");
+    return;
+  }
 
   try {
+    backend = new BackendManager({
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+      allowSourceDiscovery: !app.isPackaged,
+      logDirectory: app.getPath("logs"),
+      apiAuthKey,
+      messages: desktopMessages,
+      credentialEnvironment: requireCredentialStore().environment(),
+      onStatus: (message) => mainWindow?.webContents.send("desktop:status", message),
+      onUnexpectedExit: (message) => {
+        if (!quitting && !updateBusy) void reportBootError(message);
+      },
+    });
     const url = await backend.start();
+    // A target version is only reported complete after its backend starts.
+    updateRecovery ??= await updateJournal.recover(app.getVersion()).catch((error) => ({
+      disposition: "manual-intervention-required" as const,
+      detail: errorText(error),
+    }));
     await mainWindow.loadURL(url);
     writeParentDeathSmokeRecord(url);
   } catch (error) {
-    await backend.stop();
+    await backend?.stop();
     await reportBootError(errorText(error));
   }
 }
@@ -247,11 +295,81 @@ function requireCredentialStore(): SecureCredentialStore {
 }
 
 async function shutdownAndQuit(): Promise<void> {
-  if (quitting) return;
+  if (quitting || updateBusy) return;
   quitting = true;
   mainWindow?.webContents.send("desktop:status", desktopMessages.closingService);
   await backend?.stop();
   app.quit();
+}
+
+async function installUpdate(): Promise<void> {
+  if (updateBusy || bootPromise || !backend?.url || !updateCandidate
+    || !app.isPackaged || process.platform !== "win32"
+    || !updateRecovery || updateRecovery.disposition === "manual-intervention-required") {
+    throw new Error("Check updates after the service is ready; resolve any pending recovery first");
+  }
+  updateBusy = true;
+  let artifactPath: string | undefined;
+  let attemptStarted = false;
+  let stopped = false;
+  let launched = false;
+  try {
+    assertDataOutsideInstallation(path.dirname(app.getPath("exe")), [
+      app.getPath("userData"), path.join(os.homedir(), ".vibe-trading"),
+      ...(process.env.VIBE_TRADING_HOME ? [process.env.VIBE_TRADING_HOME] : []),
+    ]);
+    // Check again before downloading, but never silently change the reviewed target.
+    const release = await checkDesktopUpdate(updatePolicy);
+    if (release.version !== updateCandidate.version || release.url !== updateCandidate.url
+      || release.sha256 !== updateCandidate.sha256) {
+      throw new Error("The release changed. Check updates and review it again");
+    }
+    const staged = await stageDesktopUpdate(release, updatePolicy, app.getVersion(), updateJournal.stagingDirectory);
+    artifactPath = staged.artifactPath;
+    const attempt = await updateJournal.begin({
+      fromVersion: app.getVersion(), toVersion: staged.version,
+      artifactFileName: path.basename(artifactPath), artifactSha256: staged.sha256,
+      publisherCertificateSha256: staged.certificateSha256,
+    });
+    attemptStarted = true;
+    stopped = true;
+    await backend.stopForUpdate();
+    await updateJournal.advance(attempt.attemptId, "backend-stopped");
+    await assertVerifiedUpdateArtifactUnchanged(artifactPath, staged.sha256);
+    // Persist handoff intent first: a crash after spawn must not look safe to retry.
+    await updateJournal.advance(attempt.attemptId, "installer-launched");
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(artifactPath!, ["--updated", "/S", "--force-run"], {
+          detached: true, stdio: "ignore", windowsHide: true,
+        });
+        child.once("error", reject);
+        child.once("spawn", () => { launched = true; child.unref(); resolve(); });
+      });
+    } catch (error) {
+      // A rejected spawn is proof no installer started. A crash is not.
+      await updateJournal.advance(attempt.attemptId, "backend-stopped");
+      throw error;
+    }
+  } catch (error) {
+    appendFileSync(path.join(app.getPath("logs"), "updates.log"), `${new Date().toISOString()} ${errorText(error)}\n`);
+    throw error;
+  } finally {
+    updateCandidate = undefined;
+    if (launched) {
+      // Even a journal write failure must not restart a backend under the installer.
+      quitting = true;
+      app.quit();
+    } else {
+      try {
+        if (attemptStarted) updateRecovery = await updateJournal.recover(app.getVersion());
+        else if (artifactPath) await rm(artifactPath, { force: true });
+      } finally {
+        updateBusy = false;
+        if (stopped) await boot();
+      }
+    }
+  }
 }
 
 function isSafeExternalUrl(rawUrl: string): boolean {

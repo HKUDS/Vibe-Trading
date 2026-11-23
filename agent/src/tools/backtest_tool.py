@@ -340,7 +340,12 @@ class BacktestTool(BaseTool):
     """Backtest execution tool."""
 
     name = "backtest"
-    description = "Run backtest: validate config.json + signal_engine.py, invoke built-in engine."
+    description = (
+        "Run backtest: validate config.json + signal_engine.py, invoke built-in engine. "
+        "For US stocks/ETFs use slippage_us for per-side slippage (5 bps = 0.0005); "
+        "generic commission is not a US slippage setting. Report actual execution_costs "
+        "and returned metric_sources identify the underlying metric files."
+    )
     parameters = {
         "type": "object",
         "properties": {

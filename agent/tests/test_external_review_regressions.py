@@ -72,14 +72,13 @@ def test_worker_truncation_after_successful_data_call(tmp_path, monkeypatch, rea
 
 @pytest.mark.parametrize("upstream,expected", [
     ({"full_debate": "Bull: durable demand. Bear: stretched valuation. Risk: retain existing exposure."}, "completed"),
-    ({}, "incomplete"),
-    ({"full_debate": " "}, "incomplete"),
-    ({"wrong_key": "A complete but unmapped report."}, "incomplete"),
-    ({"full_debate": "### Phase 1 — Plan\nFirst, I'll fetch the data."}, "incomplete"),
+    ({}, "completed"),
+    ({"full_debate": " "}, "completed"),
+    ({"wrong_key": "A complete but unmapped report."}, "completed"),
+    ({"full_debate": "### Phase 1 — Plan\nFirst, I'll fetch the data."}, "completed"),
 ])
-def test_committee_pm_synthesis_requires_mapped_reports(tmp_path, monkeypatch, upstream, expected):
+def test_committee_pm_delivery_does_not_grade_supplied_reports(tmp_path, monkeypatch, upstream, expected):
     spec, task = _committee_role("portfolio_manager")
-    assert spec.evidence_mode == "upstream"
     answer = "Decision: HOLD. Retain existing exposure because valuation offsets durable demand; review after earnings."
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: _Replies([
         LLMResponse(content=answer, tool_calls=[], finish_reason="stop"),
@@ -89,7 +88,7 @@ def test_committee_pm_synthesis_requires_mapped_reports(tmp_path, monkeypatch, u
     assert result.status == expected
 
 
-def test_auto_data_role_still_requires_own_evidence(tmp_path, monkeypatch):
+def test_data_role_can_use_supplied_evidence(tmp_path, monkeypatch):
     spec, task = _committee_role("risk_officer")
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: _Replies([
         LLMResponse(content="Hold the current exposure based on the supplied reports.", tool_calls=[], finish_reason="stop"),
@@ -97,12 +96,12 @@ def test_auto_data_role_still_requires_own_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry())
     result = run_worker(spec, task, {k: "A complete upstream report." for k in task.input_from},
                         {"target": "NVDA", "market": "US"}, tmp_path)
-    assert result.status == "incomplete"
+    assert result.status == "completed"
 
 
 @pytest.mark.parametrize("value,expected", [("96.221B", True), ("96.22B", True), ("97.22B", False)])
 def test_formatted_revenue_keeps_its_evidence_reference(tmp_path, value, expected):
-    from src.agent.grounding import GroundingLedger
+    from evals.grounding import GroundingLedger
 
     ledger = GroundingLedger(run_dir=tmp_path, user_message="Report revenue")
     ledger.ingest_tool_result(tool_name="financial_data", arguments={}, call_id="c1", success=True,
@@ -163,4 +162,7 @@ def test_shadow_zero_trades_preserves_requested_cash(tmp_path, monkeypatch, capi
     assert result.combined["trade_count"] == 0
     assert result.combined["final_value"] == pytest.approx(capital)
     assert result.shadow_total_pnl == pytest.approx(0)
-    assert result.delta_pnl == pytest.approx(0)
+    # No journal was supplied, so the real side is unmeasured and the delta is
+    # unknown; the old 0.0 read as a measured break-even (#2205).
+    assert result.real_total_pnl is None
+    assert result.delta_pnl is None

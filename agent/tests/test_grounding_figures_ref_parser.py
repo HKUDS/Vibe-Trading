@@ -1,6 +1,6 @@
 """Regression coverage for figures refs containing provider call-id separators."""
 
-from src.agent.grounding.figures import parse_figures_block
+from evals.grounding.figures import parse_figures_block
 
 
 def test_figures_ref_keeps_pipe_inside_call_id() -> None:

@@ -32,6 +32,7 @@ from backtest.loaders import sec_frames
 from backtest.loaders import yahoo_client
 from backtest.loaders.eastmoney_client import datacenter_rejection, get_json, resolve_secid
 from backtest.loaders.sec_edgar_client import cik_for, get_company_facts
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools._result_paging import fit_records
 
@@ -840,6 +841,7 @@ class FinancialStatementsTool(BaseTool):
         "required": ["code"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Validate inputs, dispatch by market, and return a JSON envelope.
 

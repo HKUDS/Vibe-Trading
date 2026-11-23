@@ -25,7 +25,7 @@ def _us_daily_frame() -> pd.DataFrame:
 
 def test_us_intraday_interval_does_not_hit_daily_endpoint() -> None:
     """Runner ``1H`` used to fetch stock_us_hist daily bars under a 1H cache key."""
-    ak = MagicMock()
+    ak = MagicMock(spec=["stock_us_hist"])
     ak.stock_us_hist.return_value = _us_daily_frame()
     loader = DataLoader()
     with patch.dict("sys.modules", {"akshare": ak}):
@@ -35,7 +35,7 @@ def test_us_intraday_interval_does_not_hit_daily_endpoint() -> None:
 
 
 def test_hk_four_hour_interval_rejected() -> None:
-    ak = MagicMock()
+    ak = MagicMock(spec=["stock_hk_hist"])
     loader = DataLoader()
     with patch.dict("sys.modules", {"akshare": ak}):
         with pytest.raises(ValueError, match="Unsupported interval"):
@@ -44,7 +44,7 @@ def test_hk_four_hour_interval_rejected() -> None:
 
 
 def test_etf_intraday_interval_rejected() -> None:
-    ak = MagicMock()
+    ak = MagicMock(spec=["fund_etf_hist_sina"])
     loader = DataLoader()
     with patch.dict("sys.modules", {"akshare": ak}):
         with pytest.raises(ValueError, match="Unsupported interval"):
@@ -53,7 +53,7 @@ def test_etf_intraday_interval_rejected() -> None:
 
 
 def test_us_daily_interval_still_fetches() -> None:
-    ak = MagicMock()
+    ak = MagicMock(spec=["stock_us_hist"])
     ak.stock_us_hist.return_value = _us_daily_frame()
     loader = DataLoader()
     with patch.dict("sys.modules", {"akshare": ak}):
@@ -69,7 +69,7 @@ def test_us_fetch_reaches_the_amex_arca_market_id() -> None:
     def stock_us_hist(symbol: str, **_: object) -> pd.DataFrame:
         return _us_daily_frame() if symbol == "107.SPY" else pd.DataFrame()
 
-    ak = MagicMock()
+    ak = MagicMock(spec=["stock_us_hist"])
     ak.stock_us_hist.side_effect = stock_us_hist
     loader = DataLoader()
     with patch.dict("sys.modules", {"akshare": ak}):

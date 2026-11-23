@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CandlestickChart, Loader2 } from "lucide-react";
+import { CandlestickChart, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -8,17 +8,21 @@ import {
   buildPresetLegs,
   DEFAULT_PARAMS,
   type OptionLeg,
+  type PayoffAlternative,
   type OptionsLabParams,
   type OptionsPayoffRequest,
   type OptionsPayoffResponse,
 } from "@/lib/options";
 import { StrategyBuilder } from "@/components/options/StrategyBuilder";
+import { PayoffComparisons } from "@/components/options/PayoffComparisons";
+import { StrategyScenarioComparison } from "@/components/options/StrategyScenarioComparison";
 import { GreeksCards } from "@/components/options/GreeksCards";
 import { OptionsChainTable } from "@/components/options/OptionsChainTable";
 import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
 import { OptionsScenarioMatrix } from "@/components/charts/OptionsScenarioMatrix";
 import { VolatilitySurfaceGrid } from "@/components/options/VolatilitySurfaceGrid";
 import { useAnalysisState } from "@/hooks/useAnalysisState";
+import { buildOptionsAnalysisJson, buildOptionsScenarioCsv } from "@/lib/optionsExport";
 
 const ANALYZE_DEBOUNCE_MS = 250;
 
@@ -60,6 +64,8 @@ export function OptionsLab() {
   const { t } = useTranslation();
 
   const [draft, setDraft] = useAnalysisState("options", {
+    label: null as string | null,
+    alternatives: null as PayoffAlternative[] | null,
     params: DEFAULT_PARAMS as OptionsLabParams,
     legs: buildPresetLegs("long_call", DEFAULT_PARAMS.entry_spot) ?? [],
     activePresetId: "long_call" as string | null,
@@ -68,17 +74,30 @@ export function OptionsLab() {
     updatedAt: "",
   });
   const { params, legs, activePresetId, result, resultRequest, updatedAt } = draft;
+  const label = draft.label ?? t("options.comparison.current");
+  const alternatives = draft.alternatives ?? [];
   const setParams = (params: OptionsLabParams) => setDraft((d) => ({ ...d, params }));
   const [retry, setRetry] = useState(0);
   const [chainOpen, setChainOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const req = useMemo(() => buildPayoffRequest(legs, params), [legs, params]);
+  const req = useMemo(() => {
+    const primary = buildPayoffRequest(legs, params);
+    return primary ? { ...primary, label, alternatives } : null;
+  }, [legs, params, label, alternatives]);
   const signature = req ? JSON.stringify(req) : null;
   const currentSignature = useRef(signature);
   currentSignature.current = signature;
   const fresh = signature !== null && signature === JSON.stringify(resultRequest);
+  const comparisonCurves = useMemo(
+    () => result?.alternatives?.flatMap((alternative) =>
+      alternative.status === "ok" && alternative.expiry_curve
+        ? [{ label: alternative.label, curve: alternative.expiry_curve }]
+        : [],
+    ) ?? [],
+    [result?.alternatives],
+  );
 
   useEffect(() => {
     const gen = ++generation.current;
@@ -111,6 +130,25 @@ export function OptionsLab() {
 
   const handleLegsChange = (next: OptionLeg[]) => {
     setDraft((d) => ({ ...d, activePresetId: null, legs: next }));
+  };
+
+  const exportSnapshot = (format: "json" | "csv") => {
+    if (!result || !resultRequest) return;
+    try {
+      const json = format === "json";
+      const content = json ? buildOptionsAnalysisJson(resultRequest, result) : buildOptionsScenarioCsv(result, resultRequest);
+      const blob = new Blob([content], { type: json ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = json ? "options-analysis.json" : "options-scenarios.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("options.errorGeneric"));
+    }
   };
 
   const summary = result?.summary ?? null;
@@ -204,21 +242,60 @@ export function OptionsLab() {
           <section className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold">{t("options.payoff.title")}</div>
-              {loading && (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("options.builder.analyzing")}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {result && resultRequest && (
+                  <>
+                    <button type="button" onClick={() => exportSnapshot("json")} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+                      <Download className="h-3.5 w-3.5" />{t("options.exportJson")}
+                    </button>
+                    <button type="button" onClick={() => exportSnapshot("csv")} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+                      <Download className="h-3.5 w-3.5" />{t("options.exportCsv")}
+                    </button>
+                  </>
+                )}
+                {loading && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t("options.builder.analyzing")}
+                  </span>
+                )}
+              </div>
             </div>
             <OptionsPayoffChart
               curve={result?.expiry_curve ?? { spot: [], pnl: [] }}
               entrySpot={resultRequest?.entry_spot ?? params.entry_spot}
               breakevens={summary?.breakevens ?? []}
+              comparisonCurves={comparisonCurves}
             />
           </section>
         </div>
       </div>
+
+      {!!result?.expiry_scenarios?.length && (
+        <section className="overflow-x-auto rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold">{t("options.expiryScenarios.title")}</h2>
+          <table className="w-full text-sm tabular-nums">
+            <thead><tr className="text-start text-muted-foreground">
+              <th className="p-2 text-start">{t("options.expiryScenarios.spot")}</th>
+              <th className="p-2 text-end">{t("options.expiryScenarios.pnl")}</th>
+              <th className="p-2 text-end">{t("options.expiryScenarios.return")}</th>
+            </tr></thead>
+            <tbody>{result.expiry_scenarios.map((row, index) => (
+              <tr key={index} className="border-t border-border/40">
+                <td className="p-2">{row.spot.toLocaleString()}</td>
+                <td className="p-2 text-end">{row.pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="p-2 text-end">{row.return_percent == null ? "—" : `${row.return_percent.toFixed(2)}%`}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </section>
+      )}
+
+      <PayoffComparisons
+        label={label} alternatives={alternatives} legs={legs} comparisons={result?.comparisons}
+        onChange={(label, alternatives) => setDraft((d) => ({ ...d, label, alternatives }))}
+      />
+      {resultRequest && <StrategyScenarioComparison request={resultRequest} />}
 
       {/* Portfolio Greeks */}
       {result && <GreeksCards greeks={result.greeks} />}

@@ -16,6 +16,7 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pydantic import ValidationError
 
@@ -23,7 +24,7 @@ from pathlib import Path
 
 from src.config.accessor import get_env_config
 
-from src.swarm.models import SwarmEvent, SwarmRun
+from src.swarm.models import RunStatus, SwarmEvent, SwarmRun
 from src.tools.redaction import redact_internal_paths
 
 
@@ -83,6 +84,16 @@ def swarm_runs_root() -> Path:
 _TRANSIENT_WINERRORS = (5, 32)  # ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION
 _REPLACE_ATTEMPTS = 6
 _REPLACE_BACKOFF = (0.025, 0.05, 0.1, 0.2, 0.4)  # seconds; len == attempts - 1
+
+# Marker a foreign process leaves in a run directory to ask the owning
+# process to stop the run. The active-run index (src/swarm/runtime.py) is
+# process-local, so a separate `--swarm-cancel` process cannot reach it;
+# this file is the only channel between the two processes. The owning
+# runtime polls for it between layers (and in-flight workers see it through
+# _LayerStop), setting its in-memory cancel event when it appears, so a
+# cross-process request follows the same cooperative cancellation contract
+# as an in-process one.
+CANCEL_REQUESTED_FILENAME = "cancel.requested"
 
 
 def _is_transient_windows_error(exc: OSError) -> bool:
@@ -220,6 +231,47 @@ class SwarmStore:
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         self._atomic_write(rd / "run.json", run.model_dump_json(indent=2))
 
+    def request_cancel(self, run_id: str) -> bool:
+        """Ask the process owning ``run_id`` to stop it; return True if asked.
+
+        Writes the cancel-requested marker into the run directory when the
+        run exists and is still ``running``. The marker is deliberately not
+        a field in ``run.json``: a read-modify-write of that file from a
+        foreign process could clobber the owner's concurrent snapshot, while
+        creating one small file is atomic and idempotent. Returns False for
+        an unknown, malformed, or already-terminal run id — callers report
+        those as "not found or already finished".
+        """
+        try:
+            run_dir = self.run_dir(run_id)
+            run = self.load_run(run_id)
+        except (OSError, ValueError):
+            return False
+        if run is None or run.status != RunStatus.running:
+            return False
+        marker = run_dir / CANCEL_REQUESTED_FILENAME
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return True  # already requested; asking again changes nothing
+        except OSError:
+            return False
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(datetime.now(timezone.utc).isoformat() + "\n")
+        return True
+
+    def cancel_requested(self, run_id: str) -> bool:
+        """True when another process left a cancel request for ``run_id``.
+
+        A single stat call, so the owning runtime can poll it between layers
+        without measurable cost. Never raises: a missing run directory or an
+        unreadable marker means "no request".
+        """
+        try:
+            return (self.run_dir(run_id) / CANCEL_REQUESTED_FILENAME).exists()
+        except (OSError, ValueError):
+            return False
+
     def list_runs(self, limit: int = 50) -> list[SwarmRun]:
         """List all runs sorted by created_at descending.
 
@@ -257,13 +309,25 @@ class SwarmStore:
         Raises:
             FileNotFoundError: If the run directory does not exist.
         """
+        self.append_event_if(run_id, event)
+
+    def append_event_if(
+        self,
+        run_id: str,
+        event: SwarmEvent,
+        accept: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Check admission under the journal lock so an expired writer cannot trail the terminal event."""
         rd = self.run_dir(run_id)
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         events_file = rd / "events.jsonl"
         with self._write_lock:
+            if accept is not None and not accept():
+                return False
             with events_file.open("a", encoding="utf-8") as f:
                 f.write(event.model_dump_json() + "\n")
+        return True
 
     def read_events(self, run_id: str, after_index: int = 0) -> list[SwarmEvent]:
         """Read the event log with optional offset for SSE incremental streaming.
@@ -331,7 +395,17 @@ class SwarmStore:
         # caller that mutates the task set will not silently drop tasks).
         seen = {task.id for task in merged}
         merged.extend(task for tid, task in by_id.items() if tid not in seen)
-        return run.model_copy(update={"tasks": merged})
+        from src.swarm.delivery import refresh_report
+        from src.swarm.models import RunStatus
+        from src.swarm.task_store import topological_layers
+
+        hydrated = run.model_copy(update={"tasks": merged})
+        layers = topological_layers(merged)
+        if not hydrated.final_report or hydrated.status not in (RunStatus.completed, RunStatus.failed, RunStatus.cancelled):
+            refresh_report(hydrated, layers[-1] if layers else [])
+        else:
+            hydrated.report_is_partial = hydrated.status != RunStatus.completed
+        return hydrated
 
     def compute_stale_threshold(self, run: SwarmRun) -> float:
         """Per-run silence budget before a ``running`` run looks abandoned.
@@ -457,20 +531,16 @@ class SwarmStore:
         else:
             new_status = RunStatus.failed
 
-        final_report = run.final_report
-        if new_status == RunStatus.completed and not final_report:
-            for task in reversed(run.tasks):
-                if task.summary:
-                    final_report = task.summary
-                    break
+        from src.swarm.delivery import refresh_report
+        from src.swarm.task_store import topological_layers
 
-        return run.model_copy(
-            update={
-                "status": new_status,
-                "completed_at": run.completed_at or now.isoformat(),
-                "final_report": final_report,
-            }
-        )
+        recovered = run.model_copy(update={
+            "status": new_status,
+            "completed_at": run.completed_at or now.isoformat(),
+        })
+        layers = topological_layers(recovered.tasks)
+        refresh_report(recovered, layers[-1] if layers else [])
+        return recovered
 
     def _reap_stale(self, run: SwarmRun, *, now: datetime) -> SwarmRun:
         """Pure: mark non-terminal tasks failed; derive run status from tasks."""

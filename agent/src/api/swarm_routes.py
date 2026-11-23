@@ -165,6 +165,7 @@ def register_swarm_routes(
             "created_at": run.created_at,
             "completed_at": run.completed_at,
             "final_report": run.final_report,
+            "report_is_partial": run.report_is_partial,
             # Key names AND value policy mirror the MCP run payload
             # (mcp_server._run_to_dict): provider/model pass through the same
             # public-metadata gate on read, so a run.json written before that
@@ -244,8 +245,8 @@ def register_swarm_routes(
 
         Creates a new run with the same preset and user_vars as the original.
         ``resume=true`` replays: completed upstream tasks and their artifacts
-        are carried into the new run and only the failed/cancelled subgraph
-        re-executes.
+        are carried into the new run. Compatible unfinished tasks continue
+        from saved context; tasks without checkpoints restart from those reports.
         """
         _host_validate_path_param(run_id, "run_id")
         runtime = _get_swarm_runtime()

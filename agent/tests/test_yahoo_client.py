@@ -452,3 +452,9 @@ class TestSearch:
     def test_empty_payload_returns_empty(self, monkeypatch):
         monkeypatch.setattr(yahoo_client, "throttled_get_json", lambda url, **kw: {})
         assert yahoo_client.search("zzz") == []
+
+
+def test_mainland_symbol_mapping():
+    assert yahoo_client.map_symbol("601398.SH") == "601398.SS"
+    assert yahoo_client.map_symbol("601398.SS") == "601398.SS"
+    assert yahoo_client.map_symbol("000001.SZ") == "000001.SZ"

@@ -35,7 +35,7 @@ LIST_DICT_PARAMS = {
         "contradicts_claim_ids",
     ),
     "update_research_goal_status": ("audit",),
-    "analyze_options_payoff": ("legs", "scenario_iv_values"),
+    "analyze_options_payoff": ("legs", "scenario_iv_values", "expiry_spot_values", "alternatives"),
     "run_swarm": ("variables",),
     "get_market_data": ("codes",),
     "get_fund_flow": ("codes",),
@@ -278,3 +278,24 @@ def test_live_mirrored_tools_declare_the_array_params_this_covers(mcp_server) ->
             assert mcp_server._declares_json_container(properties[param]), (
                 f"{tool_name}.{param} is no longer a JSON container"
             )
+
+
+def test_mcp_collar_and_full_calculation_results(mcp_server, tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    result = asyncio.run(mcp_server.mcp.call_tool("analyze_options_payoff", {
+        "legs": [{"option_type": "put", "strike": 150, "qty": 1, "premium": 7.2},
+                 {"option_type": "call", "strike": 200, "qty": -1, "premium": 4.35}],
+        "entry_spot": 166.19, "expiry_days": 63, "underlying_qty": 1,
+        "price_as_of": "2026-11-12"}))
+    payload = json.loads(_text(result))
+    assert payload["summary"]["loss_unbounded"] is False
+    assert payload["calculation_basis"]["price_as_of"] == "2026-11-12"
+    result = asyncio.run(mcp_server.mcp.call_tool("quantlib_call", {
+        "action": "call", "module": "risk", "function": "drawdown_series",
+        "kwargs": {"equity": [100 + i / 100 for i in range(6000)]}}))
+    receipt = json.loads(_text(result))
+    path = Path(receipt["_result_file"]["path"])
+    assert path.is_relative_to(tmp_path)
+    saved = json.loads(path.read_text())
+    assert len(saved["result"]["__series__"]["values"]) == 6000

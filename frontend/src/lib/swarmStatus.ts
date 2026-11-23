@@ -211,11 +211,11 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): Swa
   // stop (a worker finishing its iteration, the runtime's own run_completed)
   // arrive afterwards and would repaint the card as running or completed, so
   // they are dropped rather than applied.
-  if (current.status === "cancelled") return current;
-
   const event = asRecord(rawEvent);
   const data = asRecord(event.data);
   const type = asString(event.type);
+  // A late terminal delivery may contain saved results; retain cancellation.
+  if (current.status === "cancelled" && type !== "run_completed") return current;
   const eventTime = timestampMs(event.timestamp);
   const { agentId, taskId } = eventAgentKey(event);
 
@@ -240,8 +240,10 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): Swa
   if (type === "run_completed") {
     return {
       ...current,
-      status: normalizeRunStatus(data.status),
-      completedAt: eventTime ?? current.completedAt,
+      status: current.status === "cancelled" ? "cancelled" : normalizeRunStatus(data.status),
+      completedAt: current.completedAt ?? eventTime,
+      finalReport: asString(data.final_report) || current.finalReport,
+      reportIsPartial: data.report_is_partial === true || current.status === "cancelled",
     };
   }
 
@@ -396,6 +398,8 @@ export function buildSwarmStatusFromToolResultPreview(preview: string): SwarmRun
     return {
       runId,
       preset: asString(parsed.preset) || "swarm",
+      finalReport: asString(parsed.final_report) || undefined,
+      reportIsPartial: parsed.report_is_partial === true,
       status,
       currentLayer: 0,
       totalLayers: 0,
@@ -501,6 +505,8 @@ export function buildSwarmStatusFromRunDetail(
   return {
     runId: id,
     preset: asString(payload.preset_name) || asString(payload.preset) || "swarm",
+    finalReport: asString(payload.final_report) || undefined,
+    reportIsPartial: payload.report_is_partial === true,
     status: normalizeRunStatus(payload.status),
     currentLayer: 0,
     totalLayers: 0,
@@ -522,6 +528,8 @@ export function mergeSwarmRunUsage(
   const withRoster = mergeSwarmRunRoster(status, payload);
   return {
     ...withRoster,
+    finalReport: asString(payload.final_report) || withRoster.finalReport,
+    reportIsPartial: typeof payload.report_is_partial === "boolean" ? payload.report_is_partial : withRoster.reportIsPartial,
     total_input_tokens: asNumber(payload.total_input_tokens) ?? withRoster.total_input_tokens,
     total_output_tokens: asNumber(payload.total_output_tokens) ?? withRoster.total_output_tokens,
     provider: asString(payload.provider) || withRoster.provider,

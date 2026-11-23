@@ -7,13 +7,22 @@ or invoke `./.venv/bin/vibe-trading` directly. An old console script in another
 Python environment uses that environment’s dependencies.
 
 Costs and parameter studies reuse a completed backtest's exported inputs and
-strategy. No model, live broker or price-provider call is part of a study.
+strategy. Saved fundamental and event columns are replayed without refreshing
+them. No model, live broker or price-provider call is part of a study.
 
 ## Reusable inputs and execution costs
 
 Run a backtest first, then select its saved run. Its run-card manifest must
 still match the strategy and every exported OHLCV snapshot. A changed or
 missing file is refused; rerun that backtest to create a new baseline.
+
+Market-engine backtests also save the opening and closing prices of the external
+benchmark they used. Research Lab replays those prices separately from the
+portfolio. It selects the saved bars in each trial window without rebuilding
+weekly or monthly bars. A trial with a declared external benchmark fails if its evaluation window does
+not contain enough matching benchmark bars. Older runs without the reference file still replay
+locally, but cannot verify the original external benchmark. Rerun the baseline
+to capture it. The cost report records the benchmark used by each trial.
 
 ```bash
 vibe-trading research-lab costs RUN_ID --fee-multipliers 1 2 3 --slippage-bps 0 5 --json
@@ -46,6 +55,10 @@ Sharpe or return, with input-order tie breaking. The selection and plan are
 written and hashed before testing. Both the supplied data map and trial-local snapshot files are truncated
 before the strategy runs, so neither supplies later prices to a training trial. Prior prices remain
 available for indicator warmup while execution begins at the evaluated window.
+The source run's manifested equity dates define the evaluation calendar. Training covers
+`train_bars` of that calendar, with earlier prices available for indicators. Every training
+candidate and test fold must return equity for exactly its planned dates. Legacy runs without
+a manifested equity artifact can use the price calendar when they declare no warm-up boundary.
 
 Every test starts flat and pays the engine's entry and liquidation costs.
 OOS returns are compounded across test windows, including each first bar.
@@ -112,6 +125,7 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 - `POST /api/research-lab/jobs`: `{ "action": "cost_sensitivity|walk_forward|factor_audit|replay", "request": {...} }`.
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.
+- `GET /api/research-lab/jobs/{id}/report?format=oos_equity_csv`: the exact per-bar `return` and compounded `equity` produced by a completed walk-forward job. This is validation OOS only and excludes the separately reported holdout. Other job kinds return 422 instead of a generic file download. The Web report offers the same artifact as **OOS CSV** alongside the unchanged JSON download.
 
 All routes use application authentication; submission uses settings-write
 protection. The API admits two simultaneous workers. Saved jobs live under the

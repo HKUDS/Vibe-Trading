@@ -6,6 +6,7 @@ import json
 
 import pytest
 import requests
+from src import update as update_core
 
 from cli import _legacy
 from cli.commands import update as update_mod
@@ -101,31 +102,31 @@ class _FakeDist:
 
 def test_detect_install_kind_checkout(monkeypatch) -> None:
     def _raise(*a, **k):  # noqa: ANN001, ANN002
-        raise update_mod.PackageNotFoundError
+        raise update_core.PackageNotFoundError
 
-    monkeypatch.setattr(update_mod, "distribution", _raise)
+    monkeypatch.setattr(update_core, "distribution", _raise)
     assert update_mod.detect_install_kind() == update_mod.KIND_CHECKOUT
 
 
 def test_detect_install_kind_editable_modern_marker(monkeypatch) -> None:
     """direct_url.json with dir_info.editable => editable (modern pip style)."""
     dist = _FakeDist(direct_url={"url": "file:///repo", "dir_info": {"editable": True}})
-    monkeypatch.setattr(update_mod, "distribution", lambda *a, **k: dist)
+    monkeypatch.setattr(update_core, "distribution", lambda *a, **k: dist)
     assert update_mod.detect_install_kind() == update_mod.KIND_EDITABLE
 
 
 def test_detect_install_kind_wheel(monkeypatch) -> None:
     """direct_url.json WITHOUT editable (a wheel's index URL) => wheel."""
     dist = _FakeDist(direct_url={"url": "https://pypi.org/simple/...", "dir_info": {}})
-    monkeypatch.setattr(update_mod, "distribution", lambda *a, **k: dist)
+    monkeypatch.setattr(update_core, "distribution", lambda *a, **k: dist)
     assert update_mod.detect_install_kind() == update_mod.KIND_WHEEL
 
 
 def test_detect_install_kind_wheel_without_any_marker(monkeypatch) -> None:
     """No direct_url.json and no egg-info on sys.path => wheel."""
     dist = _FakeDist(direct_url=None)
-    monkeypatch.setattr(update_mod, "distribution", lambda *a, **k: dist)
-    monkeypatch.setattr(update_mod, "_has_source_tree_egg_info", lambda: False)
+    monkeypatch.setattr(update_core, "distribution", lambda *a, **k: dist)
+    monkeypatch.setattr(update_core, "_has_source_tree_egg_info", lambda: False)
     assert update_mod.detect_install_kind() == update_mod.KIND_WHEEL
 
 
@@ -137,8 +138,8 @@ def test_detect_install_kind_legacy_editable_egg_info(monkeypatch) -> None:
     ``pip install -e .``), which has no ``direct_url.json``.
     """
     dist = _FakeDist(direct_url=None)
-    monkeypatch.setattr(update_mod, "distribution", lambda *a, **k: dist)
-    monkeypatch.setattr(update_mod, "_has_source_tree_egg_info", lambda: True)
+    monkeypatch.setattr(update_core, "distribution", lambda *a, **k: dist)
+    monkeypatch.setattr(update_core, "_has_source_tree_egg_info", lambda: True)
     assert update_mod.detect_install_kind() == update_mod.KIND_EDITABLE
 
 
@@ -148,7 +149,7 @@ def test_detect_install_kind_corrupt_direct_url_is_wheel(monkeypatch) -> None:
         def read_text(self, filename: str) -> str:
             return "not-json{"
 
-    monkeypatch.setattr(update_mod, "distribution", lambda *a, **k: _CorruptDist())
+    monkeypatch.setattr(update_core, "distribution", lambda *a, **k: _CorruptDist())
     assert update_mod.detect_install_kind() == update_mod.KIND_WHEEL
 
 
@@ -158,7 +159,7 @@ def test_detect_install_kind_non_dict_direct_url_is_wheel(monkeypatch) -> None:
         def read_text(self, filename: str) -> str:
             return "[1, 2, 3]"
 
-    monkeypatch.setattr(update_mod, "distribution", lambda *a, **k: _WeirdDist())
+    monkeypatch.setattr(update_core, "distribution", lambda *a, **k: _WeirdDist())
     assert update_mod.detect_install_kind() == update_mod.KIND_WHEEL
 
 
@@ -166,12 +167,12 @@ def test_has_source_tree_egg_info_finds_egg_info_on_sys_path(monkeypatch, tmp_pa
     egg_dir = tmp_path / f"{update_mod.PACKAGE_NAME.replace('-', '_')}.egg-info"
     egg_dir.mkdir()
     monkeypatch.setattr(update_mod.sys, "path", [str(tmp_path), "/nonexistent"])
-    assert update_mod._has_source_tree_egg_info() is True
+    assert update_core._has_source_tree_egg_info() is True
 
 
 def test_has_source_tree_egg_info_absent(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(update_mod.sys, "path", [str(tmp_path)])
-    assert update_mod._has_source_tree_egg_info() is False
+    assert update_core._has_source_tree_egg_info() is False
 
 
 # ---------------------------------------------------------------------------
@@ -298,3 +299,33 @@ def test_unparseable_installed_version_errors(monkeypatch, capsys: pytest.Captur
     assert update_mod.cmd_update() == update_mod.EXIT_FAILED
     assert calls == []
     assert "Could not compare versions" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("payload", [
+    None, [], "unexpected", {}, {"info": None}, {"info": []},
+    {"info": {}}, {"info": {"version": None}},
+    {"info": {"version": 99}}, {"info": {"version": ""}},
+    {"info": {"version": "   "}},
+])
+def test_malformed_pypi_response_fails_without_installing(monkeypatch, capsys, payload):
+    response = _FakePyPIResponse("99.0.0")
+    monkeypatch.setattr(response, "json", lambda: payload)
+    monkeypatch.setattr(update_core.requests, "get", lambda *a, **k: response)
+    calls, fake_run = _fake_subprocess()
+    monkeypatch.setattr(update_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(update_mod, "detect_install_kind", lambda: update_mod.KIND_WHEEL)
+    monkeypatch.setattr(update_mod, "CURRENT_VERSION", "0.1.19")
+
+    assert update_mod.cmd_update() == update_mod.EXIT_FAILED
+    assert calls == []
+    assert "Could not check for updates on PyPI" in capsys.readouterr().out
+
+
+def test_failed_verifier_cannot_report_success(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(update_mod.subprocess, "run", lambda *a, **k: SimpleNamespace(
+        returncode=1, stdout="99.0.0\n", stderr="interpreter shutdown failed",
+    ))
+    assert update_mod._verify_upgrade("99.0.0") == update_mod.EXIT_FAILED
+    assert "Updated to" not in capsys.readouterr().out

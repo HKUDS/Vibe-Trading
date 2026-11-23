@@ -230,7 +230,7 @@ def _read_pdf(path: Path, pages: str, min_text_per_page: int = _MIN_TEXT_PER_PAG
                 quality_flag = "no_ocr_engine"
             else:
                 quality_flag = "no_ocr_needed"
-        elif skipped_pages > 0:
+        elif skipped_pages > 0 or ocr_attempted_pages > 0:
             quality_flag = "degraded"
         else:
             quality_flag = "good"

@@ -9,11 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, NamedTuple, Protocol
 
 from src.agent.context import ContextBuilder
 from src.agent.llm_usage import _normalize_llm_usage
@@ -35,11 +34,20 @@ from src.swarm.models import (
     WorkerResult,
 )
 from src.swarm.context import WorkerContext
+from src.swarm import checkpoint
 from src.tools import build_swarm_registry
+from src.data_gateway.guidance import DATA_ACCESS_POLICY
 from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import redact_payload, redact_tool_result
 
 logger = logging.getLogger(__name__)
+
+
+class _CancellationSignal(Protocol):
+    def is_set(self) -> bool: ...
+
+    def wait(self, timeout: float | None = None) -> bool: ...
+
 
 def _default_max_iterations() -> int:
     from src.config.accessor import get_env_config
@@ -287,6 +295,7 @@ def build_worker_prompt(
     upstream_summaries: dict[str, str],
     skill_descriptions: str,
     grounding_block: str = "",
+    available_tools: set[str] | None = None,
 ) -> str:
     """Build the worker's system prompt with role, upstream context, and skills.
 
@@ -299,6 +308,8 @@ def build_worker_prompt(
             ahead of the Execution Rules section so the worker sees real
             recent prices before any tool decision. Empty string skips the
             section entirely.
+        available_tools: Actual registered tool names after runtime policy filtering.
+            Defaults to the spec whitelist for standalone prompt inspection.
 
     Returns:
         Complete system prompt string for the worker LLM.
@@ -318,45 +329,20 @@ def build_worker_prompt(
             f"## Available Skills (use load_skill to access full documentation)\n\n{skill_descriptions}"
         )
 
-    if "get_market_data" in (agent_spec.tools or []):
-        prompt_parts.append(
-            "## Market Data Tool Policy\n\n"
-            "For OHLCV price bars, recent closes, volume, technical indicators, "
-            "or return calculations, call `get_market_data` before writing raw "
-            "provider scripts. It uses the repository loader layer, normalizes "
-            "symbols, drops malformed OHLC rows, and returns strict JSON. Use "
-            "raw yfinance scripts only for fields outside OHLCV coverage, such "
-            "as fundamentals, holders, options, or corporate metadata."
-        )
+    prompt_parts.append(DATA_ACCESS_POLICY)
 
-    # Universal anti-fabrication rule. The grounding_block carries a similar
-    # instruction but only renders when user_vars supplies explicit symbols.
-    # Free-form prompts ("look at A-share short-term sentiment") otherwise
-    # leave the worker with no guardrail and it cheerfully cites training-data
-    # prices and sector weights. This block applies the rule unconditionally
-    # — including to aggregator / synthesis agents that have no data tools
-    # and previously had no instruction against inventing numbers.
     prompt_parts.append(
-        "## Data Citation Discipline (HARD RULE)\n\n"
-        "Every specific number you cite in your output — prices, percentages, "
-        "volumes, fund flows, market-cap rankings, sector weights, ETF codes, "
-        "ticker recommendations — MUST be traceable to one of:\n"
-        "  (a) a tool call result obtained in THIS run,\n"
-        "  (b) the Ground Truth block above (if present),\n"
-        "  (c) the Upstream Context above (if present and the upstream agent "
-        "itself sourced it from (a) or (b)).\n\n"
-        "You may NOT cite numbers from memory or training data. Markets have "
-        "moved since your cutoff; any specific price/percentage you recall is "
-        "wrong by default.\n\n"
-        "If you cannot back a number with (a), (b), or (c), you have two "
-        "choices:\n"
-        "  - call a data tool to fetch it (preferred), or\n"
-        "  - omit the number and qualify the statement (e.g. \"directional "
-        "only — not verified against live data\").\n\n"
-        "This rule applies equally to synthesis / aggregator / editor roles "
-        "that lack data tools. If upstream did not provide a specific number, "
-        "do NOT introduce one from training data — say the upstream omitted "
-        "it and proceed without."
+        "## Research Evidence and Assumptions\n\n"
+        "Base claims about observed market/company facts on tool results, dated "
+        "snapshots, or the supplied upstream evidence. Identify the source and "
+        "observation date when they affect the conclusion. Reusing upstream data "
+        "is valid; distinguish it from a new retrieval by this role. Independent "
+        "judgment does not imply newly verified facts. Compute derived metrics "
+        "with the available tools and keep their sample windows and assumptions "
+        "attached. Clearly label proposed prices, scenarios and sizing as your "
+        "assumptions or recommendations. When data is missing, explain the gap "
+        "and give the useful analysis that is still supported. No fixed citation "
+        "or declaration format is required."
     )
 
     # From here on, content varies per call (upstream context substitution,
@@ -379,62 +365,25 @@ def build_worker_prompt(
         # instruction to prefer these prices over training data.
         prompt_parts.append(grounding_block)
 
-    # The code-writing/report-file workflow below only makes sense for an
-    # agent whose whitelist (agent_spec.tools, projected by
-    # build_swarm_registry -- see run_worker step 1) actually grants
-    # write_file/bash/edit_file. A preset can and does hand a role a
-    # narrower, MCP-data-only whitelist (e.g. this deployment's
-    # deriv_fx_execution.yaml gives market_analyst/devils_advocate/
-    # optimist/contract_risk_reviewer no write_file at all, reserving it
-    # for desk_lead's final report) -- _classify_deliverable already
-    # relaxes the tool-evidence/report_written requirement for exactly
-    # this case via is_data_agent, but this block used to tell EVERY
-    # agent it "MUST" call write_file regardless, unconditionally
-    # contradicting the framework's own acceptance criteria for that same
-    # agent. In practice this produced a confused response that noticed
-    # the contradiction at runtime (e.g. "write_file is not available in
-    # this environment, so the report is delivered inline below") and
-    # improvised a preamble around it -- which, for agents relying on the
-    # SKIPPED: short-circuit convention, buried the marker several
-    # paragraphs in under markdown decoration instead of leading with it
-    # as their own role instructions require.
-    has_code_tools = bool({"write_file", "bash", "edit_file"} & set(agent_spec.tools or []))
+    enabled_tools = set(agent_spec.tools or []) if available_tools is None else available_tools
     iteration_budget = agent_spec.max_iterations or _default_max_iterations()
-    budget_rule = (
-        f"You have at most {iteration_budget} model iterations. Each iteration can "
-        "request multiple independent tools. Reuse available results and finish "
-        "once the requested deliverable is complete.\n\n"
+    prompt_parts.append(
+        "## Execution Rules\n\n"
+        f"You have at most {iteration_budget} model iterations. Reuse supplied data "
+        "and upstream reports; call available tools when more evidence or calculations "
+        "are needed. Load a skill when its methodology or API contract is useful. "
+        "Deliver the requested analysis directly in your final response. "
+        "Create files when requested or useful; a report.md file is optional. "
+        "Explain unavailable inputs and distinguish assumptions from observed results. "
+        "Using an upstream report is not a new independent retrieval of its facts. "
+        "Attribute inherited facts and separate your calculations from new data fetches; "
+        "refetch only when needed, without imposing a citation format. "
+        "Respond in the task's language."
     )
-    if has_code_tools:
+    if "bash" not in enabled_tools:
         prompt_parts.append(
-            "## Execution Rules\n\n"
-            + budget_rule +
-            "**Phase 1 — Plan (0 tool calls):** Before calling any tool, state your plan in 3-5 bullet points.\n\n"
-            "**Phase 2 — Execute:**\n"
-            "- Load a relevant skill when its method or API contract is needed; direct tool lookups do not require a preliminary skill read.\n"
-            "- Write ONE focused Python script via `write_file`, then run it with `bash python script.py`.\n"
-            "- Do NOT write long Python code inside bash. Use write_file + bash.\n"
-            "- Do NOT fetch data with curl/requests. Use the patterns from load_skill (yfinance, OKX API via Python).\n"
-            "- If a script fails, read the error, fix with `edit_file`, re-run. Max 2 retries per script.\n\n"
-            "**Phase 3 — Summarize (MUST use write_file):**\n"
-            "- You MUST call `write_file` with path `report.md` to save your final report as a markdown file.\n"
-            "- This is REQUIRED, not optional. Your final response MUST include a write_file call for report.md.\n"
-            "- The report must include specific numbers, dates, and actionable conclusions.\n"
-            "- After writing report.md, output a brief 2-3 sentence summary in your text response.\n"
-            "- Respond in the same language as the task prompt."
-        )
-    else:
-        prompt_parts.append(
-            "## Execution Rules\n\n"
-            + budget_rule +
-            "**Plan (0 tool calls):** Before calling any tool, state your plan in 3-5 bullet points.\n\n"
-            "**Execute:** You do not have `write_file`/`bash`/`edit_file` in this role -- call your "
-            "assigned data/analysis tools directly to gather what your role needs. Do not attempt to "
-            "write or run a script; it is not possible with your tool whitelist.\n\n"
-            "**Summarize:** There is no report.md for this role. Output your final analysis directly "
-            "as your plain-text response, in the exact format your role's instructions above require "
-            "(including any short-circuit marker convention they describe).\n\n"
-            "Respond in the same language as the task prompt."
+            "Shell execution is unavailable. Use assigned data and calculation tools "
+            "directly; do not write scripts you cannot execute."
         )
 
     now = datetime.now(timezone.utc)
@@ -540,7 +489,8 @@ def run_worker(
     include_shell_tools: bool = False,
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
-    cancel_event: threading.Event | None = None,
+    cancel_event: _CancellationSignal | None = None,
+    resume: bool = False,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
 
@@ -566,13 +516,9 @@ def run_worker(
             consumed by :func:`build_swarm_registry` to merge remote MCP
             tools with the local-tool pool before applying the agent's
             whitelist. ``None`` preserves the prior local-only behavior.
-        cancel_event: Optional cancellation signal from
-            :meth:`SwarmRuntime.cancel_run`. Checked at the top of each
-            ReAct iteration and passed into the LLM stream as
-            ``should_cancel``, mirroring ``AgentLoop``'s cooperative
-            cancellation contract: an in-flight LLM stream stops promptly
-            and that turn's tool calls are skipped; a tool call already
-            executing is not interrupted.
+        cancel_event: Cooperative stop signal for the run or its layer.
+            Passed to streaming as ``should_cancel`` and checked before tool
+            dispatch. A tool call already executing is not interrupted.
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -592,6 +538,7 @@ def run_worker(
             grounding_block=grounding_block,
             agent_config=agent_config,
             cancel_event=cancel_event,
+            resume=resume,
         )
         return result
     finally:
@@ -621,7 +568,8 @@ def _run_worker_impl(
     agent_config: AgentConfig | None = None,
     *,
     llm: ChatLLM,
-    cancel_event: threading.Event | None = None,
+    cancel_event: _CancellationSignal | None = None,
+    resume: bool = False,
 ) -> WorkerResult:
     """Execute a single worker task using a lightweight ReAct loop.
 
@@ -651,13 +599,9 @@ def _run_worker_impl(
             consumed by :func:`build_swarm_registry` to merge remote MCP
             tools with the local-tool pool before applying the agent's
             whitelist. ``None`` preserves the prior local-only behavior.
-        cancel_event: Optional cancellation signal from
-            :meth:`SwarmRuntime.cancel_run`. Checked at the top of each
-            ReAct iteration and passed into the LLM stream as
-            ``should_cancel``, mirroring ``AgentLoop``'s cooperative
-            cancellation contract: an in-flight LLM stream stops promptly
-            and that turn's tool calls are skipped; a tool call already
-            executing is not interrupted.
+        cancel_event: Cooperative stop signal for the run or its layer.
+            Passed to streaming as ``should_cancel`` and checked before tool
+            dispatch. A tool call already executing is not interrupted.
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -689,12 +633,23 @@ def _run_worker_impl(
         background_scope=background_scope,
     )
 
+    from src.swarm.evidence_handoff import prepare_handoff
+    try:
+        evidence_note = prepare_handoff(run_dir, task, agent_artifact_dir(run_dir, agent_id, task_id))
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.warning("Upstream evidence copy unavailable; retaining supplied reports", exc_info=True)
+        evidence_note = "Upstream evidence files could not be copied. The supplied reports remain available; do not claim independent source verification from them."
+
     # 2. Build system prompt with filtered skills
     skills_loader = SkillsLoader()
     skill_desc = _filter_skill_descriptions(skills_loader, agent_spec.skills)
     system_prompt = build_worker_prompt(
         agent_spec, upstream_summaries, skill_desc, grounding_block=grounding_block,
+        available_tools={name for name in agent_spec.tools if registry.get(name) is not None},
     )
+
+    if evidence_note:
+        system_prompt += "\n\n" + evidence_note
 
     # Token accounting accumulators — initialized before the first exit path
     # (template render failure) so every WorkerResult return below carries the
@@ -764,13 +719,47 @@ def _run_worker_impl(
     # Threshold for injecting a "wrap up" nudge (80% of budget)
     wrap_up_at = max(1, int(max_iterations * 0.8))
     last_assistant_content = ""
+    resume_key = checkpoint.context_key(messages)
+    if resume:
+        restored = checkpoint.restore(artifact_dir, key=resume_key, system=messages[0], run_dir=run_dir)
+        if restored is not None:
+            messages, last_assistant_content = restored
+            _emit(event_callback, "worker_resumed", agent_id, task_id, {"messages": len(messages)})
+        else:
+            _emit(event_callback, "worker_resume_unavailable", agent_id, task_id,
+                  {"reason": "Saved conversation is unavailable or incompatible; restarting from supplied reports."})
 
-    data_tool_calls = 0
+    def save_checkpoint() -> None:
+        checkpoint.save(artifact_dir, key=resume_key, messages=messages,
+                        last_content=last_assistant_content, run_dir=run_dir)
+
+
     content_filter_count = 0
     consecutive_content_filter_count = 0
     stream_failure_streak = 0
 
+    def stop_requested() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    def finish_cancelled(iterations: int) -> WorkerResult:
+        summary = _resolve_summary(artifact_dir, last_assistant_content)
+        _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iterations})
+        _finalize_run(artifact_dir, summary, messages)
+        return WorkerResult(
+            status="cancelled",
+            summary=summary,
+            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+            iterations=iterations,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            cache_read_tokens=total_cache_read_tokens,
+            cache_creation_tokens=total_cache_creation_tokens,
+            token_source=token_source,
+            content_filter_warnings=compute_content_filter_warnings(content_filter_count, iteration + 1),
+        )
+
     for iteration in range(max_iterations):
+        save_checkpoint()
         # Check timeout
         elapsed = time.monotonic() - t0
         if elapsed > timeout:
@@ -793,46 +782,18 @@ def _run_worker_impl(
                 ),
             )
 
-        # Check cancellation — before dispatching this iteration's LLM call,
-        # so a cancel signalled between iterations never starts new work.
-        if cancel_event is not None and cancel_event.is_set():
-            cancelled_summary = last_assistant_content or f"Cancelled after {iteration} iterations"
-            summary = _resolve_summary(artifact_dir, cancelled_summary)
-            _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
-            _finalize_run(artifact_dir, summary, messages)
-            return WorkerResult(
-                status="cancelled",
-                summary=summary,
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                iterations=iteration,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                cache_read_tokens=total_cache_read_tokens,
-                cache_creation_tokens=total_cache_creation_tokens,
-                token_source=token_source,
-                content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
-                ),
-            )
+        if stop_requested():
+            return finish_cancelled(iteration)
 
         # Inject wrap-up nudge when approaching iteration limit
         if iteration == wrap_up_at:
             remaining = max_iterations - iteration
-            if "write_file" in (agent_spec.tools or []):
-                wrap_up_content = (
-                    f"[SYSTEM] You have {remaining} iterations remaining. "
-                    "If report.md is not written yet, make one final write_file call for report.md. "
-                    "Otherwise stop calling tools and output your final analysis summary as plain text."
-                )
-            else:
-                # This role's whitelist has no write_file -- see
-                # build_worker_prompt's has_code_tools branch for why
-                # telling it to "write report.md" here would be the same
-                # contradiction that block exists to avoid.
-                wrap_up_content = (
-                    f"[SYSTEM] You have {remaining} iterations remaining. "
-                    "Stop calling tools and output your final analysis as your plain-text response now."
-                )
+            wrap_up_content = (
+                f"[SYSTEM] You have {remaining} iterations remaining. "
+                "Finish the most useful remaining work and deliver your conclusions, "
+                "available results and any unresolved limitations in your final response. "
+                "Create a file only if the user requested one or it improves the deliverable."
+            )
             messages.append({
                 "role": "user",
                 "content": wrap_up_content,
@@ -869,10 +830,15 @@ def _run_worker_impl(
             )
 
 
+        if stop_requested():
+            return finish_cancelled(iteration)
+
         # Stream the LLM — moonshot/kimi non-streaming invoke is unreliable
         # (issue #42), and streaming also feeds dashboard live progress.
+        streamed_text: list[str] = []
         try:
             def _on_text_chunk(delta: str) -> None:
+                streamed_text.append(delta)
                 _emit(event_callback, "worker_text", agent_id, task_id,
                       {"content": delta, "iteration": iteration})
 
@@ -977,35 +943,23 @@ def _run_worker_impl(
             else:
                 stream_failure_streak = 0
 
-            # Cancelled mid-stream: discard this turn's partial response and
-            # stop now, without executing any of its tool calls — mirrors
-            # AgentLoop's contract for the identical should_cancel signal.
-            if cancel_event is not None and cancel_event.is_set():
-                cancelled_summary = last_assistant_content or f"Cancelled after {iteration} iterations"
-                summary = _resolve_summary(artifact_dir, cancelled_summary)
-                _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
-                _finalize_run(artifact_dir, summary, messages)
-                return WorkerResult(
-                    status="cancelled",
-                    summary=summary,
-                    artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-                    iterations=iteration,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cache_read_tokens=total_cache_read_tokens,
-                    cache_creation_tokens=total_cache_creation_tokens,
-                    token_source=token_source,
-                    content_filter_warnings=compute_content_filter_warnings(
-                        content_filter_count, iteration + 1,
-                    ),
-                )
+            # Preserve streamed prose on cancellation, but never execute
+            # unfinished tool calls from an interrupted provider response.
+            if stop_requested():
+                last_assistant_content = "".join(streamed_text) or last_assistant_content
+                save_checkpoint()
+                return finish_cancelled(iteration)
         except Exception as exc:
+            last_assistant_content = "".join(streamed_text) or last_assistant_content
             error_msg = f"LLM call failed at iteration {iteration}: {exc}"
             logger.warning(error_msg)
             _emit(event_callback, "worker_failed", agent_id, task_id, {"error": error_msg})
+            summary = _resolve_summary(artifact_dir, last_assistant_content or "")
+            save_checkpoint()
+            _finalize_run(artifact_dir, summary, messages)
             return WorkerResult(
                 status="failed",
-                summary=_resolve_summary(artifact_dir, last_assistant_content or ""),
+                summary=summary,
                 artifact_paths=_collect_artifacts(run_dir, artifact_dir),
                 iterations=iteration,
                 error=error_msg,
@@ -1027,8 +981,9 @@ def _run_worker_impl(
         account_response(response)
 
         # Track last meaningful assistant content
-        if response.content and len(response.content.strip()) > 20:
+        if response.content:
             last_assistant_content = response.content
+            save_checkpoint()
 
         # Content-filter skip: provider blocked the response — continue to
         # the next iteration instead of finalising on empty/garbage content.
@@ -1107,15 +1062,14 @@ def _run_worker_impl(
 
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
-            summary = response.content or last_assistant_content or "(no summary)"
-            summary = _resolve_summary(artifact_dir, summary)
+            summary = response.content or ""
+            # The final response supersedes any earlier draft file, on fresh
+            # runs as well as continuation. Keep files as separate artifacts.
+            messages.append({"role": "assistant", "content": summary})
+            if not summary:
+                summary = _resolve_summary(artifact_dir, summary)
             _finalize_run(artifact_dir, summary, messages)
-            reason = _classify_deliverable(
-                summary,
-                is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
-                report_written=_report_written(artifact_dir),
-                data_tool_calls=data_tool_calls,
-            )
+            reason = _delivery_error(response.content or "") if resume and not response.content else _delivery_error(summary)
             if reason:
                 _emit(event_callback, "worker_incomplete", agent_id, task_id,
                       {"iterations": iteration + 1, "reason": reason})
@@ -1124,7 +1078,7 @@ def _run_worker_impl(
                     summary=summary,
                     artifact_paths=_collect_artifacts(run_dir, artifact_dir),
                     iterations=iteration + 1,
-                    error=f"output contract not met: {reason}",
+                    error=reason,
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     cache_read_tokens=total_cache_read_tokens,
@@ -1160,7 +1114,10 @@ def _run_worker_impl(
         )
 
         # Execute each tool call — inject run_dir so tools write inside artifact_dir
+        save_checkpoint()
         for tc in response.tool_calls:
+            if stop_requested():
+                break
             mcp_meta = _remote_tool_metadata(registry, tc.name)
             _emit(
                 event_callback, "tool_call", agent_id, task_id,
@@ -1192,6 +1149,8 @@ def _run_worker_impl(
                 interval=_HEARTBEAT_INTERVAL_S,
                 emit=_on_heartbeat,
             ):
+                if stop_requested():
+                    break
                 if run_dir_refusal is not None:
                     result = json.dumps(
                         {"status": "error", "error": run_dir_refusal},
@@ -1203,8 +1162,6 @@ def _run_worker_impl(
             # event previews, before truncation can cut a credential envelope.
             result = redact_tool_result(result)
             result_is_error = _is_error_result(result)
-            if tc.name != "load_skill" and not result_is_error:
-                data_tool_calls += 1
             tc_elapsed = time.monotonic() - tc_start
             _emit(
                 event_callback,
@@ -1227,6 +1184,10 @@ def _run_worker_impl(
                 )
             )
             worker_context.pending.add(tc.id)
+            save_checkpoint()
+
+        if stop_requested():
+            return finish_cancelled(iteration + 1)
 
     # Content filter ratio tracking
     content_filter_warnings = compute_content_filter_warnings(
@@ -1237,31 +1198,10 @@ def _run_worker_impl(
     summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
     summary = _resolve_summary(artifact_dir, summary)
     _finalize_run(artifact_dir, summary, messages)
-    reason = _classify_deliverable(
-        summary,
-        is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
-        report_written=_report_written(artifact_dir),
-        data_tool_calls=data_tool_calls,
-    )
-    if reason:
-        _emit(event_callback, "worker_incomplete", agent_id, task_id,
-              {"iterations": max_iterations, "reason": f"iteration limit; {reason}"})
-        return WorkerResult(
-            status="incomplete",
-            summary=summary,
-            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-            iterations=max_iterations,
-            error=f"hit iteration limit without a valid deliverable: {reason}",
-            input_tokens=total_input_tokens,
-            output_tokens=total_output_tokens,
-            cache_read_tokens=total_cache_read_tokens,
-            cache_creation_tokens=total_cache_creation_tokens,
-            token_source=token_source,
-            content_filter_warnings=content_filter_warnings,
-        )
     _emit(event_callback, "worker_iteration_limit", agent_id, task_id)
     return WorkerResult(
-        status="completed",
+        status="incomplete",
+        error="iteration limit reached before a final response",
         summary=summary,
         artifact_paths=_collect_artifacts(run_dir, artifact_dir),
         iterations=max_iterations,
@@ -1384,13 +1324,6 @@ def _truncate_preview(value: Any, *, limit: int = 200) -> str:
     return text if len(text) <= limit else text[:limit] + "..."
 
 
-# Tools that do not themselves fetch/compute market data. An agent whose
-# entire toolset is a subset of these is a synthesis/editor role (e.g. the
-# research editor in equity_research_team) and may legitimately produce a
-# text deliverable with no tool calls — it must NOT be failed for "no tool
-# evidence" (that would regress correct runs; see #115 framing).
-_GENERIC_TOOLS = {"bash", "read_file", "write_file", "load_skill", "edit_file"}
-
 _UNPARSED_TOOL_MARKERS = (
     "<\uff5ctool\u2581calls\u2581begin\uff5c>",
     "<tool_calls_begin>",
@@ -1398,62 +1331,6 @@ _UNPARSED_TOOL_MARKERS = (
     "<tool_sep>",
     "tool\u2581sep",
 )
-_FABRICATION_MARKERS = ("mock data", "without actual data", "fabricated data", "placeholder data")
-_PLAN_PREFIXES = (
-    "# phase 1", "## phase 1", "### phase 1",
-    "phase 1 \u2014 plan", "phase 1 - plan", "phase 1: plan",
-    "# plan", "## plan", "### plan", "**plan**",
-)
-_HANDOFF_TAILS = (
-    "execute", "execute.", "execute:", "skills.", "skills", "proceed?",
-    "proceed.", "without writing files.", "let me adjust the approach",
-    "let me adjust the approach.", "stand by for final synthesis.",
-)
-
-
-def _report_written(artifact_dir: Path) -> bool:
-    """True iff a non-empty report.md was actually produced by the worker."""
-    try:
-        p = artifact_dir / "report.md"
-        return p.is_file() and bool(p.read_text(encoding="utf-8").strip())
-    except Exception:
-        return False
-
-
-def _is_data_agent(agent_spec: SwarmAgentSpec) -> bool:
-    """An agent with at least one data/analysis tool beyond the generic kit."""
-    return bool(set(agent_spec.tools or []) - _GENERIC_TOOLS)
-
-
-def _requires_own_evidence(
-    agent_spec: SwarmAgentSpec,
-    task: SwarmTask,
-    upstream_summaries: dict[str, str],
-) -> bool:
-    """Keep data requirements unless a synthesis role has its mapped reports.
-
-    Args:
-        agent_spec: Role and evidence policy from the preset.
-        task: Task with the declared upstream report mapping.
-        upstream_summaries: Completed upstream reports supplied by the runtime.
-
-    Returns:
-        Whether this worker must gather its own data or write a report.
-    """
-    if agent_spec.evidence_mode == "upstream" and task.input_from:
-        if all(
-            _classify_deliverable(
-                upstream_summaries.get(key, ""),
-                is_data_agent=False,
-                report_written=False,
-                data_tool_calls=0,
-            ) is None
-            for key in task.input_from
-        ):
-            return False
-    return _is_data_agent(agent_spec)
-
-
 def _is_error_result(result: str) -> bool:
     """Did a tool call return a top-level error envelope?
 
@@ -1485,42 +1362,13 @@ def _is_error_result(result: str) -> bool:
     return parsed.get("ok") is False or parsed.get("success") is False
 
 
-def _classify_deliverable(
-    summary: str,
-    *,
-    is_data_agent: bool,
-    report_written: bool,
-    data_tool_calls: int,
-) -> str | None:
-    """Hybrid output contract. Return a short reason string when the worker
-    did NOT produce a substantive deliverable, else ``None``.
-
-    Content-sanity applies to every agent; the tool-evidence requirement
-    applies ONLY to data agents so tool-less synthesis/editor roles are
-    not false-rejected.
-    """
+def _delivery_error(summary: str) -> str | None:
+    """Detect missing output or unparsed provider protocol, not report quality."""
     text = (summary or "").strip()
     if not text:
-        return "empty deliverable"
-    low = text.lower()
-    if any(m in low for m in _UNPARSED_TOOL_MARKERS):
+        return "empty response"
+    if any(marker in text.lower() for marker in _UNPARSED_TOOL_MARKERS):
         return "unparsed tool-call markup (provider did not parse tool calls)"
-    if any(m in low for m in _FABRICATION_MARKERS):
-        return "explicitly fabricated / mock data"
-    if text.startswith("{") and (
-        ('"status"' in text[:40] and ('"content"' in text[:300] or '"ok"' in text[:40]))
-        or '"ok"' in text[:40]
-        or '"success"' in text[:40]
-    ):
-        return "raw tool-result envelope, not analysis"
-    if low.startswith(_PLAN_PREFIXES):
-        tail = low.rsplit("phase 2", 1)[-1].strip() if "phase 2" in low else ""
-        if len(text) < 600 or low.rstrip().endswith(_HANDOFF_TAILS) or (
-            "phase 2" in low and len(tail) < 80
-        ):
-            return "plan-only stub (no executed analysis / conclusion)"
-    if is_data_agent and not report_written and data_tool_calls == 0:
-        return "data agent produced no tool calls and no report.md"
     return None
 
 
@@ -1543,8 +1391,7 @@ def _finalize_run(artifact_dir: Path, summary: str, messages: list[dict]) -> Non
     Both files are written through one call, so a terminal path that reports a
     summary cannot omit the message log: ``messages.json`` is the only record
     of the arguments a model asked a tool for, which is what a post-mortem of a
-    bad tool call needs. The LLM-call-failure handler writes neither file and is
-    unchanged.
+    bad tool call needs. Provider failures retain the same evidence.
 
     Args:
         artifact_dir: Path to artifacts/{agent_id}/{task_id}/ directory.

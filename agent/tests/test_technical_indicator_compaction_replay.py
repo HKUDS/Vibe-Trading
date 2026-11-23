@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from tests.test_readonly_replay_after_microcompact import _Context, _Registry, _Trace, _loop
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.agent.loop import AgentLoop
 from src.tools.technical_indicator_tool import TechnicalIndicatorTool
 

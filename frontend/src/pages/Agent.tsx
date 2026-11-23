@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router";
-import { ArrowDown, ShieldCheck } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   useAgentStore,
@@ -9,6 +9,7 @@ import {
   type AgentMessageMeta,
   type StoredAgentMessage,
 } from "@/stores/agent";
+import { useSessionsStore } from "@/stores/sessions";
 import { useSSE } from "@/hooks/useSSE";
 import { useLlmUsageCounter } from "@/hooks/useLlmUsageCounter";
 import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type RunPreview } from "@/lib/api";
@@ -107,12 +108,6 @@ interface RuntimeIdentity {
   provider?: string;
   model?: string;
   reasoningEffort?: string;
-}
-
-/** A final answer held back while the grounding gate re-checks a revised draft. */
-interface GroundingRevision {
-  attemptId: string;
-  round: number;
 }
 
 function toolProgressKey(callId: string | undefined, tool: string): string {
@@ -268,7 +263,6 @@ export function Agent() {
 
   /* Connector runtime channel state (SPEC Consent §1/§4/§5) */
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
-  const [groundingRevision, setGroundingRevision] = useState<GroundingRevision | null>(null);
   const [visibleRowCount, setVisibleRowCount] = useState(TIMELINE_WINDOW_SIZE);
   const visibleRowsSessionRef = useRef<string | null>(null);
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
@@ -766,7 +760,6 @@ export function Agent() {
         touch();
         replayAttemptSeenRef.current = true;
         // Answer text only streams once the grounding gate has released it.
-        setGroundingRevision(null);
         if (!identifyActivity(d, "responding")) return;
         if (act().status !== "streaming") act().setStatus("streaming");
         queueStreamUpdate(String(d.delta || ""), false);
@@ -800,32 +793,9 @@ export function Agent() {
       },
       thinking_done: () => { touch(); /* don't flush — keep streaming text visible */ },
 
-      grounding_status: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (d.stage !== "revising") {
-          // released_redacted: the cut answer (with its own footnote) follows
-          // as text_delta; the status line has nothing left to say.
-          setGroundingRevision(null);
-          return;
-        }
-        if (typeof d.round !== "number" || d.round < 1) return;
-        if (!identifyActivity(d, "thinking")) return;
-        if (act().status !== "streaming") act().setStatus("streaming");
-        const attemptId = act().activity?.attemptId;
-        if (!attemptId) return;
-        // Pinned to the attempt so a line from a run that ended without text
-        // (timeout, cancel, failure) never resurfaces on the next attempt.
-        setGroundingRevision({ attemptId, round: d.round });
-        scrollToBottom();
-      },
-
       tool_call: (d) => {
         touch();
         replayAttemptSeenRef.current = true;
-        // A recovery round fetches evidence before the next draft; the tool
-        // activity line says what is happening, so the status line steps aside.
-        setGroundingRevision(null);
         if (!identifyActivity(d, "working")) return;
         queueStreamUpdate("", false);
         const toolName = String(d.tool || "");
@@ -951,7 +921,6 @@ export function Agent() {
 
       "attempt.completed": async (d) => {
         touch();
-        setGroundingRevision(null);
         const attemptId = String(d.attempt_id || "");
         markBackgroundCompletion(sid, attemptId);
         if (act().sessionId !== sid) {
@@ -1039,10 +1008,10 @@ export function Agent() {
         }
 
         // First completed exchange → ask the backend for a Codex-style
-        // summary title, then nudge the sidebar to re-list sessions.
+        // summary title, then re-list so the sidebar shows it.
         if (act().messages.filter((message) => message.type === "user").length === 1) {
           api.autoTitleSession(sid)
-            .then(() => window.dispatchEvent(new Event("vibe:sessions-refresh")))
+            .then(() => useSessionsStore.getState().refresh())
             .catch(() => {});
         }
 
@@ -1079,7 +1048,6 @@ export function Agent() {
 
       "attempt.failed": (d) => {
         touch();
-        setGroundingRevision(null);
         const attemptId = String(d.attempt_id || "");
         if (act().sessionId !== sid) {
           act().clearStreamingSession(sid);
@@ -1121,7 +1089,6 @@ export function Agent() {
       // to avoid showing an error bubble.
       "attempt.cancelled": (d) => {
         touch();
-        setGroundingRevision(null);
         const attemptId = String(d.attempt_id || "");
         if (act().sessionId !== sid) {
           act().clearStreamingSession(sid);
@@ -1304,7 +1271,6 @@ export function Agent() {
       genRef.current = gen;
       doDisconnect();
       setRuntimeIdentity({});
-      setGroundingRevision(null);
       // Live-channel timeline items are per-session; clear on switch.
       setLiveItems([]);
       liveRuntimeRef.current?.resetSession();
@@ -1332,7 +1298,6 @@ export function Agent() {
       const gen = genRef.current + 1;
       genRef.current = gen;
       setRuntimeIdentity({});
-      setGroundingRevision(null);
       const seed = curMsgs.length > 0 ? curMsgs : getCachedSession(urlSessionId);
       // switchSession() drops the live activity so replay can rebuild its
       // steps without duplicating them — but the attempt's start time is not
@@ -1352,7 +1317,6 @@ export function Agent() {
       genRef.current += 1;
       doDisconnect();
       setRuntimeIdentity({});
-      setGroundingRevision(null);
       setHistoryError(null);
       setLiveItems([]);
       liveRuntimeRef.current?.resetSession();
@@ -1427,6 +1391,7 @@ export function Agent() {
     let sid = act().sessionId;
     if (sid) return sid;
     const session = await api.createSession(title.slice(0, 50));
+    useSessionsStore.getState().upsert(session);
     sid = session.session_id;
     pendingGoalSessionRef.current = sid;
     act().setSessionId(sid);
@@ -1514,6 +1479,7 @@ export function Agent() {
         const sessionTitle = prompt.trim()
           || attachments.map(({ filename }) => filename).join(", ");
         const session = await api.createSession(sessionTitle.slice(0, 50));
+        useSessionsStore.getState().upsert(session);
         sid = session.session_id;
         act().setSessionId(sid);
         setSearchParams({ session: sid }, { replace: true });
@@ -1803,14 +1769,6 @@ export function Agent() {
     });
   }, [timelineRows.length]);
 
-  const groundingRound = (
-    status === "streaming"
-    && groundingRevision
-    && activity?.attemptId === groundingRevision.attemptId
-  )
-    ? groundingRevision.round
-    : null;
-
   return (
     <div className="flex flex-col flex-1 min-w-0 overflow-hidden h-full">
       <ModelRuntimeBar
@@ -1952,16 +1910,6 @@ export function Agent() {
               <div className="flex-1 min-w-0 space-y-2">
                 {activity && <ActivityLine activity={activity} reasoningTail={reasoningTail} />}
                 <LlmUsageCounter input={usageInput} output={usageOutput} />
-                {groundingRound !== null && (
-                  <p
-                    role="status"
-                    aria-live="polite"
-                    className="flex items-center gap-2 px-3 text-xs text-muted-foreground"
-                  >
-                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" aria-hidden="true" />
-                    <span>{t("agent.activity.checkingFigures", { round: groundingRound })}</span>
-                  </p>
-                )}
                 {streamingText && (
                   <div aria-live="polite" aria-atomic="false">
                     <MarkdownContent content={streamingText} streaming showCursor />

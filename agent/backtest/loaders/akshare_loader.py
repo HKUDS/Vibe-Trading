@@ -16,6 +16,7 @@ import pandas as pd
 from backtest.engines._market_hooks import _detect_market, _is_china_futures
 from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
+from backtest.loaders.akshare_compat import history_endpoint
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
@@ -146,8 +147,16 @@ class DataLoader:
         """
         validate_date_range(start_date, end_date)
 
+        self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
+            from .acquisition import source_deadline
+            import time
+
+            until = source_deadline.get()
+            if until is not None and time.monotonic() >= until:
+                self.fetch_errors[code] = "request_deadline"
+                continue
             try:
                 df = cached_loader_fetch(
                     source=self.name,
@@ -190,6 +199,9 @@ class DataLoader:
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:
+                from .base import acquisition_error_kind
+
+                self.fetch_errors[code] = acquisition_error_kind(exc)
                 logger.warning("akshare failed for %s: %s", code, exc)
         return result
 
@@ -232,7 +244,7 @@ class DataLoader:
     def _fetch_a_share(
         self, ak, code: str, start_date: str, end_date: str, interval: str,
     ) -> Optional[pd.DataFrame]:
-        """Fetch A-share via stock_zh_a_hist."""
+        """Fetch A-share history across the AKShare 1.20.46 endpoint rename."""
         symbol = code.split(".")[0]
         period = _INTERVAL_MAP_DAILY.get(interval)
         if period is None:
@@ -242,7 +254,8 @@ class DataLoader:
             )
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
-        df = ak.stock_zh_a_hist(
+        history = history_endpoint(ak, "stock_zh_a_hist_em")
+        df = history(
             symbol=symbol,
             period=period,
             start_date=sd,
@@ -270,7 +283,8 @@ class DataLoader:
                 f"Unsupported interval {interval!r}; akshare a-share supports "
                 f"{sorted(_INTERVAL_MAP_DAILY)}"
             )
-        df = ak.stock_zh_a_hist(
+        history = history_endpoint(ak, "stock_zh_a_hist_em")
+        df = history(
             symbol=symbol,
             period=period,
             start_date=start_date.replace("-", ""),
@@ -282,13 +296,14 @@ class DataLoader:
         return self._normalize(df, date_col="日期")
 
     def _fetch_us(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch US stock via stock_us_hist."""
+        """Fetch US stock history with current or legacy AKShare naming."""
         symbol = code.replace(".US", "")
+        history = history_endpoint(ak, "stock_us_hist_em")
         # akshare uses Eastmoney market ids: 105 NASDAQ, 106 NYSE, 107 AMEX /
         # NYSE Arca (where most US ETFs such as SPY list).
         for prefix in ["105.", "106.", "107.", ""]:
             try:
-                df = ak.stock_us_hist(
+                df = history(
                     symbol=f"{prefix}{symbol}",
                     period="daily",
                     start_date=start_date.replace("-", ""),
@@ -317,14 +332,15 @@ class DataLoader:
         return df.loc[start_date:end_date]
 
     def _fetch_forex(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch forex pair via forex_hist_em.
+        """Fetch forex pair via fx_hist_em (formerly forex_hist_em).
 
         Columns returned are 日期 / 代码 / 名称 / 今开 / 最新价 / 最高 / 最低 / 振幅
         — note ``最新价`` (latest) plays the role of close. Volume isn't reported,
         so we synthesize a zero column to satisfy the OHLCV contract.
         """
         symbol = code.upper().removesuffix(".FX").replace("/", "")
-        df = ak.forex_hist_em(symbol=symbol)
+        history = history_endpoint(ak, "fx_hist_em")
+        df = history(symbol=symbol)
         if df is None or df.empty:
             return None
         df = df.rename(columns={
@@ -345,9 +361,10 @@ class DataLoader:
         return df.loc[start_date:end_date]
 
     def _fetch_hk(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch HK stock via stock_hk_hist."""
+        """Fetch HK stock history with current or legacy AKShare naming."""
         symbol = code.replace(".HK", "").zfill(5)
-        df = ak.stock_hk_hist(
+        history = history_endpoint(ak, "stock_hk_hist_em")
+        df = history(
             symbol=symbol,
             period="daily",
             start_date=start_date.replace("-", ""),

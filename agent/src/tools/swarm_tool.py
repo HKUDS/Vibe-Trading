@@ -480,6 +480,10 @@ class SwarmTool(BaseTool):
                 "type": "string",
                 "description": "Natural language description of the analysis task.",
             },
+            "resume_run_id": {
+                "type": "string",
+                "description": "Continue a failed/cancelled run, retaining completed roles and saved work. Do not use for a different research question.",
+            },
             "preset_name": {
                 "type": "string",
                 "description": "Optional explicit swarm preset name when the user named one or this is a continuation.",
@@ -539,6 +543,7 @@ class SwarmTool(BaseTool):
         Args:
             **kwargs: Must include prompt (str). Optional preset_name (str) and
                 variables (dict) overrides for the preset's template variables.
+                resume_run_id continues the original run's question and inputs.
 
         Returns:
             JSON string with status, preset, variables, final_report, tasks, token_usage.
@@ -551,29 +556,8 @@ class SwarmTool(BaseTool):
                 ensure_ascii=False,
             )
 
-        preset, preset_error = _resolve_preset(prompt, kwargs.get("preset_name"))
-        if preset_error:
-            return json.dumps(
-                {"status": "error", "error": preset_error},
-                ensure_ascii=False,
-            )
-        assert preset is not None
-        variables, variables_error = _merge_variables(_build_variables(preset, prompt), kwargs.get("variables"))
-        if variables_error:
-            return json.dumps(
-                {"status": "error", "error": variables_error},
-                ensure_ascii=False,
-            )
-
-        logger.info(
-            "SwarmTool: resolved preset=%s, variables=%s from prompt: %s",
-            preset,
-            variables,
-            prompt[:100],
-        )
-
         from src.config import load_swarm_agent_config
-        from src.swarm.runtime import SwarmRuntime, register_active_run, unregister_active_run
+        from src.swarm.runtime import SwarmRuntime
         from src.swarm.store import SwarmStore, swarm_runs_root
 
         swarm_base_dir = swarm_runs_root()
@@ -590,6 +574,42 @@ class SwarmTool(BaseTool):
             max_workers=get_env_config().swarm.swarm_max_workers,
             agent_config=agent_config,
         )
+
+        resume_from = None
+        resume_run_id = kwargs.get("resume_run_id")
+        if resume_run_id:
+            from src.swarm.models import RunStatus
+            try:
+                resume_from = store.load_run(resume_run_id)
+                if resume_from is not None:
+                    resume_from = store.reconcile_run(resume_from, write=True)
+            except (ValueError, OSError):
+                resume_from = None
+            if resume_from is None or resume_from.status not in (RunStatus.failed, RunStatus.cancelled):
+                return json.dumps({"status": "error", "error": "Continuation requires an existing failed or cancelled run."})
+            preset, variables = resume_from.preset_name, resume_from.user_vars
+        else:
+            preset, preset_error = _resolve_preset(prompt, kwargs.get("preset_name"))
+            if preset_error:
+                return json.dumps(
+                    {"status": "error", "error": preset_error},
+                    ensure_ascii=False,
+                )
+            assert preset is not None
+            variables, variables_error = _merge_variables(_build_variables(preset, prompt), kwargs.get("variables"))
+            if variables_error:
+                return json.dumps(
+                    {"status": "error", "error": variables_error},
+                    ensure_ascii=False,
+                )
+
+            logger.info(
+                "SwarmTool: resolved preset=%s, variables=%s from prompt: %s",
+                preset,
+                variables,
+                prompt[:100],
+            )
+
 
         pending_live_events: list[dict[str, Any]] = []
         run_id_holder: dict[str, str | None] = {"run_id": None}
@@ -611,6 +631,8 @@ class SwarmTool(BaseTool):
                 variables,
                 live_callback=_live_callback if self._event_callback is not None else None,
                 include_shell_tools=self.include_shell_tools,
+                **({"resume_from": resume_from} if resume_from is not None else {}),
+                **({"session_id": self._session_id} if self._session_id is not None else {}),
             )
         except FileNotFoundError as exc:
             return json.dumps(
@@ -651,59 +673,38 @@ class SwarmTool(BaseTool):
 
         t0 = time.monotonic()
         max_wait = _max_wait_seconds()
-        # Index the run so a user stop arriving after this call returns (budget
-        # exhausted, or from the HTTP cancel endpoint holding a different
-        # runtime) can still reach it.
-        if self._session_id is not None:
-            register_active_run(run_id, self._session_id, lambda: runtime.cancel_run(run_id))
-        # Only a terminal run leaves the index. On the timeout path the worker
-        # threads are still alive, so dropping the entry there would make a
-        # later user stop unable to reach them.
-        settled = False
-        try:
-            while time.monotonic() - t0 < max_wait:
-                if self._cancel_event is not None:
-                    # wait() returns as soon as the flag is set, so a stop does
-                    # not have to sit out the poll interval.
-                    if self._cancel_event.wait(_POLL_INTERVAL_SECONDS):
-                        settled = True
-                        return self._stop_cancelled_run(
-                            runtime, store, run_id, preset, variables
-                        )
-                else:
-                    time.sleep(_POLL_INTERVAL_SECONDS)
-
-                loaded = store.load_run(run_id)
-                if loaded is None:
-                    settled = True
-                    return json.dumps(
-                        {"status": "error", "error": f"Run {run_id} disappeared"},
-                        ensure_ascii=False,
+        while time.monotonic() - t0 < max_wait:
+            if self._cancel_event is not None:
+                # A stop does not have to sit out the poll interval.
+                if self._cancel_event.wait(_POLL_INTERVAL_SECONDS):
+                    return self._stop_cancelled_run(
+                        runtime, store, run_id, preset, variables
                     )
+            else:
+                time.sleep(_POLL_INTERVAL_SECONDS)
 
-                reconciled = store.reconcile_run(loaded, write=True)
-                if reconciled.status.value in ("completed", "failed", "cancelled"):
-                    settled = True
-                    return _format_result(reconciled, preset, variables)
-
-            # Wait budget elapsed but the run is still in flight. Do NOT cancel —
-            # the daemon thread keeps working and the agent can decide to wait
-            # more (re-invoke with the returned run_id) or hand off partial state
-            # to the user. Cancelling here used to throw away minutes of LLM cost
-            # whenever a preset legitimately ran past the budget.
             loaded = store.load_run(run_id)
-            if loaded is not None:
-                return _format_result(
-                    store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
+            if loaded is None:
+                return json.dumps(
+                    {"status": "error", "error": f"Run {run_id} disappeared"},
+                    ensure_ascii=False,
                 )
 
-            return json.dumps(
-                {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},
-                ensure_ascii=False,
+            reconciled = store.reconcile_run(loaded, write=True)
+            if reconciled.status.value in ("completed", "failed", "cancelled"):
+                return _format_result(reconciled, preset, variables)
+
+        # Wait budget elapsed. Return the run ID without cancelling the run.
+        loaded = store.load_run(run_id)
+        if loaded is not None:
+            return _format_result(
+                store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
             )
-        finally:
-            if settled:
-                unregister_active_run(run_id)
+
+        return json.dumps(
+            {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},
+            ensure_ascii=False,
+        )
 
     def _stop_cancelled_run(
         self,
@@ -797,6 +798,7 @@ def _format_result(
         "preset": preset,
         "auto_variables": variables,
         "final_report": run.final_report or "",
+        "report_is_partial": run.report_is_partial,
         "error": run_level_error(run),
         "tasks": task_summaries,
         "token_usage": {

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.figures import magnitude_suffix
+from evals.grounding import GroundingLedger
+from evals.grounding.figures import magnitude_suffix
 
 
 @pytest.mark.parametrize("prose", ["96.22B", "96.22 billion", "96.22 Billion", "962.21亿"])

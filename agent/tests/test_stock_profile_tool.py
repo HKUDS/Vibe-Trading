@@ -248,13 +248,17 @@ def test_listing_identity_omits_financial_currency_when_not_fetched() -> None:
     assert "financial_currency" not in listing
 
 
-def test_listing_identity_underlying_symbol_only_when_yahoo_supplies_it() -> None:
+def test_listing_identity_underlying_symbol_only_when_yahoo_supplies_it(monkeypatch) -> None:
     """The underlying-issuer link is never inferred, only passed through (#1567)."""
     summary = _sample_summary()
     with patch.object(sp, "get_quote_summary", return_value=summary):
         out = sp.StockProfileTool().execute(ticker="AAPL.US")
     assert "underlying_symbol" not in json.loads(out)["data"]["listing"]
 
+    # A new upstream observation requires a cache miss; the first snapshot
+    # correctly retains the provider's earlier absence until it expires.
+    from src.data_gateway import get_gateway
+    monkeypatch.setattr(get_gateway().cache, "get", lambda _: None)
     summary["price"]["underlyingSymbol"] = "AAPL"
     with patch.object(sp, "get_quote_summary", return_value=summary):
         out = sp.StockProfileTool().execute(ticker="AAPL.US")

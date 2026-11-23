@@ -263,7 +263,11 @@ def test_malformed_timeout_env_falls_back_to_default(
     frame = provider.query_events(["AAA"], as_of="2024-01-31")
 
     assert not frame.empty
-    assert client.timeouts == [DEFAULT_TIMEOUT_S]
+    # Malformed source settings still use their original default, but dispatch
+    # is now also capped by the gateway's unchanged source budget.
+    from src.data_gateway import get_gateway
+    assert len(client.timeouts) == 1
+    assert 0 < client.timeouts[0] <= min(DEFAULT_TIMEOUT_S, get_gateway().config.source_timeout)
 
 
 def test_malformed_budget_env_falls_back_to_default(
@@ -280,7 +284,11 @@ def test_malformed_budget_env_falls_back_to_default(
     frame = provider.query_events(["AAA"], as_of="2024-01-31")
 
     assert not frame.empty
-    assert client.timeouts == [DEFAULT_TIMEOUT_S]
+    # Malformed source settings still use their original default, but dispatch
+    # is now also capped by the gateway's unchanged source budget.
+    from src.data_gateway import get_gateway
+    assert len(client.timeouts) == 1
+    assert 0 < client.timeouts[0] <= min(DEFAULT_TIMEOUT_S, get_gateway().config.source_timeout)
 
 
 def test_reachable_but_empty_feed_does_not_raise() -> None:

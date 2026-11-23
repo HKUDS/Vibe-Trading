@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.grounding.ledger import GroundingLedger
+from evals.grounding.ledger import GroundingLedger
 from src.trading import profiles as trading_profiles
 from src.trading import service as trading_service
 from src.tools import symbol_search_tool as ss
@@ -155,6 +155,42 @@ class TestSymbolSearchSuccess:
         assert candidate is not None
         assert candidate["symbol"] == "GGAL.BA"
         assert candidate["market"] == "ar"
+
+    def test_us_multiclass_share_maps_to_us_suffix(self):
+        # Yahoo writes Berkshire B as BRK-B. It must map to BRK-B.US (market
+        # "us"), not stay bare on "global" where the data layer cannot resolve
+        # it and an explicit BRK-B.US query finds nothing.
+        quote = {
+            "symbol": "BRK-B",
+            "shortname": "Berkshire Hathaway B",
+            "exchange": "NYQ",
+            "quoteType": "EQUITY",
+        }
+        candidate = ss._yahoo_candidate(quote)
+        assert candidate is not None
+        assert candidate["symbol"] == "BRK-B.US"
+        assert candidate["market"] == "us"
+
+    def test_eastmoney_and_yahoo_corroborate_the_same_share_class(self):
+        em = ss._eastmoney_candidate({"Code": "BRK_B", "QuoteID": "106.BRK_B"})
+        yahoo = ss._yahoo_candidate({"symbol": "BRK-B", "exchange": "NYQ", "quoteType": "EQUITY"})
+        merged = ss._merge_candidates([em, yahoo])
+        assert [c["symbol"] for c in merged] == ["BRK-B.US"]
+        assert "yahoo" in merged[0]["also_from"]
+        assert ss._eastmoney_candidate({"Code": "BWA", "QuoteID": "106.BW_A"}) is None
+
+    def test_crypto_hyphen_symbol_stays_native(self):
+        # BTC-USD must not gain a .US suffix merely because it has a hyphen.
+        quote = {
+            "symbol": "BTC-USD",
+            "shortname": "Bitcoin USD",
+            "exchange": "CCC",
+            "quoteType": "CRYPTOCURRENCY",
+        }
+        candidate = ss._yahoo_candidate(quote)
+        assert candidate is not None
+        assert candidate["symbol"] == "BTC-USD"
+        assert candidate["market"] == "global"
 
     def test_limit_clamped_and_applied(self):
         with patch.object(
@@ -1307,3 +1343,36 @@ def test_eastmoney_market_zero_splits_beijing_from_shenzhen(quote_id: str, expec
     candidate = ss._eastmoney_candidate(row)
     assert candidate is not None
     assert candidate["symbol"] == expected
+
+
+@pytest.mark.parametrize("query,expected", [("AAPL.US", "AAPL"), ("aapl.us", "AAPL"), ("BRK-B.US", "BRK-B"), ("BRK.B.US", "BRK-B")])
+def test_project_us_suffix_is_translated_only_for_provider_search(monkeypatch, query, expected):
+    calls = []
+    monkeypatch.setattr(ss, "_search_selected_connector", lambda *args: ([], None, None))
+    monkeypatch.setattr("src.tools.gildata_identity.search_candidates", lambda *args: ([], None))
+    monkeypatch.setattr(ss.sec_edgar_client, "cik_for", lambda *args: None)
+
+    def search(text):
+        calls.append(text)
+        return [
+            {"symbol": expected + ".US", "market": "us", "source": "fixture"},
+            {"symbol": expected + ".L", "market": "uk", "source": "fixture"},
+            {"symbol": "MSFT.US", "market": "us", "source": "fixture"},
+        ], "ok"
+
+    monkeypatch.setattr(ss, "_search_eastmoney", search)
+    monkeypatch.setattr(ss, "_search_yahoo", search)
+    result = json.loads(ss.SymbolSearchTool.execute.__wrapped__(ss.SymbolSearchTool(), query=query))
+    assert calls == [expected.replace("-", "_"), expected]
+    assert result["data"]["query"] == query
+    assert [c["symbol"] for c in result["data"]["candidates"]] == [query.upper()]
+
+
+def test_project_us_query_cannot_fabricate_identity_from_wrong_or_missing_hits(monkeypatch):
+    monkeypatch.setattr(ss, "_search_selected_connector", lambda *args: ([], None, None))
+    monkeypatch.setattr("src.tools.gildata_identity.search_candidates", lambda *args: ([], None))
+    monkeypatch.setattr(ss, "_search_eastmoney", lambda *args: ([], "ok"))
+    monkeypatch.setattr(ss, "_search_yahoo", lambda *args: ([{"symbol": "AAPL.L", "market": "uk", "source": "fixture"}], "ok"))
+    result = json.loads(ss.SymbolSearchTool.execute.__wrapped__(ss.SymbolSearchTool(), query="AAPL.US"))
+    assert result["data"]["query"] == "AAPL.US"
+    assert result["data"]["candidates"] == [] and result["data"]["count"] == 0

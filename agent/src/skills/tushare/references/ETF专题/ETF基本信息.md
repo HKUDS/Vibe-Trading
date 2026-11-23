@@ -50,6 +50,10 @@ etf_type | str | Y | 基金投资通道类型（境内、QDII）
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 
 #获取当前所有上市的ETF列表
 df = pro.etf_basic(list_status='L', fields='ts_code,extname,index_code,index_name,exchange,mgr_name')

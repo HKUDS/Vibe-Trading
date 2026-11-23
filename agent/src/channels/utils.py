@@ -15,7 +15,7 @@ from src.config.paths import get_data_dir
 
 logger = logging.getLogger(__name__)
 
-_UNSAFE_CHARS = re.compile(r"[/\\:*?\"<>|]")
+_UNSAFE_CHARS = re.compile(r"[/\\:*?\"<>|\x00-\x1f\x7f]")
 
 # Static client identification for the RFC 2971 IMAP ``ID`` command. NetEase
 # mailboxes (163/126/yeah.net) accept ``LOGIN`` but reject the first ``SELECT``
@@ -102,7 +102,8 @@ def split_message(content: str, max_len: int = 2000) -> list[str]:
 
 def safe_filename(name: str) -> str:
     """Replace unsafe path characters with underscores."""
-    return _UNSAFE_CHARS.sub("_", name).strip()
+    sanitized = _UNSAFE_CHARS.sub("_", name).strip()
+    return "_" if sanitized in {".", ".."} else sanitized
 
 
 def send_imap_id(client: Any) -> None:

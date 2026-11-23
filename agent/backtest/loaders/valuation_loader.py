@@ -135,6 +135,40 @@ def _to_baostock_code(code: str) -> str | None:
     return None
 
 
+def _baostock_valuation_rows(code: str, columns: str, start: str, end: str) -> list:
+    """Materialize one serialized BaoStock session inside shared acquisition."""
+    import baostock as bs
+    from backtest.loaders.acquisition import remaining_timeout
+    from backtest.loaders.baostock_loader import _baostock_socket_guard, _read_timeout
+    from src.data_gateway.reads import managed_reader
+
+    @managed_reader
+    def acquire():
+        with _baostock_socket_guard(remaining_timeout(_read_timeout())) as acquired:
+            if not acquired:
+                return []
+            login = bs.login()
+            if login.error_code != "0":
+                logger.warning("baostock login failed: %s; valuation fallback stays NaN", login.error_msg)
+                return []
+            try:
+                result = bs.query_history_k_data_plus(
+                    code, columns, start_date=start, end_date=end, frequency="d",
+                )
+                if result.error_code != "0":
+                    logger.warning("baostock valuation query failed for %s: %s", code, result.error_msg)
+                    return []
+                rows = []
+                while result.next():
+                    remaining_timeout(_read_timeout())
+                    rows.append(result.get_row_data())
+                return rows
+            finally:
+                bs.logout()
+
+    return acquire()
+
+
 def _load_baostock_valuation(
     cn_symbols: Sequence[str],
     fields: Sequence[str],
@@ -161,8 +195,6 @@ def _load_baostock_valuation(
     Returns:
         ``field -> dates x symbols`` frames aligned to ``index``/``cn_symbols``.
     """
-    from backtest.loaders.baostock_loader import _baostock_socket_guard, _read_timeout
-
     wanted = [field for field in fields if field in BAOSTOCK_VALUATION_FIELDS]
     nan_frames = {
         field: pd.DataFrame(float("nan"), index=index, columns=list(cn_symbols))
@@ -171,52 +203,28 @@ def _load_baostock_valuation(
     if not wanted:
         return nan_frames
 
-    import baostock as bs
-
     columns = "date," + ",".join(BAOSTOCK_VALUATION_FIELDS[field] for field in wanted)
     series_by_field: dict[str, dict[str, pd.Series]] = {field: {} for field in wanted}
-    with _baostock_socket_guard(_read_timeout()) as acquired:
-        if not acquired:
-            return nan_frames
-        lg = bs.login()
-        if lg.error_code != "0":
-            logger.warning("baostock login failed: %s; valuation fallback stays NaN", lg.error_msg)
-            return nan_frames
+    for code in cn_symbols:
+        bs_code = _to_baostock_code(code)
+        if bs_code is None:
+            continue
         try:
-            for code in cn_symbols:
-                bs_code = _to_baostock_code(code)
-                if bs_code is None:
-                    continue
-                try:
-                    rs = bs.query_history_k_data_plus(
-                        bs_code,
-                        columns,
-                        start_date=start,
-                        end_date=end,
-                        frequency="d",
-                    )
-                except Exception as exc:  # noqa: BLE001 - one bad fetch must not raise
-                    logger.warning("baostock valuation fetch failed for %s: %s", code, exc)
-                    continue
-                if rs.error_code != "0":
-                    logger.warning("baostock valuation query failed for %s: %s", code, rs.error_msg)
-                    continue
-                rows = []
-                while rs.next():
-                    rows.append(rs.get_row_data())
-                if not rows:
-                    continue
-                frame = pd.DataFrame(rows, columns=columns.split(","))
-                frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
-                frame = frame.dropna(subset=["date"]).set_index("date").sort_index()
-                for field in wanted:
-                    source_column = BAOSTOCK_VALUATION_FIELDS[field]
-                    if source_column in frame.columns:
-                        series_by_field[field][code] = pd.to_numeric(
-                            frame[source_column], errors="coerce"
-                        )
-        finally:
-            bs.logout()
+            rows = _baostock_valuation_rows(bs_code, columns, start, end)
+        except Exception as exc:  # noqa: BLE001 - a failed symbol remains NaN
+            logger.warning("baostock valuation fetch failed for %s: %s", code, exc)
+            continue
+        if not rows:
+            continue
+        frame = pd.DataFrame(rows, columns=columns.split(","))
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+        frame = frame.dropna(subset=["date"]).set_index("date").sort_index()
+        for field in wanted:
+            source_column = BAOSTOCK_VALUATION_FIELDS[field]
+            if source_column in frame.columns:
+                series_by_field[field][code] = pd.to_numeric(
+                    frame[source_column], errors="coerce"
+                )
 
     for field in wanted:
         per_code = series_by_field[field]

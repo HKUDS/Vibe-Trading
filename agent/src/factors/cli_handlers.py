@@ -84,17 +84,14 @@ def _load_cli_env() -> None:
     themselves before reading credentials.
     """
     try:
-        from src.providers.llm import _ensure_dotenv
+        from src.providers.settings import _ensure_dotenv
 
         _ensure_dotenv()
     except Exception:
         pass
 
-# Benchmarkable data universes: every name here must have a panel loader in
-# ``src.tools.alpha_bench_tool._UNIVERSE_TAG``. There is no KRX (or NSE/BSE)
-# panel yet, so Korea/India are deliberately absent — ``alpha bench`` would
-# fail at universe load, not produce a Korean benchmark.
-_UNIVERSE_CHOICES = ["csi300", "sp500", "btc-usdt"]
+# Cross-sectional benchmark universes with a panel loader.
+_UNIVERSE_CHOICES = ["csi300", "sp500"]
 
 # Per-row fields that only ``bench_runner_strict`` produces. They are the
 # statistics ``categorise_strict`` actually gates on, so a strict run that

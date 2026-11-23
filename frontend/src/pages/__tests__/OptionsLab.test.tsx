@@ -3,12 +3,12 @@ import { api } from "@/lib/api";
 import type { OptionsLabParams, OptionsPayoffResponse } from "@/lib/options";
 import { clearAnalysisState } from "@/hooks/useAnalysisState";
 import { OptionsLab } from "../OptionsLab";
-vi.mock("@/lib/api", () => ({ api: { analyzeOptionsPayoff: vi.fn() } }));
+vi.mock("@/lib/api", () => ({ api: { analyzeOptionsPayoff: vi.fn(), compareOptionsStrategies: vi.fn() } }));
 vi.mock("@/components/options/StrategyBuilder", () => ({ StrategyBuilder: ({ params, onParamsChange }: { params: OptionsLabParams; onParamsChange: (p: OptionsLabParams) => void }) => <button onClick={() => onParamsChange({ ...params, entry_spot: params.entry_spot + 10 })}>Edit spot</button> }));
 vi.mock("@/components/options/OptionsChainTable", () => ({ OptionsChainTable: () => <div>chain loaded</div> }));
 vi.mock("@/components/options/GreeksCards", () => ({ GreeksCards: () => null }));
 vi.mock("@/components/charts/OptionsScenarioMatrix", () => ({ OptionsScenarioMatrix: () => null }));
-vi.mock("@/components/charts/OptionsPayoffChart", () => ({ OptionsPayoffChart: ({ entrySpot, curve }: { entrySpot: number; curve: { pnl: number[] } }) => <div data-testid="payoff">{entrySpot}:{curve.pnl.join(",")}</div> }));
+vi.mock("@/components/charts/OptionsPayoffChart", () => ({ OptionsPayoffChart: ({ entrySpot, curve, comparisonCurves }: { entrySpot: number; curve: { pnl: number[] }; comparisonCurves?: Array<{ label: string }> }) => <><div data-testid="payoff">{entrySpot}:{curve.pnl.join(",")}</div><div data-testid="comparison-curves">{comparisonCurves?.map((entry) => entry.label).join(",")}</div></> }));
 const output: OptionsPayoffResponse = { status: "ok", inputs: {}, summary: { net_premium: 10, entry_commission: 0, entry_cost: 10, entry_side: "debit", breakevens: [110], breakeven_intervals: [], max_profit: null, max_loss: -10, profit_unbounded: true, loss_unbounded: false }, greeks: { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 }, expiry_curve: { spot: [100], pnl: [7] }, scenario_grid: { iv_values: [], spot: [], pnl: [] }, limitations: [] };
 beforeEach(() => { clearAnalysisState("options"); vi.clearAllMocks(); vi.useFakeTimers(); });
 afterEach(() => vi.useRealTimers());
@@ -34,4 +34,71 @@ it("keeps old chart parameters consistent and restores completed results without
   expect(screen.getByTestId("payoff")).toHaveTextContent("110:7");
   expect(api.analyzeOptionsPayoff).toHaveBeenCalledTimes(2);
   expect(screen.queryByText("chain loaded")).not.toBeInTheDocument();
+});
+it("exports the completed request snapshot after parameters change", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue(output);
+  const createObjectURL = vi.fn(() => "blob:options-export");
+  const revokeObjectURL = vi.fn();
+  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  render(<OptionsLab />); await tick();
+  fireEvent.click(screen.getByText("Edit spot"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+  const jsonBlob = createObjectURL.mock.calls[0][0] as Blob;
+  const exported = JSON.parse(await jsonBlob.text());
+  expect(exported.request.entry_spot).toBe(100);
+  expect(exported.result).toEqual(output);
+
+  fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  const csvBlob = createObjectURL.mock.calls[1][0] as Blob;
+  expect(await csvBlob.text()).toContain("expiry,,100,7");
+  expect(click).toHaveBeenCalledTimes(2);
+  expect(revokeObjectURL).toHaveBeenCalledWith("blob:options-export");
+  click.mockRestore();
+});
+
+it("sends saved legs with the current strategy and displays server comparisons", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue({ ...output, comparisons: [{
+    left_label: "Strategy 1", right_label: "Current strategy", status: "ok",
+    metrics: { max_profit_return: { left_decimal: .21, right_decimal: .18, relation: "higher", difference_percentage_points: 3 } },
+  }] });
+  render(<OptionsLab />); await tick();
+  fireEvent.click(screen.getByText("Save legs for comparison")); await tick();
+  const sent = vi.mocked(api.analyzeOptionsPayoff).mock.lastCall![0];
+  expect(sent.alternatives).toEqual([{ label: "Strategy 1", legs: sent.legs }]);
+  expect(screen.getByText("Higher · 3.00")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Edit spot")); await tick();
+  const updated = vi.mocked(api.analyzeOptionsPayoff).mock.lastCall![0];
+  expect(updated.entry_spot).toBe(110);
+  expect(updated.alternatives).toEqual(sent.alternatives);
+});
+
+it("passes backend alternative curves into the shared payoff chart", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue({
+    ...output,
+    alternatives: [{
+      ...output,
+      label: "Strategy 1",
+      expiry_curve: { spot: [100, 120], pnl: [5, 15] },
+    }],
+  });
+  render(<OptionsLab />); await tick();
+  expect(screen.getByTestId("comparison-curves")).toHaveTextContent("Strategy 1");
+});
+
+it("keeps scenario comparison on the completed request while the builder changes", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue(output);
+  vi.mocked(api.compareOptionsStrategies).mockReturnValue(new Promise(() => {}));
+  render(<OptionsLab />); await tick();
+  fireEvent.click(screen.getByText("Save legs for comparison")); await tick();
+  fireEvent.click(screen.getByRole("button", { name: /Spot x IV Scenario Matrix/ }));
+  await act(async () => {});
+  expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.compareOptionsStrategies).mock.calls[0][0].entry_spot).toBe(100);
+
+  fireEvent.click(screen.getByText("Edit spot")); await tick();
+  expect(api.compareOptionsStrategies).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(api.compareOptionsStrategies).mock.calls[1][0].entry_spot).toBe(110);
 });

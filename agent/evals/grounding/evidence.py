@@ -1,0 +1,1758 @@
+"""Evidence intake: what a tool result is allowed to ground.
+
+Every observed number the gate validates against enters here. Kind maps are
+keyed on tool field names, never on natural language.
+"""
+
+from __future__ import annotations
+
+from src.agent.tool_results import ARCHIVE_MANIFEST
+
+import contextlib
+import csv
+import hashlib
+import json
+import math
+import re
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any, Mapping
+
+from evals.grounding.document_quotes import document_integer_quotes
+
+from evals.grounding.figures import (
+    Figure,
+    _CURRENCY_CODES,
+    parse_figures_block,
+    scan_figures,
+)
+from src.agent.instrument_identity import (
+    _CANONICAL_SYMBOL_RE,
+    _infer_currency,
+    _infer_venue,
+    _normalize_symbol,
+    _utc_now,
+)
+
+_PRICE_FIELDS = {"open", "high", "low", "close", "adj_close", "price"}
+
+_TIMESTAMP_FIELDS = ("trade_date", "date", "datetime", "timestamp", "time", "index")
+
+_MAX_GENERIC_EVIDENCE = 2_000
+
+#: Figures one document may contribute. A filing's text carries far more
+#: numbers than a tool result, and one long document must not crowd the ledger.
+_MAX_DOCUMENT_FIGURES = 400
+
+#: Top-level fields of a code-running tool's envelope (backtest, bash, ...). They
+#: describe the process, not the market, so they never become observed evidence.
+_ENVELOPE_FIELDS = frozenset(
+    {"exit_code", "returncode", "elapsed_seconds", "duration_seconds"}
+)
+
+# Only these CSV columns count; Volume, Adj Close etc. are ignored so the
+# contradiction check gains no values it would be willing to accept.
+_CSV_PRICE_COLUMNS = {
+    "open": "open",
+    "high": "high",
+    "low": "low",
+    "close": "close",
+    "price": "price",
+}
+
+_CSV_DATE_COLUMNS = {"date", "datetime", "trade_date", "timestamp", "index"}
+
+_CSV_FILENAME_SUFFIX_MAP = (
+    ("_V", ".V"),
+    ("_TO", ".TO"),
+    ("_F", "=F"),
+    ("_US", ".US"),
+)
+
+# Nested quote leaves of non-OHLC tools ("data.last", "quote[0].close_price")
+# mapped to canonical price fields. Only unambiguous quote fields: ratios,
+# volumes, strikes and analyst targets stay out so the check accepts no more.
+_GENERIC_PRICE_FIELD_ALIASES = {
+    "open": "open",
+    "open_price": "open",
+    "openprice": "open",
+    "开盘": "open",
+    "开盘价": "open",
+    "high": "high",
+    "high_price": "high",
+    "最高": "high",
+    "最高价": "high",
+    "low": "low",
+    "low_price": "low",
+    "最低": "low",
+    "最低价": "low",
+    "close": "close",
+    "close_price": "close",
+    "closeprice": "close",
+    "prev_close": "close",
+    "pre_close": "close",
+    "preclose": "close",
+    "previous_close": "close",
+    "收盘": "close",
+    "收盘价": "close",
+    "昨收": "close",
+    "adj_close": "adj_close",
+    "adjclose": "adj_close",
+    "adjusted_close": "adj_close",
+    "price": "price",
+    "last": "price",
+    "last_price": "price",
+    "lastprice": "price",
+    "latest_price": "price",
+    "current_price": "price",
+    "market_price": "price",
+    "settle": "price",
+    "settlement": "price",
+    "settle_price": "price",
+    "vwap": "price",
+    "现价": "price",
+    "最新价": "price",
+}
+
+# Metric family per field name: a figure is grounded only by evidence of its
+# own kind, so an observed price never stands in for a volatility (#1336).
+_ANALYSIS_KIND_ALIASES = {
+    "annualized_vol": "vol",
+    "annualized_volatility": "vol",
+    "volatility": "vol",
+    "return_vol": "vol",
+    "return_volatility": "vol",
+    "vol": "vol",
+    "max_drawdown": "drawdown",
+    "maxdd": "drawdown",
+    "drawdown": "drawdown",
+    "sharpe": "sharpe",
+    "sharpe_ratio": "sharpe",
+    "win_rate": "win_rate",
+    "hit_rate": "win_rate",
+    "hitrate": "win_rate",
+    "probability": "probability",
+    "prob": "probability",
+    "total_return": "return",
+    "annual_return": "return",
+    "cumulative_return": "return",
+    "benchmark_return": "return",
+    "excess_return": "return",
+    "annualized_return": "return",
+    "return": "return",
+    "returns": "return",
+    "correlation_matrix": "correlation",
+    "contribution": "contribution",
+    "contribution_pct": "contribution",
+    "risk_contribution": "contribution",
+    "risk_contribution_pct": "contribution",
+    "ic_positive_ratio": "win_rate",
+    "var": "tail_risk",
+    "var_95": "tail_risk",
+    "var_99": "tail_risk",
+    # quantlib_call records a scalar result under the function name, and "var"
+    # alone matches only a whole leaf (_EXACT_ONLY_ALIASES), so these two need
+    # their own entries or a real VaR result grounds nothing (#1464).
+    "historical_var": "tail_risk",
+    "parametric_var": "tail_risk",
+    "cvar": "tail_risk",
+    "cvar_95": "tail_risk",
+    "cvar_99": "tail_risk",
+    "es": "tail_risk",
+    "es_95": "tail_risk",
+    "es_99": "tail_risk",
+    "expected_shortfall": "tail_risk",
+    # Chinese TOOL FIELD NAMES from A-share tools, not answer prose.
+    "最大回撤": "drawdown",
+    "回撤": "drawdown",
+    "夏普": "sharpe",
+    "夏普比率": "sharpe",
+    "年化波动率": "vol",
+    "波动率": "vol",
+    "胜率": "win_rate",
+    "命中率": "win_rate",
+    "概率": "probability",
+    "年化收益率": "return",
+    "累计收益率": "return",
+    "收益率": "return",
+}
+
+# Sample-size, window and duration leaves share a metric's token but hold a
+# count: ``return_observations = 81`` is 81 observations, never an 81% return
+# (#1420/#1426). Matched on the leaf's first and last field-name token.
+_METADATA_COUNT_HEADS = frozenset({"n"})
+
+_METADATA_COUNT_TAILS = frozenset(
+    {"obs", "observations", "window", "lookback", "count", "days", "duration"}
+)
+
+# Money-denominated fields a currency-marked figure may quote besides a price:
+# a market-data row's amount, the backtest engine's equity and P&L leaves, and the
+# opening and closing valuation of a reported period.
+_AMOUNT_FIELDS = frozenset(
+    {
+        "amount",
+        "turnover",
+        "成交额",
+        "final_value",
+        "initial_cash",
+        "initial_capital",
+        "pnl",
+        "total_pnl",
+        "avg_pnl",
+        "notional",
+        "value_start",
+        "value_end",
+    }
+)
+
+# The backtest engine's summary outputs, relative to its run directory: small
+# documents of scalars, recorded whole when the backtest completes. A list
+# inside them (1,000 Monte Carlo Sharpe samples, one entry per rebalance) is a
+# series and is not descended. metrics.csv/json are recorded as they always
+# were; every other file must appear, byte for byte, in the run card's
+# artifact manifest, which the engine writes after its outputs.
+_BACKTEST_SUMMARY_FILES = (
+    "run_card.json",
+    "artifacts/metrics.csv",
+    "artifacts/metrics.json",
+    "artifacts/risk_xray.json",
+    "artifacts/validation.json",
+    "artifacts/rebalance_notes.json",
+)
+
+_MANIFEST_EXEMPT = frozenset({"run_card.json", "artifacts/metrics.csv", "artifacts/metrics.json"})
+
+# Tools whose result names a file the model itself wrote. Such a file is never
+# engine output, whatever its name.
+_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+
+# Columns of a backtest table that name the row's instrument (trades.csv "code").
+_TABLE_SYMBOL_COLUMNS = frozenset({"symbol", "code", "ticker"})
+
+#: Written by the loop into the active run when it archives a backtest there;
+#: ``source_run`` names the run directory the copy came from.
+
+
+def _relative_posix(path: Path, root: Path) -> str:
+    """``path`` relative to ``root`` in POSIX form, "" for ``root`` itself."""
+    try:
+        relative = Path(path).resolve().relative_to(root).as_posix()
+    except (OSError, ValueError):
+        return Path(path).as_posix()
+    return "" if relative == "." else relative
+
+
+def _artifact_ref(path: Path, root: Path) -> str:
+    """``path`` as a ref names it: below the active run, else below its parent.
+
+    A backtest an earlier turn left is a sibling of the active run, so
+    ``<run id>/<backtest>/artifacts/metrics.csv`` names it exactly.
+    """
+    relative = _relative_posix(path, root)
+    if Path(relative).is_absolute():
+        with contextlib.suppress(OSError, ValueError):
+            return Path(path).resolve().relative_to(root.parent).as_posix()
+    return relative
+
+
+def _file_sha256(path: Path) -> str | None:
+    """Hex SHA-256 of a file's bytes, or None when it cannot be read."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _archive_matches(root: Path, declared_dir: Path, call_id: str) -> bool:
+    """Check the engine directory and call that produced an archived result.
+
+    Args:
+        root: Active run holding the archive manifest.
+        declared_dir: Source run directory declared by the backtest call.
+        call_id: Exact successful engine tool call.
+
+    Returns:
+        Whether the archive was created for this directory and call.
+    """
+    try:
+        payload = json.loads((root / ARCHIVE_MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or payload.get("source_call_id") != call_id:
+        return False
+    source = payload.get("source_run_dir")
+    if not isinstance(source, str) or not source:
+        return False
+    try:
+        return Path(source).resolve() == declared_dir.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _run_card_manifest(directory: Path) -> dict[str, str]:
+    """``{relative path: sha256}`` from a backtest's run card, or empty."""
+    try:
+        card = json.loads((directory / "run_card.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    entries = card.get("artifacts") if isinstance(card, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    return {
+        str(entry["path"]): str(entry["sha256"])
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("path") and entry.get("sha256")
+    }
+
+
+def _summary_scalars(path: Path) -> list[tuple[str, int | float]]:
+    """``(field, value)`` for every scalar of a summary artifact; lists are not descended.
+
+    A CSV contributes its first data row by (casefolded) header, a JSON
+    document every number reachable through objects alone, under its dotted
+    path ("tail_risk.var_95").
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    pairs: list[tuple[str, int | float]] = []
+    if path.suffix == ".csv":
+        try:
+            rows = list(csv.reader(text.splitlines()))
+        except csv.Error:
+            return []
+        if len(rows) < 2:
+            return []
+        for name, cell in zip(rows[0], rows[1]):
+            value = _coerce_csv_number(cell)
+            if name.strip() and value is not None:
+                pairs.append((name.strip().casefold(), value))
+        return pairs
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+
+    def visit(item: Any, dotted: str) -> None:
+        if _is_number(item):
+            pairs.append((dotted, item))
+        elif isinstance(item, dict):
+            for key, child in item.items():
+                visit(child, f"{dotted}.{key}" if dotted else str(key))
+
+    visit(data, "")
+    return pairs
+
+
+def _cell_symbol(text: str) -> str | None:
+    """The canonical symbol a table cell or header consists of, or None."""
+    stripped = (text or "").strip()
+    if not stripped or _CANONICAL_SYMBOL_RE.fullmatch(stripped) is None:
+        return None
+    return _normalize_symbol(stripped)
+
+
+def _symbol_from_csv_filename(stem: str) -> str | None:
+    """Map a run-dir CSV stem (``BYN_V`` -> ``BYN.V``) to a canonical symbol.
+
+    A stem without a known venue suffix (a bare ``AAPL``) maps to None, because
+    the project requires an explicit venue suffix.
+
+    Args:
+        stem: CSV filename without the ``.csv`` extension.
+
+    Returns:
+        The canonical symbol, or None.
+    """
+    upper = (stem or "").strip().upper()
+    if not upper:
+        return None
+    for raw, canonical in _CSV_FILENAME_SUFFIX_MAP:
+        if upper.endswith(raw) and len(upper) > len(raw):
+            return upper[: -len(raw)] + canonical
+    return None
+
+
+def _json_object(value: Any) -> dict[str, Any] | None:
+    """Parse a JSON object from a tool result when possible."""
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _is_number(value: Any) -> bool:
+    """Return whether a value is a finite JSON-style number, excluding bool."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def _coerce_csv_number(value: Any) -> int | float | None:
+    """Coerce a CSV text cell (``"0.375"``) to a finite number, or None."""
+    if _is_number(value):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = float(value.strip().replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+        if math.isfinite(parsed):
+            return parsed
+    return None
+
+
+# "." is not a separator: a decimal price such as 8.5 would parse as a date.
+# Only the leading month-day (optional year) matters; annotations after the
+# day ("08-10(一)", "08-10盘中") are ignored.
+_CLAIM_DATE_RE = re.compile(
+    r"^\s*(?:((?:19|20)\d{2})\s*[-/年]\s*)?"
+    r"(0?[1-9]|1[0-2])\s*[-/月]\s*([12]\d|3[01]|0?[1-9])"
+)
+
+
+def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
+    """Match an evidence timestamp against the date cell of a claim.
+
+    A year-less cell (``08-05``) matches on month and day. That can match the
+    wrong year, so callers still compare the value against every matched record
+    rather than trusting the date.
+
+    Args:
+        timestamp: Evidence timestamp, normally ISO ``YYYY-MM-DD``.
+        date_value: Date cell as written in the answer.
+
+    Returns:
+        True when the timestamp denotes the day the claim names.
+    """
+    stamp = (timestamp or "").strip()
+    claim = (date_value or "").strip()
+    if not stamp or not claim:
+        return False
+    if stamp.startswith(claim):
+        return True
+    match = _CLAIM_DATE_RE.match(claim)
+    parts = stamp[:10].split("-")
+    if match is None or len(parts) != 3:
+        return False
+    try:
+        stamp_year, stamp_month, stamp_day = map(int, parts)
+    except ValueError:
+        return False
+    if match.group(1) is not None and stamp_year != int(match.group(1)):
+        return False
+    return (stamp_month, stamp_day) == (int(match.group(2)), int(match.group(3)))
+
+
+def _leaf_name(path: str) -> str:
+    """The last field name of an evidence path, without its list index."""
+    leaf = str(path or "").rsplit(".", 1)[-1]
+    return re.sub(r"\[\d+\]$", "", leaf).strip().casefold()
+
+
+def _field_money_unit(path: str) -> tuple[str | None, float]:
+    """Read an explicit currency/magnitude suffix from a numeric field name.
+
+    Args:
+        path: Evidence field path, for example ``data.revenue_usd_bn``.
+
+    Returns:
+        The named currency and multiplier into its base units. Ambiguous or
+        absent suffixes leave the value unchanged; prose is never consulted.
+    """
+    parts = _leaf_name(path).rsplit("_", 2)
+    if len(parts) != 3 or parts[-2].upper() not in _CURRENCY_CODES:
+        return None, 1.0
+    scale = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mn": 1e6,
+             "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9,
+             "t": 1e12, "tn": 1e12, "trillion": 1e12}.get(parts[-1])
+    if scale is None:
+        return None, 1.0
+    currency = parts[-2].upper()
+    return {"RMB": "CNY", "CNH": "CNY"}.get(currency, currency), scale
+
+
+def _price_field_for_path(path: str) -> str | None:
+    """Map a generic evidence JSON path to a canonical price field.
+
+    Args:
+        path: Recorded evidence field, e.g. ``"data.quote[0].last_price"``.
+
+    Returns:
+        The matching member of ``_PRICE_FIELDS``, or ``None`` when the leaf is
+        not an unambiguous quote field.
+    """
+    return _GENERIC_PRICE_FIELD_ALIASES.get(_leaf_name(path))
+
+
+def _is_metadata_count_leaf(path: str) -> bool:
+    """Whether an evidence leaf is a sample size, window or duration.
+
+    Args:
+        path: Recorded evidence field, e.g. ``"stats.return_observations"``.
+
+    Returns:
+        True for ``n_*`` and ``*_obs`` / ``*_observations`` / ``*_window`` /
+        ``*_lookback`` / ``*_count`` / ``*_days`` / ``*_duration`` leaves.
+    """
+    tokens = [token for token in _leaf_name(path).split("_") if token]
+    if not tokens:
+        return False
+    return tokens[-1] in _METADATA_COUNT_TAILS or (
+        len(tokens) > 1 and tokens[0] in _METADATA_COUNT_HEADS
+    )
+
+
+# Price-denominated indicator leaves, registered per tool and matched by path
+# prefix (spec §5). An unregistered leaf is still evidence but cannot ground a
+# price: inferring price-ness from leaf names admitted ``sma_cross`` as a price.
+_REGISTERED_PRICE_INDICATORS: dict[str, tuple[str, ...]] = {
+    "technical_indicators": (
+        "latest_close",
+        "indicators.sma_",
+        "indicators.ema_",
+        "indicators.bollinger.upper",
+        "indicators.bollinger.middle",
+        "indicators.bollinger.lower",
+    ),
+}
+
+
+_FUND_NAV_PRICE_FIELDS = frozenset({"unit_nav", "accumulated_nav", "adjusted_nav"})
+
+def _is_registered_price_indicator(tool: str, path: str) -> bool:
+    """Whether a tool registered this leaf as a price-denominated level.
+
+    Args:
+        tool: The tool whose result produced the evidence record.
+        path: Recorded evidence field, e.g. ``"indicators.bollinger.lower"``.
+
+    Returns:
+        True when the tool has a registration whose prefix the path matches.
+    """
+    leaf = str(path or "").strip()
+    if tool == "get_fund_nav":
+        # Only this tool's dated, exactly resolved fund rows expose these
+        # levels. A generic nav field or daily growth is not a price.
+        match = re.fullmatch(r"funds\.[0-9]{6}\.OF\.rows\[[0-9]+\]\.([a-z_]+)", leaf)
+        return bool(match and match.group(1) in _FUND_NAV_PRICE_FIELDS)
+    prefixes = _REGISTERED_PRICE_INDICATORS.get(str(tool or ""))
+    if not prefixes:
+        return False
+    for prefix in prefixes:
+        if leaf == prefix:
+            return True
+        if not leaf.startswith(prefix):
+            continue
+        # A prefix ending in "_" names a parametrised family (``sma_20``): only a
+        # numeric parameter may follow, so ``sma_cross`` is not a price.
+        rest = leaf[len(prefix):]
+        if not prefix.endswith("_"):
+            return True
+        if rest.isdigit():
+            return True
+    return False
+
+
+# Tail-risk names short enough to be a fragment of an unrelated leaf count only
+# as the whole leaf: "var_explained" and "sales_es" are not a VaR.
+_EXACT_ONLY_ALIASES = frozenset({"var", "es"})
+
+# Field-name qualifiers that follow a metric's head and do not change what it
+# measures ("hit_rate_daily", "vol_annualized"), like a numeric parameter.
+_QUALIFIER_SUFFIXES = frozenset(
+    {"daily", "weekly", "monthly", "annual", "annualized", "yearly", "pct", "percent", "bps"}
+)
+
+
+#: Tail-risk measure per field-name token, scanned right to left like every
+#: other head-noun rule in this module. VaR and ES/CVaR are different
+#: measurements of the same family, and 95% and 99% are different numbers of
+#: either, so the family alone cannot say which value a figure quotes (#1425).
+_TAIL_RISK_MEASURE_TOKENS = {
+    "var": "var",
+    "cvar": "es",
+    "es": "es",
+    "shortfall": "es",
+}
+
+
+def tail_risk_identity(path: str) -> str | None:
+    """The tail-risk identity an evidence field names, e.g. ``var_95``.
+
+    Read off the FIELD NAME a tool returned — never off answer prose, which the
+    gate does not interpret. ``data.tail_risk.var_95`` and ``historical_var``
+    are ``var_95`` and ``var``; ``cvar_99`` and ``es_99`` are both ``es_99``,
+    which is the point: they are the same measurement under two names.
+
+    Args:
+        path: Evidence JSON path or leaf name.
+
+    Returns:
+        ``"<measure>"`` or ``"<measure>_<confidence>"``, or None when the field
+        is not a tail-risk value at all.
+    """
+    if _metric_kind_for_path(path) != "tail_risk":
+        return None
+    tokens = [token for token in re.split(r"[_.]", _leaf_name(path)) if token]
+    confidence = tokens[-1] if tokens and tokens[-1].isdigit() else ""
+    measure = None
+    for token in reversed([token for token in tokens if not token.isdigit()]):
+        measure = _TAIL_RISK_MEASURE_TOKENS.get(token)
+        if measure is not None:
+            break
+    if measure is None:
+        return None
+    return f"{measure}_{confidence}" if confidence else measure
+
+
+def _metric_kind_for_path(path: str) -> str | None:
+    """Map an evidence JSON path to an analysis metric kind.
+
+    A metadata count leaf (:func:`_is_metadata_count_leaf`) has no kind.
+    """
+    if _is_metadata_count_leaf(path):
+        return None
+    leaf = _leaf_name(path)
+    kind = _ANALYSIS_KIND_ALIASES.get(leaf)
+    if kind is not None:
+        return kind
+    # Recognize explicitly named metric maps with ticker-keyed numeric leaves.
+    # A dotted venue suffix (AAPL.US) occupies multiple path components;
+    # only uppercase symbol-shaped components can follow the metric field.
+    parts = str(path or "").split(".")
+    for index, part in enumerate(parts[:-1]):
+        parent_kind = _ANALYSIS_KIND_ALIASES.get(part.casefold())
+        if parent_kind not in {"contribution", "correlation"}:
+            continue
+        labels = parts[index + 1 :]
+        if all(re.fullmatch(r"[A-Z][A-Z0-9]{0,14}", label) for label in labels):
+            return parent_kind
+    # Compound leaves ("strategy_max_drawdown"): scan tokens from the right,
+    # where English puts the head noun, so "return_vol" is vol, not return.
+    # Only the head of a compound leaf says what it measures (#1426):
+    # "strategy_max_drawdown" is a drawdown, while "sharpe_sample_size" and
+    # "drawdown_threshold" are a size and a threshold. A trailing numeric
+    # parameter or period qualifies the head ("cvar_95", "hit_rate_daily").
+    tokens = [token for token in re.split(r"[_.]", leaf) if token]
+    stripped = list(tokens)
+    while stripped and (stripped[-1].isdigit() or stripped[-1] in _QUALIFIER_SUFFIXES):
+        stripped.pop()
+    for candidate in (tokens, stripped):
+        for size in (2, 1):
+            if len(candidate) < size:
+                continue
+            key = "_".join(candidate[-size:])
+            kind = None if key in _EXACT_ONLY_ALIASES else _ANALYSIS_KIND_ALIASES.get(key)
+            if kind is not None:
+                return kind
+    return None
+
+
+def _keyed_metric_map_kind(path: str) -> str | None:
+    """Identify metric maps with instrument-shaped keys after the metric name.
+
+    Scalar fields such as ``positions[0].contribution_pct`` are not keyed
+    maps and must keep their ordinary indexed evidence references.
+    """
+    parts = str(path or "").split(".")
+    for index, part in enumerate(parts[:-1]):
+        kind = _ANALYSIS_KIND_ALIASES.get(part.casefold())
+        if kind not in {"contribution", "correlation"}:
+            continue
+        if all(re.fullmatch(r"[A-Z][A-Z0-9]{0,14}", key) for key in parts[index + 1 :]):
+            return kind
+    return None
+
+
+def _analysis_symbol_key(key: str) -> str | None:
+    """Return a plausible instrument key, excluding common aggregate labels."""
+    if _CANONICAL_SYMBOL_RE.fullmatch(key) or (
+        re.fullmatch(r"[A-Z][A-Z0-9]{0,14}", key)
+        and key not in {"ALL", "PORTFOLIO", "TOTAL", "UNKNOWN"}
+    ):
+        return _normalize_symbol(key)
+    return None
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    """One observed, unavailable, or derived numeric evidence item.
+
+    ``artifact`` and ``scope`` are set only for backtest output: the file the
+    value was read from and the backtest run directory that produced it, both
+    relative to the ledger's run directory ("" is that directory itself). A
+    declaration's ``ref`` may name either one.
+    """
+
+    call_id: str
+    tool: str
+    symbol: str | None
+    source: str
+    timestamp: str | None
+    field: str
+    value: int | float | None
+    status: str
+    currency: str | None = None
+    venue: str | None = None
+    currency_conversion: str | None = None
+    artifact: str | None = None
+    scope: str | None = None
+    # Explicit field-unit multiplier already applied to the stored value.
+    value_scale: float = 1.0
+    # Source-declared unit, distinct from a currency inferred from the listing.
+    value_unit: str | None = None
+
+
+def _is_price_kind(record: EvidenceRecord) -> bool:
+    """Whether a record is money-denominated: a quote, a registered level or an amount.
+
+    Args:
+        record: One evidence record, with its raw or canonical field.
+
+    Returns:
+        True for OHLC/quote fields, registered price indicators and
+        amount/turnover leaves.
+    """
+    return (
+        (
+            record.tool == "get_sec_filings"
+            and record.source == "sec_edgar"
+            and record.field.startswith("data.metric.points[")
+            and record.field.endswith("].val")
+            and record.currency is not None
+        )
+        or record.field in _PRICE_FIELDS
+        or _price_field_for_path(record.field) is not None
+        or _is_registered_price_indicator(record.tool, record.field)
+        or _leaf_name(record.field) in _AMOUNT_FIELDS
+    )
+
+
+def _has_money_unit(record: EvidenceRecord) -> bool:
+    """Whether the source explicitly denominates this leaf in money."""
+    unit = record.value_unit or ""
+    currency, _, denominator = unit.partition("/")
+    return currency in _CURRENCY_CODES and denominator in {"", "shares", "share"}
+
+
+_PERCENT_HEADER = re.compile(r"(?:^[%％]$|[(（]\s*[%％]\s*[)）]$)")
+_NUMERIC_CELL = re.compile(r"[+−-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+
+
+def _wrapped_percent_headers(lines: list[str]) -> list[str]:
+    """Rejoin a trailing percentage header only when its row layout survives.
+
+    The preceding multi-cell header must be exactly one cell short of every
+    following numeric row. Only single-cell, nonnumeric continuation lines
+    may connect it to the percent marker. A complete header, a delimiter,
+    a blank, a width change or a grouped last-column amount makes the layout
+    ambiguous; leave the entire block unchanged in those cases.
+
+    Args:
+        lines: Extracted document lines, including their line endings.
+
+    Returns:
+        A copy with unambiguous wrapped headers joined for column matching.
+    """
+    result = list(lines)
+    for index, line in enumerate(lines):
+        marker = line.strip()
+        if (
+            len(marker.split()) != 1
+            or not _PERCENT_HEADER.search(marker)
+            or any(c.isdigit() or c in "|\t" for c in marker)
+        ):
+            continue
+        first = index - 1
+        while first >= 0:
+            cells = lines[first].split()
+            if not cells or any(c.isdigit() or c in "|\t%％" for c in lines[first]):
+                break
+            if len(cells) > 1:
+                break
+            first -= 1
+        if first < 0:
+            continue
+        header = lines[first].split()
+        if len(header) < 2 or any(c.isdigit() or c in "|\t%％" for c in lines[first]):
+            continue
+        width = len(header) + 1
+        found, ambiguous = False, False
+        for following in lines[index + 1 :]:
+            cells = following.split()
+            if (
+                not cells
+                or "|" in following
+                or "\t" in following
+                or _NUMERIC_CELL.fullmatch(cells[0])
+                or not all(
+                    _NUMERIC_CELL.fullmatch(c) or c in {"—", "-"} for c in cells[1:]
+                )
+                or len(cells) < 2
+            ):
+                break
+            found = True
+            if len(cells) != width or "," in cells[-1]:
+                ambiguous = True
+                break
+        if found and not ambiguous:
+            ending = line[len(line.rstrip("\r\n")) :]
+            result[index] = " ".join([*header, marker]) + ending
+    return result
+
+
+def _document_percent_cells(text: str) -> str:
+    """Attach an explicit column unit to numeric cells before evidence scanning.
+
+    A PDF reader may flatten a table to whitespace. Only carry its header
+    across contiguous, equal-width numeric rows with a leading row label.
+    Preserve empty cells in delimited tables and reset on any ambiguous row.
+    """
+    if "%" not in text and "％" not in text:
+        return text
+    lines = _wrapped_percent_headers(text.splitlines(keepends=True))
+    columns: tuple[int, ...] = ()
+    layout = ("", 0)
+    for i, line in enumerate(lines):
+        row = line.rstrip("\r\n").strip(" ")
+        sep = "|" if "|" in row else "\t" if "\t" in row else ""
+        if sep == "|":
+            row = row.removeprefix("|").removesuffix("|")
+        if not sep:
+            row = row.strip()
+        delimiter = re.escape(sep) if sep else r"\s+"
+        parts = re.split(f"({delimiter})", row)
+        cells = [part.strip() for part in parts[::2]]
+        shape = (sep, len(cells))
+        if columns and shape == layout:
+            if sep == "|" and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue
+            if cells[0] and all(_NUMERIC_CELL.fullmatch(c) or c in {"", "—", "-"} for c in cells[1:]):
+                # Odd parts are the original delimiters.
+                for col in columns:
+                    pos = 2 * col
+                    if _NUMERIC_CELL.fullmatch(parts[pos].strip()):
+                        parts[pos] = parts[pos].rstrip() + "%"
+                lines[i] = line.replace(row, "".join(parts), 1)
+                continue
+        columns = tuple(j for j, c in enumerate(cells) if j and _PERCENT_HEADER.search(c))
+        if any(_NUMERIC_CELL.fullmatch(c) for c in cells):
+            columns = ()
+        layout = shape
+    return "".join(lines)
+
+
+def _document_field(figure: Figure) -> str:
+    """The evidence field a document's figure is recorded under.
+
+    The name carries the figure's written shape and nothing more. A document
+    does not say whether a number is revenue or a price, so a made-up semantic
+    name would let the gate's money and percent filters act on a distinction the
+    file never drew — while the shape is exactly what the reader did see.
+    """
+    if figure.percent:
+        return "document.ratio"
+    if figure.currency:
+        return "document.amount"
+    return "document.figure"
+
+
+class _EvidenceMixin:
+    """Evidence behaviour of :class:`GroundingLedger`."""
+
+    def _ingest_analysis_result(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any] | None,
+        call_id: str,
+    ) -> None:
+        """Record metric figures a completed analysis result actually produced.
+
+        An ok envelope is not enough: ``backtest`` reports ok for any runner exit
+        and a skipped call carries no result (#1336). Only a result yielding at
+        least one recognisable metric counts as completed analysis.
+        """
+        if payload is None or payload.get("skipped"):
+            return
+        if tool_name == "backtest":
+            if str(payload.get("status") or "").casefold() != "ok" and payload.get(
+                "exit_code"
+            ) not in (0, "0"):
+                return
+            recorded = self._record_backtest_metrics(arguments, payload, call_id)
+        elif tool_name == "factor_analysis":
+            if str(payload.get("status") or "").casefold() != "ok":
+                return
+            recorded = self._record_leaf_metrics(payload, call_id, tool_name, "")
+        elif tool_name == "run_shadow_backtest":
+            if str(payload.get("status") or "").casefold() != "ok":
+                return
+            combined = payload.get("combined")
+            if not isinstance(combined, dict):
+                # A combined dict containing only {"error": ...} is no analysis.
+                return
+            recorded = self._record_leaf_metrics(combined, call_id, tool_name, "combined")
+        elif tool_name == "quantlib_call":
+            if payload.get("ok") is not True or str(
+                arguments.get("action") or ""
+            ).casefold() != "call":
+                return
+            function = str(arguments.get("function") or "")
+            recorded = self._record_leaf_metrics(
+                payload.get("result"), call_id, tool_name, function
+            )
+        else:
+            return
+        if recorded:
+            self._analysis_completed.append(
+                {"call_id": call_id, "tool": tool_name, "recorded_at": _utc_now()}
+            )
+
+    def _record_leaf_metrics(
+        self,
+        value: Any,
+        call_id: str,
+        tool_name: str,
+        field_prefix: str,
+    ) -> int:
+        """Record nested numeric leaves whose key names a metric kind."""
+        recorded = 0
+
+        def visit(
+            item: Any,
+            path: str,
+            *,
+            metric_map: str | None = None,
+            keyed_symbol: str | None = None,
+            keyed_symbols: tuple[str, ...] = (),
+        ) -> None:
+            nonlocal recorded
+            if _is_number(item):
+                kind = _metric_kind_for_path(path)
+                if kind is None:
+                    return
+                symbol = keyed_symbol if metric_map == "contribution" else None
+                self._analysis_metrics.append(
+                    {
+                        "metric": kind,
+                        "value": float(item),
+                        "tool": tool_name,
+                        "call_id": call_id,
+                        "field": path,
+                        "instrument_scoped": metric_map is not None,
+                        "symbol": symbol,
+                        "instrument_symbols": list(keyed_symbols),
+                    }
+                )
+                recorded += 1
+                return
+            if isinstance(item, dict):
+                for key, child in item.items():
+                    key_text = str(key)
+                    child_path = f"{path}.{key_text}" if path else key_text
+                    parent_kind = _ANALYSIS_KIND_ALIASES.get(key_text.casefold())
+                    child_metric_map = (
+                        parent_kind
+                        if isinstance(child, dict) and parent_kind in {"contribution", "correlation"}
+                        else metric_map
+                    )
+                    child_symbol = keyed_symbol
+                    child_symbols = keyed_symbols
+                    if metric_map == "contribution":
+                        child_symbol = _analysis_symbol_key(key_text)
+                    elif metric_map == "correlation":
+                        child_symbol = None
+                        axis_symbol = _analysis_symbol_key(key_text)
+                        if axis_symbol and axis_symbol not in child_symbols:
+                            child_symbols = (*child_symbols, axis_symbol)
+                    visit(
+                        child,
+                        child_path,
+                        metric_map=child_metric_map,
+                        keyed_symbol=child_symbol,
+                        keyed_symbols=child_symbols,
+                    )
+            elif isinstance(item, list):
+                for index, child in enumerate(item):
+                    visit(
+                        child,
+                        f"{path}[{index}]",
+                        metric_map=metric_map,
+                        keyed_symbol=keyed_symbol,
+                        keyed_symbols=keyed_symbols,
+                    )
+
+        visit(value, field_prefix or "")
+        return recorded
+
+    def _record_backtest_metrics(
+        self,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any],
+        call_id: str,
+    ) -> int:
+        """Parse metric figures from a successful backtest's run-dir artifacts."""
+        root = self.run_dir.resolve()
+        candidates: list[Path] = []
+        own_dir: Path | None = None
+        raw_dir = arguments.get("run_dir") or payload.get("run_dir")
+        declared = root
+        if raw_dir:
+            declared = Path(str(raw_dir))
+            declared = declared if declared.is_absolute() else self.run_dir / declared
+            try:
+                resolved = declared.resolve()
+                if resolved == root or resolved.is_relative_to(root):
+                    candidates.append(resolved)
+                    own_dir = resolved
+            except (OSError, RuntimeError, ValueError):
+                pass
+        else:
+            own_dir = root
+            candidates.append(root)
+        # The loop copies detached output before ingesting this result. The
+        # archive must name the full directory AND this call, since basenames
+        # collide and one directory can be backtested repeatedly in a turn.
+        archived = (
+            own_dir != root
+            and not self._is_model_written(root / ARCHIVE_MANIFEST)
+            and _archive_matches(root, declared, call_id)
+        )
+        if archived:
+            candidates.append(root)
+        # Only canonical engine metric locations count. A result's explicit
+        # artifact path cannot reintroduce an unrelated run or arbitrary CSV.
+        files: list[Path] = []
+        seen_dirs: set[Path] = set()
+        for candidate in candidates:
+            if candidate.is_file():
+                files.append(candidate)
+                continue
+            if candidate in seen_dirs:
+                continue
+            seen_dirs.add(candidate)
+            for dir_path in (candidate, candidate / "artifacts"):
+                for name in ("metrics.csv", "metrics.json"):
+                    target = dir_path / name
+                    if target.is_file() and target.resolve().is_relative_to(candidate.resolve()):
+                        files.append(target)
+        recorded = 0
+        seen_files: set[Path] = set()
+        for file_path in files:
+            if file_path in seen_files or self._is_model_written(file_path):
+                continue
+            seen_files.add(file_path)
+            recorded += self._record_metrics_file(file_path, call_id)
+        if recorded:
+            own_dir = own_dir or root
+            scope = _relative_posix(own_dir, root)
+            self._backtest_scopes[call_id] = scope
+            self._scope_latest[scope] = call_id
+            self._record_backtest_outputs(own_dir, call_id, scope)
+            # The active run holds this backtest's copy only when the loop's
+            # archive names it as the source; otherwise it is an earlier run's.
+            if archived:
+                self._record_backtest_outputs(root, call_id, scope)
+        return recorded
+
+    def _record_backtest_outputs(
+        self, directory: Path, call_id: str, scope: str, *, verify_tables: bool = False
+    ) -> None:
+        """Record every scalar of a backtest's summary outputs, and hash its tables.
+
+        The run's Sortino, turnover, final equity, Monte Carlo p-values and
+        risk X-ray are as observed as its Sharpe; only kind-named metrics used
+        to count, so a report quoting the rest was refused figure by figure.
+        A file re-recorded under the same path replaces its earlier records:
+        the loop's archive overwrites the active run's copy on every backtest.
+
+        Args:
+            directory: A backtest run directory, or the active run holding its copy.
+            call_id: The backtest call that produced the outputs.
+            scope: That backtest's run directory relative to the ledger's.
+            verify_tables: Register a table only if the run card lists it with
+                its current hash (for a run this ledger did not watch finish).
+        """
+        root = self.run_dir.resolve()
+        manifest = _run_card_manifest(directory)
+        room = _MAX_GENERIC_EVIDENCE
+        for name in _BACKTEST_SUMMARY_FILES:
+            path = directory / name
+            if (
+                not path.is_file()
+                or not path.resolve().is_relative_to(directory.resolve())
+                or self._is_model_written(path)
+            ):
+                continue
+            if (name not in _MANIFEST_EXEMPT or (verify_tables and name != "run_card.json")) and manifest.get(name) != _file_sha256(path):
+                continue
+            artifact = _artifact_ref(path, root)
+            self._evidence = [record for record in self._evidence if record.artifact != artifact]
+            for field_name, value in _summary_scalars(path):
+                if room <= 0:
+                    return
+                if _price_field_for_path(field_name) is not None:
+                    continue
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool="backtest",
+                        symbol=None,
+                        source="backtest",
+                        timestamp=None,
+                        field=field_name,
+                        value=value,
+                        status="observed",
+                        artifact=artifact,
+                        scope=scope,
+                    )
+                )
+                room -= 1
+        tables = directory / "artifacts"
+        if tables.is_dir():
+            for path in sorted(tables.glob("*.csv")):
+                if (
+                    not path.resolve().is_relative_to(directory.resolve())
+                    or self._is_model_written(path)
+                    or f"artifacts/{path.name}" in _BACKTEST_SUMMARY_FILES
+                ):
+                    continue
+                digest = _file_sha256(path)
+                if digest is not None and (
+                    not verify_tables or manifest.get(f"artifacts/{path.name}") == digest
+                ):
+                    self._engine_tables[str(path.resolve())] = (digest, scope)
+
+    def _adopt_prior_backtest(self, raw_dir: Any, call_id: str) -> None:
+        """Ground figures read from a backtest an earlier turn finished.
+
+        The ledger only watches backtests launched under the active run. A run
+        reused through ``list_backtest_runs`` + ``read_run_artifact`` is adopted
+        only if it sits in an allowed run root, its run card and ``metrics.csv``
+        agree, no file is a symlink or one the model wrote, and each table it
+        registers is listed in the run card manifest with the same hash. It is
+        named in a figure ref as ``<run id>/<backtest>`` (or ``backtest::<run id>/<backtest>``).
+        """
+        if not raw_dir:
+            return
+        from src.tools.path_utils import safe_run_dir
+
+        try:
+            directory = safe_run_dir(str(raw_dir))
+        except ValueError:
+            return
+        card, metrics = directory / "run_card.json", directory / "artifacts" / "metrics.csv"
+        if directory.is_relative_to(self.run_dir.resolve()) or any(
+            path.is_symlink() or self._is_model_written(path) for path in (card, metrics)
+        ):
+            return
+        if _run_card_manifest(directory).get("artifacts/metrics.csv") != _file_sha256(metrics):
+            return
+        recorded = dict(_summary_scalars(card))
+        shared = [(name, value) for name, value in _summary_scalars(metrics) if f"metrics.{name}" in recorded]
+        if not shared or any(
+            not math.isclose(value, recorded[f"metrics.{name}"], rel_tol=1e-9, abs_tol=1e-12)
+            for name, value in shared
+        ):
+            return
+        scope = _artifact_ref(directory, self.run_dir.resolve())
+        self._record_metrics_file(metrics, call_id)
+        self._backtest_scopes[call_id] = scope
+        self._scope_latest[scope] = call_id
+        self._record_backtest_outputs(directory, call_id, scope, verify_tables=True)
+
+    def _note_model_write(
+        self, tool_name: str, arguments: Mapping[str, Any], payload: dict[str, Any] | None
+    ) -> None:
+        """Remember a file the model wrote, so it never passes for engine output."""
+        if tool_name not in _WRITE_TOOLS:
+            return
+        raw = (payload or {}).get("path") or arguments.get("path") or arguments.get("file_path")
+        if not raw:
+            return
+        path = Path(str(raw))
+        if not path.is_absolute():
+            path = Path(str(arguments.get("run_dir") or self.run_dir)) / path
+        try:
+            self._model_written.add(str(path.resolve()))
+        except OSError:
+            return
+
+    def _is_model_written(self, path: Path) -> bool:
+        """Whether the model wrote ``path`` itself in this run."""
+        try:
+            return str(path.resolve()) in self._model_written
+        except OSError:
+            return True
+
+    def _ingest_engine_table(
+        self, payload: dict[str, Any], call_id: str, *, tool_name: str = "read_file"
+    ) -> None:
+        """Record the rows of a backtest table the model just read back.
+
+        Only a table a completed backtest wrote counts, and only while it is
+        still byte for byte what the engine wrote. Only the rows the model was
+        shown are recorded: a per-bar table is a dense series, and recording
+        all of it would let an invented weight or return match some bar by
+        chance. Price columns remain artifact-scoped; they never enlarge the
+        undeclared market-price pool.
+
+        Args:
+            payload: The file or structured artifact reader's result.
+            call_id: The reader's call.
+            tool_name: The reader that showed these rows to the model.
+        """
+        raw = payload.get("path")
+        if not isinstance(raw, str):
+            return
+        try:
+            path = Path(raw).resolve()
+        except OSError:
+            return
+        known = self._engine_tables.get(str(path))
+        if known is None or self._is_model_written(path) or _file_sha256(path) != known[0]:
+            return
+        scope = known[1]
+        if tool_name == "read_run_artifact":
+            columns, records = payload.get("columns"), payload.get("rows")
+            if (
+                not isinstance(columns, list)
+                or not all(isinstance(cell, str) for cell in columns)
+                or not isinstance(records, list)
+                or not all(isinstance(row, list) and len(row) == len(columns) for row in records)
+            ):
+                return
+            header = [cell.strip() for cell in columns]
+            data_rows = [["" if cell is None else str(cell) for cell in row] for row in records]
+        else:
+            content = payload.get("content")
+            if not isinstance(content, str):
+                return
+            truncated = "\n... (truncated)"
+            if content.endswith(truncated):
+                content = content[: -len(truncated)]
+                content = content[: content.rfind("\n") + 1]
+            try:
+                rows = list(csv.reader(content.splitlines()))
+            except csv.Error:
+                return
+            if len(rows) < 2:
+                return
+            header = [cell.strip() for cell in rows[0]]
+            data_rows = rows[1:]
+        folded = [cell.casefold() for cell in header]
+        date_index = next(
+            (index for index, name in enumerate(folded) if name in _CSV_DATE_COLUMNS), None
+        )
+        symbol_index = next(
+            (index for index, name in enumerate(folded) if name in _TABLE_SYMBOL_COLUMNS), None
+        )
+        artifact = _artifact_ref(path, self.run_dir.resolve())
+        room = _MAX_GENERIC_EVIDENCE
+        for row in data_rows:
+            timestamp = (
+                row[date_index].strip()
+                if date_index is not None and date_index < len(row)
+                else None
+            )
+            for index, cell in enumerate(row[: len(header)]):
+                if index in (date_index, symbol_index):
+                    continue
+                value = _coerce_csv_number(cell)
+                if value is None:
+                    continue
+                # A weight column is named by its instrument ("000001.SZ"), and
+                # that name is the field a ref narrows on. The record carries no
+                # symbol: a portfolio table is not evidence about the listing,
+                # and a symbol here would start attributing the answer's
+                # portfolio figures to one instrument.
+                column_symbol = _cell_symbol(header[index])
+                price_field = _price_field_for_path(folded[index])
+                row_symbol = (
+                    _cell_symbol(row[symbol_index])
+                    if symbol_index is not None and symbol_index < len(row)
+                    else _symbol_from_csv_filename(path.stem.removeprefix("ohlcv_"))
+                ) if price_field else None
+                if room <= 0:
+                    return
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool=tool_name,
+                        symbol=row_symbol,
+                        source="backtest",
+                        timestamp=timestamp,
+                        field=column_symbol or folded[index],
+                        value=value,
+                        status="observed",
+                        artifact=artifact,
+                        scope=scope,
+                        currency=_infer_currency(row_symbol or "") if price_field else None,
+                    )
+                )
+                room -= 1
+
+    def _record_metrics_file(self, path: Path, call_id: str) -> int:
+        """Record metric figures from one metrics.csv/metrics.json artifact."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return 0
+        if path.suffix == ".json":
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                return 0
+            if not isinstance(data, dict):
+                return 0
+            return self._record_leaf_metrics(data, call_id, "backtest", "")
+        try:
+            rows = list(csv.reader(text.splitlines()))
+        except csv.Error:
+            return 0
+        if len(rows) < 2:
+            return 0
+        header = [cell.strip().casefold() for cell in rows[0]]
+        recorded = 0
+        for index, raw in enumerate(rows[1]):
+            if index >= len(header):
+                break
+            kind = _ANALYSIS_KIND_ALIASES.get(header[index])
+            value = _coerce_csv_number(raw)
+            if kind is not None and value is not None:
+                self._analysis_metrics.append(
+                    {
+                        "metric": kind,
+                        "value": float(value),
+                        "tool": "backtest",
+                        "call_id": call_id,
+                        "field": header[index],
+                    }
+                )
+                recorded += 1
+        return recorded
+
+    def _record_tool_failure(self, tool_name: str, call_id: str, result: str) -> None:
+        """Store structured unavailable evidence for failed business envelopes."""
+        payload = _json_object(result) or {}
+        self._tool_failures.append(
+            {
+                "call_id": call_id,
+                "tool": tool_name,
+                "status": "unavailable",
+                "error_code": payload.get("error_code"),
+                "message": str(payload.get("error") or payload.get("message") or "tool failed")[:500],
+                "recorded_at": _utc_now(),
+            }
+        )
+
+    def _ingest_market_data(
+        self,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any] | None,
+        call_id: str,
+        *,
+        tool_name: str = "get_market_data",
+    ) -> None:
+        """Convert full OHLCV payloads into source-linked evidence rows."""
+        if payload is None:
+            self._record_tool_failure(tool_name, call_id, "malformed JSON result")
+            return
+        requested_source = str(arguments.get("source") or "auto")
+        provenance = payload.get("_provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        for raw_symbol, raw_rows in payload.items():
+            if str(raw_symbol).startswith("_"):
+                continue
+            symbol = _normalize_symbol(raw_symbol)
+            rows = raw_rows.get("data") if isinstance(raw_rows, dict) else raw_rows
+            if not isinstance(rows, list):
+                continue
+            symbol_provenance = provenance.get(raw_symbol)
+            actual_source = (
+                str(symbol_provenance.get("source"))
+                if isinstance(symbol_provenance, dict) and symbol_provenance.get("source")
+                else requested_source
+            )
+            currency_conversion = (
+                str(symbol_provenance.get("currency_conversion"))
+                if isinstance(symbol_provenance, dict)
+                and symbol_provenance.get("currency_conversion")
+                else None
+            )
+            # The currency the source declared for this line wins over the
+            # one its suffix implies: a venue can list lines in more than one
+            # (#1566), and the answer is required to name this one.
+            quote_currency = (
+                str(symbol_provenance.get("quote_currency"))
+                if isinstance(symbol_provenance, dict)
+                and symbol_provenance.get("quote_currency")
+                else _infer_currency(symbol)
+            )
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                timestamp = next(
+                    (str(row[key]) for key in _TIMESTAMP_FIELDS if row.get(key) is not None),
+                    None,
+                )
+                for field_name, value in row.items():
+                    normalized_field = str(field_name).casefold()
+                    if normalized_field in _TIMESTAMP_FIELDS or not _is_number(value):
+                        continue
+                    self._evidence.append(
+                        EvidenceRecord(
+                            call_id=call_id,
+                            tool=tool_name,
+                            symbol=symbol,
+                            source=actual_source,
+                            timestamp=timestamp,
+                            field=normalized_field,
+                            value=value,
+                            status="observed",
+                            currency=quote_currency,
+                            venue=_infer_venue(symbol),
+                            currency_conversion=currency_conversion,
+                        )
+                    )
+        unresolved = payload.get("_unresolved")
+        if isinstance(unresolved, list):
+            for raw_symbol in unresolved:
+                symbol = _normalize_symbol(raw_symbol)
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool=tool_name,
+                        symbol=symbol,
+                        source=requested_source,
+                        timestamp=None,
+                        field="availability",
+                        value=None,
+                        status="unavailable",
+                        currency=_infer_currency(symbol),
+                        venue=_infer_venue(symbol),
+                    )
+                )
+
+    def _ingest_generic_numeric(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any],
+        call_id: str,
+    ) -> None:
+        """Flatten bounded numeric leaves from other market-sensitive tools."""
+        symbols = self._extract_symbol_arguments(arguments)
+        symbol = symbols[0] if len(symbols) == 1 else None
+        if symbol:
+            symbol = (
+                self._match_authorized_symbol(symbol, self.authorized_symbols) or symbol
+            )
+        source = str(payload.get("source") or tool_name)
+        remaining = _MAX_GENERIC_EVIDENCE
+        timestamp_fields = (*_TIMESTAMP_FIELDS, "latest_date", "as_of")
+        data = payload.get("data")
+        metric = data.get("metric") if isinstance(data, dict) else None
+        unit = metric.get("unit") if isinstance(metric, dict) else None
+        unit = unit.strip().upper() if isinstance(unit, str) else None
+        metric_currency = {"RMB": "CNY", "CNH": "CNY"}.get(unit, unit) if unit in _CURRENCY_CODES else None
+
+        def visit(
+            value: Any,
+            path: str,
+            timestamp: str | None = None,
+            declared_currency: str | None = None,
+            declared_unit: str | None = None,
+        ) -> None:
+            nonlocal remaining
+            if remaining <= 0:
+                return
+            if _is_number(value):
+                field_currency, field_scale = _field_money_unit(path)
+                unit_currency = (declared_unit or "").split("/", 1)[0]
+                unit_currency = unit_currency if unit_currency in _CURRENCY_CODES else None
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool=tool_name,
+                        symbol=symbol,
+                        source=source,
+                        timestamp=timestamp,
+                        field=path or "value",
+                        value=value * field_scale if field_currency else value,
+                        value_scale=field_scale,
+                        value_unit=declared_unit or field_currency,
+                        status="observed",
+                        currency=unit_currency or field_currency or (
+                            metric_currency
+                            if tool_name == "get_sec_filings"
+                            and path.startswith("data.metric.points[")
+                            and path.endswith("].val")
+                            else (
+                                declared_currency
+                                if declared_currency
+                                and _leaf_name(path) in _AMOUNT_FIELDS
+                                else _infer_currency(symbol or "")
+                            )
+                        ),
+                        venue=_infer_venue(symbol or ""),
+                    )
+                )
+                remaining -= 1
+                return
+            if isinstance(value, dict):
+                # An object that names its own ISO currency ("currency": "USD")
+                # denominates the amount leaves beside it; nothing else inherits it.
+                sibling = value.get("currency")
+                sibling = sibling.strip().upper() if isinstance(sibling, str) else None
+                local_currency = (
+                    {"RMB": "CNY", "CNH": "CNY"}.get(sibling, sibling) if sibling in _CURRENCY_CODES else None
+                )
+                local_timestamp = next(
+                    (
+                        str(value[key])
+                        for key in timestamp_fields
+                        if value.get(key) is not None
+                    ),
+                    timestamp,
+                )
+                units = value.get("_units") if tool_name == "get_financial_statements" else None
+                units = units if isinstance(units, dict) else {}
+                for key, item in value.items():
+                    if key == "_units":
+                        continue
+                    if str(key).casefold() in timestamp_fields:
+                        continue
+                    if not path and str(key).casefold() in _ENVELOPE_FIELDS:
+                        continue
+                    visit(
+                        item,
+                        f"{path}.{key}" if path else str(key),
+                        local_timestamp,
+                        local_currency,
+                        units.get(key) if isinstance(units.get(key), str) else None,
+                    )
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    visit(item, f"{path}[{index}]", timestamp, declared_currency)
+
+        visit(payload, "")
+
+    def _ingest_run_dir_ohlc_csvs(self) -> None:
+        """Register OHLC rows from per-symbol CSVs the run wrote via bash+yfinance.
+
+        Those prices were observed but bypassed ``get_market_data``. Only a file
+        whose name maps to a symbol already tracked in this run is accepted, so a
+        stray CSV cannot mint identity; rows are bounded by
+        ``_MAX_GENERIC_EVIDENCE`` and each file is ingested once.
+        """
+        if not self.run_dir.is_dir():
+            return
+        entitled = self._session_symbols | self.authorized_symbols
+        if not entitled:
+            return
+        room = _MAX_GENERIC_EVIDENCE
+        for path in sorted(self.run_dir.rglob("*.csv")):
+            if room <= 0:
+                return
+            try:
+                identity_key = f"{path.resolve()}:{path.stat().st_mtime_ns}"
+            except (OSError, ValueError):
+                continue
+            if identity_key in self._ingested_csvs:
+                continue
+            self._ingested_csvs.add(identity_key)
+            symbol = _symbol_from_csv_filename(path.stem)
+            if not symbol or symbol not in entitled:
+                continue
+            try:
+                with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+                    rows = list(csv.DictReader(handle))
+            except (OSError, UnicodeDecodeError, csv.Error):
+                continue
+            for row in rows:
+                if room <= 0:
+                    return
+                if not isinstance(row, dict):
+                    continue
+                timestamp = next(
+                    (
+                        str(row[key]).strip()
+                        for key in row
+                        if str(key).strip().casefold() in _CSV_DATE_COLUMNS
+                        and row[key] not in (None, "")
+                    ),
+                    None,
+                )
+                for key, value in row.items():
+                    field_name = _CSV_PRICE_COLUMNS.get(
+                        str(key).strip().casefold().replace(" ", "_")
+                    )
+                    if field_name is None:
+                        continue
+                    numeric = _coerce_csv_number(value)
+                    if numeric is None:
+                        continue
+                    self._evidence.append(
+                        EvidenceRecord(
+                            call_id=f"csv:{path.name}",
+                            tool="bash",
+                            symbol=symbol,
+                            source="yfinance",
+                            timestamp=timestamp,
+                            field=field_name,
+                            value=numeric,
+                            status="observed",
+                            currency=_infer_currency(symbol),
+                            venue=_infer_venue(symbol),
+                        )
+                    )
+                    room -= 1
+
+    def _price_records(self) -> list[EvidenceRecord]:
+        """Return observed OHLC/price evidence only."""
+        return [
+            record
+            for record in self._evidence
+            if record.status == "observed"
+            and record.field in _PRICE_FIELDS
+            and record.value is not None
+            and record.artifact is None
+        ]
+
+    def _comparable_price_records(self) -> list[EvidenceRecord]:
+        """Return every observed quote a numeric claim may be checked against.
+
+        Quotes from non-OHLC tools are re-keyed onto canonical price fields and
+        registered indicator leaves onto ``indicator``.
+
+        Returns:
+            Observed price evidence with canonical ``field`` values.
+        """
+        records = self._price_records()
+        already_counted = {id(record) for record in records}
+        for record in self._evidence:
+            if record.artifact is not None:
+                continue
+            if id(record) in already_counted:
+                continue
+            if record.status != "observed" or record.value is None:
+                continue
+            field_name = _price_field_for_path(record.field)
+            if field_name is None:
+                if _is_registered_price_indicator(record.tool, record.field):
+                    records.append(replace(record, field="indicator"))
+                continue
+            records.append(replace(record, field=field_name))
+        return records
+
+    def _ingest_document_text(
+        self,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any],
+        call_id: str,
+        *,
+        tool_name: str = "read_document",
+    ) -> None:
+        """Record the figures a document states as observed evidence.
+
+        ``read_document`` answers with one prose blob, so the numeric-leaf
+        flattening every other tool goes through found nothing: a PDF's figures
+        never became evidence and the gate redacted each of them as unsourced.
+
+        Only numbers carrying a mark of measurement count. A page number, a
+        section heading or a year in running text is not a finding, and
+        admitting bare integers would let an invented small figure match by
+        chance. Bare integers may be retained separately for exact labelled
+        quotation, never as operands or general-purpose evidence. The document
+        must not be one this run wrote — reading back its
+        own draft is not observation — and nothing under the run directory is
+        read as a document, so the ledger's own artifacts cannot launder
+        themselves through the reader.
+
+        Args:
+            arguments: The reader's arguments; its ``file_path`` names the source.
+            payload: The document reader's envelope.
+            call_id: The reader call that showed this text to the model.
+            tool_name: The reader that returned the text.
+        """
+        text = next(
+            (
+                payload[key]
+                for key in ("text", "content", "markdown")
+                if isinstance(payload.get(key), str)
+            ),
+            None,
+        )
+        if not text:
+            return
+        path: Path | None = None
+        raw_path = arguments.get("file_path")
+        if isinstance(raw_path, str) and raw_path.strip():
+            try:
+                path = Path(raw_path).resolve()
+            except OSError:
+                path = None
+            if path is not None:
+                if self._is_model_written(path):
+                    return
+                try:
+                    path.relative_to(self.run_dir.resolve())
+                except ValueError:
+                    pass
+                else:
+                    return
+        artifact = path.name if path is not None else None
+        if artifact is None and isinstance(payload.get("file"), str):
+            artifact = payload["file"]
+        room = min(
+            _MAX_DOCUMENT_FIGURES,
+            _MAX_GENERIC_EVIDENCE - len(self._evidence),
+        )
+        if room <= 0:
+            return
+        seen: set[tuple[float, bool, str | None]] = set()
+        text = _document_percent_cells(text)
+        figures = scan_figures(text, parse_figures_block(text))
+        self._document_integer_quotes.extend(document_integer_quotes(
+            text, figures, call_id,
+            _MAX_DOCUMENT_FIGURES - len(self._document_integer_quotes),
+        ))
+        for figure in figures:
+            if room <= 0:
+                return
+            if figure.shape != "measured":
+                continue
+            value = float(figure.value) * float(figure.scale or 1.0)
+            if not math.isfinite(value):
+                continue
+            key = (round(value, 6), bool(figure.percent), figure.currency_code)
+            if key in seen:
+                continue
+            seen.add(key)
+            self._evidence.append(
+                EvidenceRecord(
+                    call_id=call_id,
+                    tool=tool_name,
+                    symbol=None,
+                    source="document",
+                    timestamp=None,
+                    field=_document_field(figure),
+                    value=value,
+                    status="observed",
+                    currency=figure.currency_code,
+                    artifact=artifact,
+                )
+            )
+            room -= 1

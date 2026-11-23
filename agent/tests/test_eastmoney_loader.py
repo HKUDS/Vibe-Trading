@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import eastmoney_client
+from backtest.loaders.base import loader_cache_put
 from tests.loader_contract import assert_loader_contract
 from backtest.loaders.eastmoney_loader import DataLoader, _to_compact_date
 
@@ -57,6 +58,31 @@ class TestLoaderContract:
 
     def test_is_available_true(self) -> None:
         assert DataLoader().is_available() is True
+
+
+def test_legacy_us_cache_requires_a_fresh_resolution(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE", "1")
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE_ROOT", str(tmp_path))
+    loader = DataLoader()
+    start, end = "2024-01-02", "2024-01-03"
+    legacy = loader._frame_from_rows(_client_rows())
+    for symbol in ("BRK.US", "00700.HK"):
+        loader_cache_put(source="eastmoney", symbol=symbol, timeframe="1D", start_date=start,
+                         end_date=end, fields=None, frame=legacy)
+
+    # BRK's cached bars could belong to BRKC. Settled HK data is still valid.
+    with patch.object(eastmoney_client, "resolve_secid", return_value=None) as resolve:
+        assert set(loader.fetch(["BRK.US", "00700.HK"], start, end)) == {"00700.HK"}
+        resolve.assert_called_once_with("BRK.US")
+
+    with patch.object(eastmoney_client, "resolve_secid", return_value="105.AAPL") as resolve, patch.object(
+        eastmoney_client, "fetch_kline", return_value=_client_rows()
+    ) as fetch:
+        first = loader.fetch(["AAPL.US"], start, end)
+        cached = loader.fetch(["AAPL.US"], start, end)
+        pd.testing.assert_frame_equal(first["AAPL.US"], cached["AAPL.US"])
+        resolve.assert_called_once_with("AAPL.US")
+        fetch.assert_called_once()
 
 
 class TestToCompactDate:

@@ -19,14 +19,14 @@ def configure_parser(parser) -> None:
 
 def run(args) -> int:
     """Run a custom provider operation without accepting a key on argv."""
-    from src.providers.custom_profiles import CustomProviderStore, STORE_LOCK
+    from src.providers.custom_profiles import CustomProviderStore
 
     store = CustomProviderStore()
     try:
         if args.custom_command == "list":
             result = store.list_public()
         elif args.custom_command == "add":
-            from src.api.custom_provider_routes import _perform_completion_test, _validate_custom_base_url
+            from src.providers.custom_profiles import _perform_completion_test, _validate_custom_base_url
 
             base_url = _validate_custom_base_url(args.base_url)
             key = getpass.getpass("API key (hidden): ")
@@ -34,11 +34,9 @@ def run(args) -> int:
             result = store.save(profile_id=args.id, label=args.label, base_url=base_url, model=args.model, api_key=key)
         else:
             # Canonical settings writes use the same host paths as the API.
-            import api_server  # noqa: F401
-            from src.api.settings_routes import activate_custom_provider
+            from src.providers.custom_profiles import activate_custom_provider
 
-            with STORE_LOCK:
-                result = activate_custom_provider(store.get(args.id), store=store)
+            result = activate_custom_provider(args.id, store=store)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (RuntimeError, ValueError, OSError) as exc:

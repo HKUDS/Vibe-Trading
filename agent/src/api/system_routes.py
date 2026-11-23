@@ -155,8 +155,8 @@ def _provider_readiness() -> Tuple[bool, str]:
     """
     try:
         from src.config.accessor import get_env_config
-        from src.providers.capabilities import provider_env_names
-        from src.providers.llm import _sync_provider_env
+        from src.providers.registry import provider_env_names
+        from src.providers.settings import _sync_provider_env
     except Exception as exc:  # noqa: BLE001 — degrade to not-ready, never crash the probe
         logger.warning("readiness: provider config import failed: %r", exc)
         return False, "provider configuration unavailable"
@@ -232,6 +232,15 @@ def register_system_routes(
         return _terminate_current_process
 
     # --- Routes ---
+
+    @app.get("/api/system/update", dependencies=[Depends(host.require_local_or_auth)])
+    async def check_software_update():
+        from src.update import check_update
+
+        try:
+            return await asyncio.to_thread(check_update, _app_version)
+        except Exception:
+            raise HTTPException(503, "Could not check for updates. Try again later.") from None
 
     def _health_payload() -> HealthResponse:
         return HealthResponse(

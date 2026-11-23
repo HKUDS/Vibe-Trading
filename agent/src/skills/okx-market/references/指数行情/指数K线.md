@@ -31,13 +31,13 @@
 **接口示例**
 
 ```python
-import requests
+from src.data_gateway.reads import public_http_get
 import pandas as pd
 
 BASE_URL = "https://www.okx.com/api/v5"
 
 # 获取 BTC 指数日K
-resp = requests.get(f"{BASE_URL}/market/index-candles", params={
+resp = public_http_get(f"{BASE_URL}/market/index-candles", params={
     "instId": "BTC-USD",
     "bar": "1D",
     "limit": "30"

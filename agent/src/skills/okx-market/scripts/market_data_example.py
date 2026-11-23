@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-import requests
+from src.data_gateway.reads import public_http_get
 import pandas as pd
 from datetime import datetime
 
@@ -21,7 +21,7 @@ def get_ticker(inst_id: str) -> Optional[dict]:
         行情数据字典，失败返回 None。
     """
     try:
-        resp = requests.get(f"{BASE_URL}/market/ticker", params={"instId": inst_id})
+        resp = public_http_get(f"{BASE_URL}/market/ticker", params={"instId": inst_id})
         data = resp.json()
         if data["code"] != "0":
             print(f"API错误: {data['msg']}")
@@ -48,7 +48,7 @@ def get_top_tickers(inst_type: str = "SPOT", top_n: int = 10) -> Optional[pd.Dat
         DataFrame，失败返回 None。
     """
     try:
-        resp = requests.get(f"{BASE_URL}/market/tickers", params={"instType": inst_type})
+        resp = public_http_get(f"{BASE_URL}/market/tickers", params={"instType": inst_type})
         tickers = resp.json()["data"]
         df = pd.DataFrame(tickers)
         df["volCcy24h"] = df["volCcy24h"].astype(float)
@@ -77,7 +77,7 @@ def get_funding_rates(symbols: Optional[list] = None) -> Optional[pd.DataFrame]:
     rows = []
     for sym in symbols:
         try:
-            resp = requests.get(f"{BASE_URL}/public/funding-rate", params={"instId": sym})
+            resp = public_http_get(f"{BASE_URL}/public/funding-rate", params={"instId": sym})
             data = resp.json()["data"][0]
             rate = float(data["fundingRate"])
             annual = rate * 3 * 365 * 100

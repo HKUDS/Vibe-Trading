@@ -14,18 +14,18 @@ AKShare is a completely free, open-source Python financial data library. No regi
 ## Quick Start
 
 ```python
-import akshare as ak
+from src.data_gateway.skill_sources import akshare_query
 
 # A-share daily OHLCV (前复权)
-df = ak.stock_zh_a_hist(symbol="000001", period="daily",
+df = akshare_query("stock_zh_a_hist_em", symbol="000001", period="daily",
                          start_date="20240101", end_date="20260101", adjust="qfq")
 
 # US stock daily
-df = ak.stock_us_hist(symbol="105.AAPL", period="daily",
+df = akshare_query("stock_us_hist_em", symbol="105.AAPL", period="daily",
                        start_date="20240101", end_date="20260101", adjust="qfq")
 
 # HK stock daily
-df = ak.stock_hk_hist(symbol="00700", period="daily",
+df = akshare_query("stock_hk_hist_em", symbol="00700", period="daily",
                        start_date="20240101", end_date="20260101", adjust="qfq")
 ```
 
@@ -35,7 +35,7 @@ df = ak.stock_hk_hist(symbol="00700", period="daily",
 
 | Function | Description | Key Params |
 |----------|-------------|------------|
-| `stock_zh_a_hist()` | A-share OHLCV | symbol, period, start_date, end_date, adjust |
+| `stock_zh_a_hist_em()` | A-share OHLCV | symbol, period, start_date, end_date, adjust |
 | `stock_zh_a_spot_em()` | Real-time A-share quotes | (none) |
 | `stock_individual_info_em()` | Stock basic info | symbol |
 | `stock_zh_a_hist_min_em()` | Intraday bars | symbol, period(1/5/15/30/60) |
@@ -44,8 +44,8 @@ df = ak.stock_hk_hist(symbol="00700", period="daily",
 
 | Function | Description | Key Params |
 |----------|-------------|------------|
-| `stock_us_hist()` | US stock OHLCV | symbol (e.g. "105.AAPL"), period, start_date, end_date |
-| `stock_hk_hist()` | HK stock OHLCV | symbol (e.g. "00700"), period, start_date, end_date |
+| `stock_us_hist_em()` | US stock OHLCV | symbol (e.g. "105.AAPL"), period, start_date, end_date |
+| `stock_hk_hist_em()` | HK stock OHLCV | symbol (e.g. "00700"), period, start_date, end_date |
 
 ### Macro / Forex / Futures
 
@@ -54,7 +54,7 @@ df = ak.stock_hk_hist(symbol="00700", period="daily",
 | `macro_china_gdp()` | China GDP data |
 | `macro_china_cpi()` | China CPI data |
 | `futures_main_sina()` | Futures main contract quotes |
-| `currency_boc_sina()` | BOC forex rates |
+| `fx_boc_rate_sina()` | BOC forex rates |
 
 ## Column Names
 

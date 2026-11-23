@@ -1,5 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { api } from "@/lib/api";
+import { buildSwarmStatusFromRunDetail, mergeSwarmRunUsage } from "@/lib/swarmStatus";
 import { Clock, Users } from "lucide-react";
 import { SwarmDashboard } from "@/components/chat/SwarmDashboard";
 import { abbreviateNum } from "@/lib/formatters";
@@ -175,7 +179,49 @@ function runTone(status: SwarmRunStatus["status"]): string {
   }
 }
 
-export const SwarmStatusCard = memo(function SwarmStatusCard({ status }: Props) {
+export const SwarmStatusCard = memo(function SwarmStatusCard({ status: originalStatus }: Props) {
+  const continuationKey = `swarm-continuation:${originalStatus.runId}`;
+  const [continued, setContinued] = useState<SwarmRunStatus | null>(() => {
+    try {
+      const runId = localStorage.getItem(continuationKey);
+      return runId ? { ...originalStatus, runId, status: "pending", completedAt: undefined } : null;
+    } catch { return null; }
+  });
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState("");
+  const status = continued ?? originalStatus;
+  const activeRunId = continued && ["pending", "running"].includes(continued.status) ? continued.runId : null;
+  useEffect(() => {
+    if (!activeRunId) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const payload = await api.getSwarmRun(activeRunId);
+        const snapshot = buildSwarmStatusFromRunDetail(payload, activeRunId);
+        if (!disposed && snapshot) {
+          setContinued(mergeSwarmRunUsage(snapshot, payload));
+          setResumeError("");
+        }
+      } catch (error) {
+        if (!disposed) setResumeError(String(error));
+      }
+      if (!disposed) timer = setTimeout(poll, 1500);
+    };
+    void poll();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [activeRunId]);
+  const resume = async () => {
+    setResuming(true);
+    setResumeError("");
+    try {
+      const run = await api.retrySwarmRun(status.runId, true);
+      try { localStorage.setItem(continuationKey, run.id); } catch { /* Storage may be unavailable. */ }
+      setContinued({ ...status, runId: run.id, status: "pending", completedAt: undefined });
+    } catch (error) {
+      setResumeError(String(error));
+    } finally { setResuming(false); }
+  };
   const { t: typedT } = useTranslation();
   const t = typedT as unknown as ManifestTranslation;
   const done = status.agents.filter((agent) =>
@@ -230,6 +276,26 @@ export const SwarmStatusCard = memo(function SwarmStatusCard({ status }: Props) 
         )}
 
         <TokenUsageLine status={status} t={t} />
+
+        {status.finalReport && (
+          <details className="mt-3" open={status.reportIsPartial}>
+            <summary className="cursor-pointer text-sm font-medium">{t(status.reportIsPartial ? "swarmStatus.partialResults" : "swarmStatus.report")}</summary>
+            <div className="prose prose-sm dark:prose-invert mt-2 max-w-none overflow-x-auto">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{status.finalReport}</ReactMarkdown>
+            </div>
+          </details>
+        )}
+        {["failed", "cancelled"].includes(status.status) && (
+          <button type="button" className="mt-3 rounded border px-3 py-1 text-xs" disabled={resuming} onClick={() => void resume()}>
+            {t("swarmStatus.continueWork")}
+          </button>
+        )}
+        {activeRunId && (
+          <button type="button" className="mt-3 rounded border px-3 py-1 text-xs" onClick={() => {
+            void api.cancelSwarmRun(activeRunId).catch((error) => setResumeError(String(error)));
+          }}>{t("agent.cancel")}</button>
+        )}
+        {resumeError && <p role="alert" className="mt-2 text-xs text-destructive">{resumeError}</p>}
 
         <SwarmDashboard
           agents={status.agents}

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.providers import llm as _provider_adapters
+from src.providers import settings as _provider_configuration
+
 import asyncio
 import json
 import os
@@ -11,12 +14,10 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from src.providers.capabilities import (
-    get_llm_credentials,
-    get_provider_capabilities,
-    provider_env_names,
-)
-from src.providers.llm import ChatOpenAIWithReasoning, _sync_provider_env, build_llm
+from src.providers.settings import get_llm_credentials
+from src.providers.registry import get_provider_capabilities, provider_env_names
+from src.providers.llm import ChatOpenAIWithReasoning, build_llm
+from src.providers.settings import _sync_provider_env
 
 
 class TestProviderCapabilityAliases:
@@ -126,15 +127,14 @@ class TestProviderCapabilityAliases:
 # ---------------------------------------------------------------------------
 
 
-class TestSyncProviderEnv:
-    """Provider-specific env vars → OPENAI_* mapping."""
+class TestResolvedProviderConfig:
+    """Legacy connection precedence without mutating other provider credentials."""
 
     def _run_sync(self, env: dict[str, str]) -> dict[str, str]:
         """Run _sync_provider_env with a clean env and return relevant keys."""
         # Reset the dotenv guard so it doesn't skip
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True  # pretend already loaded
+        _provider_configuration._dotenv_loaded = True  # pretend already loaded
 
         clean = {
             k: v
@@ -155,11 +155,9 @@ class TestSyncProviderEnv:
         clean.update(env)
         with patch.dict(os.environ, clean, clear=True):
             _sync_provider_env()
-            return {
-                "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
-                "OPENAI_API_BASE": os.environ.get("OPENAI_API_BASE", ""),
-                "OPENAI_BASE_URL": os.environ.get("OPENAI_BASE_URL", ""),
-            }
+            snapshot = _provider_configuration.resolve_config()
+            assert dict(os.environ) == clean
+            return {"OPENAI_API_KEY": snapshot.api_key, "OPENAI_API_BASE": snapshot.base_url, "OPENAI_BASE_URL": snapshot.base_url}
 
     def test_openai_default(self) -> None:
         result = self._run_sync(
@@ -343,9 +341,8 @@ class TestSyncProviderEnv:
 
 
 def test_build_anthropic_uses_messages_api_proxy() -> None:
-    import src.providers.llm as llm_mod
 
-    llm_mod._dotenv_loaded = True
+    _provider_configuration._dotenv_loaded = True
     captured: dict[str, object] = {}
 
     class _FakeChatAnthropic:
@@ -364,7 +361,7 @@ def test_build_anthropic_uses_messages_api_proxy() -> None:
     }
     with patch.dict(os.environ, env, clear=True):
         with patch.object(
-            llm_mod,
+            _provider_adapters,
             "import_module",
             return_value=SimpleNamespace(ChatAnthropic=_FakeChatAnthropic),
         ):
@@ -405,17 +402,18 @@ def _make_fake_anthropic_base():
             self.calls.append(dict(payload))
             if self.model == "deprecates-temp" and "temperature" in payload:
                 raise RuntimeError("`temperature` is deprecated for this model.")
+            if self.model == "refuses-temp" and "temperature" in payload:
+                raise RuntimeError("temperature: Extra inputs are not permitted")
             return SimpleNamespace(payload=payload)
 
     return _FakeAnthropicBase
 
 
 def test_anthropic_temperature_self_heal_drops_and_retries() -> None:
-    import src.providers.llm as llm_mod
 
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("deprecates-temp")
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     base = _make_fake_anthropic_base()
-    safe_cls = llm_mod._make_temperature_safe_anthropic(base)
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(base)
     inst = safe_cls(model="deprecates-temp", temperature=0.0)
 
     result = inst._generate([])
@@ -426,15 +424,14 @@ def test_anthropic_temperature_self_heal_drops_and_retries() -> None:
     assert "temperature" not in inst.calls[1]
     assert "temperature" not in result.payload
     # Model is remembered so later calls omit temperature up front.
-    assert "deprecates-temp" in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+    assert any(key[-1] == "deprecates-temp" for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
 
 
 def test_anthropic_temperature_preserved_for_supported_model() -> None:
-    import src.providers.llm as llm_mod
 
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("supports-temp")
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     base = _make_fake_anthropic_base()
-    safe_cls = llm_mod._make_temperature_safe_anthropic(base)
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(base)
     inst = safe_cls(model="supports-temp", temperature=0.0)
 
     result = inst._generate([])
@@ -442,7 +439,7 @@ def test_anthropic_temperature_preserved_for_supported_model() -> None:
     # Deterministic temperature preserved; no retry, nothing remembered.
     assert len(inst.calls) == 1
     assert result.payload.get("temperature") == 0.0
-    assert "supports-temp" not in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+    assert not any(key[-1] == "supports-temp" for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
 
 
 def test_is_anthropic_temperature_unsupported_error_matching() -> None:
@@ -461,6 +458,30 @@ def test_is_anthropic_temperature_unsupported_error_matching() -> None:
     assert not _is_anthropic_temperature_unsupported_error(
         RuntimeError("rate limit exceeded")
     )
+    # The API also words the refusal as a validation error on the field itself.
+    assert _is_anthropic_temperature_unsupported_error(
+        RuntimeError("temperature: Extra inputs are not permitted")
+    )
+    # Without a mention of `temperature` the same wording is unrelated.
+    assert not _is_anthropic_temperature_unsupported_error(
+        RuntimeError("max_tokens: Extra inputs are not permitted")
+    )
+
+
+def test_anthropic_temperature_self_heal_handles_the_validation_wording() -> None:
+
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+    base = _make_fake_anthropic_base()
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(base)
+    inst = safe_cls(model="refuses-temp", temperature=0.0)
+
+    result = inst._generate([])
+
+    assert len(inst.calls) == 2
+    assert "temperature" in inst.calls[0]
+    assert "temperature" not in inst.calls[1]
+    assert "temperature" not in result.payload
+    assert any(key[-1] == "refuses-temp" for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
 
 
 # ---------------------------------------------------------------------------
@@ -512,7 +533,6 @@ def _openai_compat_sse(text: str, model: str) -> bytes:
 )
 def test_openai_compat_temperature_self_heal_drops_and_retries() -> None:
     """A 400 on `temperature` gets one retry without it, remembered for later calls."""
-    import src.providers.llm as llm_mod
 
     calls: list[dict] = []
 
@@ -524,7 +544,7 @@ def test_openai_compat_temperature_self_heal_drops_and_retries() -> None:
         return httpx.Response(200, json=_openai_compat_completion_body(model))
 
     model = "claude-opus-4-8"
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     try:
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             llm = ChatOpenAIWithReasoning(
@@ -543,14 +563,14 @@ def test_openai_compat_temperature_self_heal_drops_and_retries() -> None:
             assert "temperature" in calls[0]
             assert calls[0]["temperature"] == 0.0
             assert "temperature" not in calls[1]
-            assert model in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+            assert any(key[-1] == model for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
 
             # Remembered: the second invoke skips the doomed attempt entirely.
             llm.invoke("hello again")
             assert len(calls) == 3
             assert "temperature" not in calls[2]
     finally:
-        llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+        _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
 
 
 @pytest.mark.skipif(
@@ -559,7 +579,6 @@ def test_openai_compat_temperature_self_heal_drops_and_retries() -> None:
 )
 def test_openai_compat_temperature_preserved_for_supported_model() -> None:
     """Models that accept `temperature` keep it; nothing is remembered."""
-    import src.providers.llm as llm_mod
 
     calls: list[dict] = []
 
@@ -569,7 +588,7 @@ def test_openai_compat_temperature_preserved_for_supported_model() -> None:
         return httpx.Response(200, json=_openai_compat_completion_body(model))
 
     model = "claude-sonnet-4-5"
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     try:
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             llm = ChatOpenAIWithReasoning(
@@ -586,9 +605,9 @@ def test_openai_compat_temperature_preserved_for_supported_model() -> None:
         assert result.content == "ok"
         assert len(calls) == 1
         assert calls[0]["temperature"] == 0.0
-        assert model not in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+        assert not any(key[-1] == model for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
     finally:
-        llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+        _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
 
 
 @pytest.mark.skipif(
@@ -597,7 +616,6 @@ def test_openai_compat_temperature_preserved_for_supported_model() -> None:
 )
 def test_openai_compat_stream_temperature_self_heals_and_is_remembered() -> None:
     """A streaming 400 on `temperature` retries without it; later streams skip it."""
-    import src.providers.llm as llm_mod
 
     calls: list[dict] = []
 
@@ -613,7 +631,7 @@ def test_openai_compat_stream_temperature_self_heals_and_is_remembered() -> None
         )
 
     model = "claude-opus-4-8"
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     try:
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             llm = ChatOpenAIWithReasoning(
@@ -633,9 +651,9 @@ def test_openai_compat_stream_temperature_self_heals_and_is_remembered() -> None
         assert len(calls) == 2
         assert "temperature" in calls[0]
         assert "temperature" not in calls[1]
-        assert model in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+        assert any(key[-1] == model for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
     finally:
-        llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+        _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
 
 
 @pytest.mark.skipif(
@@ -644,7 +662,6 @@ def test_openai_compat_stream_temperature_self_heals_and_is_remembered() -> None
 )
 def test_openai_compat_agenerate_temperature_self_heals() -> None:
     """The async generate path mirrors the sync temperature self-heal."""
-    import src.providers.llm as llm_mod
 
     calls: list[dict] = []
 
@@ -669,7 +686,7 @@ def test_openai_compat_agenerate_temperature_self_heals() -> None:
             return await llm.ainvoke("hello")
 
     model = "claude-opus-4-8"
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
     try:
         result = asyncio.run(run())
 
@@ -677,9 +694,9 @@ def test_openai_compat_agenerate_temperature_self_heals() -> None:
         assert len(calls) == 2
         assert "temperature" in calls[0]
         assert "temperature" not in calls[1]
-        assert model in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+        assert any(key[-1] == model for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
     finally:
-        llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(model)
+        _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -692,9 +709,8 @@ class TestMinimaxTemperature:
 
     def test_minimax_temperature_clamped_from_zero(self) -> None:
         """When LANGCHAIN_TEMPERATURE=0.0 and provider=minimax, temperature must be clamped to 0.01."""
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
 
         captured: dict[str, float] = {}
 
@@ -710,7 +726,7 @@ class TestMinimaxTemperature:
             "LANGCHAIN_TEMPERATURE": "0.0",
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         assert (
             captured["temperature"] == 0.01
@@ -718,9 +734,8 @@ class TestMinimaxTemperature:
 
     def test_minimax_positive_temperature_preserved(self) -> None:
         """When an explicit positive temperature is set, it should be preserved."""
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
 
         captured: dict[str, float] = {}
 
@@ -736,7 +751,7 @@ class TestMinimaxTemperature:
             "LANGCHAIN_TEMPERATURE": "0.7",
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         assert captured["temperature"] == 0.7
 
@@ -745,9 +760,8 @@ class TestDisableHttpProxy:
     """The proxy opt-out must cover both OpenAI SDK execution paths."""
 
     def test_build_llm_passes_sync_and_async_direct_clients(self) -> None:
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
         captured: dict[str, object] = {}
         sync_client = object()
         async_client = object()
@@ -764,11 +778,11 @@ class TestDisableHttpProxy:
         }
         with patch.dict(os.environ, env, clear=True):
             with patch.object(
-                llm_mod,
-                "_build_proxy_free_http_clients",
+                _provider_adapters,
+                "_build_http_clients",
                 return_value=(sync_client, async_client),
             ) as build_clients:
-                with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+                with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                     build_llm()
 
         build_clients.assert_called_once_with()
@@ -778,9 +792,8 @@ class TestDisableHttpProxy:
         assert "http_socket_options" not in captured
 
     def test_build_llm_leaves_default_transport_when_disabled(self) -> None:
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
         captured: dict[str, object] = {}
 
         class _FakeChatOpenAI:
@@ -794,7 +807,7 @@ class TestDisableHttpProxy:
             "VIBE_TRADING_DISABLE_HTTP_PROXY": "0",
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
 
         assert "http_client" not in captured
@@ -803,7 +816,6 @@ class TestDisableHttpProxy:
 
     def test_direct_clients_do_not_install_environment_proxy_mounts(self) -> None:
         import asyncio
-        import src.providers.llm as llm_mod
 
         env = {
             "HTTP_PROXY": "http://proxy.invalid:8080",
@@ -811,7 +823,7 @@ class TestDisableHttpProxy:
             "ALL_PROXY": "socks5://proxy.invalid:1080",
         }
         with patch.dict(os.environ, env, clear=False):
-            sync_client, async_client = llm_mod._build_proxy_free_http_clients()
+            sync_client, async_client = _provider_adapters._build_http_clients()
         try:
             assert sync_client._mounts == {}
             assert async_client._mounts == {}
@@ -829,8 +841,7 @@ class TestKimiTemperature:
     """Kimi reasoning models reject any temperature other than 1."""
 
     def _capture_temperature(self, model: str, configured_temp: str) -> float:
-        import src.providers.llm as llm_mod
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
 
         captured: dict[str, float] = {}
 
@@ -846,7 +857,7 @@ class TestKimiTemperature:
             "LANGCHAIN_TEMPERATURE": configured_temp,
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         return captured["temperature"]
 
@@ -874,9 +885,8 @@ class TestReasoningEffortPassthrough:
     selected explicitly."""
 
     def _capture(self, env: dict[str, str]) -> dict:
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
 
         captured: dict = {}
 
@@ -885,7 +895,7 @@ class TestReasoningEffortPassthrough:
                 captured.update(kwargs)
 
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         return captured
 
@@ -941,9 +951,8 @@ class TestKimiCodingProvider:
         )
 
     def test_env_mapping_to_openai_vars(self) -> None:
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
 
         clean = {
             k: v
@@ -960,13 +969,14 @@ class TestKimiCodingProvider:
         with patch.dict(os.environ, clean, clear=True):
             _sync_provider_env()
 
-            assert os.environ.get("OPENAI_API_KEY") == "sk-kimi-test"
-            assert os.environ.get("OPENAI_API_BASE") == "https://api.kimi.com/coding/v1"
+            snapshot = _provider_configuration.resolve_config()
+            assert dict(os.environ) == clean
+            assert snapshot.api_key == "sk-kimi-test"
+            assert snapshot.base_url == "https://api.kimi.com/coding/v1"
 
     def _build_and_capture(self, temperature: str) -> dict:
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
 
         captured: dict = {}
 
@@ -982,7 +992,7 @@ class TestKimiCodingProvider:
             "LANGCHAIN_TEMPERATURE": temperature,
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         return captured
 
@@ -1048,9 +1058,8 @@ class TestGetLlmCredentials:
 
     def test_build_llm_receives_normalized_ollama_base_url(self) -> None:
         """The runtime constructor must not reintroduce Ollama's raw root (#1069)."""
-        import src.providers.llm as llm_mod
 
-        llm_mod._dotenv_loaded = True
+        _provider_configuration._dotenv_loaded = True
         captured: dict[str, object] = {}
 
         class _FakeChatOpenAI:
@@ -1063,7 +1072,7 @@ class TestGetLlmCredentials:
             "OLLAMA_BASE_URL": "http://localhost:11434",
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
 
         assert captured["base_url"] == "http://localhost:11434/v1"
@@ -1145,10 +1154,9 @@ def _make_relocating_anthropic_base():
 
 
 def test_anthropic_temperature_self_heal_strips_relocated_extra_body() -> None:
-    import src.providers.llm as llm_mod
 
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("deprecates-temp")
-    safe_cls = llm_mod._make_temperature_safe_anthropic(
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(
         _make_relocating_anthropic_base()
     )
     inst = safe_cls(model="deprecates-temp", temperature=0.0)
@@ -1165,14 +1173,13 @@ def test_anthropic_temperature_self_heal_strips_relocated_extra_body() -> None:
         or "temperature" not in inst.calls[1]["extra_body"]
     )
     assert "extra_body" not in result.payload
-    assert "deprecates-temp" in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+    assert any(key[-1] == "deprecates-temp" for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
 
 
 def test_anthropic_temperature_self_heal_keeps_other_extra_body_keys() -> None:
-    import src.providers.llm as llm_mod
 
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("deprecates-temp")
-    safe_cls = llm_mod._make_temperature_safe_anthropic(
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(
         _make_relocating_anthropic_base()
     )
     inst = safe_cls(model="deprecates-temp", temperature=0.0, extra_body={"top_k": 40})
@@ -1184,10 +1191,9 @@ def test_anthropic_temperature_self_heal_keeps_other_extra_body_keys() -> None:
 
 
 def test_anthropic_relocated_temperature_preserved_for_supported_model() -> None:
-    import src.providers.llm as llm_mod
 
-    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("supports-temp")
-    safe_cls = llm_mod._make_temperature_safe_anthropic(
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(
         _make_relocating_anthropic_base()
     )
     inst = safe_cls(model="supports-temp", temperature=0.0)
@@ -1196,4 +1202,4 @@ def test_anthropic_relocated_temperature_preserved_for_supported_model() -> None
 
     assert len(inst.calls) == 1
     assert result.payload["extra_body"] == {"temperature": 0.0}
-    assert "supports-temp" not in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+    assert not any(key[-1] == "supports-temp" for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)

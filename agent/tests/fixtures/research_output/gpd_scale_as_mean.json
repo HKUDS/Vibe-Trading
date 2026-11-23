@@ -1,0 +1,27 @@
+{
+  "case_id": "research.gpd_scale_as_mean.2026-11-13",
+  "origin": {
+    "commit": "cb81c01c2",
+    "case": "nvda-pilot",
+    "report_sha256": "71190de456742819808d957cb4fcd8b751f082fc2c06efe2c9a6e2cda463bfad",
+    "source_sha256": "f96dbe8670b67902cb295cff6860e35ad2ffb72131cd743b20e5c169fe0dcfc2",
+    "extraction": "Human-reviewed claim; mean recomputed from the same 25 tail observations."
+  },
+  "claim": {
+    "reported_text": "阈值外平均超额约 1.4%",
+    "reported_percent": 1.4
+  },
+  "evidence": {
+    "scale_sigma": 0.014122672900830642,
+    "empirical_mean_excess_percent": 1.9973501906111664,
+    "fitted_mean_excess_percent": 2.036649591259857
+  },
+  "expected_status": "FAIL",
+  "policy": "Offline evaluation only; preserve original report verbatim.",
+  "measurements": [
+    {
+      "field": "reported_percent",
+      "expected": 1.9973501906111664
+    }
+  ]
+}

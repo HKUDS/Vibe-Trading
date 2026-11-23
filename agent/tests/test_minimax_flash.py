@@ -10,9 +10,9 @@ import httpx
 import pytest
 from langchain_core.messages import HumanMessage, ToolMessage
 
-from src.api.settings_routes import LLMProviderOption, _list_provider_models
+from src.providers.discovery import LLMProviderOption, _list_provider_models
 from src.config.accessor import reset_env_config
-from src.providers import llm
+from src.providers import llm, settings
 
 FLASH = "MiniMax-M3.1-Flash"
 MODELS = [FLASH, "MiniMax-M3"]
@@ -94,9 +94,9 @@ def requests(monkeypatch):
     async_client = httpx.AsyncClient(
         transport=httpx.MockTransport(respond), trust_env=False
     )
-    monkeypatch.setattr(llm, "_dotenv_loaded", True)
+    monkeypatch.setattr(settings, "_dotenv_loaded", True)
     monkeypatch.setattr(
-        llm, "_build_proxy_free_http_clients", lambda: (sync, async_client)
+        llm, "_build_http_clients", lambda: (sync, async_client)
     )
     for key in (
         "OPENAI_BASE_URL",

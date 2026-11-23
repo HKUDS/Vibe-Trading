@@ -8,10 +8,29 @@
     "default_base_url": "https://openrouter.ai/api/v1",
     "api_key_required": true,
     "model_options": [
+      "deepseek/deepseek-v4-pro",
+      "deepseek/deepseek-v4.1-flash",
+      "openai/gpt-5.5-pro",
+      "google/gemini-3.5-flash",
       "minimax/minimax-m3.1-flash:free",
       "minimax/minimax-m3.1-flash",
       "minimax/minimax-m3"
-    ]
+    ],
+    "capabilities": {
+      "capture_reasoning": true,
+      "openrouter_reasoning_body": true
+    },
+    "setup": {
+      "order": 0,
+      "label": "OpenRouter (recommended - multiple models)",
+      "key_prefix": "sk-or-",
+      "key_placeholder": "sk-or-v1-..."
+    },
+    "onboarding": {
+      "order": 0,
+      "description": "recommended — 200+ models, one key",
+      "key_prefix": "sk-or-"
+    }
   },
   {
     "name": "openai",
@@ -20,7 +39,25 @@
     "base_url_env": "OPENAI_BASE_URL",
     "default_model": "gpt-5.5",
     "default_base_url": "https://api.openai.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "top_level_reasoning_effort": true
+    },
+    "setup": {
+      "order": 7,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    },
+    "onboarding": {
+      "order": 1,
+      "description": "GPT-5.5 direct",
+      "key_prefix": "sk-"
+    },
+    "model_options": [
+      "gpt-5.5",
+      "gpt-5.5-pro",
+      "gpt-5.5-instant"
+    ]
   },
   {
     "name": "anthropic",
@@ -29,7 +66,21 @@
     "base_url_env": "ANTHROPIC_BASE_URL",
     "default_model": "claude-sonnet-4-6",
     "default_base_url": "https://api.anthropic.com",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "native_adapter_package": "langchain-anthropic"
+    },
+    "backend": "anthropic",
+    "onboarding": {
+      "order": 2,
+      "label": "Anthropic",
+      "description": "Anthropic Messages API or compatible proxy"
+    },
+    "model_options": [
+      "claude-sonnet-4-6",
+      "claude-opus-4-6",
+      "claude-haiku-4-5"
+    ]
   },
   {
     "name": "openai-codex",
@@ -51,6 +102,21 @@
       "max",
       "ultra",
       "persistent"
+    ],
+    "backend": "openai_codex",
+    "automatic_model_list": true,
+    "setup": {
+      "order": 19
+    },
+    "onboarding": {
+      "order": 3,
+      "label": "OpenAI Codex",
+      "description": "ChatGPT OAuth for Codex"
+    },
+    "model_options": [
+      "openai-codex/gpt-6-sol",
+      "openai-codex/gpt-6-astra",
+      "openai-codex/gpt-6-luna"
     ]
   },
   {
@@ -60,7 +126,27 @@
     "base_url_env": "DEEPSEEK_BASE_URL",
     "default_model": "deepseek-v4-pro",
     "default_base_url": "https://api.deepseek.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "capture_reasoning": true,
+      "top_level_reasoning_effort": true,
+      "native_adapter_package": "langchain-deepseek"
+    },
+    "backend": "deepseek",
+    "setup": {
+      "order": 1,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    },
+    "onboarding": {
+      "order": 4,
+      "description": "cheapest tier — good for batch backtest research",
+      "key_prefix": "sk-"
+    },
+    "model_options": [
+      "deepseek-v4-pro",
+      "deepseek-flash"
+    ]
   },
   {
     "name": "opencode",
@@ -75,10 +161,60 @@
     ],
     "api_key_required": true,
     "model_options": [
+      "deepseek-v4.1-flash",
+      "deepseek-v4-pro",
+      "glm-5.3-flash",
       "minimax-m3.1-flash-free",
       "minimax-m3.1-flash",
       "minimax-m3"
-    ]
+    ],
+    "capabilities": {
+      "capture_reasoning": true,
+      "default_headers": {
+        "User-Agent": "{user_agent}"
+      }
+    },
+    "runtime_variants": {
+      "opencode-zen": {
+        "name": "opencode-zen",
+        "api_key_env": "OPENAI_API_KEY",
+        "base_url_env": "OPENAI_BASE_URL",
+        "capture_reasoning": false,
+        "send_reasoning_content": false,
+        "gemini_thought_signatures": false,
+        "normalize_assistant_content": false,
+        "openrouter_reasoning_body": false,
+        "top_level_reasoning_effort": false,
+        "reasoning_effort_models": null,
+        "default_headers": {},
+        "native_adapter_package": null
+      },
+      "opencode-go": {
+        "name": "opencode-go",
+        "api_key_env": "OPENAI_API_KEY",
+        "base_url_env": "OPENAI_BASE_URL",
+        "capture_reasoning": false,
+        "send_reasoning_content": false,
+        "gemini_thought_signatures": false,
+        "normalize_assistant_content": false,
+        "openrouter_reasoning_body": false,
+        "top_level_reasoning_effort": false,
+        "reasoning_effort_models": null,
+        "default_headers": {},
+        "native_adapter_package": null
+      }
+    },
+    "setup": {
+      "order": 2,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    },
+    "onboarding": {
+      "order": 5,
+      "label": "OpenCode",
+      "description": "Go / Zen relay — DeepSeek, GLM, Kimi, Qwen under one key",
+      "key_prefix": "sk-"
+    }
   },
   {
     "name": "siliconflow-cn",
@@ -87,7 +223,20 @@
     "base_url_env": "SILICONFLOW_BASE_URL",
     "default_model": "deepseek-ai/DeepSeek-V3.1-Terminus",
     "default_base_url": "https://api.siliconflow.cn/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 3,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    },
+    "onboarding": {
+      "order": 6,
+      "description": "OpenAI-compatible MaaS endpoint in China",
+      "key_prefix": "sk-"
+    },
+    "model_options": [
+      "deepseek-ai/DeepSeek-V3.1-Terminus"
+    ]
   },
   {
     "name": "siliconflow-global",
@@ -96,7 +245,20 @@
     "base_url_env": "SILICONFLOW_GLOBAL_BASE_URL",
     "default_model": "deepseek-ai/DeepSeek-V3.1-Terminus",
     "default_base_url": "https://api.siliconflow.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 4,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    },
+    "onboarding": {
+      "order": 7,
+      "description": "OpenAI-compatible global MaaS endpoint",
+      "key_prefix": "sk-"
+    },
+    "model_options": [
+      "deepseek-ai/DeepSeek-V3.1-Terminus"
+    ]
   },
   {
     "name": "nvidia",
@@ -105,7 +267,28 @@
     "base_url_env": "NVIDIA_BASE_URL",
     "default_model": "nvidia/nemotron-3-ultra-550b-a55b",
     "default_base_url": "https://integrate.api.nvidia.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "default_headers": {
+        "User-Agent": "{user_agent}"
+      }
+    },
+    "aliases": [
+      "nvidia-nim"
+    ],
+    "setup": {
+      "order": 6,
+      "key_prefix": "nvapi-",
+      "key_placeholder": "nvapi-..."
+    },
+    "onboarding": {
+      "order": 9,
+      "description": "hosted NVIDIA API catalog",
+      "key_prefix": "nvapi-"
+    },
+    "model_options": [
+      "nvidia/nemotron-3-ultra-550b-a55b"
+    ]
   },
   {
     "name": "gemini",
@@ -114,7 +297,14 @@
     "base_url_env": "GEMINI_BASE_URL",
     "default_model": "gemini-3.5-flash",
     "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "gemini_thought_signatures": true
+    },
+    "setup": {
+      "order": 8,
+      "key_placeholder": "api-key..."
+    }
   },
   {
     "name": "groq",
@@ -123,7 +313,12 @@
     "base_url_env": "GROQ_BASE_URL",
     "default_model": "meta-llama/llama-4-maverick-17b-128e-instruct",
     "default_base_url": "https://api.groq.com/openai/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 9,
+      "key_prefix": "gsk_",
+      "key_placeholder": "gsk_..."
+    }
   },
   {
     "name": "novita",
@@ -132,7 +327,12 @@
     "base_url_env": "NOVITA_BASE_URL",
     "default_model": "moonshotai/kimi-k3",
     "default_base_url": "https://api.novita.ai/openai",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 15,
+      "key_prefix": "sk_",
+      "key_placeholder": "sk_..."
+    }
   },
   {
     "name": "dashscope",
@@ -141,7 +341,12 @@
     "base_url_env": "DASHSCOPE_BASE_URL",
     "default_model": "qwen-plus-latest",
     "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 10,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    }
   },
   {
     "name": "qwen",
@@ -159,7 +364,14 @@
     "base_url_env": "ZHIPU_BASE_URL",
     "default_model": "glm-5.1",
     "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "capture_reasoning": true
+    },
+    "setup": {
+      "order": 11,
+      "key_placeholder": "api-key..."
+    }
   },
   {
     "name": "glm",
@@ -168,7 +380,11 @@
     "base_url_env": "ZHIPU_BASE_URL",
     "default_model": "glm-5.1",
     "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "capture_reasoning": true,
+      "name": "zhipu"
+    }
   },
   {
     "name": "moonshot",
@@ -177,7 +393,27 @@
     "base_url_env": "MOONSHOT_BASE_URL",
     "default_model": "kimi-k2.6",
     "default_base_url": "https://api.moonshot.ai/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "capture_reasoning": true,
+      "send_reasoning_content": true,
+      "normalize_assistant_content": true,
+      "top_level_reasoning_effort": true,
+      "reasoning_effort_models": [
+        "kimi-k3.1-pro"
+      ],
+      "default_headers": {
+        "User-Agent": "{user_agent}"
+      }
+    },
+    "aliases": [
+      "kimi"
+    ],
+    "setup": {
+      "order": 12,
+      "key_prefix": "sk-",
+      "key_placeholder": "sk-..."
+    }
   },
   {
     "name": "kimi-coding",
@@ -186,7 +422,15 @@
     "base_url_env": "KIMI_CODING_BASE_URL",
     "default_model": "kimi-for-coding",
     "default_base_url": "https://api.kimi.com/coding/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "capabilities": {
+      "capture_reasoning": true,
+      "send_reasoning_content": true,
+      "normalize_assistant_content": true,
+      "default_headers": {
+        "User-Agent": "{user_agent}"
+      }
+    }
   },
   {
     "name": "minimax",
@@ -203,7 +447,11 @@
       "https://api.minimax.io/v1",
       "https://api.minimaxi.com/v1"
     ],
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 13,
+      "key_placeholder": "api-key..."
+    }
   },
   {
     "name": "mimo",
@@ -212,7 +460,11 @@
     "base_url_env": "MIMO_BASE_URL",
     "default_model": "MiMo-72B-A27B",
     "default_base_url": "https://api.xiaomimimo.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 14,
+      "key_placeholder": "api-key..."
+    }
   },
   {
     "name": "spark",
@@ -221,7 +473,14 @@
     "base_url_env": "SPARK_BASE_URL",
     "default_model": "4.0Ultra",
     "default_base_url": "https://spark-api-open.xf-yun.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "aliases": [
+      "iflytek"
+    ],
+    "setup": {
+      "order": 16,
+      "key_placeholder": "api-password..."
+    }
   },
   {
     "name": "zai",
@@ -230,7 +489,12 @@
     "base_url_env": "ZAI_BASE_URL",
     "default_model": "glm-5.1",
     "default_base_url": "https://api.z.ai/api/coding/paas/v4",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 17,
+      "label": "Z.ai (Coding platform)",
+      "key_placeholder": "api-key..."
+    }
   },
   {
     "name": "modelscope",
@@ -239,7 +503,20 @@
     "base_url_env": "MODELSCOPE_BASE_URL",
     "default_model": "Qwen/Qwen3.5-27B",
     "default_base_url": "https://api-inference.modelscope.cn/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "setup": {
+      "order": 5,
+      "key_placeholder": "api-key..."
+    },
+    "onboarding": {
+      "order": 8,
+      "description": "Alibaba's OpenAI-compatible MaaS platform"
+    },
+    "model_options": [
+      "Qwen/Qwen3.5-27B",
+      "Qwen/Qwen3.5-397B-A17B",
+      "Qwen/Qwen3-235B-A22B"
+    ]
   },
   {
     "name": "ollama",
@@ -248,7 +525,20 @@
     "base_url_env": "OLLAMA_BASE_URL",
     "default_model": "qwen2.5:32b",
     "default_base_url": "http://localhost:11434",
-    "api_key_required": false
+    "api_key_required": false,
+    "setup": {
+      "order": 18,
+      "label": "Ollama (local, free)"
+    },
+    "onboarding": {
+      "order": 10,
+      "description": "local, free, no API key"
+    },
+    "model_options": [
+      "qwen2.5:32b",
+      "llama3.3:70b",
+      "deepseek-r1:14b"
+    ]
   },
   {
     "name": "copilot",
@@ -259,7 +549,11 @@
     "default_base_url": "https://api.githubcopilot.com",
     "api_key_required": false,
     "auth_type": "gh_cli",
-    "login_command": "gh auth login"
+    "login_command": "gh auth login",
+    "backend": "copilot",
+    "aliases": [
+      "github-copilot"
+    ]
   },
   {
     "name": "claude-cli",
@@ -277,6 +571,8 @@
       "high",
       "xhigh",
       "max"
-    ]
+    ],
+    "backend": "claude_cli",
+    "automatic_model_list": true
   }
 ]

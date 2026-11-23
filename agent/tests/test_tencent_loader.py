@@ -188,6 +188,46 @@ def test_multiyear_window_is_served_in_full(monkeypatch) -> None:
     assert ends[2] < ends[1]
 
 
+def test_non_iso_start_date_does_not_truncate(monkeypatch) -> None:
+    """Regression: a non-ISO start_date must not silently truncate the window.
+
+    The pagination stop test compared the ISO cursor against the raw
+    ``start_date`` as a string. ``"2023-05-11" < "2023-1-5"`` is true
+    lexicographically even though 2023-05-11 is chronologically later, so the
+    backward walk broke early and dropped every bar before the final page.
+    """
+    loader = tencent_loader.DataLoader()
+    history = _history("2023-01-05", 600)
+    end_date = history.index.max().strftime("%Y-%m-%d")
+    monkeypatch.setattr(loader, "_request_page", _last500_api(history, None))
+
+    df = loader._fetch_one("600519.SH", "2023-1-5", end_date)  # non-ISO start
+
+    assert len(df) == 600
+    assert df.index.min() == pd.Timestamp("2023-01-05")
+
+
+def test_fetch_refreshes_legacy_truncated_pages(tmp_path, monkeypatch):
+    from backtest.loaders.base import loader_cache_put
+
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE", "1")
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE_ROOT", str(tmp_path))
+    history = _history("2023-01-05", 600)
+    end = history.index[-1].strftime("%Y-%m-%d")
+    for fields in (None, ["raw"]):
+        loader_cache_put(source="tencent", symbol="600519.SH", timeframe="1D",
+                         start_date="2023-1-5", end_date=end, fields=fields,
+                         frame=history.tail(500))
+
+    loader = tencent_loader.DataLoader()
+    requests = []
+    monkeypatch.setattr(loader, "_request_page", _last500_api(history, requests))
+    for start in ("2023-1-5", "2023-01-05"):
+        result = loader.fetch(["600519.SH"], start, end)["600519.SH"]
+        assert result.index.equals(history.index)
+        assert len(requests) == 4  # Two pages each for adjusted and raw, then cache hits.
+
+
 def test_pagination_moves_the_end_cursor_behind_each_page(monkeypatch) -> None:
     """Next request's end = the day before the current page's oldest bar."""
     loader = tencent_loader.DataLoader()
@@ -342,3 +382,42 @@ def test_midwalk_empty_page_that_persists_ends_the_walk(monkeypatch) -> None:
 
     assert calls["n"] == 3
     assert len(df) == tencent_loader._PAGE_SIZE
+
+
+def test_gateway_deadline_caps_socket_and_prevents_late_retry(monkeypatch):
+    from backtest.loaders.acquisition import source_deadline
+
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(tencent_loader.time, "monotonic", lambda: now[0])
+
+    def expire(req, timeout, **kwargs):
+        calls.append(timeout)
+        now[0] += timeout
+        raise TimeoutError("socket timeout")
+
+    monkeypatch.setattr(urllib.request, "urlopen", expire)
+    token = source_deadline.set(101.0)
+    try:
+        with pytest.raises(TimeoutError, match="Acquisition deadline"):
+            tencent_loader.DataLoader()._fetch_one("600519.SH", "2026-01-01", "2026-01-31")
+        assert calls == [1.0]
+    finally:
+        source_deadline.reset(token)
+
+
+@pytest.mark.parametrize("status,expected", [(401, 1), (403, 1), (404, 1), (501, 1), (408, 3), (429, 3), (503, 3)])
+def test_rejected_http_requests_do_not_spend_retry_budget(monkeypatch, status, expected):
+    calls = []
+    sleeps = []
+    loader = tencent_loader.DataLoader()
+
+    def rejected(*args):
+        calls.append(args)
+        raise urllib.error.HTTPError("https://example.test", status, "rejected", {}, None)
+
+    monkeypatch.setattr(loader, "_request_page", rejected)
+    monkeypatch.setattr(tencent_loader.time, "sleep", sleeps.append)
+    with pytest.raises(ValueError, match=f"failed after {expected} attempts"):
+        loader._fetch_one("601398.SH", "2026-11-02", "2026-11-13")
+    assert len(calls) == expected and len(sleeps) == expected - 1

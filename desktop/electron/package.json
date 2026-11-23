@@ -1,6 +1,6 @@
 {
   "name": "vibe-trading-desktop-unofficial-community",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "author": "Vibe-Trading Desktop Community Contributors",
   "license": "MIT",
@@ -91,7 +91,12 @@
       "useZip": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
     }
+  },
+  "desktopUpdates": {
+    "feedUrl": "",
+    "allowedPublisherCertificateSha256": []
   }
 }

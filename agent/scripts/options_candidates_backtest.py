@@ -68,9 +68,9 @@ def with_tbill(equity: pd.Series, cash: pd.Series) -> pd.Series:
     which the engine itself leaves at 0%. Simple interest, added post hoc."""
     global _tbill
     if _tbill is None:
-        import yfinance as yf
+        from src.data_gateway.skill_sources import yahoo_download
 
-        irx = yf.download("^IRX", start="2015-01-01", end=OOS[2], progress=False,
+        irx = yahoo_download("^IRX", start="2015-01-01", end=OOS[2], progress=False,
                           auto_adjust=False)["Close"].squeeze()
         _tbill = irx.tz_localize(None) / 100.0
     rate = _tbill.reindex(cash.index, method="ffill").fillna(0.0)

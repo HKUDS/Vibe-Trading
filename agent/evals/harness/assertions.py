@@ -350,18 +350,22 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     expectation = _mapping(case.expect.get("identity"))
     if not expectation:
         return []
-    problem = _artifact_problem(bundle, "grounding", missing_invalid=True)
+    current = "identity" in bundle.present or "identity" in bundle.errors
+    artifact_key = "identity" if current else "grounding"
+    artifact_path = f"artifacts/{'identity' if current else 'grounding'}_evidence.json"
+    payload = bundle.identity if current else bundle.grounding
+    problem = _artifact_problem(bundle, artifact_key, missing_invalid=True)
     if problem:
         return [
             _verdict(
                 problem,
                 "identity.artifact_available",
                 expectation,
-                bundle.errors.get("grounding", "missing"),
-                "artifacts/grounding_evidence.json",
+                bundle.errors.get(artifact_key, "missing"),
+                artifact_path,
             )
         ]
-    identity = _mapping(bundle.grounding.get("identity") if bundle.grounding else None)
+    identity = _mapping(payload.get("identity") if payload else None)
     verdicts: list[Verdict] = []
     expected_status = expectation.get("status")
     if expected_status is not None:
@@ -376,7 +380,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                 "identity.status",
                 expected_status,
                 observed,
-                "artifacts/grounding_evidence.json#/identity/status",
+                artifact_path + "#/identity/status",
             )
         )
     expected_symbols = expectation.get("authorized_symbols")
@@ -393,7 +397,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                 "identity.authorized_symbols",
                 expected_symbols,
                 observed_symbols,
-                "artifacts/grounding_evidence.json#/identity/authorized_symbols",
+                artifact_path + "#/identity/authorized_symbols",
             )
         )
     forbidden = expectation.get("forbidden_symbols", [])
@@ -410,7 +414,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                 "identity.forbidden_symbols",
                 forbidden,
                 violations,
-                "artifacts/grounding_evidence.json#/identity/authorized_symbols",
+                artifact_path + "#/identity/authorized_symbols",
             )
         )
     constraint = expectation.get("constraint")
@@ -429,7 +433,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                     "identity.constraint",
                     constraint,
                     None,
-                    "artifacts/grounding_evidence.json#/identity/records/*/resolution_constraints",
+                    artifact_path + "#/identity/records/*/resolution_constraints",
                     detail="constraint provenance is not instrumented in this run",
                 )
             )
@@ -443,7 +447,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                     "identity.constraint",
                     constraint,
                     constraint_records,
-                    "artifacts/grounding_evidence.json#/identity/records/*/resolution_constraints",
+                    artifact_path + "#/identity/records/*/resolution_constraints",
                 )
             )
     return verdicts
@@ -453,7 +457,9 @@ def _evidence_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     expectation = _mapping(case.expect.get("evidence"))
     if not expectation:
         return []
-    problem = _artifact_problem(bundle, "grounding", missing_invalid=True)
+    # Current research runs intentionally carry identity state only. Absence
+    # of the retired numeric artifact is missing evaluation, not corrupt output.
+    problem = _artifact_problem(bundle, "grounding", missing_invalid=bundle.identity is None)
     if problem:
         return [
             _verdict(
@@ -515,7 +521,8 @@ def _evidence_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     )
     verdicts.append(
         _verdict(
-            VerdictStatus.PASS if not violations else VerdictStatus.FAIL,
+            (VerdictStatus.NOT_EVALUABLE if forbidden and not validations
+             else VerdictStatus.PASS if not violations else VerdictStatus.FAIL),
             "evidence.forbidden_issue_codes",
             forbidden,
             {"observed_issue_codes": sorted(issue_codes), "violations": violations},

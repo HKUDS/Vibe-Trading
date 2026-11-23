@@ -15,11 +15,15 @@ what ``run_worker`` does with it once it arrives:
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from src.providers.chat import LLMResponse, ToolCallRequest
+from src.swarm import checkpoint
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
 import src.swarm.worker as worker_mod
 from src.swarm.worker import run_worker
@@ -91,7 +95,7 @@ def _tool_call_response() -> LLMResponse:
     )
 
 
-def _run(tmp_path: Path, llm: _ScriptedLLM, registry: _Registry, cancel_event: threading.Event | None):
+def _run(tmp_path: Path, llm: _ScriptedLLM, registry: _Registry, cancel_event: threading.Event | None, *, on_event=None):
     """Run one tool-enabled worker against the scripted LLM and registry."""
     agent = SwarmAgentSpec(
         id="analyst",
@@ -104,6 +108,12 @@ def _run(tmp_path: Path, llm: _ScriptedLLM, registry: _Registry, cancel_event: t
     )
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="Do the thing.")
     events: list[str] = []
+
+    def record_event(event):
+        events.append(event.type)
+        if on_event is not None:
+            on_event(event)
+
     with (
         patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: registry),
         patch.object(worker_mod, "ChatLLM", llm),
@@ -114,7 +124,7 @@ def _run(tmp_path: Path, llm: _ScriptedLLM, registry: _Registry, cancel_event: t
             upstream_summaries={},
             user_vars={},
             run_dir=tmp_path,
-            event_callback=lambda ev: events.append(ev.type),
+            event_callback=record_event,
             cancel_event=cancel_event,
         )
     return result, events
@@ -133,7 +143,7 @@ def test_cancel_set_before_first_iteration_makes_no_llm_call(tmp_path):
     assert llm.calls == 0, "a cancel signalled before the iteration must not start an LLM call"
     assert registry.executed == []
     assert "worker_cancelled" in events
-    assert "Cancelled" in result.summary
+    assert result.summary == ""  # cancellation is status, not invented research
 
 
 def test_cancel_during_stream_skips_that_turns_tool_calls(tmp_path):
@@ -151,6 +161,40 @@ def test_cancel_during_stream_skips_that_turns_tool_calls(tmp_path):
     )
     assert "worker_cancelled" in events
     assert "tool_call" not in events
+
+
+@pytest.mark.parametrize("cancel_at", ["first_result", "next_tool_event"])
+def test_cancel_during_tool_batch_keeps_completed_result(tmp_path, cancel_at):
+    cancel_event = threading.Event()
+    response = _tool_call_response()
+    response.tool_calls.append(ToolCallRequest(id="c2", name="noop_tool", arguments={}))
+    llm = _ScriptedLLM(response)
+
+    class Registry(_Registry):
+        def execute(self, name, args):
+            result = super().execute(name, args)
+            if cancel_at == "first_result":
+                cancel_event.set()
+            return result
+
+    def cancel_before_dispatch(event):
+        if cancel_at == "next_tool_event" and event.type == "tool_call" and event.data["call_id"] == "c2":
+            cancel_event.set()
+
+    registry = Registry()
+    result, events = _run(tmp_path, llm, registry, cancel_event, on_event=cancel_before_dispatch)
+
+    assert result.status == "cancelled"
+    assert llm.calls == 1
+    assert registry.executed == ["noop_tool"]
+    assert events.count("tool_result") == 1
+    assert "worker_cancelled" in events
+    artifact_dir = worker_mod.agent_artifact_dir(tmp_path, "analyst", "t1")
+    saved = json.loads((artifact_dir / checkpoint.FILENAME).read_text(encoding="utf-8"))
+    restored, _ = checkpoint.restore(artifact_dir, key=saved["key"], system=saved["messages"][0], run_dir=tmp_path)
+    results = {m["tool_call_id"]: json.loads(m["content"]) for m in restored if m["role"] == "tool"}
+    assert results["c1"]["ok"] is True
+    assert results["c2"]["error_code"] == "interrupted_tool_result"
 
 
 def test_same_response_dispatches_its_tool_when_nothing_is_cancelled(tmp_path):

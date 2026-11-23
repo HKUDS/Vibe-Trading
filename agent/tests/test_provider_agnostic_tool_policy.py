@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.provider_helpers import chat_with_adapter
+
 import json
 import sys
 from types import SimpleNamespace
@@ -14,7 +16,6 @@ from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.trace import TraceWriter
 from src.config.accessor import get_env_config, reset_env_config
-from src.providers.chat import ChatLLM
 from src.providers.llm import provider_diagnostics
 from src.providers.tool_policy import bash_policy, policy_status
 from src.providers import tool_policy
@@ -70,11 +71,8 @@ class _RecordingLLM:
         yield AIMessageChunk(content="ok", response_metadata={"finish_reason": "stop"})
 
 
-def _chat(llm: _RecordingLLM) -> ChatLLM:
-    chat = ChatLLM.__new__(ChatLLM)
-    chat._llm = llm
-    chat.model_name = "gpt-test"
-    return chat
+def _chat(llm: _RecordingLLM):
+    return chat_with_adapter(llm, model="gpt-test")
 
 
 def test_chat_filters_denied_tools_before_any_provider_binds(shared_policy) -> None:
