@@ -186,11 +186,14 @@ class ThreadLog:
 
     # ---- Reading ----
 
-    def read(self) -> List[ThreadItem]:
+    def read(self, *, strict: bool = False) -> List[ThreadItem]:
         """Read every valid item in file order.
 
         A line that is not valid UTF-8, not JSON, not an object or does not
         match the schema is skipped with a warning; its neighbours are kept.
+
+        Args:
+            strict: Refuse unreadable records when callers rely on tool outcomes.
 
         Returns:
             Items in write order.
@@ -205,6 +208,8 @@ class ThreadLog:
                 try:
                     items.append(ThreadItem.from_line(raw_line))
                 except (json.JSONDecodeError, UnicodeDecodeError, ThreadItemError) as exc:
+                    if strict:
+                        raise ThreadItemError(f"Corrupted thread record {line_number}") from exc
                     logger.warning(
                         "Skipping corrupted thread record %d in %s (%s)",
                         line_number,

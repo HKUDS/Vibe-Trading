@@ -44,8 +44,7 @@ class _CapturingLLM:
         timeout: int | None = None,
         idle_timeout_s: float | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        on_waiting_chunk=None,
-    ) -> _AnswerResponse:
+        on_waiting_chunk=None, **_callbacks) -> _AnswerResponse:
         del tools, on_text_chunk, on_reasoning_chunk
         self.messages = messages
         self.calls.append([dict(item) for item in messages])
@@ -158,7 +157,7 @@ def test_detached_swarm_usage_stays_with_the_originating_goal_and_run(tmp_path, 
 
 def test_run_swarm_charges_usage_after_returning_run_id(tmp_path, monkeypatch):
     from src.kernel.contracts import LLMResponse
-    from src.swarm import runtime, store, worker
+    from src.swarm import runtime, store, node
     from src.swarm.models import SwarmAgentSpec, SwarmTask
     from src.tools import swarm_tool
 
@@ -183,7 +182,7 @@ def test_run_swarm_charges_usage_after_returning_run_id(tmp_path, monkeypatch):
                 usage_metadata={"input_tokens": 10, "output_tokens": 2},
             )
 
-    monkeypatch.setattr(worker, "ChatLLM", lambda **_: SwarmLLM())
+    monkeypatch.setattr(node, "ChatLLM", lambda **_: SwarmLLM())
     monkeypatch.setattr(store, "swarm_runs_root", lambda: tmp_path / "swarms")
     monkeypatch.setattr(swarm_tool, "_max_wait_seconds", lambda: 0)
     monkeypatch.setattr(runtime.SwarmRuntime, "_prefetch_grounding_data", lambda *_: None)

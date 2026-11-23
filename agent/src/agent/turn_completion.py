@@ -19,6 +19,9 @@ def complete_turn(
         pending_write=pending_write,
     )
     conversation.end_turn(tool_env, turn.usage)
+    if setup.trace._runtime.require_durable_items:
+        result["stop_reason"] = turn.reason
+        result["content_filter_count"] = setup.state.content_filter_count
     recorder = conversation.thread
     items = recorder._runtime.thread.turn_items(recorder.turn_id)
     result["tool_count"] = sum(item.type == "tool_result" for item in items)

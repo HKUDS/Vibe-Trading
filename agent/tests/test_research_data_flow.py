@@ -22,7 +22,7 @@ from src.session.thread import ThreadLog
 from src.swarm.evidence_handoff import prepare_handoff
 from src.swarm.models import SwarmTask
 from src.swarm.task_store import TaskStore
-from src.swarm.artifacts import agent_artifact_dir
+from src.swarm.artifacts import agent_artifact_dir, node_thread
 from src.tools.data_refs import resolve_data_refs
 from src.tools.options_payoff_tool import OptionsPayoffTool
 from src.tools.quantlib_tool import QuantlibCallTool
@@ -150,7 +150,7 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     malformed_call = {**call, "id": "bad-receipt"}
     malformed_receipt = '{"_result_file":"not a receipt object"}'
     if canonical:
-        thread = ThreadLog(source / "thread.jsonl")
+        thread = ThreadLog(node_thread(tmp_path, "bull", "bull"))
         thread.append("assistant", "malformed-turn", content="", phase="commentary",
                       tool_calls=[malformed_call])
         thread.append("tool_result", "malformed-turn", name="get_market_data",

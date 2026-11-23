@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.product.result_artifacts import _write_original, save_result_parts
 from src.session.thread import ThreadLog
-from src.swarm.artifacts import agent_artifact_dir
+from src.swarm.artifacts import agent_artifact_dir, node_thread
 from src.tools.path_utils import safe_path
 from src.tools.redaction import redact_tool_result
 
@@ -43,7 +43,7 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
                 )
 
 
-def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[dict, str]]:
+def _observations(source: Path, task_id: str, errors: list[str], thread_path: Path | None = None) -> list[tuple[dict, str]]:
     """Read recorded observations, retaining their original producing role."""
     found = []
     inherited = safe_path("upstream/index.json", source)
@@ -57,7 +57,7 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
                 found.append((entry, raw))
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 errors.append(f"{task_id} inherited observation unavailable: {exc}")
-    thread_path = safe_path("thread.jsonl", source)
+    thread_path = thread_path or safe_path("thread.jsonl", source)
     canonical = thread_path.is_file()
     for call, call_id, name, raw, turn_id in _recorded_results(source, thread_path):
         tool = call.get("name", name)
@@ -139,7 +139,8 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         try:
             source_task = store.load_task(task_id)
             source = agent_artifact_dir(run_dir, source_task.agent_id, task_id)
-            observations = _observations(source, task_id, errors)
+            thread = node_thread(run_dir, source_task.agent_id, task_id)
+            observations = _observations(source, task_id, errors, thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()

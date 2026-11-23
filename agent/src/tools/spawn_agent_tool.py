@@ -75,6 +75,11 @@ def _broker_tool_prefixes() -> tuple[str, ...]:
     return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
+def is_order_action_name(name: str) -> bool:
+    """Recognize explicit order mutation names, including prefixed MCP tools."""
+    return any(part in name.casefold() for part in ("place_order", "cancel_order", "submit_order", "replace_order"))
+
+
 def is_trading_state_tool(tool: BaseTool, *, include_unclassified_remote: bool = True) -> bool:
     """Whether a tool places, modifies or cancels orders or changes trading state.
 
@@ -96,6 +101,8 @@ def is_trading_state_tool(tool: BaseTool, *, include_unclassified_remote: bool =
     # Child registries wrap tools to confine their workspace. Inspect the
     # source tool so the same rule remains valid after wrapping.
     candidate = getattr(tool, "_tool", tool)
+    if is_order_action_name(str(candidate.name)):
+        return True
     if getattr(candidate, "is_readonly", False) is True:
         return False
     from src.live.order_guard import LiveOrderGuardTool
@@ -220,7 +227,7 @@ class _WorkspaceTool(BaseTool):
     The class name stays empty so discovery never registers the wrapper.
     """
 
-    def __init__(self, tool: BaseTool, workspace: Path) -> None:
+    def __init__(self, tool: BaseTool, workspace: Path, *, pin_undeclared: bool = False) -> None:
         """Wrap one of the parent's tools.
 
         Args:
@@ -235,6 +242,7 @@ class _WorkspaceTool(BaseTool):
         self.name = tool.name
         self.description = tool.description
         self.parameters = tool.parameters
+        self._pin_run_dir = pin_undeclared and "run_dir" not in (self.parameters or {}).get("properties", {})
         self.repeatable = tool.repeatable
         self.is_readonly = tool.is_readonly
         self.deterministic = tool.deterministic
@@ -249,9 +257,15 @@ class _WorkspaceTool(BaseTool):
         """Return the wrapped tool's own schema."""
         return self._tool.to_openai_schema()
 
+    def workspace_arguments(self, arguments: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        """Resolve the effective tool arguments inside the assigned workspace."""
+        if self._pin_run_dir:
+            arguments = {**arguments, "run_dir": str(self._workspace)}
+        return _confine_run_dir(arguments, self._workspace)
+
     def execute(self, **kwargs: Any) -> str:
         """Run the wrapped tool with run_dir and write roots held to the workspace."""
-        args, refusal = _confine_run_dir(kwargs, self._workspace)
+        args, refusal = self.workspace_arguments(kwargs)
         if refusal is not None:
             return _error("outside_subagent_workspace", refusal)
         return self._tool.execute(**args)

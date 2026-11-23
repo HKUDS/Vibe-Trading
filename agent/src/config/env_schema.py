@@ -436,7 +436,7 @@ class APIConfig(_EnvBase):
 class SwarmConfig(_EnvBase):
     """Multi-agent swarm execution parameters.
 
-    Sources: ``src/swarm/worker.py``, ``src/tools/swarm_tool.py``,
+    Sources: ``src/swarm/node.py``, ``src/tools/swarm_tool.py``,
     ``src/swarm/runtime.py``, ``src/swarm/grounding.py``.
     """
 

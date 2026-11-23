@@ -14,7 +14,7 @@ existing ``_FakeClient``-style factory used in
 ``tests/test_mcp_client_adapter.py`` and ``tests/test_registry_mcp_integration.py``.
 That keeps the ``MCPRemoteTool`` wrapper, schema normalization, and
 adapter error path on the hot path. ``ChatLLM`` is the only thing
-stubbed — :func:`run_worker` doesn't need a real LLM to exercise the
+stubbed — :func:`run_node` doesn't need a real LLM to exercise the
 event-emit / tool-execution / report-write contract.
 """
 
@@ -35,7 +35,7 @@ from mcp import types as mcp_types
 from src.config.schema import MCPServerConfig
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask
-from src.swarm.worker import run_worker
+from src.swarm.node import run_node
 from src.tools.mcp import build_mcp_tool_wrappers
 
 
@@ -138,7 +138,7 @@ class _StubChatLLM:
     def __call__(self, *args, **kwargs):  # pragma: no cover — supports ChatLLM(model_name=...)
         return self
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
         self.tool_defs_seen.append(tools)
         if not self._responses:
             return LLMResponse(content="(stub exhausted)", finish_reason="stop")
@@ -217,11 +217,11 @@ def _final_response(content: str = "Done.") -> LLMResponse:
 # --------------------------------------------------------------------------- #
 
 
-def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
+def test_run_node_uses_remote_mcp_tool_and_report_cites_canned_data(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """A run_worker call against a fake MCP server returns a report.md whose
+    """A run_node call against a fake MCP server returns a report.md whose
     text comes from the remote tool's payload. This is the smallest possible
     proof that the wiring (M1 plumbing → M2 registry → M4 events) actually
     routes data from a remote MCP server through the worker into the agent's
@@ -277,7 +277,7 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
 
     with (
         patch(
-            "src.swarm.worker.build_swarm_registry",
+            "src.swarm.node.build_swarm_registry",
             wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
                 tool_names,
                 remote_tools,
@@ -285,9 +285,9 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
                 include_shell_tools=include_shell_tools,
             ),
         ),
-        patch("src.swarm.worker.ChatLLM", llm_factory),
+        patch("src.swarm.node.ChatLLM", llm_factory),
     ):
-        result = run_worker(
+        result = run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=_agent_spec(
                 agent_id="kb_analyst",
@@ -364,14 +364,14 @@ def test_two_agents_with_distinct_servers_only_see_their_own_remote_tools(
 
         with (
             patch(
-                "src.swarm.worker.build_swarm_registry",
+                "src.swarm.node.build_swarm_registry",
                 wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
                     tool_names, remote_tools, policy=policy, include_shell_tools=include_shell_tools,
                 ),
             ),
-            patch("src.swarm.worker.ChatLLM", llm_factory),
+            patch("src.swarm.node.ChatLLM", llm_factory),
         ):
-            run_worker(
+            run_node(
                 policy=ToolPolicy.from_config(get_env_config()),
                 agent_spec=_agent_spec(agent_id=agent_id, tools=whitelist),
                 task=_task(task_id=f"task_{agent_id}", agent_id=agent_id),
@@ -460,14 +460,14 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
 
     with (
         patch(
-            "src.swarm.worker.build_swarm_registry",
+            "src.swarm.node.build_swarm_registry",
             wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
                 tool_names, remote_tools, policy=policy, include_shell_tools=include_shell_tools,
             ),
         ),
-        patch("src.swarm.worker.ChatLLM", llm_factory),
+        patch("src.swarm.node.ChatLLM", llm_factory),
     ):
-        run_worker(
+        run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=_agent_spec(
                 agent_id="kb_analyst", tools=["mcp_kb_search"], max_iterations=3,
@@ -551,14 +551,14 @@ def test_remote_tool_transport_failure_does_not_crash_worker(tmp_path: Path) -> 
 
     with (
         patch(
-            "src.swarm.worker.build_swarm_registry",
+            "src.swarm.node.build_swarm_registry",
             wraps=lambda tool_names, *, policy, agent_config=None, include_shell_tools=False, skill_allowlist=None, background_manager=None, background_scope=None: _registry_with_remote(
                 tool_names, remote_tools, policy=policy, include_shell_tools=include_shell_tools,
             ),
         ),
-        patch("src.swarm.worker.ChatLLM", llm_factory),
+        patch("src.swarm.node.ChatLLM", llm_factory),
     ):
-        result = run_worker(
+        result = run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=_agent_spec(
                 agent_id="kb_analyst", tools=["mcp_kb_search"], max_iterations=3,

@@ -249,6 +249,8 @@ alongside the bundled roster (same-name files override it, like user skills) and
 
 </sub>
 
+Each task runs in its own agent workspace. The run record retains task summaries and lists the deliverables. Continuation reuses completed tasks and saved observations from runs created with the current node runtime. Earlier runs remain available in the dashboard. To repeat one, start a fresh run explicitly.
+
 </details>
 
 <details>

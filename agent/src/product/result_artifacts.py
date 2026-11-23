@@ -156,8 +156,10 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     from src.tools.path_utils import safe_run_dir
 
     try:
-        readable = isinstance(registry.get('bash'), BashTool)
-        if not readable and isinstance(registry.get('read_file'), ReadFileTool):
+        shell = registry.get('bash')
+        reader = registry.get('read_file')
+        readable = isinstance(getattr(shell, "_tool", shell), BashTool)
+        if not readable and isinstance(getattr(reader, "_tool", reader), ReadFileTool):
             safe_run_dir(str(run_dir), roots=registry.policy.file_roots)
             readable = True
     except (AttributeError, KeyError, ValueError):

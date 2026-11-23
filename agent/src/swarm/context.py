@@ -1,4 +1,4 @@
-"""Budget worker context without discarding a fresh batch of observations."""
+"""Budget node context without discarding a fresh batch of observations."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _OFFLOADED = "[Worker context result saved: "
 
 
-class WorkerContext:
+class NodeContext:
     """Track real prompt size and save old observations before removing them.
 
     A result stays visible for at least one successful model request. Under
@@ -85,7 +85,7 @@ class WorkerContext:
             try:
                 paths = self._save_result(redact_tool_result(content), digest)
             except (OSError, ValueError):
-                logger.warning('Could not preserve worker context result', exc_info=True)
+                logger.warning('Could not preserve node context result', exc_info=True)
                 continue
             marker = (
                 f'{_OFFLOADED}{json.dumps(paths)}] This result was returned earlier, not missing. '

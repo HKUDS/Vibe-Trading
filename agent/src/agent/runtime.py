@@ -73,6 +73,9 @@ class AgentRuntime:
         background_manager: Optional[Any] = None,
         thread_recorder: Optional[Any] = None,
         queued_inputs: Optional[Any] = None,
+        system_prompt: str | None = None,
+        local_thread_path: Path | None = None,
+        pacing_type: type[TurnPacing] = TurnPacing,
     ) -> None:
         """Initialize AgentRuntime.
 
@@ -104,10 +107,16 @@ class AgentRuntime:
                 user messages to append; the loop takes them only after a
                 tool batch finished, before the next model call. ``None``
                 takes none.
+            system_prompt: A host-supplied prompt with a fixed tool catalog.
+            local_thread_path: A private durable thread for an isolated task.
+            pacing_type: Turn delivery policy selected by the caller.
         """
         self._owns_recorder = thread_recorder is None
+        self._system_prompt = system_prompt
+        self._local_thread_path = local_thread_path
+        self._pacing_type = pacing_type
         self._conversation = ConversationState(thread_recorder, queued_inputs)
-        self.registry = prepare_registry(registry)
+        self.registry = registry if system_prompt is not None else prepare_registry(registry)
         self._hooks = getattr(self.registry, "hooks", None)
         if self._hooks is not None and thread_recorder is not None:
             self._hooks.set_audit_sink(thread_recorder)
@@ -174,6 +183,15 @@ class AgentRuntime:
         set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
         if callable(set_usage_callback):
             set_usage_callback(self.usage.record_subagent)
+
+    def request_backoff(self, streak: int) -> float:
+        return _stream_retry_backoff_s(streak)
+
+    def request_max_delay(self) -> float:
+        return _stream_retry_max_delay_s()
+
+    def run_limits(self) -> RunLimits:
+        return RunLimits(self.max_iterations)
 
     def _should_stop(self) -> bool:
         return self.activity.cancel.is_set() or self.goals.stop_reason is not None
@@ -263,13 +281,13 @@ class AgentRuntime:
         state = setup.state
         assert state is not None
         try:
-            pacing = TurnPacing(self._conversation, self._llm_runtime.provider, self.llm, self.max_iterations, self.goals)
+            pacing = self._pacing_type(self._conversation, self._llm_runtime.provider, self.llm, self.max_iterations, self.goals)
             steps = IterationSteps(
                 requests=SessionRequest(
                     llm=self.llm, cancel=self.activity.cancel, should_stop=self._should_stop,
                     record_usage=self.usage.record, recover_overflow=self._context_compactor.recover_context_overflow,
-                    timeout_seconds=_llm_timeout_seconds, backoff=_stream_retry_backoff_s,
-                    max_delay=_stream_retry_max_delay_s,
+                    timeout_seconds=_llm_timeout_seconds, backoff=self.request_backoff,
+                    max_delay=self.request_max_delay,
                 ),
                 state=state,
                 activity=self.activity, goals=self.goals, tools=self.tools, compactor=self._context_compactor,
@@ -279,7 +297,7 @@ class AgentRuntime:
             )
             turn = run_loop(
                 state.view,
-                steps.ports(), RunLimits(self.max_iterations), self.activity.cancel, self._emit,
+                steps.ports(), self.run_limits(), self.activity.cancel, self._emit,
             )
         except Exception as exc:
             return fail_turn(
@@ -298,7 +316,7 @@ class AgentRuntime:
         """Build run resources and per-turn state before iteration."""
         if isinstance(self.registry, DeferredToolRegistry):
             self.registry.reset_exposure()
-        else:
+        elif self._system_prompt is None:
             self.tool_env.registry = self.registry = prepare_registry(self.registry)
         if self.memory.session_workspace:
             setattr(self.registry, "session_workspace", self.memory.session_workspace)
@@ -325,10 +343,14 @@ class AgentRuntime:
             from src.session.thread import ThreadLog
 
             record_dir = SESSIONS_DIR / session_id if session_id else run_dir
-            runtime = SessionRuntime(ThreadLog(record_dir / "thread.jsonl"), session_id)
+            runtime = SessionRuntime(
+                ThreadLog(self._local_thread_path or record_dir / "thread.jsonl"), session_id,
+                require_durable_items=self._local_thread_path is not None,
+            )
             self._conversation.thread = runtime.begin_turn(uuid.uuid4().hex[:12])
-            self.memory.session_workspace = str(runtime.workspace_path)
-            setattr(self.registry, "session_workspace", self.memory.session_workspace)
+            if self._local_thread_path is None:
+                self.memory.session_workspace = str(runtime.workspace_path)
+                setattr(self.registry, "session_workspace", self.memory.session_workspace)
             if self._hooks is not None:
                 self._hooks.set_audit_sink(self._conversation.thread)
 
@@ -353,14 +375,14 @@ class AgentRuntime:
         self.tool_env.identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,
-            history=self._conversation.thread.user_history if self._conversation.thread is not None else history,
+            history=(self._conversation.thread.user_history if self._local_thread_path is None else None),
             contextual_identity_constraints=(
                 get_env_config().agent_tuning.vibe_contextual_identity_constraints
             ),
             seed_prompt_symbols=self._conversation.thread is None or (
                 self._conversation.thread.queued_input_id is None and self._conversation.thread.answer_to_question_id is None
             ),
-            restored_state=self._conversation.thread.identity_state if self._conversation.thread is not None else None,
+            restored_state=(self._conversation.thread.identity_state if self._local_thread_path is None else None),
         )
 
         context = ContextBuilder(self.registry, self.memory,
@@ -373,7 +395,12 @@ class AgentRuntime:
                 f"{goal_context}\n\n"
                 f"<user-message>\n{user_message}\n</user-message>"
             )
-        messages = context.build_messages(llm_user_message, history)
+        if self._system_prompt is None:
+            messages = context.build_messages(llm_user_message, history)
+            recorded_user = messages[-1]
+        else:
+            recorded_user = {"role": "user", "content": llm_user_message}
+            messages = [{"role": "system", "content": self._system_prompt}, *(history or [recorded_user])]
         self._conversation.turn_messages = messages
         if self._conversation.thread is not None:
             # Before any model call: the user message exactly as it is sent,
@@ -381,7 +408,7 @@ class AgentRuntime:
             # replay reproduces the request byte for byte.
             self._conversation.thread.start(
                 prompt=user_message,
-                message=messages[-1],
+                message=recorded_user,
                 model=self._llm_runtime.configured_model or None,
                 provider=self._llm_runtime.provider or None,
             )

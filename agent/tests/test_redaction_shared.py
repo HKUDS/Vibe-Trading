@@ -648,7 +648,7 @@ def test_metadata_exception_is_exact_and_cannot_hide_a_credential_suffix(key: st
 
 
 def test_metadata_validation_reaches_swarm_argument_previews() -> None:
-    from src.swarm.worker import _preview_tool_arguments
+    from src.swarm.node import _preview_tool_arguments
 
     preview = _preview_tool_arguments({
         "token_budget": "opaque-test-credential",

@@ -114,7 +114,7 @@ TARGET_FILES=(
   agent/src/channels/mochat.py
   agent/src/goal/store.py
   agent/src/session/models.py
-  agent/src/swarm/worker.py
+  agent/src/swarm/node.py
   agent/src/tools/lockup_expiry_tool.py
   agent/src/trading/connectors/dhan/sdk.py
   agent/src/trading/connectors/shoonya/sdk.py

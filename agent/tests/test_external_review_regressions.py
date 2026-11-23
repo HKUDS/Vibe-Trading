@@ -17,8 +17,8 @@ import pytest
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.presets import build_run_from_preset
-from src.swarm.worker import run_worker
-import src.swarm.worker as worker
+from src.swarm.node import run_node
+import src.swarm.node as worker
 
 
 class _ObservationTool(BaseTool):
@@ -68,12 +68,12 @@ def test_worker_truncation_after_successful_data_call(tmp_path, monkeypatch, rea
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: llm)
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: registry)
     spec, task = _committee_role("risk_officer")
-    result = run_worker(spec, task, {}, {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
+    result = run_node(spec, task, {}, {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
     assert result.status == ("completed" if reason == "stop" else "token_limit")
     assert len(calls) == 1  # Never execute a truncated response's partial call.
     if reason != "stop":
         assert "truncated" in result.error
-        saved = list(tmp_path.rglob("messages.json"))
+        saved = list(tmp_path.rglob("thread.jsonl"))
         assert saved and "My final position size should be" in saved[0].read_text()
 
 
@@ -91,7 +91,7 @@ def test_committee_pm_delivery_does_not_grade_supplied_reports(tmp_path, monkeyp
         LLMResponse(content=answer, tool_calls=[], finish_reason="stop"),
     ]))
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
-    result = run_worker(spec, task, upstream, {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
+    result = run_node(spec, task, upstream, {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
     assert result.status == expected
 
 
@@ -101,7 +101,7 @@ def test_data_role_can_use_supplied_evidence(tmp_path, monkeypatch):
         LLMResponse(content="Hold the current exposure based on the supplied reports.", tool_calls=[], finish_reason="stop"),
     ]))
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *args, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
-    result = run_worker(spec, task, {k: "A complete upstream report." for k in task.input_from},
+    result = run_node(spec, task, {k: "A complete upstream report." for k in task.input_from},
                         {"target": "NVDA", "market": "US"}, tmp_path, policy=ToolPolicy.from_config(get_env_config()))
     assert result.status == "completed"
 

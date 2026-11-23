@@ -69,10 +69,11 @@ class IterationSteps:
         if notifs:
             text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
             self.conversation.inject(state.view.messages, f"<background-results>\n{text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>")
-        self.compactor.compact_if_needed(
-            state.view.messages, state.run_dir, state.trace, state.iteration, state.current_iter,
-            session_id=state.session_id,
-        )
+        if not self.pacing.manages_context:
+            self.compactor.compact_if_needed(
+                state.view.messages, state.run_dir, state.trace, state.iteration, state.current_iter,
+                session_id=state.session_id,
+            )
         if self.activity.cancel.is_set() or self.goals.stop_reason is not None:
             return Stop(self.goals.stop_reason or "cancelled")
         self.pacing.write_directives(state, self.writes)
@@ -81,6 +82,8 @@ class IterationSteps:
             view.tools = None
         else:
             view.tools = request_definitions(self.tools.env.registry)
+        if self.pacing.manages_context:
+            return self.pacing.prepare_context(state)
         return None
 
     def request(self, view: LoopContext, emit: EventSink) -> LLMResponse | Continue | Stop:
@@ -90,22 +93,31 @@ class IterationSteps:
             emit=emit, iteration=state.current_iter, heartbeat_interval=_heartbeat_interval_s,
             reasoning_interval=_reasoning_delta_min_interval_s,
         )
-        result = self.requests.send(
-            view.messages, view.tools, state.stream, run_dir=state.run_dir, trace=state.trace,
-            iteration=state.iteration, current_iter=state.current_iter,
-        )
+        try:
+            result = self.requests.send(
+                view.messages, view.tools, state.stream, run_dir=state.run_dir, trace=state.trace,
+                iteration=state.iteration, current_iter=state.current_iter,
+            )
+        except Exception:
+            self.pacing.capture_interrupted_response(state)
+            raise
         if result is None:
+            self.pacing.capture_interrupted_response(state)
             return Stop(self.goals.stop_reason or "cancelled")
         response, request_messages = result
         self.tools.replay._consume_readonly_replay_visibility(state.view.messages, state.trace, state.current_iter)
         self.activity.touch()
         usage = getattr(response, "usage_metadata", None)
         state.current_response_model = getattr(response, "response_model", None)
-        self.compactor.observe_request(usage, request_messages, view.tools)
+        if self.pacing.manages_context:
+            self.pacing.observe_context(state, request_messages, usage)
+        else:
+            self.compactor.observe_request(usage, request_messages, view.tools)
         if state.current_response_model:
             state.last_response_model = state.current_response_model
         self.usage.record(state.run_dir, usage, state.current_iter)
         if self.activity.cancel.is_set() or (self.goals.stop_reason is not None and response.has_tool_calls):
+            self.pacing.capture_interrupted_response(state)
             return Stop(self.goals.stop_reason or "cancelled")
         state.thinking_text = "".join(state.stream.thinking_chunks)
         self._record_thinking(state)

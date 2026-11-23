@@ -12,7 +12,7 @@ from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-import src.swarm.worker as worker
+import src.swarm.node as worker
 from tests.test_agent_loop_deterministic_cache import _drive
 
 
@@ -70,7 +70,7 @@ def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, 
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read evidence.',
                                   tools=[tool.name], max_iterations=3),
@@ -80,7 +80,7 @@ def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, 
     assert result.status == 'completed'
     assert len(seen) == 2
     assert secret not in json.dumps(seen)
-    persisted = next(tmp_path.rglob('messages.json')).read_text()
+    persisted = next(tmp_path.rglob('thread.jsonl')).read_text()
     assert secret not in persisted
     output = next(m for m in seen[1] if m['role'] == 'tool')
     payload = json.loads(output['content'])

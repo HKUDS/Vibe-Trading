@@ -1,8 +1,8 @@
 """Worker-side half of cooperative swarm cancellation.
 
 ``test_swarm_cancel_mid_flight_worker.py`` proves the runtime threads
-``cancel_event`` from ``cancel_run()`` into ``run_worker``; this file proves
-what ``run_worker`` does with it once it arrives:
+``cancel_event`` from ``cancel_run()`` into ``run_node``; this file proves
+what ``run_node`` does with it once it arrives:
 
 * set before an iteration starts → no LLM call is made, status ``cancelled``;
 * set while the stream is in flight → that turn's tool calls are never
@@ -27,11 +27,11 @@ from unittest.mock import patch
 import pytest
 
 from src.kernel.contracts import LLMResponse, ToolCallRequest
-from src.swarm import checkpoint
-from src.swarm.artifacts import agent_artifact_dir
+from src.session.thread import ThreadLog
+from src.swarm.artifacts import agent_artifact_dir, node_thread
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
-import src.swarm.worker as worker_mod
-from src.swarm.worker import run_worker
+import src.swarm.node as worker_mod
+from src.swarm.node import run_node
 
 _TOOL_DEF = {
     "type": "function",
@@ -87,7 +87,7 @@ class _ScriptedLLM:
         """No-op: the stub owns no HTTP client."""
         return None
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, should_cancel=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, should_cancel=None, on_waiting_chunk=None, **_callbacks):
         """Return the scripted response, optionally cancelling "mid-stream"."""
         self.calls += 1
         self.should_cancel_seen.append(should_cancel)
@@ -127,7 +127,7 @@ def _run(tmp_path: Path, llm: _ScriptedLLM, registry: _Registry, cancel_event: t
         patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: registry),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        result = run_worker(
+        result = run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
@@ -180,19 +180,14 @@ def test_cancel_during_tool_batch_keeps_completed_result(tmp_path, cancel_at):
     response.tool_calls.append(ToolCallRequest(id="c2", name="noop_tool", arguments={}))
     llm = _ScriptedLLM(response)
 
-    class Registry(_Registry):
-        def execute(self, name, args):
-            result = super().execute(name, args)
-            if cancel_at == "first_result":
-                cancel_event.set()
-            return result
-
-    def cancel_before_dispatch(event):
-        if cancel_at == "next_tool_event" and event.type == "item.started" and event.data["item"]["tool_call_id"] == "c2":
+    def cancel_after_event(event):
+        if cancel_at == "first_result" and event.type == "item.completed":
+            cancel_event.set()
+        elif cancel_at == "next_tool_event" and event.type == "item.started" and event.data["item"]["tool_call_id"] == "c2":
             cancel_event.set()
 
-    registry = Registry()
-    result, events = _run(tmp_path, llm, registry, cancel_event, on_event=cancel_before_dispatch)
+    registry = _Registry()
+    result, events = _run(tmp_path, llm, registry, cancel_event, on_event=cancel_after_event)
 
     assert result.status == "cancelled"
     assert llm.calls == 1
@@ -200,11 +195,10 @@ def test_cancel_during_tool_batch_keeps_completed_result(tmp_path, cancel_at):
     assert events.count("item.completed") == 1
     assert "worker_cancelled" in events
     artifact_dir = agent_artifact_dir(tmp_path, "analyst", "t1")
-    saved = json.loads((artifact_dir / checkpoint.FILENAME).read_text(encoding="utf-8"))
-    restored, _ = checkpoint.restore(artifact_dir, key=saved["key"], system=saved["messages"][0], run_dir=tmp_path)
-    results = {m["tool_call_id"]: json.loads(m["content"]) for m in restored if m["role"] == "tool"}
+    items = ThreadLog(node_thread(tmp_path, "analyst", "t1")).read()
+    results = {m.get("tool_call_id"): json.loads(m.get("content")) for m in items if m.type == "tool_result"}
     assert results["c1"]["ok"] is True
-    assert results["c2"]["error_code"] == "interrupted_tool_result"
+    assert results["c2"]["error_code"] == "tool_cancelled"
 
 
 def test_same_response_dispatches_its_tool_when_nothing_is_cancelled(tmp_path):
@@ -231,21 +225,17 @@ def test_cancel_event_is_forwarded_to_stream_chat_as_should_cancel(tmp_path):
 
     assert llm.should_cancel_seen, "stream_chat was never called"
     predicate = llm.should_cancel_seen[0]
-    assert predicate == cancel_event.is_set, (
-        "the worker must hand cancel_event.is_set to stream_chat as should_cancel, "
-        "the same cooperative predicate AgentRuntime uses"
-    )
+    assert callable(predicate)
     assert predicate() is False
     cancel_event.set()
     assert predicate() is True
 
 
-def test_no_cancel_event_leaves_stream_chat_signature_untouched(tmp_path):
-    """Callers that never pass cancel_event (older call sites, tests with stubs
-    whose stream_chat has no should_cancel parameter) must see no new kwarg."""
+def test_node_deadline_still_binds_cancel_predicate_without_parent(tmp_path):
+    """A standalone child turn also has a cooperative local deadline."""
     llm = _ScriptedLLM(_tool_call_response())
     registry = _Registry()
 
     _run(tmp_path, llm, registry, cancel_event=None)
 
-    assert llm.should_cancel_seen and all(p is None for p in llm.should_cancel_seen)
+    assert llm.should_cancel_seen and all(callable(p) and not p() for p in llm.should_cancel_seen)

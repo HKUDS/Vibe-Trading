@@ -12,7 +12,7 @@ from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.data_gateway.guidance import DATA_ACCESS_POLICY, MCP_DATA_GUIDANCE, SHELL_DATA_GUIDANCE
 from src.swarm.models import SwarmAgentSpec
-from src.swarm.worker import build_worker_prompt
+from src.swarm.node import build_worker_prompt
 from src.tools.bash_tool import BashTool
 from src.tools.background_tools import BackgroundRunTool
 from src.tools.mcp import MCPRemoteTool, MCPRemoteToolSpec

@@ -108,7 +108,7 @@ def workers_succeed(monkeypatch):
         )
 
     workers_succeed.calls = []
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
     return workers_succeed
 
 

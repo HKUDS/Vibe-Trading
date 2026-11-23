@@ -23,13 +23,13 @@ from src.swarm.models import (
     WorkerResult,
 )
 from src.swarm.store import SwarmStore
-from src.swarm.worker import (
+from src.product.tool_results import _is_tool_success
+from src.swarm.node import (
     _delivery_error,
-    _is_error_result,
-    run_worker,
+    run_node,
 )
 import src.swarm.runtime as rt
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 
 PLAN_STUB = (
     "### Phase 1 — Plan\n"
@@ -78,7 +78,7 @@ def test_timeout_terminal_run_not_completed(tmp_path, monkeypatch):
     """fail-before / pass-after anchor: timeout terminal must not be a success."""
     monkeypatch.setattr(
         rt,
-        "run_worker",
+        "run_node",
         lambda *a, **k: WorkerResult(status="timeout", summary="partial work"),
     )
     run = _run(tmp_path, None)
@@ -90,7 +90,7 @@ def test_timeout_terminal_run_not_completed(tmp_path, monkeypatch):
 def test_incomplete_terminal_run_not_completed(tmp_path, monkeypatch):
     monkeypatch.setattr(
         rt,
-        "run_worker",
+        "run_node",
         lambda *a, **k: WorkerResult(
             status="incomplete",
             summary=PLAN_STUB,
@@ -108,7 +108,7 @@ def test_genuine_completion_still_succeeds(tmp_path, monkeypatch):
     """Guard: a real deliverable must still complete and become final_report."""
     monkeypatch.setattr(
         rt,
-        "run_worker",
+        "run_node",
         lambda *a, **k: WorkerResult(status="completed", summary=REAL_REPORT, iterations=4),
     )
     run = _run(tmp_path, None)
@@ -123,19 +123,19 @@ def test_genuine_completion_still_succeeds(tmp_path, monkeypatch):
 
 
 def test_is_error_result_top_level_error():
-    assert _is_error_result('{"status": "error", "error": "bad key"}') is True
-    assert _is_error_result('{"status":"error"}') is True
+    assert (not _is_tool_success('{"status": "error", "error": "bad key"}')) is True
+    assert (not _is_tool_success('{"status":"error"}')) is True
 
 
 def test_is_error_result_top_level_ok():
-    assert _is_error_result('{"status": "ok", "content": "..."}') is False
+    assert (not _is_tool_success('{"status": "ok", "content": "..."}')) is False
 
 
 def test_is_error_result_nested_error_no_false_positive():
     """A nested ``status`` (e.g. inside ``data``) must NOT count — only the
     envelope status matters for the deliverable contract."""
     nested = '{"status": "ok", "data": {"status": "error", "detail": "x"}}'
-    assert _is_error_result(nested) is False
+    assert (not _is_tool_success(nested)) is False
 
 
 def test_is_error_result_error_past_substring_head():
@@ -144,28 +144,28 @@ def test_is_error_result_error_past_substring_head():
     this; JSON parse catches it."""
     long_field = "x" * 200
     payload = '{"meta": "' + long_field + '", "status": "error"}'
-    assert _is_error_result(payload) is True
+    assert (not _is_tool_success(payload)) is True
 
 
 def test_is_error_result_truncated_falls_back_to_substring():
     """Truncated / unparseable JSON still gets the original substring
     classifier; the function must never raise on the worker hot path."""
     truncated = '{"status": "error", "trace": "...'  # missing closing quote
-    assert _is_error_result(truncated) is True
+    assert (not _is_tool_success(truncated)) is True
 
 
 def test_is_error_result_non_json_safe():
-    assert _is_error_result("") is False
-    assert _is_error_result(None) is False  # type: ignore[arg-type]
-    assert _is_error_result("plain text output") is False
-    assert _is_error_result("[1, 2, 3]") is False  # JSON array, not envelope
+    assert (not _is_tool_success("")) is False
+    assert (not _is_tool_success(None)) is False  # type: ignore[arg-type]
+    assert (not _is_tool_success("plain text output")) is False
+    assert (not _is_tool_success("[1, 2, 3]")) is False  # JSON array, not envelope
 
 
 def test_is_error_result_other_status_values():
     """Only ``"error"`` counts; ``"warning"`` / ``"degenerate"`` etc. are
     not error envelopes (the worker still credits them as a tool call)."""
-    assert _is_error_result('{"status": "degenerate", "warning": "T=0"}') is False
-    assert _is_error_result('{"status": "warning"}') is False
+    assert (not _is_tool_success('{"status": "degenerate", "warning": "T=0"}')) is False
+    assert (not _is_tool_success('{"status": "warning"}')) is False
 
 
 def test_is_error_result_ok_false_envelope_no_status_key():
@@ -174,17 +174,17 @@ def test_is_error_result_ok_false_envelope_no_status_key():
     is the exact envelope that let a failed tool call be silently credited
     as a completed data tool call before this fix."""
     assert (
-        _is_error_result('{"ok": false, "error": "eastmoney news fetch failed"}')
+        (not _is_tool_success('{"ok": false, "error": "eastmoney news fetch failed"}'))
         is True
     )
 
 
 def test_is_error_result_success_false_envelope_no_status_key():
-    assert _is_error_result('{"success": false, "error": "boom"}') is True
+    assert (not _is_tool_success('{"success": false, "error": "boom"}')) is True
 
 
 def test_is_error_result_ok_true_is_not_an_error():
-    assert _is_error_result('{"ok": true, "data": []}') is False
+    assert (not _is_tool_success('{"ok": true, "data": []}')) is False
 
 
 def test_is_error_result_nested_ok_false_no_false_positive():
@@ -192,7 +192,7 @@ def test_is_error_result_nested_ok_false_no_false_positive():
     the envelope's own ``ok``/``success`` matters, mirroring the existing
     nested-``status`` guarantee."""
     nested = '{"status": "ok", "data": {"ok": false, "detail": "x"}}'
-    assert _is_error_result(nested) is False
+    assert (not _is_tool_success(nested)) is False
 
 
 class _ResultTool(BaseTool):
@@ -229,7 +229,7 @@ class _ScriptedLLM:
             ),
         ]
 
-    def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None, **_callbacks):
         return self._responses.pop(0)
 
     def close(self) -> None:
@@ -266,7 +266,7 @@ def test_tool_result_event_status_and_evidence_credit_agree(
     monkeypatch.setattr(worker_mod, "ChatLLM", lambda *args, **kwargs: _ScriptedLLM())
 
     events: list[SwarmEvent] = []
-    worker_result = run_worker(
+    worker_result = run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
@@ -321,13 +321,13 @@ def test_collect_artifacts_rejects_symlink_escape(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ChatLLM lifecycle: run_worker must close the per-task LLM (regression #1141)
+# ChatLLM lifecycle: run_node must close the per-task LLM (regression #1141)
 # ---------------------------------------------------------------------------
 
 
-def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
+def test_run_node_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
     """A successful run must close the per-task ChatLLM exactly once."""
-    import src.swarm.worker as worker_mod
+    import src.swarm.node as worker_mod
 
     registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool("done", raises=False))
@@ -344,7 +344,7 @@ def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
         worker_mod, "ChatLLM", lambda *args, **kwargs: _TrackingLLM()
     )
 
-    worker_result = run_worker(
+    worker_result = run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
@@ -364,9 +364,9 @@ def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
     assert len(closed) == 1, f"close must be called exactly once, got {len(closed)}"
 
 
-def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) -> None:
+def test_run_node_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) -> None:
     """close() must fire even when the run dies on a tool exception."""
-    import src.swarm.worker as worker_mod
+    import src.swarm.node as worker_mod
 
     registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool("boom", raises=True))
@@ -383,7 +383,7 @@ def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) ->
         worker_mod, "ChatLLM", lambda *args, **kwargs: _TrackingLLM()
     )
 
-    worker_result = run_worker(
+    worker_result = run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",

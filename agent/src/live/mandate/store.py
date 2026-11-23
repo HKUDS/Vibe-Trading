@@ -4,7 +4,7 @@ This module exposes exactly ONE public function, :func:`load_mandate`. There is
 deliberately NO ``save_mandate`` / ``set_mandate`` here or in any module
 importable by the agent loop or registered as a tool — mandate writes happen
 only in the consent UX commit path (``src.live.mandate.commit``, owned by a
-separate parcel), which is not reachable from ``loop.py`` / ``worker.py`` /
+separate parcel), which is not reachable from ``loop.py`` / ``node.py`` /
 any ``BaseTool.execute()``. This mirrors the #142 swarm-config trust template:
 the protected file is resolved at boot from a fixed user-side path, never from
 caller input, agent tool args, or session ``variables`` (see

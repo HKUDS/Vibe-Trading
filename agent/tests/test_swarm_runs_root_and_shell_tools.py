@@ -64,14 +64,14 @@ def test_filtered_registry_warns_when_requested_tool_dropped(caplog):
 # ---- P03-B: include_shell_tools propagates to the worker -------------------
 def test_execute_run_propagates_include_shell_tools(tmp_path, monkeypatch):
     """mcp_server now passes include_shell_tools into start_run; pin that the
-    runtime forwards it all the way to run_worker."""
+    runtime forwards it all the way to run_node."""
     captured: dict[str, object] = {}
 
     def fake_worker(*args, **kwargs):
         captured["include_shell_tools"] = kwargs.get("include_shell_tools")
         return WorkerResult(status="completed", summary="real deliverable: ok")
 
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
 
     store = SwarmStore(base_dir=tmp_path)
     runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)

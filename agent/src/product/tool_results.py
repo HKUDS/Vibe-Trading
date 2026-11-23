@@ -42,7 +42,9 @@ def _is_tool_success(result: str) -> bool:
             if data.get("ok") is False or data.get("success") is False:
                 return False
     except (json.JSONDecodeError, TypeError):
-        pass
+        head = (result or "").lstrip()[:160].lower()
+        if head.startswith("{") and ('"status": "error"' in head or '"status":"error"' in head):
+            return False
     return True
 
 

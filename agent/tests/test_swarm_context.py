@@ -15,9 +15,10 @@ import pytest
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.config.limits import truncate_tool_result
-from src.swarm.context import WorkerContext
+from src.session.thread import ThreadLog
+from src.swarm.context import NodeContext
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-import src.swarm.worker as worker
+import src.swarm.node as worker
 from src.tools.read_file_tool import ReadFileTool
 
 
@@ -49,7 +50,7 @@ def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read all evidence.',
                                   tools=names, max_iterations=3),
@@ -63,7 +64,7 @@ def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
 
 
 def _pressured(tmp_path, *, can_read=True):
-    context = WorkerContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=can_read)
+    context = NodeContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=can_read)
     context.max_tokens = 12_000
     messages = [{'role': 'system', 'content': 'Analyze the supplied observations.'}]
     for i in range(4):
@@ -92,7 +93,7 @@ def test_pressure_saves_old_results_and_keeps_the_fresh_batch(tmp_path, monkeypa
             assert read['status'] == 'ok'
             parts.append(read['content'])
         assert ''.join(parts) == originals[receipt['tool_call_id']]
-    assert messages[-1]['content'] == originals['new-1']
+    assert messages[-1].get('content') == originals['new-1']
     assert messages[-2]['content'] == originals['new-0']
     assert context.compact(messages, []) == []
 
@@ -111,7 +112,7 @@ def test_unrecoverable_results_are_never_discarded(tmp_path, monkeypatch, cause)
 
 
 def test_real_usage_and_schema_growth_are_counted(tmp_path):
-    context = WorkerContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=False)
+    context = NodeContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=False)
     messages = [{'role': 'system', 'content': 's'}, {'role': 'user', 'content': 'q'}]
     schemas = [{'type': 'function', 'description': 'large schema ' * 500}]
     assert context.tokens(messages, schemas) > context.tokens(messages, []) + 1000
@@ -164,7 +165,7 @@ def test_worker_refuses_over_budget_request_without_discarding_fresh_results(tmp
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='a', role='Analyst', system_prompt='Analyze.', tools=['probe'], max_iterations=3),
         task=SwarmTask(id='t', agent_id='a', prompt_template='Read.'),
@@ -172,8 +173,8 @@ def test_worker_refuses_over_budget_request_without_discarding_fresh_results(tmp
     )
     assert len(calls) == 1
     assert result.status == 'token_limit'
-    messages = json.loads(next(tmp_path.rglob('messages.json')).read_text())
-    assert json.loads(messages[-1]['content'])['observed'] == 'probe'
+    messages = [item for item in ThreadLog(next(tmp_path.rglob('thread.jsonl'))).read() if item.type == 'tool_result']
+    assert json.loads(messages[-1].get('content'))['observed'] == 'probe'
 
 
 @pytest.mark.parametrize('tools', [['get_market_data'], ['write_file']])

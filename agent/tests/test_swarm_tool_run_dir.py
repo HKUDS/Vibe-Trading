@@ -20,11 +20,12 @@ from pathlib import Path
 
 import pytest
 
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-from src.swarm.worker import _tool_arguments, run_worker
+from src.swarm.node import run_node
+from src.tools.spawn_agent_tool import _WorkspaceTool as WorkspaceBinding
 
 
 class _DeclaredTool(BaseTool):
@@ -62,6 +63,12 @@ def workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "artifacts" / "analyst"
     ws.mkdir(parents=True)
     return ws
+
+
+def _tool_arguments(tool, arguments, workspace):
+    tool.received.clear()
+    result = json.loads(WorkspaceBinding(tool, workspace, pin_undeclared=True).execute(**arguments))
+    return ({"run_dir": tool.received[-1]}, None) if tool.received else ({}, result["error"])
 
 
 def test_undeclared_run_dir_is_pinned_to_the_workspace(workspace: Path) -> None:
@@ -115,7 +122,7 @@ def test_run_dir_outside_the_workspace_is_refused(
 
     assert refusal is not None
     assert str(workspace) in refusal, "the refusal must name the workspace boundary"
-    assert "outside this agent's workspace" in refusal
+    assert "outside this sub-agent's workspace" in refusal
 
 
 class _ScriptedLLM:
@@ -135,14 +142,14 @@ class _ScriptedLLM:
             ),
         ]
 
-    def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None, **_callbacks):
         return self._responses.pop(0)
 
     def close(self) -> None:
         """No-op: the scripted stub owns no HTTP client."""
 
 
-def _run_worker_with(
+def _run_node_with(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool: BaseTool, arguments: dict
 ):
     registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
@@ -156,7 +163,7 @@ def _run_worker_with(
         lambda *args, **kwargs: _ScriptedLLM(tool.name, arguments),
     )
     events = []
-    run_worker(
+    run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
@@ -180,7 +187,7 @@ def test_worker_passes_a_relative_run_dir_through_to_the_tool(
     """The call site, not only the helper: this is where the value was discarded."""
     _DeclaredTool.received.clear()
 
-    _run_worker_with(tmp_path, monkeypatch, _DeclaredTool(), {"run_dir": "runs/demo"})
+    _run_node_with(tmp_path, monkeypatch, _DeclaredTool(), {"run_dir": "runs/demo"})
 
     assert _DeclaredTool.received == [
         str(tmp_path / "artifacts" / "analyst" / "task" / "runs" / "demo")
@@ -193,7 +200,7 @@ def test_worker_refuses_an_escaping_run_dir_without_calling_the_tool(
     """An escape must surface as a tool error, so the agent can correct it."""
     _DeclaredTool.received.clear()
 
-    events = _run_worker_with(
+    events = _run_node_with(
         tmp_path, monkeypatch, _DeclaredTool(), {"run_dir": "../../other_run"}
     )
 
@@ -216,16 +223,18 @@ def test_worker_kernel_binds_the_whitelisted_tools_to_configured_hooks(tmp_path,
         lambda **kwargs: _ScriptedLLM("write_file", {"path": "probe.md", "content": "probe"}),
     )
     kernel_runs = []
-    kernel = worker_mod.run_loop
+    from src.agent import runtime as agent_runtime
+
+    kernel = agent_runtime.run_loop
 
     def capture_kernel(*args, **kwargs):
         outcome = kernel(*args, **kwargs)
         kernel_runs.append(outcome)
         return outcome
 
-    monkeypatch.setattr(worker_mod, "run_loop", capture_kernel)
+    monkeypatch.setattr(agent_runtime, "run_loop", capture_kernel)
     events = []
-    result = run_worker(
+    result = run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst", role="Analyst", system_prompt="Run the probe.",

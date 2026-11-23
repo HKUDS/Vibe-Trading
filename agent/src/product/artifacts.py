@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 class ToolDelivery:
     """Publish a sanitized result to every model, recording and artifact sink."""
 
+    raw_event_arguments = False
+    truncate_preview_with_ellipsis = False
+
     def __init__(self, env, replay, conversation, emit, activity, record_write):
         self.env = env
         self.replay = replay
@@ -120,7 +123,8 @@ class ToolDelivery:
                     "type": "tool_result",
                     "tool_call_id": tc.id,
                     "name": tc.name,
-                    "arguments": {key: str(value)[:200] for key, value in redacted.items()},
+                    "arguments": redacted if self.raw_event_arguments else
+                    {key: str(value)[:200] for key, value in redacted.items()},
                     **({"blocked": True} if blocked else {}),
                 },
                 "iter": iteration,
@@ -319,6 +323,8 @@ class ToolDelivery:
             images=image_refs,
         )
         preview = result[:200]
+        if self.truncate_preview_with_ellipsis and len(result) > 200:
+            preview = result[:200] + "..."
         self._emit_tool_completed(tc, status, elapsed_ms, preview, artifact=artifact)
 
 

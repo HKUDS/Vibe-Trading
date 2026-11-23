@@ -10,7 +10,7 @@ from src.product.tool_policy import ToolPolicy
 from src.providers.chat import ChatLLM
 from src.session.runtime_lock import HTTP_SERVER_OWNER, release_sessions_dir
 from src.session.service import SessionService
-from src.swarm import runtime, worker
+from src.swarm import runtime, node as worker
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
 from src.swarm.store import SwarmStore
 from src.tools import build_filtered_registry, build_registry, build_swarm_registry
@@ -26,7 +26,7 @@ from src.tools.spawn_agent_tool import child_registry
         (build_swarm_registry, ([],)),
         (SessionService, (None, None, None)),
         (runtime.SwarmRuntime, (None,)),
-        (worker.run_worker, (None, None, {}, {}, None)),
+        (worker.run_node, (None, None, {}, {}, None)),
         (ChatLLM, ()),
     ],
 )
@@ -79,11 +79,11 @@ def test_swarm_runtime_forwards_the_policy_to_its_worker(monkeypatch, tmp_path, 
         seen.append(policy)
         return WorkerResult(status="completed", summary="done")
 
-    monkeypatch.setattr(runtime, "run_worker", record_worker)
+    monkeypatch.setattr(runtime, "run_node", record_worker)
     host = runtime.SwarmRuntime(store=SwarmStore(base_dir=tmp_path), policy=restricted)
     agent = SwarmAgentSpec(id="probe", role="research", system_prompt="research")
     task = SwarmTask(id="task", agent_id=agent.id, prompt_template="research")
-    result = host._run_worker_with_retries(agent, task, {}, {}, tmp_path, None, "run")
+    result = host._run_node_with_retries(agent, task, {}, {}, tmp_path, None, "run")
 
     assert result.status == "completed"
     assert seen[0] is restricted

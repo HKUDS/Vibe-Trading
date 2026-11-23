@@ -29,8 +29,10 @@ from src.config.accessor import get_env_config
 from src.config.schema import AgentConfig
 from src.providers.settings import _ensure_dotenv
 from src.providers.llm import uses_responses_api
-from src.swarm import checkpoint, grounding
-from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts
+from src.session.thread import ThreadLog
+from src.session.thread_schema import ThreadItemError
+from src.swarm import grounding
+from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts, collect_node_artifacts, node_thread
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -54,7 +56,9 @@ from src.swarm.task_store import (
 )
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
-from src.swarm.worker import UsageMeasure, _CancellationSignal, run_worker
+from src.swarm.node import (
+    UNKNOWN_TOOL_OUTCOME, UsageMeasure, _CancellationSignal, run_node, unknown_outcome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -464,11 +468,21 @@ class SwarmRuntime:
             ValueError: If DAG validation fails or a prior task has an unknown outcome.
         """
         if resume_from is not None:
+            prior_dir = self._store.run_dir(resume_from.id)
             for task in resume_from.tasks:
                 # The deadline diagnostic is already persisted on historical runs.
                 error = task.error or ""
                 if error.startswith(_LAYER_DEADLINE_ERROR) and error.endswith(_UNKNOWN_OUTCOME):
                     raise ValueError(f"Cannot resume task {task.id}: {error}")
+                path = node_thread(prior_dir, task.agent_id, task.id)
+                try:
+                    unresolved = path.is_file() and unknown_outcome(ThreadLog(path).read(strict=True))
+                except (OSError, ThreadItemError):
+                    unresolved = True
+                if error == UNKNOWN_TOOL_OUTCOME or unresolved:
+                    raise ValueError(f"Cannot resume task {task.id}: {UNKNOWN_TOOL_OUTCOME}")
+            if not (prior_dir / "nodes").is_dir():
+                raise ValueError("Cannot resume a swarm run created before the AgentRuntime cutover. Start a new run explicitly.")
 
         _ensure_dotenv()
         # Reap any previously running runs whose host process died without
@@ -502,6 +516,7 @@ class SwarmRuntime:
         )
 
         self._store.create_run(run)
+        (self._store.run_dir(run.id) / "nodes").mkdir(exist_ok=True)
 
         cancel_event = threading.Event()
         thread = threading.Thread(
@@ -977,6 +992,7 @@ class SwarmRuntime:
                 continue
             prev = prev_by_id[task.id]
             artifact_paths = _rehome_artifact_paths(prev.artifacts, prev_run_dir, run_dir)
+            self._copy_node_thread(prev_run_dir, run_dir, task)
             task_store.update_status(
                 task.id,
                 TaskStatus.completed,
@@ -1014,14 +1030,11 @@ class SwarmRuntime:
                 continue
             if _task_definition_changed(prev, task, prev_agents, new_agents, resume_from, run):
                 continue
-            prior_dir = agent_artifact_dir(prev_run_dir, task.agent_id, task.id)
-            if not (prior_dir / checkpoint.FILENAME).is_file():
+            if not self._copy_node_thread(prev_run_dir, run_dir, task):
                 continue
-            paths = list(prev.artifacts)
-            for file in prior_dir.rglob("*"):
-                if file.is_file():
-                    paths.append(str(file.relative_to(prev_run_dir)))
-            artifacts = _rehome_artifact_paths(list(dict.fromkeys(paths)), prev_run_dir, run_dir)
+            workspace = agent_artifact_dir(prev_run_dir, task.agent_id, task.id)
+            paths = collect_node_artifacts(prev_run_dir, workspace)
+            artifacts = _rehome_artifact_paths(paths, prev_run_dir, run_dir)
             task_store.update_status(task.id, TaskStatus.pending, summary=prev.summary, artifacts=artifacts)
         if kept:
             logger.info(
@@ -1030,6 +1043,16 @@ class SwarmRuntime:
                 resume_from.id,
                 kept,
             )
+
+    @staticmethod
+    def _copy_node_thread(source: Path, target: Path, task: SwarmTask) -> bool:
+        original = node_thread(source, task.agent_id, task.id)
+        if not original.is_file():
+            return False
+        destination = node_thread(target, task.agent_id, task.id)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, destination)
+        return True
 
     def _prefetch_grounding_data(self, run: SwarmRun) -> None:
         """Fetch run-level grounding data without blocking ``start_run``."""
@@ -1208,7 +1231,7 @@ class SwarmRuntime:
                         )
 
                 future = executor.submit(
-                    self._run_worker_with_retries,
+                    self._run_node_with_retries,
                     agent_spec=agent_spec,
                     task=task,
                     upstream_summaries=upstream,
@@ -1274,7 +1297,7 @@ class SwarmRuntime:
 
         return results
 
-    def _run_worker_with_retries(
+    def _run_node_with_retries(
         self,
         agent_spec: SwarmAgentSpec,
         task: SwarmTask,
@@ -1307,7 +1330,7 @@ class SwarmRuntime:
                 into the worker's system prompt. Empty string when no
                 symbols were extracted from user_vars.
             cancel_event: Cooperative stop signal for the run or this layer.
-                Forwarded to run_worker() and checked before another attempt.
+                Forwarded to run_node() and checked before another attempt.
             record_usage: Optional sink for each model attempt by this task.
 
         Returns:
@@ -1320,7 +1343,6 @@ class SwarmRuntime:
         cumulative_cache_creation_tokens = 0
         cumulative_token_source: str | None = None
         result: WorkerResult | None = None
-        successful_reads: dict[tuple[str, str], str] = {}
 
         def stop_requested() -> bool:
             return cancel_event is not None and cancel_event.is_set()
@@ -1337,6 +1359,8 @@ class SwarmRuntime:
                 "token_source": cumulative_token_source,
             })
 
+        successful_reads: dict[tuple[str, str], str] = {}
+        thread_path = node_thread(run_dir, agent_spec.id, task.id)
         # Each task owns its artifact directory, so only retries need to clear it.
         for attempt in range(max_retries + 1):
             if stop_requested():
@@ -1369,18 +1393,15 @@ class SwarmRuntime:
                     return cancelled_result()
                 # Checkpointed retries continue the saved conversation and files.
                 artifact_dir = agent_artifact_dir(run_dir, agent_spec.id, task.id)
-                if not (artifact_dir / checkpoint.FILENAME).is_file():
+                if not thread_path.is_file():
                     if stop_requested():
                         return cancelled_result()
                     clear_agent_artifacts(artifact_dir)
                     successful_reads.clear()
 
-            resume_kwargs = {}
-            if (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
-                resume_kwargs["resume"] = True
             if stop_requested():
                 return cancelled_result()
-            result = run_worker(
+            result = run_node(
                 policy=self.policy,
                 agent_spec=agent_spec,
                 task=task,
@@ -1392,9 +1413,9 @@ class SwarmRuntime:
                 grounding_block=grounding_block,
                 agent_config=self._agent_config,
                 cancel_event=cancel_event,
+                resume=thread_path.is_file(),
                 successful_reads=successful_reads,
                 **({"record_usage": record_usage} if record_usage is not None else {}),
-                **resume_kwargs,
             )
 
             cumulative_input_tokens += result.input_tokens
@@ -1405,7 +1426,7 @@ class SwarmRuntime:
                 cumulative_token_source, result.token_source
             )
 
-            if result.status != "failed":
+            if result.status != "failed" or result.error == UNKNOWN_TOOL_OUTCOME:
                 # Success (or timeout/token_limit/completed) — no more retries
                 result = result.model_copy(
                     update={

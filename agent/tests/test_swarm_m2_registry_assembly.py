@@ -305,11 +305,16 @@ def test_swarm_registry_excludes_broker_mutations() -> None:
     remote = MagicMock(spec=LiveOrderGuardTool)
     remote.name = "mcp_broker_submit"
     remote.is_readonly = False
+    from src.tools.mcp import MCPRemoteTool
+
+    mislabeled = MagicMock(spec=MCPRemoteTool)
+    mislabeled.name = "mcp_broker_submit_order"
+    mislabeled.is_readonly = True
     cfg = _make_agent_config({"broker": {"command": "unused"}})
-    with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[remote]):
+    with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[remote, mislabeled]):
         registry = build_swarm_registry(
             ["trading_positions", "trading_place_order", "trading_cancel_order",
-             "etoro_close_position", "mcp_broker_submit"],
+             "etoro_close_position", "mcp_broker_submit", mislabeled.name],
             agent_config=cfg,
             policy=ToolPolicy.from_config(get_env_config()),
         )

@@ -32,7 +32,7 @@ import pytest
 import mcp_server
 import src.swarm.runtime as rt
 import src.swarm.store as store_mod
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -509,7 +509,7 @@ def test_runtime_layer_boundary_sync_writes_run_json(tmp_path, monkeypatch):
 
     import threading
 
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
     runtime._execute_run(run, threading.Event())
 
     # After _execute_run, run.json must reflect the completed task.
@@ -787,7 +787,7 @@ def test_worker_source_wires_heartbeat_around_llm_streaming():
     import re
     source = inspect.getsource(worker_mod)
     timer_match = re.search(
-        r'with HeartbeatTimer\(\s*\n\s*tool_name=f"llm:', source
+        r'with HeartbeatTimer\(\s*tool_name=f"llm:', source
     )
     timer_idx = timer_match.start() if timer_match else -1
     stream_idx = source.find("llm.stream_chat(", timer_idx)
@@ -803,29 +803,22 @@ def test_heartbeat_interval_env_var_is_robust_to_garbage(monkeypatch):
     took down every swarm path. Falls back to 3.0s now."""
     monkeypatch.setenv("SWARM_HEARTBEAT_INTERVAL_S", "abc")
 
-    # Force re-evaluation by calling the resolver directly.
-    import importlib
-    import src.swarm.worker as w
-    importlib.reload(w)
-
-    assert w._HEARTBEAT_INTERVAL_S == 3.0
+    assert get_env_config().swarm.swarm_heartbeat_interval_s == 3.0
 
 
 def test_worker_source_wires_heartbeat_around_tool_execute():
-    """Belt-and-braces: assert worker.py wraps registry.execute in HeartbeatTimer.
-
-    A pure-source check (no LLM/tool needed) guards against accidental
-    refactors that re-expose the silent-tool-call symptom from #132.
-    """
+    """The common tool wait wraps registry dispatch in its heartbeat."""
     import inspect
-    source = inspect.getsource(worker_mod)
-    assert "HeartbeatTimer(" in source
-    assert "task_heartbeat" in source
-    # The wrapping must enclose registry.execute, not sit beside it.
-    timer_idx = source.find("with HeartbeatTimer(")
-    exec_idx = source.find("registry.execute(", timer_idx)
-    next_dedent = source.find("\n        ", exec_idx)  # exit the `with` block
-    assert 0 < timer_idx < exec_idx < next_dedent
+    from src.kernel.tool_runner import wait_for_tool
+    from src.product.tool_invocation import ToolInvocation
+
+    invocation = inspect.getsource(ToolInvocation._invoke_tool)
+    assert "HeartbeatTimer(" in invocation
+    assert "heartbeat=heartbeat" in invocation
+    assert "registry.execute(tool_name, effective_args)" in invocation
+    wait = inspect.getsource(wait_for_tool)
+    assert "with heartbeat(_on_heartbeat)" in wait
+    assert "result_queue.get(timeout=wait)" in wait
 
 
 def test_swarm_tool_forwards_started_and_live_events(monkeypatch):

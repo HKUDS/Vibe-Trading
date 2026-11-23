@@ -10,7 +10,7 @@ def agent_artifact_dir(run_dir: Path, agent_id: str, task_id: str) -> Path:
     The single source of truth for this path — shared with the retry loop
     in ``runtime.py`` so the two can never compute it differently and drift
     apart.  The guard belongs here rather than only in
-    ``clear_agent_artifacts`` because this path is also used by ``run_worker``
+    ``clear_agent_artifacts`` because this path is also used by ``run_node``
     for ``mkdir``; validating the shared constructor protects both directory
     creation and recursive cleanup from the same path escape.
 
@@ -69,10 +69,16 @@ def agent_artifact_dir(run_dir: Path, agent_id: str, task_id: str) -> Path:
     return artifact_dir
 
 
+def node_thread(run_dir: Path, agent_id: str, task_id: str) -> Path:
+    """Locate the canonical thread outside the model's task workspace."""
+    workspace = agent_artifact_dir(run_dir, agent_id, task_id)
+    return run_dir / "nodes" / workspace.parent.name / workspace.name / "thread.jsonl"
+
+
 def clear_agent_artifacts(artifact_dir: Path) -> None:
     """Remove *artifact_dir* and everything in it, before a retry attempt.
 
-    A retry re-invokes :func:`run_worker` against the same ``artifact_dir``.
+    A retry re-invokes :func:`run_node` against the same ``artifact_dir``.
     Without this, a failed attempt's ``report.md`` (or any other file a tool
     wrote) would still be sitting there when the retried attempt reads the
     directory back via ``_resolve_summary``/``_report_written``/
@@ -81,7 +87,7 @@ def clear_agent_artifacts(artifact_dir: Path) -> None:
 
     Raises on failure rather than swallowing it: proceeding with a retry
     while known-stale artifacts remain would recreate the exact bug this
-    exists to prevent. ``run_worker`` recreates the directory itself
+    exists to prevent. ``run_node`` recreates the directory itself
     (``mkdir(parents=True, exist_ok=True)``) on its next invocation.
     """
     if artifact_dir.exists():
@@ -121,3 +127,12 @@ def collect_artifacts(run_dir: Path, artifact_dir: Path) -> list[str]:
             # failure is not a durable artifact and must not escape the run.
             continue
     return sorted(artifacts)
+
+
+def collect_node_artifacts(run_dir: Path, workspace: Path) -> list[str]:
+    """Publish the task's deliverables while keeping runtime records private."""
+    private = {"req.json", "state.json", "llm_usage.json", "run_manifest.json",
+               "artifacts/identity_evidence.json"}
+    relative = workspace.relative_to(run_dir)
+    reserved = {str(relative / name) for name in private}
+    return [path for path in collect_artifacts(run_dir, workspace) if path not in reserved]

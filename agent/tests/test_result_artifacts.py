@@ -21,7 +21,7 @@ from src.config.limits import TOOL_RESULT_LIMIT
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.tools.read_file_tool import ReadFileTool
-import src.swarm.worker as worker
+import src.swarm.node as worker
 from tests.test_agent_loop_deterministic_cache import _drive
 
 
@@ -157,7 +157,7 @@ def test_worker_model_can_recover_complete_result(tmp_path, monkeypatch):
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
         policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read evidence.',
                                   tools=['large_result_probe', 'read_file'], max_iterations=3),

@@ -99,7 +99,7 @@ def test_task_failed_event_does_not_leak_abs_path(tmp_path, monkeypatch):
             error=f"worker blew up writing {_ABS_LEAK}/secret/topology.log",
         )
 
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
     store, run = _drive_run(tmp_path)
 
     err = _event_data(store, run.id, "task_failed")["error"]
