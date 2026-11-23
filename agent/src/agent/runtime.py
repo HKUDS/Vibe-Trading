@@ -107,6 +107,9 @@ class AgentRuntime:
                 user messages to append; the loop takes them only after a
                 tool batch finished, before the next model call. ``None``
                 takes none.
+            system_prompt: A host-supplied prompt with a fixed tool catalog.
+            local_thread_path: A private durable thread for an isolated task.
+            pacing_type: Turn delivery policy selected by the caller.
         """
         self._owns_recorder = thread_recorder is None
         self._system_prompt = system_prompt
@@ -180,6 +183,15 @@ class AgentRuntime:
         set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
         if callable(set_usage_callback):
             set_usage_callback(self.usage.record_subagent)
+
+    def request_backoff(self, streak: int) -> float:
+        return _stream_retry_backoff_s(streak)
+
+    def request_max_delay(self) -> float:
+        return _stream_retry_max_delay_s()
+
+    def run_limits(self) -> RunLimits:
+        return RunLimits(self.max_iterations)
 
     def _should_stop(self) -> bool:
         return self.activity.cancel.is_set() or self.goals.stop_reason is not None
@@ -274,8 +286,8 @@ class AgentRuntime:
                 requests=SessionRequest(
                     llm=self.llm, cancel=self.activity.cancel, should_stop=self._should_stop,
                     record_usage=self.usage.record, recover_overflow=self._context_compactor.recover_context_overflow,
-                    timeout_seconds=_llm_timeout_seconds, backoff=_stream_retry_backoff_s,
-                    max_delay=_stream_retry_max_delay_s,
+                    timeout_seconds=_llm_timeout_seconds, backoff=self.request_backoff,
+                    max_delay=self.request_max_delay,
                 ),
                 state=state,
                 activity=self.activity, goals=self.goals, tools=self.tools, compactor=self._context_compactor,
@@ -285,7 +297,7 @@ class AgentRuntime:
             )
             turn = run_loop(
                 state.view,
-                steps.ports(), RunLimits(self.max_iterations), self.activity.cancel, self._emit,
+                steps.ports(), self.run_limits(), self.activity.cancel, self._emit,
             )
         except Exception as exc:
             return fail_turn(
@@ -363,14 +375,14 @@ class AgentRuntime:
         self.tool_env.identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,
-            history=self._conversation.thread.user_history if self._conversation.thread is not None else history,
+            history=(self._conversation.thread.user_history if self._local_thread_path is None else None),
             contextual_identity_constraints=(
                 get_env_config().agent_tuning.vibe_contextual_identity_constraints
             ),
             seed_prompt_symbols=self._conversation.thread is None or (
                 self._conversation.thread.queued_input_id is None and self._conversation.thread.answer_to_question_id is None
             ),
-            restored_state=self._conversation.thread.identity_state if self._conversation.thread is not None else None,
+            restored_state=(self._conversation.thread.identity_state if self._local_thread_path is None else None),
         )
 
         context = ContextBuilder(self.registry, self.memory,

@@ -10,7 +10,7 @@ from src.agent.loop_streaming import TurnStream
 from src.agent.tools import ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-import src.swarm.worker as worker
+import src.swarm.node as worker
 
 
 class AnswerModel:
@@ -73,7 +73,7 @@ def test_worker_delivers_without_tools_files_or_risk_table(tmp_path, monkeypatch
     llm = AnswerModel(answer)
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: llm)
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
-    result = worker.run_worker(
+    result = worker.run_node(
         SwarmAgentSpec(id="pm", role="PM", system_prompt="Decide.", tools=["get_market_data"]),
         SwarmTask(id="decision", agent_id="pm", prompt_template="Use the supplied report."),
         {"report": "Revenue USD 96.22B."}, {}, tmp_path,
@@ -94,7 +94,7 @@ def test_worker_actual_delivery_failure_is_not_success(tmp_path, monkeypatch, re
     llm = AnswerModel(answer, finish_reason=reason)
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: llm)
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
-    result = worker.run_worker(
+    result = worker.run_node(
         SwarmAgentSpec(id="pm", role="PM", system_prompt="Decide."),
         SwarmTask(id="decision", agent_id="pm", prompt_template="Review."), {}, {}, tmp_path,
         policy=ToolPolicy.from_config(get_env_config()),
@@ -122,7 +122,7 @@ def test_worker_iteration_exhaustion_keeps_partial_output(tmp_path, monkeypatch)
                                tool_calls=[ToolCallRequest("c1", "missing_tool", {})])
     monkeypatch.setattr(worker, "ChatLLM", lambda **kw: WorkingModel(""))
     monkeypatch.setattr(worker, "build_swarm_registry", lambda *a, **kw: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
-    result = worker.run_worker(
+    result = worker.run_node(
         SwarmAgentSpec(id="pm", role="PM", system_prompt="Decide.", max_iterations=1),
         SwarmTask(id="decision", agent_id="pm", prompt_template="Review."), {}, {}, tmp_path,
         policy=ToolPolicy.from_config(get_env_config()),

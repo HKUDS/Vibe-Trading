@@ -30,8 +30,9 @@ from src.config.schema import AgentConfig
 from src.providers.settings import _ensure_dotenv
 from src.providers.llm import uses_responses_api
 from src.session.thread import ThreadLog
+from src.session.thread_schema import ThreadItemError
 from src.swarm import grounding
-from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts, node_thread
+from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts, collect_node_artifacts, node_thread
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -474,7 +475,11 @@ class SwarmRuntime:
                 if error.startswith(_LAYER_DEADLINE_ERROR) and error.endswith(_UNKNOWN_OUTCOME):
                     raise ValueError(f"Cannot resume task {task.id}: {error}")
                 path = node_thread(prior_dir, task.agent_id, task.id)
-                if error == UNKNOWN_TOOL_OUTCOME or (path.is_file() and unknown_outcome(ThreadLog(path).read())):
+                try:
+                    unresolved = path.is_file() and unknown_outcome(ThreadLog(path).read(strict=True))
+                except (OSError, ThreadItemError):
+                    unresolved = True
+                if error == UNKNOWN_TOOL_OUTCOME or unresolved:
                     raise ValueError(f"Cannot resume task {task.id}: {UNKNOWN_TOOL_OUTCOME}")
             if not (prior_dir / "nodes").is_dir():
                 raise ValueError("Cannot resume a swarm run created before the AgentRuntime cutover. Start a new run explicitly.")
@@ -1027,7 +1032,9 @@ class SwarmRuntime:
                 continue
             if not self._copy_node_thread(prev_run_dir, run_dir, task):
                 continue
-            artifacts = _rehome_artifact_paths(prev.artifacts, prev_run_dir, run_dir)
+            workspace = agent_artifact_dir(prev_run_dir, task.agent_id, task.id)
+            paths = collect_node_artifacts(prev_run_dir, workspace)
+            artifacts = _rehome_artifact_paths(paths, prev_run_dir, run_dir)
             task_store.update_status(task.id, TaskStatus.pending, summary=prev.summary, artifacts=artifacts)
         if kept:
             logger.info(

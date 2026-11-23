@@ -21,7 +21,7 @@ def test_research_runtime_does_not_load_offline_numeric_checks():
     code = """
 import sys
 from src.agent.runtime import AgentRuntime
-from src.swarm.worker import run_worker
+from src.swarm.node import run_node
 assert not any(n.startswith(('evals.grounding', 'src.agent.grounding')) for n in sys.modules)
 """
     code = f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n" + code

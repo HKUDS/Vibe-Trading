@@ -10,10 +10,10 @@ import json
 import threading
 
 from src.kernel.contracts import LLMResponse, ToolCallRequest
-from src.swarm import checkpoint
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-from src.swarm.artifacts import agent_artifact_dir
-from src.swarm.worker import _run_worker_impl
+from src.session.thread import ThreadLog
+from src.swarm.artifacts import agent_artifact_dir, node_thread
+from src.swarm.node import UNKNOWN_TOOL_OUTCOME, run_node
 
 
 class Registry:
@@ -40,6 +40,9 @@ class Provider:
         self.steps = iter(steps)
         self.seen = []
 
+    def close(self):
+        pass
+
     def stream_chat(self, messages, **kwargs):
         self.seen.append(json.loads(json.dumps(messages)))
         step = next(self.steps)
@@ -49,14 +52,14 @@ class Provider:
 
 
 def run(tmp_path, registry, monkeypatch, provider, **kwargs):
-    monkeypatch.setattr("src.swarm.worker.build_swarm_registry", lambda *a, **k: registry)
-    return _run_worker_impl(
+    monkeypatch.setattr("src.swarm.node.build_swarm_registry", lambda *a, **k: registry)
+    monkeypatch.setattr("src.swarm.node.ChatLLM", lambda **kwargs: provider)
+    return run_node(
         SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="Research", max_iterations=4),
         SwarmTask(id="task", agent_id="analyst", prompt_template="Analyze NVDA"),
         {},
         {},
         tmp_path,
-        llm=provider,
         **kwargs,
         policy=ToolPolicy.from_config(get_env_config()),
     )
@@ -84,7 +87,7 @@ def test_retry_preserves_real_tool_result_and_partial_stream(tmp_path, monkeypat
     assert interrupted.summary == "Revenue $26B; remaining risk work"
     assert registry.calls == 1
     artifact = agent_artifact_dir(tmp_path, "analyst", "task")
-    assert (artifact / "messages.json").is_file()
+    assert node_thread(tmp_path, "analyst", "task").is_file()
     # Old tool-written deliverables must not replace the resumed conclusion.
     (artifact / "report.md").write_text("Old preliminary view")
     second = Provider([LLMResponse(content="Hold. Revenue $26B; risk still uncertain.", finish_reason="stop")])
@@ -113,31 +116,22 @@ def test_cancelled_stream_is_saved_without_dispatching_tools(tmp_path, monkeypat
     assert result.status == "cancelled"
     assert result.summary == "Available evidence: $26B"
     assert registry.calls == 0
-    data = json.loads((agent_artifact_dir(tmp_path, "analyst", "task") / checkpoint.FILENAME).read_text())
-    assert data["last_content"] == result.summary
+    items = ThreadLog(node_thread(tmp_path, "analyst", "task")).read()
+    assert any(item.type == "assistant" and item.get("content") == result.summary for item in items)
 
 
-def test_unknown_tool_outcome_is_disclosed_not_replayed(tmp_path):
-    initial = [
-        {"role": "system", "content": "research\n## Current Date & Time\nold"},
-        {"role": "user", "content": "task"},
-    ]
-    key = checkpoint.context_key(initial)
-    messages = initial + [
-        {
-            "role": "assistant",
-            "content": "Saving report",
-            "tool_calls": [{"id": "pending", "function": {"name": "write_file", "arguments": "{}"}}],
-        }
-    ]
-    checkpoint.save(tmp_path, key=key, messages=messages, last_content="Saving report", run_dir=tmp_path)
-    fresh = {"role": "system", "content": "research\n## Current Date & Time\nnew"}
-    restored, _ = checkpoint.restore(tmp_path, key=key, system=fresh, run_dir=tmp_path / "next")
-    assert restored[0] == fresh
-    outcomes = [m for m in restored if m.get("tool_call_id") == "pending"]
-    assert len(outcomes) == 1
-    assert json.loads(outcomes[0]["content"])["error_code"] == "interrupted_tool_result"
-    assert checkpoint.restore(tmp_path, key="different instructions", system=fresh, run_dir=tmp_path) is None
+def test_unknown_tool_outcome_is_disclosed_not_replayed(tmp_path, monkeypatch):
+    path = node_thread(tmp_path, "analyst", "task")
+    ThreadLog(path).append(
+        "assistant", "interrupted", phase="commentary", content="Saving report",
+        tool_calls=[{"id": "pending", "type": "function", "function": {"name": "write_file", "arguments": "{}"}}],
+    )
+    registry = Registry()
+    model = Provider([])
+    result = run(tmp_path, registry, monkeypatch, model, resume=True)
+    assert result.error == UNKNOWN_TOOL_OUTCOME
+    assert not model.seen
+    assert registry.calls == 0
 
 
 def test_empty_resumed_response_does_not_pass_using_old_report(tmp_path, monkeypatch):
@@ -179,10 +173,12 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     for task in tasks:
         previous.save_task(task)
     previous.update_status("a", TaskStatus.completed, summary="Revenue $26B")
-    previous.update_status("b", TaskStatus.failed, summary="Risk work in progress")
+    previous.update_status("b", TaskStatus.failed, summary="Risk work in progress",
+                           artifacts=["artifacts/b/b/report.md"])
     artifact = agent_artifact_dir(store.run_dir(prior.id), "b", "b")
     artifact.mkdir(parents=True)
-    (artifact / checkpoint.FILENAME).write_text('{"version": 1, "messages": []}')
+    prior_thread = node_thread(store.run_dir(prior.id), "b", "b")
+    ThreadLog(prior_thread).append("user", "prior-turn", content="synthesize", llm_content="synthesize")
     (artifact / "report.md").write_text("Prior partial work")
     resumed = prior.model_copy(update={"id": "next", "status": RunStatus.pending})
     store.create_run(resumed)
@@ -194,7 +190,7 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     assert summaries == {"a": "Revenue $26B"}
     assert current.load_task("b").status == TaskStatus.pending
     copied = agent_artifact_dir(store.run_dir(resumed.id), "b", "b")
-    assert (copied / checkpoint.FILENAME).read_bytes() == (artifact / checkpoint.FILENAME).read_bytes()
+    assert node_thread(store.run_dir(resumed.id), "b", "b").read_bytes() == prior_thread.read_bytes()
     assert (copied / "report.md").read_text() == "Prior partial work"
     # Different questions must not inherit prior securities' completed research.
     changed = resumed.model_copy(update={"id": "different", "user_vars": {"target": "JPM"}})
@@ -205,7 +201,7 @@ def test_explicit_continuation_copies_checkpoint_and_keeps_completed_input(tmp_p
     kept = {}
     SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))._apply_resume_overlay(changed, store.run_dir(changed.id), current, prior, kept)
     assert not kept
-    assert not (agent_artifact_dir(store.run_dir(changed.id), "b", "b") / checkpoint.FILENAME).exists()
+    assert not node_thread(store.run_dir(changed.id), "b", "b").exists()
 
 
 def test_agent_tool_resumes_original_run_without_rerouting(tmp_path, monkeypatch):
@@ -267,4 +263,105 @@ def test_fresh_final_response_supersedes_earlier_report_file(tmp_path, monkeypat
     assert result.summary == final
     artifact = agent_artifact_dir(tmp_path, "analyst", "task")
     assert (artifact / "report.md").read_text() == "Preliminary: risk sample is short."
-    assert json.loads((artifact / "messages.json").read_text())[-1]["content"] == final
+    items = ThreadLog(node_thread(tmp_path, "analyst", "task")).read()
+    assert [item.get("content") for item in items if item.type == "assistant"][-1] == final
+
+
+def test_pre_cutover_run_is_refused_before_preset_dispatch(tmp_path, monkeypatch):
+    import pytest
+
+    from src.swarm.models import RunStatus, SwarmRun
+    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.store import SwarmStore
+
+    store = SwarmStore(base_dir=tmp_path)
+    old = SwarmRun(
+        id="pre-cutover", preset_name="demo", status=RunStatus.failed,
+        created_at="2026-11-13T00:00:00Z",
+    )
+    store.create_run(old)
+    runtime = SwarmRuntime(store, policy=ToolPolicy.from_config(get_env_config()))
+    with pytest.raises(ValueError, match="before the AgentRuntime cutover"):
+        runtime.start_run("demo", {}, resume_from=old)
+
+
+def test_detached_mutation_stops_batch_and_refuses_retry(tmp_path, monkeypatch):
+    from src.agent.tools import BaseTool, ToolRegistry
+    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.store import SwarmStore
+
+    calls = []
+    done = threading.Event()
+
+    class MutatingTool(BaseTool):
+        name = "write_probe"
+        is_readonly = False
+
+
+        def execute(self, **kwargs):
+            calls.append(kwargs["operation"])
+            done.wait(10)
+            return '{"status":"ok"}'
+
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(MutatingTool())
+    model = Provider([
+        LLMResponse(tool_calls=[
+            ToolCallRequest("first", "write_probe", {"operation": "first"}),
+            ToolCallRequest("second", "write_probe", {"operation": "second"}),
+        ]),
+    ])
+    monkeypatch.setattr("src.swarm.node.ChatLLM", lambda **_: model)
+    monkeypatch.setattr("src.swarm.node.build_swarm_registry", lambda *a, **k: registry)
+    monkeypatch.setattr("src.product.tool_invocation._tool_timeout_seconds", lambda: 0.2)
+    runtime = SwarmRuntime(SwarmStore(tmp_path), policy=registry.policy)
+    events = []
+    try:
+        result = runtime._run_node_with_retries(
+            SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="Research", max_retries=2),
+            SwarmTask(id="task", agent_id="analyst", prompt_template="Analyze"),
+            {}, {}, tmp_path, events.append, "run",
+        )
+    finally:
+        done.set()
+    assert result.error == UNKNOWN_TOOL_OUTCOME
+    assert calls == ["first"]
+    assert not any(event.type == "task_retry" for event in events)
+    items = ThreadLog(node_thread(tmp_path, "analyst", "task")).read()
+    outcomes = {item.get("tool_call_id"): json.loads(item.get("content"))
+                for item in items if item.type == "tool_result"}
+    assert outcomes["first"]["outcome"] == "unknown"
+    assert outcomes["second"]["error_code"] == "tool_cancelled"
+
+
+def test_resumed_node_replays_evidence_without_restoring_identity_authority(tmp_path, monkeypatch):
+    from src.agent.tools import BaseTool, ToolRegistry
+    from src.product.identity.ledger import IdentityLedger
+
+    calls = []
+
+    class Probe(BaseTool):
+        name = "market_probe"
+
+        def execute(self, **kwargs):
+            calls.append(kwargs)
+            return '{"status":"ok"}'
+
+    workspace = agent_artifact_dir(tmp_path, "analyst", "task")
+    workspace.mkdir(parents=True)
+    identity = IdentityLedger(run_dir=workspace, user_message="Use AAPL.US.")
+    assert "AAPL.US" in identity.authorized_symbols
+    path = node_thread(tmp_path, "analyst", "task")
+    log = ThreadLog(path)
+    log.append("state", "older-attempt", workspace=str(workspace), identity=identity.export_state())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(Probe())
+    model = Provider([
+        LLMResponse(tool_calls=[ToolCallRequest("read", "market_probe", {"symbol": "AAPL.US"})]),
+        LLMResponse(content="Fresh authorization is required."),
+    ])
+    result = run(tmp_path, registry, monkeypatch, model, resume=True)
+    assert result.status == "completed"
+    assert not calls
+    receipts = [item for item in log.read() if item.type == "tool_result"]
+    assert len(receipts) == 1 and receipts[0].get("status") == "error"

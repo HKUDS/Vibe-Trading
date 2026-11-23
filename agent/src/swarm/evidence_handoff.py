@@ -140,7 +140,7 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
             source_task = store.load_task(task_id)
             source = agent_artifact_dir(run_dir, source_task.agent_id, task_id)
             thread = node_thread(run_dir, source_task.agent_id, task_id)
-            observations = _observations(source, task_id, errors, thread)
+            observations = _observations(source, task_id, errors, thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()

@@ -129,7 +129,7 @@ class WorkerStatus(str, Enum):
 
     ``cancelled`` mirrors ``TaskStatus.cancelled``: the worker stopped
     because ``cancel_run()`` was signalled, not because it failed. It must
-    never be retried (see ``SwarmRuntime._run_worker_with_retries``).
+    never be retried (see ``SwarmRuntime._run_node_with_retries``).
     """
 
     completed = "completed"

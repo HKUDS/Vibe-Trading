@@ -11,7 +11,7 @@ import json
 import pytest
 
 from src.swarm.presets import build_run_from_preset
-import src.swarm.worker as worker
+import src.swarm.node as worker
 
 
 def test_real_preset_tools_available_without_shell():

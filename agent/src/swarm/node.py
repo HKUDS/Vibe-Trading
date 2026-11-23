@@ -11,8 +11,10 @@ from typing import Any, Callable, NamedTuple, Protocol
 
 from src.agent.runtime import AgentRuntime
 from src.config.schema import AgentConfig
+from src.config.accessor import get_env_config
 from src.data_gateway.guidance import DATA_ACCESS_POLICY
-from src.kernel.contracts import LLMResponse, Stop
+from src.kernel.contracts import LLMResponse, RunLimits, Stop
+from src.agent.tools import BaseTool
 from src.kernel.progress import HeartbeatTimer
 from src.product.pacing import TurnPacing
 from src.product.identity.ledger import agent_authored_request
@@ -23,14 +25,18 @@ from src.product.tool_policy import ToolPolicy
 from src.product.usage import _normalize_llm_usage
 from src.providers.chat import ChatLLM
 from src.providers.response import ProviderStreamError
+from src.providers.content_filter import MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS
 from src.session.replay import STOPPED_TURN_NOTES, replay
 from src.session.thread import ThreadLog
-from src.swarm.artifacts import agent_artifact_dir, collect_artifacts, node_thread
+from src.session.thread_schema import ThreadItemError
+from src.swarm.artifacts import agent_artifact_dir, collect_node_artifacts, node_thread
+from src.swarm.context import NodeContext
 from src.swarm.evidence_handoff import prepare_handoff
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
-from src.tools.redaction import redact_text
+from src.tools.redaction import redact_payload, redact_text
+from src.tools.spawn_agent_tool import _WorkspaceTool
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +48,10 @@ class _CancellationSignal(Protocol):
 
 
 def _default_max_iterations() -> int:
-    from src.config.accessor import get_env_config
     return get_env_config().swarm.swarm_worker_max_iter
 
 
 def _default_timeout_seconds() -> int:
-    from src.config.accessor import get_env_config
     return get_env_config().swarm.swarm_worker_timeout
 
 
@@ -404,6 +408,9 @@ class NodeModel:
         self.measures: list[UsageMeasure] = []
         self.current_iteration = lambda: 1
         self.partial = ""
+        self.last_content = ""
+        self.filtered = 0
+        self.consecutive_filtered = 0
 
     @property
     def iteration(self):
@@ -434,9 +441,11 @@ class NodeModel:
         def heartbeat(payload):
             self.emit("task_heartbeat", {**payload, "phase": "llm", "iteration": self.iteration})
 
-        from src.agent.tuning import _heartbeat_interval_s
-        with HeartbeatTimer(tool_name=f"llm:{self.model_name or 'default'}",
-                            interval=_heartbeat_interval_s(), emit=heartbeat):
+        with HeartbeatTimer(
+            tool_name=f"llm:{getattr(self.llm, 'model_name', None) or 'default'}",
+            interval=get_env_config().swarm.swarm_heartbeat_interval_s,
+            emit=heartbeat,
+        ):
             try:
                 result = self.llm.stream_chat(
                     messages, timeout=seconds, idle_timeout_s=seconds, on_text_chunk=on_text, **kwargs,
@@ -449,6 +458,17 @@ class NodeModel:
                 raise
         if not self.stop.is_set() or _normalize_llm_usage(result.usage_metadata):
             self.account(messages, result)
+        if result.content:
+            self.last_content = result.content
+        if result.content_filter_triggered:
+            self.filtered += 1
+            self.consecutive_filtered += 1
+            if self.consecutive_filtered < MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS:
+                self.emit("content_filter_skipped", {
+                    "iteration": self.iteration, "content_filter_count": self.filtered,
+                })
+        else:
+            self.consecutive_filtered = 0
         return result
 
     def chat(self, messages, **kwargs):
@@ -463,10 +483,30 @@ class NodeModel:
         return {**fields, "token_source": "estimated" if "estimated" in sources else "provider" if sources else None}
 
 
+def _preview_tool_arguments(arguments: dict) -> dict[str, str]:
+    """Return a short, redacted argument preview for streamed events."""
+    preview: dict[str, str] = {}
+    for key, value in redact_payload(arguments).items():
+        if key == "run_dir":
+            continue
+        preview[key] = _truncate_preview(value)
+    return preview
+
+
+def _truncate_preview(value: Any, *, limit: int = 200) -> str:
+    """Stringify and truncate an event preview payload."""
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    else:
+        text = str(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
 class NodeEvents:
     """Project product tool lifecycle items onto the swarm dashboard contract."""
 
-    def __init__(self, emit, registry):
+    def __init__(self, emit, registry, stop):
+        self.stop = stop
         self.emit = emit
         self.registry = registry
         self.calls = {}
@@ -474,21 +514,24 @@ class NodeEvents:
     def __call__(self, kind: str, data: dict) -> None:
         subtype = data.get("kind")
         item = data.get("item") or {}
-        if kind == "item.started" and subtype == "tool.started":
+        if kind == "item.started" and subtype == "tool.started" and not self.stop.is_set():
             call_id = item["tool_call_id"]
             tool = self.registry.get(item["name"])
-            spec = tool._spec if isinstance(tool, MCPRemoteTool) else None
+            source = getattr(tool, "_tool", tool)
+            spec = source._spec if isinstance(source, MCPRemoteTool) else None
             remote = {"server": spec.server_name, "remote_tool": spec.remote_name} if spec else {}
             iteration = data["iter"] - 1
             self.calls[data["live_id"]] = (iteration, remote)
             self.emit(kind, {
                 "kind": subtype, "live_id": f"tool:{call_id}", "iteration": iteration,
                 "item": {"type": "tool_result", "tool_call_id": call_id, "name": item["name"],
-                         "arguments": {key: val for key, val in item.get("arguments", {}).items() if key != "run_dir"},
+                         "arguments": _preview_tool_arguments(item.get("arguments", {})),
                          **remote},
             })
         elif kind == "item.completed" and data["live_id"] in self.calls:
             iteration, remote = self.calls.pop(data["live_id"])
+            if '"error_code": "tool_cancelled"' in item.get("content", ""):
+                return
             self.emit(kind, {"kind": subtype, "live_id": f"tool:{item['tool_call_id']}",
                              "item": {key: value for key, value in item.items()
                                       if key not in {"artifact", "cached"}} | {"iteration": iteration, **remote}})
@@ -499,6 +542,39 @@ class NodeEvents:
 
 class NodePacing(TurnPacing):
     """Retain task delivery rules while using the product execution loop."""
+
+    manages_context = True
+
+    def prepare_context(self, state):
+        if not hasattr(self, "budget"):
+            self.budget = NodeContext(
+                model=getattr(self.llm, "model_name", None),
+                artifact_dir=state.run_dir,
+                can_read_files=any(tool.get("function", {}).get("name") == "read_file"
+                                   for tool in state.view.tools or []),
+            )
+        messages, tools = state.view.messages, state.view.tools
+        offloaded = self.budget.compact(messages, tools)
+        if offloaded:
+            self.llm.emit("worker_context_offloaded", {"iteration": state.iteration - 1, "results": offloaded})
+        tokens = self.budget.tokens(messages, tools)
+        if tokens > self.budget.budget(messages, tools).total:
+            self.llm.emit("worker_token_limit", {"tokens": tokens})
+            return Stop("node_context_limit")
+        return None
+
+    def observe_context(self, state, request, usage):
+        self.budget.observe(request, state.view.tools, usage)
+
+    def after_tools(self, state, response, progress, cancel):
+        self.budget.pending.update(call.id for call in response.tool_calls)
+        return False
+
+    def capture_interrupted_response(self, state):
+        if self.llm.partial:
+            self.conversation.append_assistant(
+                state.view.messages, {"role": "assistant", "content": self.llm.partial}, phase="commentary",
+            )
 
     def write_directives(self, state, writes):
         wrap_at = max(1, int(self.max_iterations * 0.8))
@@ -522,11 +598,11 @@ def _node_history(items, run_dir: Path):
     """Continue saved task input with paths rebased into the resumed workspace."""
     if not items:
         return None
-    original_root = next(
-        (str(Path(item.get("workspace")).parents[2]) for item in reversed(items)
-         if item.type == "state" and item.get("workspace")),
-        str(run_dir),
-    )
+    previous_roots = {
+        str(Path(item.get("workspace")).parents[2])
+        for item in items if item.type == "state" and item.get("workspace")
+    }
+    previous_roots.discard(str(run_dir))
     first_user = next((item.seq for item in items if item.type == "user"), None)
     messages = [
         message for message in replay(item for item in items if item.type != "user" or item.seq == first_user)
@@ -534,7 +610,8 @@ def _node_history(items, run_dir: Path):
     ]
     for message in messages:
         if isinstance(message.get("content"), str):
-            message["content"] = message["content"].replace(original_root, str(run_dir))
+            for root in previous_roots:
+                message["content"] = message["content"].replace(root, str(run_dir))
     messages.append({"role": "user", "content":
         "Continue the interrupted task from the saved work. Reuse available observations and files; "
         "finish the remaining request. The prior response was incomplete."})
@@ -546,9 +623,21 @@ class TemplateVars(dict):
         return f"(determine the appropriate {key} based on the objective)"
 
 
+def _best_summary(messages: list[dict], fallback: str) -> str:
+    """Extract the best summary from all assistant messages."""
+    texts = [
+        m["content"] for m in messages
+        if m.get("role") == "assistant" and m.get("content")
+        and len(m["content"].strip()) > 100
+    ]
+    if texts:
+        return max(texts, key=len)
+    return fallback
+
+
 def _node_result(result, stop, model, items, workspace, emit, *, resumed):
     iterations = result["iterations"]
-    summary = result.get("content") or model.partial
+    summary = result.get("content") or model.partial or model.last_content
     error = result.get("reason")
     status = result["status"]
     if unknown_outcome(items):
@@ -557,7 +646,7 @@ def _node_result(result, stop, model, items, workspace, emit, *, resumed):
     elif stop.expired:
         status, error = "timeout", None
         elapsed = time.monotonic() - stop.started
-        summary = _resolve_summary(workspace, summary or f"Worker timed out after {elapsed:.0f}s ({iterations} iterations)")
+        summary = _resolve_summary(workspace, _best_summary(replay(items), summary) or f"Worker timed out after {elapsed:.0f}s ({iterations} iterations)")
         emit("worker_timeout", {"elapsed": elapsed})
     elif status == "cancelled":
         iterations = max(0, iterations - 1) if model.partial or model.iteration + 1 == iterations else iterations
@@ -565,21 +654,26 @@ def _node_result(result, stop, model, items, workspace, emit, *, resumed):
         error = None
         emit("worker_cancelled", {"iterations": iterations})
     elif status == "success" or result.get("stop_reason") == "final_answer":
-        summary = summary if summary or resumed else _resolve_summary(workspace, summary)
-        error = _delivery_error(summary)
+        delivered = result.get("content") or ""
+        summary = delivered or _resolve_summary(workspace, "")
+        error = _delivery_error(delivered if resumed else summary)
         status = "incomplete" if error else "completed"
         emit(f"worker_{status}", {"iterations": iterations, **({"reason": error} if error else {})})
-    elif not error and status == "failed" and not summary:
-        summary = "" if resumed else _resolve_summary(workspace, "")
-        error = _delivery_error(summary)
-        status = "incomplete" if error else "completed"
-        emit(f"worker_{status}", {"iterations": iterations, **({"reason": error} if error else {})})
+    elif result.get("stop_reason") == "node_context_limit":
+        status, error = "token_limit", None
+        iterations -= 1
+        summary = _resolve_summary(workspace, summary or f"Worker context too large ({iterations} iterations)")
     elif error and error.startswith("provider output truncated"):
         status = "token_limit"
         error = "Model output was truncated; increase the provider output-token limit and retry."
         emit("worker_token_limit", {"reason": result["reason"].split("(")[1].split(")")[0], "error": error})
+    elif error and error.startswith("content_filter_circuit_breaker:"):
+        emit("content_filter_circuit_breaker", {
+            "iteration": iterations - 1, "count": result.get("content_filter_count", iterations),
+        })
     elif error and error.startswith("reached max iterations"):
         status, error = "incomplete", "iteration limit reached before a final response"
+        summary = _resolve_summary(workspace, _best_summary(replay(items), summary))
         emit("worker_iteration_limit", {})
     else:
         status = "failed"
@@ -588,6 +682,21 @@ def _node_result(result, stop, model, items, workspace, emit, *, resumed):
         summary = _resolve_summary(workspace, summary)
         emit("worker_failed", {"error": error})
     return status, summary, iterations, error
+
+
+class NodeRuntime(AgentRuntime):
+    """Use the swarm transport tuning on the common turn engine."""
+
+    def request_backoff(self, streak: int) -> float:
+        config = get_env_config().swarm
+        return min(config.swarm_stream_retry_delay_s * 2 ** min(streak - 1, 62),
+                   config.swarm_stream_retry_max_delay_s)
+
+    def request_max_delay(self) -> float:
+        return get_env_config().swarm.swarm_stream_retry_max_delay_s
+
+    def run_limits(self) -> RunLimits:
+        return RunLimits(self.max_iterations, frozenset({"length", "max_tokens", "max_output_tokens"}))
 
 
 def run_node(
@@ -614,7 +723,11 @@ def run_node(
     workspace.mkdir(parents=True, exist_ok=True)
     thread_path = node_thread(run_dir, agent_spec.id, task.id)
     thread = ThreadLog(thread_path)
-    previous = thread.read() if resume else []
+    try:
+        previous = thread.read(strict=True) if resume else []
+    except (OSError, ThreadItemError):
+        emit("worker_failed", {"error": UNKNOWN_TOOL_OUTCOME})
+        return WorkerResult(status="failed", summary="", error=UNKNOWN_TOOL_OUTCOME)
     if unknown_outcome(previous):
         emit("worker_failed", {"error": UNKNOWN_TOOL_OUTCOME})
         return WorkerResult(status="failed", summary="", error=UNKNOWN_TOOL_OUTCOME)
@@ -624,11 +737,15 @@ def run_node(
         agent_spec.tools, policy=policy, agent_config=agent_config,
         include_shell_tools=include_shell_tools, skill_allowlist=agent_spec.skills or None,
         background_manager=background, background_scope=background.scope,
-        workspace=workspace,
     )
+    available = {name for name in agent_spec.tools if registry.get(name) is not None}
+    for name in available:
+        tool = registry.get(name)
+        if isinstance(tool, BaseTool):
+            registry.register(_WorkspaceTool(tool, workspace.resolve(), pin_undeclared=True))
     system = build_worker_prompt(
         agent_spec, upstream_summaries, _filter_skill_descriptions(SkillsLoader(), agent_spec.skills),
-        grounding_block=grounding_block, available_tools=set(registry.tool_names),
+        grounding_block=grounding_block, available_tools=available,
     )
     try:
         note = prepare_handoff(run_dir, task, workspace)
@@ -645,27 +762,32 @@ def run_node(
     stop = NodeStop(cancel_event, agent_spec.timeout_seconds or _default_timeout_seconds())
     model = NodeModel(llm, stop, emit, record_usage)
     try:
-        child = AgentRuntime(
+        child = NodeRuntime(
             registry=registry, llm=model, memory=WorkspaceMemory(run_dir=str(workspace)),
-            event_callback=NodeEvents(emit, registry), cancel_event=stop,
+            event_callback=NodeEvents(emit, registry, stop), cancel_event=stop,
             max_iterations=agent_spec.max_iterations or _default_max_iterations(),
             background_manager=background, system_prompt=system, local_thread_path=thread_path,
             pacing_type=NodePacing,
         )
         model.current_iteration = lambda: child.activity.iteration
         child.invocation.stop_on_unknown = stop.set
+        child.invocation.heartbeat_interval = lambda: get_env_config().swarm.swarm_heartbeat_interval_s
         child.invocation.successful_reads = successful_reads if successful_reads is not None else {}
-        child.delivery.preview_limit = 203
+        child.delivery.raw_event_arguments = True
+        child.delivery.truncate_preview_with_ellipsis = True
         with agent_authored_request():
             result = child.run(prompt, history=history or None)
     finally:
         llm.close()
+    try:
+        items = thread.read(strict=True)
+    except (OSError, ThreadItemError):
+        emit("worker_failed", {"error": UNKNOWN_TOOL_OUTCOME})
+        return WorkerResult(status="failed", summary="", error=UNKNOWN_TOOL_OUTCOME, **model.usage_fields())
     status, summary, iterations, error = _node_result(
-        result, stop, model, thread.read(), workspace, emit, resumed=bool(history),
+        result, stop, model, items, workspace, emit, resumed=bool(history),
     )
-    private = {"req.json", "state.json", "llm_usage.json", "run_manifest.json", "artifacts/identity_evidence.json"}
-    reserved = {str(workspace.relative_to(run_dir) / name) for name in private}
-    artifacts = [path for path in collect_artifacts(run_dir, workspace) if path not in reserved]
     return WorkerResult(status=status, summary=summary, iterations=iterations, error=error,
-                        artifact_paths=artifacts, content_filter_warnings=result.get("content_filter_warnings") or [],
+                        artifact_paths=collect_node_artifacts(run_dir, workspace),
+                        content_filter_warnings=result.get("content_filter_warnings") or [],
                         **model.usage_fields())

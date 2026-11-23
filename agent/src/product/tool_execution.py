@@ -289,7 +289,7 @@ class ToolExecution:
                     execution_plan.append((tc, refused))
                     continue
 
-            use_shared_cache = self.invocation.successful_reads is None or not self.replay._is_tool_readonly(tc.name)
+            use_shared_cache = self.invocation.successful_reads is None
             if use_shared_cache and self.replay.deliver_cached(tc, tool_def, repeatable, dedup_key, context, messages, trace, iteration, self.delivery):
                 continue
 

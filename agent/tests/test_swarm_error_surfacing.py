@@ -62,7 +62,7 @@ def auth_failure(monkeypatch):
             error=f"LLM call failed at iteration 0: {exc}",
         )
 
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
 
 
 def test_error_captured_in_run_json(tmp_path, auth_failure):
@@ -92,6 +92,6 @@ def test_unset_model_runtime_error_surfaces(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
 
-    monkeypatch.setattr(rt, "run_worker", boom)
+    monkeypatch.setattr(rt, "run_node", boom)
     run = _run(tmp_path)
     assert "LANGCHAIN_MODEL_NAME" in json.dumps(mcp_server._run_to_dict(run))

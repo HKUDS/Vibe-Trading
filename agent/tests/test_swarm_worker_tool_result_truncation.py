@@ -1,7 +1,7 @@
-"""Tests that run_worker() truncates oversized tool results the same way
+"""Tests that run_node() truncates oversized tool results the same way
 agent/src/agent/loop.py does.
 
-Regression: run_worker() truncated an oversized tool result with a raw
+Regression: run_node() truncated an oversized tool result with a raw
 result[:TOOL_RESULT_LIMIT] slice, no notice, frequently invalid JSON, and no
 correction of any envelope field the cut falsifies. The main agent loop, given
 the identical tool output and the identical limit, uses the shared
@@ -21,8 +21,8 @@ from unittest.mock import patch
 from src.config.limits import TOOL_RESULT_LIMIT, truncate_tool_result
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-import src.swarm.worker as worker_mod
-from src.swarm.worker import run_worker
+import src.swarm.node as worker_mod
+from src.swarm.node import run_node
 
 FINAL_TEXT = (
     "# BTC-USDT — Short-Term View\n\n"
@@ -73,8 +73,7 @@ class _ScriptedChatLLM:
 
     def stream_chat(
         self, messages, tools=None, on_text_chunk=None, timeout=None,
-        on_waiting_chunk=None,
-    ) -> LLMResponse:
+        on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         self.received_messages.append(list(messages))
         if self._responses:
             return self._responses.pop(0)
@@ -102,7 +101,7 @@ def _run(monkeypatch, tmp_path: Path, llm: _ScriptedChatLLM, tool_result: str) -
         ),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        run_worker(
+        run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,

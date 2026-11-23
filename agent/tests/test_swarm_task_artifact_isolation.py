@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pytest
 
-import src.swarm.worker as worker
+import src.swarm.node as worker
 from src.kernel.contracts import LLMResponse, ToolCallRequest
-from src.swarm.artifacts import agent_artifact_dir
+from src.session.thread import ThreadLog
+from src.swarm.artifacts import agent_artifact_dir, node_thread
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore
@@ -80,9 +81,9 @@ def test_runtime_preserves_each_same_agent_tasks_real_files(
         assert task.summary.startswith(f"# {task.id}\n")
         directory = store.run_dir(run.id) / "artifacts" / agent.id / task.id
         assert (directory / "report.md").read_text() == task.summary
-        assert (directory / "summary.md").read_text() == task.summary
-        messages = json.loads((directory / "messages.json").read_text())
-        assert messages[1]["content"] == task.id
+        assert not (directory / "summary.md").exists()
+        messages = [item.to_dict() for item in ThreadLog(node_thread(store.run_dir(run.id), task.agent_id, task.id)).read()]
+        assert [m["content"] for m in messages if m["type"] == "user"] == [task.id]
         assert all(path.startswith(f"artifacts/{agent.id}/{task.id}/") for path in task.artifacts)
 
 

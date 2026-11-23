@@ -16,6 +16,11 @@ MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS = 1
 class TurnPacing:
     """Own forced-text retries, empty responses, and goal continuation."""
 
+    manages_context = False
+
+    def capture_interrupted_response(self, state) -> None:
+        """Allow a task delivery policy to retain an interrupted draft."""
+
     def __init__(self, conversation, provider, llm, max_iterations, goals) -> None:
         self.conversation = conversation
         self.provider = provider

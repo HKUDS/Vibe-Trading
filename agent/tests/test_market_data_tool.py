@@ -14,7 +14,7 @@ import pandas as pd
 from src.market_data import fetch_market_data_json
 from src.swarm.models import SwarmAgentSpec
 from src.swarm.presets import list_presets, load_preset
-from src.swarm.worker import build_worker_prompt
+from src.swarm.node import build_worker_prompt
 from src.tools import build_swarm_registry
 
 

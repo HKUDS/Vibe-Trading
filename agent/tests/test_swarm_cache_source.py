@@ -36,8 +36,8 @@ from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmRun, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore
-import src.swarm.worker as worker_mod
-from src.swarm.worker import _estimate_tokens, _measure_usage, run_worker
+import src.swarm.node as worker_mod
+from src.swarm.node import _measure_usage, run_node
 
 
 # --------------------------------------------------------------------------- #
@@ -146,7 +146,7 @@ def test_estimate_tokens_stays_a_two_tuple_wrapper(usage_metadata: dict | None) 
     messages = [{"role": "user", "content": "abc"}]
     response = LLMResponse(content="some text", usage_metadata=usage_metadata)
     m = _measure_usage(messages, response)
-    assert _estimate_tokens(messages, response) == (m.input_tokens, m.output_tokens)
+    assert _measure_usage(messages, response)[:2] == (m.input_tokens, m.output_tokens)
 
 
 # --------------------------------------------------------------------------- #
@@ -300,7 +300,7 @@ class _ScriptedLLM:
         return None
 
     def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None,
-                    should_cancel=None, on_waiting_chunk=None) -> LLMResponse:
+                    should_cancel=None, on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         """Return the next scripted response, optionally cancelling first."""
         idx = self.calls
         self.calls += 1
@@ -335,7 +335,7 @@ def _drive_worker(
         patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: _Registry()),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        return run_worker(
+        return run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
@@ -469,14 +469,14 @@ def _run_with_retries(
     )
     task = SwarmTask(id="task-1", agent_id="analyst", prompt_template="Analyze")
     with (
-        patch("src.swarm.runtime.run_worker", side_effect=results),
+        patch("src.swarm.runtime.run_node", side_effect=results),
         patch("src.swarm.runtime._worker_retry_delay_s", return_value=0.0),
         patch(
             "src.swarm.runtime._wait_for_worker_retry",
             return_value=cancelled_during_wait,
         ),
     ):
-        return runtime._run_worker_with_retries(
+        return runtime._run_node_with_retries(
             agent_spec=agent,
             task=task,
             upstream_summaries={},

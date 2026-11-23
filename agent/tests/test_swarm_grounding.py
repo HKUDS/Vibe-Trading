@@ -22,7 +22,7 @@ from src.swarm import grounding
 from src.swarm.models import SwarmAgentSpec, SwarmRun, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.task_store import TaskStore
-from src.swarm.worker import build_worker_prompt
+from src.swarm.node import build_worker_prompt
 
 
 # --------------------------------------------------------------------------- #
@@ -323,7 +323,7 @@ def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatc
         seen.append(kwargs["grounding_block"])
         return WorkerResult(status="completed", summary="done")
 
-    monkeypatch.setattr(runtime, "_run_worker_with_retries", _fake_worker)
+    monkeypatch.setattr(runtime, "_run_node_with_retries", _fake_worker)
 
     results = runtime._execute_layer(
         run=run,

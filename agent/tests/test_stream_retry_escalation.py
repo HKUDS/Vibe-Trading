@@ -26,7 +26,7 @@ from pydantic import ValidationError
 
 import src.agent.runtime as loop_mod
 import src.agent.tuning as tuning_mod
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 from src.config.env_schema import AgentTuningConfig, SwarmConfig
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.providers.response import ProviderStreamError
@@ -85,7 +85,7 @@ class _ScriptedWorkerLLM:
         """No-op: the stub owns no HTTP client."""
         return None
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
         """Play the next scripted entry, or repeat the final response."""
         self.calls += 1
         if self._script:
@@ -134,7 +134,7 @@ def _tool_response(idx: int) -> LLMResponse:
     )
 
 
-def _run_worker(
+def _run_node(
     monkeypatch,
     tmp_path: Path,
     llm: _ScriptedWorkerLLM,
@@ -153,9 +153,9 @@ def _run_worker(
         ``time.sleep`` duration observed inside the worker.
     """
     sleeps: list[float] = []
-    monkeypatch.setattr(worker_mod.time, "sleep", lambda s: sleeps.append(s))
-    monkeypatch.setattr(worker_mod, "_STREAM_RETRY_DELAY_S", 1.0)
-    monkeypatch.setattr(worker_mod, "_STREAM_RETRY_MAX_DELAY_S", 8.0)
+    monkeypatch.setattr(worker_mod.NodeStop, "wait", lambda self, delay: bool(sleeps.append(delay)))
+    monkeypatch.setenv("SWARM_STREAM_RETRY_DELAY_S", "1")
+    monkeypatch.setenv("SWARM_STREAM_RETRY_MAX_DELAY_S", "8")
     agent_spec = worker_mod.SwarmAgentSpec(
         id="analyst",
         role="Synthesis analyst",
@@ -170,7 +170,7 @@ def _run_worker(
         patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: _EmptyRegistry()),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        result = worker_mod.run_worker(
+        result = worker_mod.run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent_spec,
             task=task,
@@ -185,7 +185,7 @@ def test_first_failure_sleeps_configured_base(monkeypatch, tmp_path):
     """One retryable failure → exactly one sleep of the configured base (1.0)."""
     llm = _ScriptedWorkerLLM([_transient_error(), LLMResponse(content=FINAL_TEXT)])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [1.0]
@@ -195,7 +195,7 @@ def test_existing_single_failure_still_retried_once(monkeypatch, tmp_path):
     """One retryable failure → exactly two stream_chat calls (no multi-retry)."""
     llm = _ScriptedWorkerLLM([_transient_error(), LLMResponse(content=FINAL_TEXT)])
 
-    result, _ = _run_worker(monkeypatch, tmp_path, llm)
+    result, _ = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert llm.calls == 2
@@ -215,7 +215,7 @@ def test_delay_escalates_across_consecutive_iterations(monkeypatch, tmp_path):
         _transient_error(), LLMResponse(content=FINAL_TEXT),
     ])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm, max_iterations=4)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm, max_iterations=4)
 
     assert result.status == "completed"
     assert sleeps == [1.0, 2.0, 4.0]
@@ -225,7 +225,7 @@ def test_streak_resets_after_clean_iteration(monkeypatch, tmp_path):
     """A clean first-attempt iteration resets the streak to the base delay."""
     llm = _ScriptedWorkerLLM([_tool_response(0), _transient_error()])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm, max_iterations=3)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm, max_iterations=3)
 
     assert result.status == "completed"
     assert sleeps == [1.0]
@@ -235,7 +235,7 @@ def test_non_retryable_error_no_sleep_no_escalation(monkeypatch, tmp_path):
     """A deterministic 4xx fails the worker with no sleep recorded."""
     llm = _ScriptedWorkerLLM([_bad_request_error()])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm, max_iterations=3)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm, max_iterations=3)
 
     assert result.status == "failed"
     assert sleeps == []
@@ -245,7 +245,7 @@ def test_retry_after_honored(monkeypatch, tmp_path):
     """A 429 with Retry-After: 7 sleeps exactly 7 seconds."""
     llm = _ScriptedWorkerLLM([_rate_limit_error("7")])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [7.0]
@@ -255,7 +255,7 @@ def test_retry_after_clamped_to_max(monkeypatch, tmp_path):
     """A Retry-After larger than the configured cap is clamped to the cap."""
     llm = _ScriptedWorkerLLM([_rate_limit_error("500")])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [8.0]
@@ -265,7 +265,7 @@ def test_garbage_retry_after_falls_back_to_backoff(monkeypatch, tmp_path):
     """A non-numeric Retry-After header falls back to the exponential delay."""
     llm = _ScriptedWorkerLLM([_rate_limit_error("soon")])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [1.0]
@@ -339,8 +339,7 @@ class _FlakyLoopLLM:
         timeout: int | None = None,
         idle_timeout_s: float | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        on_waiting_chunk=None,
-    ) -> LLMResponse:
+        on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         """Raise the next queued error or return the final response."""
         self.calls += 1
         if self._errors:

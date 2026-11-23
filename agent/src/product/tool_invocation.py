@@ -90,6 +90,8 @@ class ToolInvocation:
         self._order_attempts = set()
         self._order_attempt_lock = threading.Lock()
 
+    heartbeat_interval = staticmethod(_heartbeat_interval_s)
+
     def reset(self) -> None:
         self._order_attempts.clear()
 
@@ -101,6 +103,8 @@ class ToolInvocation:
         call_id: str,
     ) -> tuple[str, int]:
         """Screen effective arguments, run hooks and invoke with the bound wait policy."""
+        if self.stop_on_unknown is not None and self.cancelled():
+            return json.dumps({"status": "error", "error_code": "tool_cancelled", "skipped": True}), 0
         readonly = self.replay._is_tool_readonly(tool_name)
         order_tool = self._is_order_tool(tool_name)
         prepared = prepare_tool_call(
@@ -134,7 +138,13 @@ class ToolInvocation:
                 }), 0
 
         cache = self.successful_reads
-        key = self.replay._identical_call_key(tool_name, effective_args) if readonly and cache is not None else None
+        key = None
+        if readonly and cache is not None:
+            tool = self.env.registry.get(tool_name)
+            bind_workspace = getattr(tool, "workspace_arguments", None)
+            normalized, refusal = bind_workspace(effective_args) if bind_workspace else (effective_args, None)
+            if refusal is None:
+                key = self.replay._identical_call_key(tool_name, normalized)
         if key is not None and key in cache:
             cached = cache[key]
             payload = _parse_tool_payload(cached)
@@ -143,11 +153,16 @@ class ToolInvocation:
             return f"{cached}\n\n[Repeat: prior successful read]", 0
 
         def heartbeat(emit):
-            return HeartbeatTimer(tool_name=tool_name, interval=_heartbeat_interval_s(), emit=emit)
+            return HeartbeatTimer(tool_name=tool_name, interval=self.heartbeat_interval(), emit=emit)
 
         limit = _tool_timeout_seconds()
+        def invoke():
+            if self.stop_on_unknown is not None and self.cancelled():
+                return json.dumps({"status": "error", "error_code": "tool_cancelled", "skipped": True})
+            return self.env.registry.execute(tool_name, effective_args)
+
         result, elapsed_ms = wait_for_tool(
-            tool_name, call_id, lambda: self.env.registry.execute(tool_name, effective_args),
+            tool_name, call_id, invoke,
             readonly=readonly, detachable=not order_tool,
             timeout=limit if not order_tool and limit > 0 else None,
             cancelled=self.cancelled, progress=self.progress,
@@ -165,10 +180,10 @@ class ToolInvocation:
 
     def _is_order_tool(self, tool_name: str) -> bool:
         """Return whether a tool name can submit or cancel an order."""
-        name = str(tool_name or "").casefold()
-        if any(marker in name for marker in ("place_order", "cancel_order", "submit_order", "replace_order")):
+        from src.tools.spawn_agent_tool import is_order_action_name, is_trading_state_tool
+
+        if is_order_action_name(str(tool_name or "")):
             return True
-        from src.tools.spawn_agent_tool import is_trading_state_tool
 
         get_tool = getattr(self.env.registry, "get", None)
         tool = get_tool(tool_name) if callable(get_tool) else None

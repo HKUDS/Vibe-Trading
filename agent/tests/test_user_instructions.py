@@ -20,7 +20,7 @@ from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.config.accessor import reset_env_config
 from src.swarm.models import SwarmAgentSpec
-from src.swarm.worker import build_worker_prompt
+from src.swarm.node import build_worker_prompt
 
 pytestmark = pytest.mark.unit
 

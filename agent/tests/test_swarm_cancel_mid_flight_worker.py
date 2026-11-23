@@ -3,12 +3,12 @@ not just skip layers that have not started yet.
 
 Pre-fix: cancel_event was threaded from cancel_run() into _execute_run and
 _execute_layer, and polled between layers, but was never passed into
-_run_worker_with_retries or run_worker. A worker already running when
+_run_node_with_retries or run_node. A worker already running when
 cancel_run() fired ran to completion untouched, exactly the gap AgentRuntime's
 should_cancel mechanism (agent/src/agent/loop.py) already closed for the
 main, non-swarm agent loop.
 
-Post-fix: cancel_event reaches run_worker(), is passed to
+Post-fix: cancel_event reaches run_node(), is passed to
 ChatLLM.stream_chat() as should_cancel (interrupting an in-flight LLM
 stream), and is checked at the top of each ReAct iteration and right after
 the stream returns, mirroring AgentRuntime's cooperative-cancellation
@@ -60,7 +60,7 @@ def test_cancel_mid_flight_worker_stops_promptly(tmp_path, monkeypatch):
             time.sleep(0.01)
         return WorkerResult(status="completed", summary="done")
 
-    monkeypatch.setattr(rt, "run_worker", slow_worker)
+    monkeypatch.setattr(rt, "run_node", slow_worker)
     store, runtime, run = _make_run(tmp_path)
     cancel_event = threading.Event()
 
@@ -79,8 +79,8 @@ def test_cancel_mid_flight_worker_stops_promptly(tmp_path, monkeypatch):
     )
 
 
-def test_run_worker_receives_cancel_event_kwarg(tmp_path, monkeypatch):
-    """The retry wrapper must actually forward cancel_event to run_worker,
+def test_run_node_receives_cancel_event_kwarg(tmp_path, monkeypatch):
+    """The retry wrapper must actually forward cancel_event to run_node,
     not just accept it."""
     received = {}
 
@@ -88,7 +88,7 @@ def test_run_worker_receives_cancel_event_kwarg(tmp_path, monkeypatch):
         received["cancel_event"] = kwargs.get("cancel_event")
         return WorkerResult(status="completed", summary="done")
 
-    monkeypatch.setattr(rt, "run_worker", capture_worker)
+    monkeypatch.setattr(rt, "run_node", capture_worker)
     store, runtime, run = _make_run(tmp_path)
     cancel_event = threading.Event()
 
@@ -109,7 +109,7 @@ def test_cancelled_worker_result_persists_as_cancelled_task(tmp_path, monkeypatc
         assert kwargs["cancel_event"].is_set()
         return WorkerResult(status="cancelled", summary="stopped on request", iterations=2)
 
-    monkeypatch.setattr(rt, "run_worker", cancelling_worker)
+    monkeypatch.setattr(rt, "run_node", cancelling_worker)
     store, runtime, run = _make_run(tmp_path)
     cancel_event = threading.Event()
 
@@ -144,7 +144,7 @@ def test_cancel_run_wakes_worker_retry_wait(tmp_path, monkeypatch):
 
     parent = ObservedEvent()
     runtime._cancel_events[run.id] = parent
-    monkeypatch.setattr(rt, "run_worker", worker)
+    monkeypatch.setattr(rt, "run_node", worker)
     monkeypatch.setattr(rt, "_worker_retry_delay_s", lambda attempt: 3.0)
     thread = threading.Thread(target=runtime._execute_run, args=(run, parent))
     thread.start()
@@ -164,7 +164,7 @@ def test_cancel_run_wakes_worker_retry_wait(tmp_path, monkeypatch):
 
 
 def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkeypatch):
-    from src.swarm.worker import UsageMeasure
+    from src.swarm.node import UsageMeasure
 
     store, runtime, run = _make_run(tmp_path)
     run.agents[0].max_retries = 1
@@ -214,7 +214,7 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
         yield from real_as_completed(futures, timeout=timeout)
 
     monkeypatch.setattr(store, "_write_lock", DelayedAppendLock())
-    monkeypatch.setattr(rt, "run_worker", worker)
+    monkeypatch.setattr(rt, "run_node", worker)
     monkeypatch.setattr(rt, "as_completed", expire_first_layer)
     monkeypatch.setattr(rt, "_worker_retry_delay_s", lambda attempt: 0.0)
 
@@ -273,7 +273,7 @@ def test_cli_cancels_active_run_owned_by_another_process(tmp_path, monkeypatch):
         finally:
             exited.set()
 
-    monkeypatch.setattr(rt, "run_worker", worker)
+    monkeypatch.setattr(rt, "run_node", worker)
     monkeypatch.setattr(runtime, "_execute_run", execute_run)
     # start_run owns record creation.
     run.id = "r-cli-cancel"

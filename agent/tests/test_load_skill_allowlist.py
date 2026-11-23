@@ -20,9 +20,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.product.resources.skills import SkillsLoader
-from src.swarm import worker as worker_mod
+from src.swarm import node as worker_mod
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-from src.swarm.worker import run_worker
+from src.swarm.node import run_node
 from src.tools import build_filtered_registry, build_swarm_registry
 from src.tools.load_skill_tool import LoadSkillTool
 
@@ -112,7 +112,7 @@ def test_swarm_registry_honours_skill_allowlist() -> None:
 
 
 def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
-    """run_worker must deliver ``agent_spec.skills`` to the registry builder —
+    """run_node must deliver ``agent_spec.skills`` to the registry builder —
     the one line that makes the documented per-worker boundary real."""
     captured: dict = {}
 
@@ -133,7 +133,7 @@ def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
         def close(self) -> None:
             pass
 
-        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
+        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
             from src.kernel.contracts import LLMResponse
 
             return LLMResponse(content="done")
@@ -156,7 +156,7 @@ def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
         patch.object(worker_mod, "build_swarm_registry", _capture),
         patch.object(worker_mod, "ChatLLM", _FinalAnswerLLM()),
     ):
-        run_worker(
+        run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
@@ -189,7 +189,7 @@ def test_swarm_worker_empty_skills_stays_unrestricted(tmp_path: Path) -> None:
         def close(self) -> None:
             pass
 
-        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
+        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
             from src.kernel.contracts import LLMResponse
 
             return LLMResponse(content="done")
@@ -212,7 +212,7 @@ def test_swarm_worker_empty_skills_stays_unrestricted(tmp_path: Path) -> None:
         patch.object(worker_mod, "build_swarm_registry", _capture),
         patch.object(worker_mod, "ChatLLM", _FinalAnswerLLM()),
     ):
-        run_worker(
+        run_node(
             policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,

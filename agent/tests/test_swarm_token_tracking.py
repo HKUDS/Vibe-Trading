@@ -23,7 +23,7 @@ import pytest
 
 from src.kernel.contracts import LLMResponse
 from src.providers.response import parse_response
-from src.swarm.worker import _estimate_tokens
+from src.swarm.node import _measure_usage
 
 
 # --------------------------------------------------------------------------- #
@@ -102,7 +102,7 @@ def test_estimate_tokens_uses_real_usage_metadata_when_present() -> None:
         content="ignored for this assertion",
         usage_metadata={"input_tokens": 980_137, "output_tokens": 15_868},
     )
-    in_tok, out_tok = _estimate_tokens(messages=[{"role": "user", "content": "x" * 1_000_000}], response=response)
+    in_tok, out_tok = _measure_usage(messages=[{"role": "user", "content": "x" * 1_000_000}], response=response)[:2]
     # Real provider counts win even though the heuristic would over-estimate
     # massively from the bogus 1M-char message payload above.
     assert in_tok == 980_137
@@ -112,7 +112,7 @@ def test_estimate_tokens_uses_real_usage_metadata_when_present() -> None:
 def test_estimate_tokens_falls_back_when_usage_metadata_is_none() -> None:
     messages = [{"role": "user", "content": "hello world"}]
     response = LLMResponse(content="howdy", usage_metadata=None)
-    in_tok, out_tok = _estimate_tokens(messages, response)
+    in_tok, out_tok = _measure_usage(messages, response)[:2]
     # Heuristic: roughly len(json.dumps(messages)) // 4 and len(content) // 4.
     # We don't pin exact numbers (they depend on json formatting) but they
     # must be positive and proportional to length.
@@ -128,7 +128,7 @@ def test_estimate_tokens_falls_back_when_usage_metadata_is_all_zero() -> None:
         content="hi back",
         usage_metadata={"input_tokens": 0, "output_tokens": 0},
     )
-    in_tok, out_tok = _estimate_tokens(messages, response)
+    in_tok, out_tok = _measure_usage(messages, response)[:2]
     assert in_tok > 0
     assert out_tok > 0
 
@@ -140,14 +140,14 @@ def test_estimate_tokens_partial_usage_metadata_is_used_directly() -> None:
         content="some text",
         usage_metadata={"input_tokens": 500, "output_tokens": 0},
     )
-    in_tok, out_tok = _estimate_tokens([], response)
+    in_tok, out_tok = _measure_usage([], response)[:2]
     assert in_tok == 500
     assert out_tok == 0
 
 
 def test_estimate_tokens_handles_non_llmresponse_object_safely() -> None:
     """Defensive: callers from older code paths might pass a raw string."""
-    in_tok, out_tok = _estimate_tokens([{"role": "user", "content": "abc"}], "not-an-LLMResponse")
+    in_tok, out_tok = _measure_usage([{"role": "user", "content": "abc"}], "not-an-LLMResponse")[:2]
     # Input falls through to the heuristic; output can't be derived without
     # an LLMResponse, so it's 0 — same as the old behaviour.
     assert in_tok > 0
@@ -164,6 +164,6 @@ def test_estimate_tokens_ignores_extra_metadata_fields(metadata_keys_extra: dict
     sub-counts). They should not interfere with the bare input/output read."""
     metadata = {"input_tokens": 100, "output_tokens": 20, **metadata_keys_extra}
     response = LLMResponse(content="x", usage_metadata=metadata)
-    in_tok, out_tok = _estimate_tokens([], response)
+    in_tok, out_tok = _measure_usage([], response)[:2]
     assert in_tok == 100
     assert out_tok == 20

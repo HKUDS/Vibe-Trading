@@ -27,7 +27,7 @@ def test_partial_upstream_reaches_synthesis_with_actual_status(tmp_path, monkeyp
         seen.append(upstream_summaries["risk"])
         return WorkerResult(status="completed", summary="Hold. VaR remains unavailable.")
 
-    monkeypatch.setattr("src.swarm.runtime.run_worker", worker)
+    monkeypatch.setattr("src.swarm.runtime.run_node", worker)
     run = SwarmRun(
         id="partial",
         preset_name="demo",
@@ -65,7 +65,7 @@ def test_user_cancellation_never_dispatches_remaining_roles(tmp_path, monkeypatc
         cancel.set()
         return WorkerResult(status="completed", summary="Available research: revenue $26B.")
 
-    monkeypatch.setattr("src.swarm.runtime.run_worker", worker)
+    monkeypatch.setattr("src.swarm.runtime.run_node", worker)
     run = SwarmRun(
         id="cancel",
         preset_name="demo",
