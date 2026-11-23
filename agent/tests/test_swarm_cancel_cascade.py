@@ -1,16 +1,4 @@
-"""Regression tests for #2055 — a user stop must actually stop a swarm run.
-
-The bug had three layers, and this file pins the two backend ones:
-
-1. ``SessionService.cancel_current`` only cancelled the ``AgentRuntime``; the swarm
-   the loop had started kept running.
-2. ``SwarmTool.execute`` polled in a ``time.sleep`` loop, so even a cancelled
-   session left the tool (and its worker threads) burning tokens until the wait
-   budget ran out.
-
-The frontend half (a stop button that calls the cancel endpoint) lives in the
-web client and is covered by its own tests.
-"""
+"""Swarm cancellation during a turn and by run ID after the tool returns."""
 
 from __future__ import annotations
 
@@ -182,23 +170,6 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
 # ---------------------------------------------------------------------------
 
 
-def test_cancel_runs_for_session_only_touches_its_own_runs():
-    signalled: list[str] = []
-
-    def cancel(run_id):
-        signalled.append(run_id)
-        return True
-
-    rt.register_active_run("r1", "sess-a", lambda: cancel("r1"))
-    rt.register_active_run("r2", "sess-b", lambda: cancel("r2"))
-
-    assert rt.cancel_runs_for_session("sess-a") == 1
-    assert signalled == ["r1"]
-    # Signalled runs leave the index so a second stop is a no-op.
-    assert rt.cancel_runs_for_session("sess-a") == 0
-    assert rt.active_run_ids("sess-b") == ["r2"]
-
-
 def test_cancel_indexed_run_reaches_a_foreign_runtime_run():
     """The HTTP endpoint holds a different SwarmRuntime; the index bridges it."""
     rt.register_active_run("r1", "sess-a", lambda: True)
@@ -208,7 +179,7 @@ def test_cancel_indexed_run_reaches_a_foreign_runtime_run():
 
 
 # ---------------------------------------------------------------------------
-# 3. SessionService.cancel_current cascades
+# 3. Session stop acts on the turn, while explicit swarm stop acts on the run
 # ---------------------------------------------------------------------------
 
 
@@ -232,39 +203,34 @@ def _bare_service():
     return service
 
 
-def test_cancel_current_cancels_the_swarm_of_that_session(monkeypatch):
-    seen: list[str] = []
-
-    def fake_cancel_runs_for_session(session_id):
-        seen.append(session_id)
-        return 1
-
-    monkeypatch.setattr(rt, "cancel_runs_for_session", fake_cancel_runs_for_session)
-
+def test_cancel_current_only_stops_the_current_turn():
     service = _bare_service()
     loop = _FakeLoop()
     service._active_loops["sess-1"] = loop
 
     assert service.cancel_current("sess-1") is True
     assert loop.cancelled is True
-    assert seen == ["sess-1"]
 
 
-def test_cancel_current_stops_a_swarm_whose_turn_already_ended(monkeypatch):
-    """No loop, no task — the run outlived the turn and is still cancellable."""
-    monkeypatch.setattr(rt, "cancel_runs_for_session", lambda session_id: 2)
-
+@pytest.mark.parametrize("has_active_turn", [False, True])
+def test_cancel_current_leaves_detached_swarm_for_explicit_cancel(has_active_turn):
     service = _bare_service()
+    if has_active_turn:
+        service._active_loops["sess-2"] = _FakeLoop()
+    stopped = threading.Event()
 
-    assert service.cancel_current("sess-2") is True
+    def cancel_run():
+        stopped.set()
+        return True
 
-
-def test_cancel_current_reports_false_when_nothing_is_running(monkeypatch):
-    monkeypatch.setattr(rt, "cancel_runs_for_session", lambda session_id: 0)
-
-    service = _bare_service()
-
-    assert service.cancel_current("sess-3") is False
+    rt.register_active_run("detached", "sess-2", cancel_run)
+    try:
+        assert service.cancel_current("sess-2") is has_active_turn
+        assert not stopped.is_set()
+        assert rt.cancel_indexed_run("detached") is True
+        assert stopped.is_set()
+    finally:
+        rt.unregister_active_run("detached")
 
 
 # ---------------------------------------------------------------------------

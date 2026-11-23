@@ -163,6 +163,10 @@ class AgentRuntime:
         self.tools = ToolExecution(self.tool_env, self.replay, self.delivery, self.invocation,
                                    self.activity.cancel, self._context_compactor._context_budget,
                                    self._context_compactor._prompt_tokens)
+        swarm_tool = self.registry.get("run_swarm")
+        bind_turn_cancel = getattr(swarm_tool, "bind_turn_cancel", None)
+        if callable(bind_turn_cancel):
+            bind_turn_cancel(self.activity.cancel)
         spawn_agent = self.registry.get("spawn_agent")
         set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
         if callable(set_usage_callback):

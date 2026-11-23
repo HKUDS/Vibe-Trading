@@ -63,8 +63,7 @@ logger = logging.getLogger(__name__)
 # ``run_swarm`` builds one instance per tool call — so an HTTP cancel handler
 # holding a different runtime cannot reach a run started by the agent, and once
 # the tool call returns (wait budget exhausted) nobody polls that instance at
-# all. This module-level index is the only handle that outlives both: the owning
-# session can still stop the run while its worker threads are burning tokens.
+# all. The index routes explicit cancellation by run ID after the tool returns.
 _ACTIVE_RUNS: dict[str, tuple[str, Callable[[], bool]]] = {}
 _ACTIVE_RUNS_LOCK = threading.Lock()
 
@@ -104,35 +103,6 @@ def active_run_ids(session_id: str) -> list[str]:
     """Return the run ids currently indexed for ``session_id``."""
     with _ACTIVE_RUNS_LOCK:
         return [rid for rid, (sid, _) in _ACTIVE_RUNS.items() if sid == session_id]
-
-
-def cancel_runs_for_session(session_id: str) -> int:
-    """Signal every indexed run of ``session_id``; return how many were reached.
-
-    Cancellation is requested for all of them before any is waited on, so a
-    session with parallel runs stops them together instead of serially. Runs
-    that accepted the signal leave the index: nothing else can be done for them,
-    and keeping dead ids around would make ``cancel_current`` report success for
-    a stop that changes nothing.
-    """
-    with _ACTIVE_RUNS_LOCK:
-        targets = [
-            (rid, cancel)
-            for rid, (sid, cancel) in _ACTIVE_RUNS.items()
-            if sid == session_id
-        ]
-    signalled: list[str] = []
-    for run_id, cancel in targets:
-        try:
-            if cancel():
-                signalled.append(run_id)
-        except Exception:
-            logger.warning("Swarm cancel callback failed for session %s", session_id, exc_info=True)
-    if signalled:
-        with _ACTIVE_RUNS_LOCK:
-            for run_id in signalled:
-                _ACTIVE_RUNS.pop(run_id, None)
-    return len(signalled)
 
 
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
