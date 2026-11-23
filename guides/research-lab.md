@@ -19,8 +19,8 @@ missing file is refused; rerun that backtest to create a new baseline.
 Market-engine backtests also save the opening and closing prices of the external
 benchmark they used. Research Lab replays those prices separately from the
 portfolio. It selects the saved bars in each trial window without rebuilding
-weekly or monthly bars. A trial without enough matching benchmark bars reports
-its equal-weight fallback. Older runs without the reference file still replay
+weekly or monthly bars. A trial with a declared external benchmark fails if its evaluation window does
+not contain enough matching benchmark bars. Older runs without the reference file still replay
 locally, but cannot verify the original external benchmark. Rerun the baseline
 to capture it. The cost report records the benchmark used by each trial.
 
