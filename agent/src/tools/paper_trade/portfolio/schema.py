@@ -1,8 +1,10 @@
 """Internal pt-v2.0 portfolio parser and packaged JSON contract loader.
 
-This module is intentionally not connected to the legacy ``paper_trade_step``
-registration or execution path. It only parses public-shaped input into typed
-immutable models and resolves the packaged Draft 2020-12 contract.
+This module feeds the registered ``paper_trade_step`` portfolio mode: the mode
+dispatch hands a ``mode="portfolio"`` / ``schema_version="pt-v2.0"`` payload to
+the portfolio step, which parses it here into typed immutable models before
+execution. It also resolves the packaged Draft 2020-12 contract published in
+the tool schema.
 """
 
 from __future__ import annotations
