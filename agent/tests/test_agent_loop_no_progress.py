@@ -182,7 +182,7 @@ def test_authorization_denial_does_not_poison_an_unexecuted_call(tmp_path):
     call = SimpleNamespace(
         id="denied", name=tool.name, arguments={"path": "artifact.csv"}
     )
-    loop.tools._record_blocked_tool_call(
+    loop.delivery.deliver_blocked_call(
         call,
         '{"status":"error","reason":"identity not yet resolved"}',
         ContextBuilder,

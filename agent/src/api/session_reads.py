@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.api.session_http import ModelSelectionResponse, SessionResponse, existing_session, model_selection_response
-from src.session.event_projection import display_page
+from src.session.thread_display import display_page
 
 
 logger = logging.getLogger(__name__)

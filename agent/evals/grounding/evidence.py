@@ -26,6 +26,7 @@ from evals.grounding.figures import (
     parse_figures_block,
     scan_figures,
 )
+from src.product.identity.authorization import extract_symbol_arguments, match_authorized_symbol
 from src.product.identity.normalize import (
     _CANONICAL_SYMBOL_RE,
     _infer_currency,
@@ -1453,11 +1454,11 @@ class _EvidenceMixin:
         call_id: str,
     ) -> None:
         """Flatten bounded numeric leaves from other market-sensitive tools."""
-        symbols = self._extract_symbol_arguments(arguments)
+        symbols = extract_symbol_arguments(arguments)
         symbol = symbols[0] if len(symbols) == 1 else None
         if symbol:
             symbol = (
-                self._match_authorized_symbol(symbol, self.authorized_symbols) or symbol
+                match_authorized_symbol(symbol, self.authorized_symbols) or symbol
             )
         source = str(payload.get("source") or tool_name)
         remaining = _MAX_GENERIC_EVIDENCE

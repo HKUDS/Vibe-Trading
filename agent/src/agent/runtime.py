@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from functools import partial
 import logging
 import threading
 import time as _time
-import traceback
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
@@ -14,6 +12,7 @@ from src.agent.loop_conversation import ConversationState
 from src.agent.loop_driver import IterationSteps
 from src.agent.loop_state import TurnSetup, TurnState
 from src.agent.loop_watchdog import StallWatchdog
+from src.agent.turn_completion import complete_turn, fail_turn
 from src.agent.tools import ToolRegistry
 from src.agent.tuning import (
     _llm_timeout_seconds,
@@ -27,7 +26,7 @@ from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
 from src.core.state import RunStateStore
 from src.goal.context import get_current_goal_context
-from src.kernel.contracts import LLMRuntimeSnapshot, LoopContext, LoopPorts, ModelMessage, RunLimits
+from src.kernel.contracts import LLMRuntimeSnapshot, LoopContext, ModelMessage, RunLimits
 from src.kernel.events import EventSink
 from src.kernel.loop import run_loop
 from src.kernel.state import RunActivity
@@ -35,7 +34,6 @@ from src.product.artifacts import ToolDelivery, write_run_manifest
 from src.product.context import ContextBuilder
 from src.product.goals import GoalBudget
 from src.product.identity.ledger import IdentityLedger
-from src.product.outcome import finish_outcome
 from src.product.pacing import TurnPacing
 from src.product.resources.hooks import HookDecision
 from src.product.resources.memory import WorkspaceMemory
@@ -48,12 +46,11 @@ from src.product.usage import UsageLedger, _new_llm_usage_summary
 from src.product.verification import _verification_ledger
 from src.product.write_directives import WriteTargetState
 from src.providers.chat import ChatLLM
-from src.providers.response import ProviderStreamError, reported_model_source
+from src.providers.response import reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.session.compaction import ContextCompactor
 from src.session.request import SessionRequest
 from src.tools.background_tools import get_background_manager
-from src.tools.redaction import redact_text
 
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
@@ -62,14 +59,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgentRuntime:
-    """ReAct Agent core loop.
-
-    Attributes:
-        registry: Tool registry.
-        llm: ChatLLM client.
-        memory: Workspace memory.
-        max_iterations: Maximum research iterations, plus one text-only answer retry.
-    """
+    """Compose and run a research turn with its host resources."""
 
     def __init__(
         self,
@@ -242,16 +232,7 @@ class AgentRuntime:
                 self._background_manager.cancel_all()
 
     def _run_bound(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
-        """Run the ReAct loop with the LLM session already bound.
-
-        Args:
-            user_message: User message.
-            history: Prior conversation messages.
-            session_id: Session ID.
-
-        Returns:
-            Execution result dict.
-        """
+        """Run a turn with the LLM session already bound."""
         # Preserve cancellation accepted while the first run is queued.  A
         # completed loop may still be reused deliberately, so clear terminal
         # state only after the first run has begun.
@@ -289,32 +270,22 @@ class AgentRuntime:
                 background=self._background_manager,
                 pacing=pacing,
             )
-            ports = LoopPorts(
-                before_iteration=steps.before_iteration, prepare_request=steps.prepare_request,
-                request=steps.request, record_partial=steps.record_partial,
-                after_text=partial(pacing.handle, state), run_tools=steps.run_tools,
-                poll_inputs=steps.poll_inputs, on_cancel=steps.on_cancel,
-                read_delta=self._conversation.delta.copy,
-                read_usage=lambda: dict(self.usage.summary["totals"]),
-            )
             turn = run_loop(
                 state.view,
-                ports, RunLimits(self.max_iterations), self.activity.cancel, self._emit,
+                steps.ports(), RunLimits(self.max_iterations), self.activity.cancel, self._emit,
             )
         except Exception as exc:
-            return self._handle_bound_error(exc, setup)
-        result = finish_outcome(
-            setup, iterations=turn.iterations, activity=self.activity, runtime=self._llm_runtime, max_iterations=self.max_iterations,
-            budget_reason=self.goals.stop_reason, waiting_user=self.delivery.waiting_user is not None,
-            pending_write=self._write_targets.pending,
+            return fail_turn(
+                exc, setup, activity=self.activity, conversation=self._conversation,
+                tool_env=self.tool_env, usage=self.usage.summary["totals"],
+                max_iterations=self.max_iterations, logger=logger,
+            )
+        return complete_turn(
+            setup, turn=turn, activity=self.activity, runtime=self._llm_runtime,
+            max_iterations=self.max_iterations, budget_reason=self.goals.stop_reason,
+            waiting_user=self.delivery.waiting_user is not None, pending_write=self._write_targets.pending,
+            conversation=self._conversation, tool_env=self.tool_env,
         )
-        self._conversation.end_turn(self.tool_env, turn.usage)
-        recorder = self._conversation.thread
-        items = recorder._runtime.thread.turn_items(recorder.turn_id)
-        result["tool_count"] = sum(item.type == "tool_result" for item in items)
-        self.activity.done.set()
-
-        return result
 
     def _prepare_turn(self, user_message: str, history: Optional[list[ModelMessage]], session_id: str) -> TurnSetup:
         """Build run resources and per-turn state before iteration."""
@@ -450,19 +421,6 @@ class AgentRuntime:
             mid_turn_nudge_rounds=mid_turn_nudge_rounds,
         )
         return TurnSetup(state=state, run_dir=run_dir, trace=trace, state_store=state_store)
-
-    def _handle_bound_error(self, exc: Exception, setup: TurnSetup) -> Dict[str, Any]:
-        """Persist an iteration exception using the historical error envelope."""
-        state = setup.state
-        assert state is not None and setup.run_dir is not None and setup.trace is not None and setup.state_store is not None
-        reason = redact_text(exc)
-        logger.error("AgentRuntime error: %s", redact_text(traceback.format_exc()))
-        error_code = "provider_stream_error" if isinstance(exc, ProviderStreamError) else "agent_loop_error"
-        setup.trace.write({"type": "end", "iter": self.activity.iteration, "status": "error", "reason": reason, "iterations": state.iteration})
-        setup.state_store.mark_failure(setup.run_dir, reason)
-        self._conversation.end_turn(self.tool_env, self.usage.summary["totals"])
-        self.activity.done.set()
-        return {"status": "failed", "error_code": error_code, "reason": reason, "run_dir": str(setup.run_dir), "run_id": setup.run_dir.name, "content": "", "iterations": state.iteration, "max_iterations": self.max_iterations}
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""

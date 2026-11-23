@@ -1,7 +1,7 @@
 """Option reads acquire identity before authorization without weakening the gate."""
 
 from src.product.tool_policy import ToolPolicy
-from src.config.accessor import get_env_config
+from src.config.env_schema import EnvConfig
 
 
 from dataclasses import replace
@@ -24,7 +24,7 @@ from src.tools.symbol_search_tool import SymbolSearchTool
 def runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     events = []
-    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry = ToolRegistry(policy=ToolPolicy.from_config(EnvConfig()))
     resolver = SymbolSearchTool()
     options = OptionsChainTool()
     response = {"ok": True, "data": {"query": "AAPL", "sources": {"fixture": "ok"}, "candidates": [{"symbol": "AAPL.US", "market": "us"}]}}
@@ -97,7 +97,7 @@ def test_failed_dependency_never_starts_options_or_auto_retries(runtime, monkeyp
         r.response["data"]["candidates"] = [{"symbol": "MSFT.US", "market": "us"}]
     else:
         monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "search_symbol")
-        monkeypatch.setattr(r.registry, "policy", ToolPolicy.from_config(get_env_config()))
+        monkeypatch.setattr(r.registry, "policy", ToolPolicy.from_config(EnvConfig()))
     messages = r.run([option()])
     refusal = json.loads(messages[-1]["content"])
     assert refusal["status"] == "error" and "identity_resolution" in refusal
@@ -172,7 +172,7 @@ def test_unavailable_resolver_cannot_enable_options(runtime):
 
 def test_denied_consumer_does_not_trigger_a_dependency(runtime, monkeypatch):
     monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "get_options_chain")
-    monkeypatch.setattr(runtime.registry, "policy", ToolPolicy.from_config(get_env_config()))
+    monkeypatch.setattr(runtime.registry, "policy", ToolPolicy.from_config(EnvConfig()))
     runtime.run([option()])
     assert runtime.events == []
 

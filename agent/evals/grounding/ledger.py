@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from src.product.identity.authorization import extract_symbol_arguments
 from src.product.identity.constraints import ResolutionContext
 
 from src.product.identity.normalize import _scan_symbols
@@ -312,7 +313,7 @@ class GroundingLedger(
         self._session_symbols.update(sorted(found)[:room])
         self._session_symbol_roots.update(
             symbol
-            for symbol in self._extract_symbol_arguments(arguments)
+            for symbol in extract_symbol_arguments(arguments)
             if "." not in symbol
         )
 
