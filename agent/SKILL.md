@@ -134,7 +134,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (85)
+## Available MCP Tools (86)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -200,6 +200,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `scan_shadow_signals` | Today's symbols matching the shadow's cadence | None |
 | `list_swarm_presets` | List multi-agent team presets | None |
 | `run_swarm` | Execute a multi-agent research team | LLM key |
+| `cancel_swarm` | Request cooperative cancellation by run ID | None |
 | `get_swarm_status` | Poll swarm run status without blocking | None |
 | `get_run_result` | Get final report and task summaries | None |
 | `list_runs` | List recent swarm runs with metadata | None |
