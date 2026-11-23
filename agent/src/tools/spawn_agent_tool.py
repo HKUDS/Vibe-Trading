@@ -75,7 +75,7 @@ def _broker_tool_prefixes() -> tuple[str, ...]:
     return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
-def is_trading_state_tool(tool: BaseTool) -> bool:
+def is_trading_state_tool(tool: BaseTool, *, include_unclassified_remote: bool = True) -> bool:
     """Whether a tool places, modifies or cancels orders or changes trading state.
 
     A tool that is not read-only and is either a live-broker order tool
@@ -86,6 +86,9 @@ def is_trading_state_tool(tool: BaseTool) -> bool:
 
     Args:
         tool: A registered tool.
+        include_unclassified_remote: Treat remote writes outside the known
+            broker surface as trading state. Swarm retains its existing
+            operator-configured integrations outside that surface.
 
     Returns:
         True when a child agent must not receive the tool.
@@ -105,7 +108,7 @@ def is_trading_state_tool(tool: BaseTool) -> bool:
         from src.tools.mcp import MCPRemoteTool
         from src.live.classification import ToolClass, classify_tool
 
-        if isinstance(candidate, MCPRemoteTool):
+        if include_unclassified_remote and isinstance(candidate, MCPRemoteTool):
             spec = getattr(candidate, "_spec", None)
             if spec is None:
                 return True

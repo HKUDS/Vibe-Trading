@@ -426,7 +426,8 @@ def build_swarm_registry(
 ) -> ToolRegistry:
     """Build a per-worker registry that merges local + remote MCP tools.
 
-    Swarm workers receive a strict whitelist (``agent_spec.tools``). This
+    Swarm workers receive a strict whitelist (``agent_spec.tools``). Broker
+    mutations are excluded even when requested by a preset. This
     builder honors that whitelist while letting operator-configured MCP
     servers contribute additional tools by name (``mcp_<server>_<tool>``).
     Tools the whitelist requests but the operator has NOT surfaced — either
@@ -458,6 +459,8 @@ def build_swarm_registry(
         ToolRegistry containing the whitelist intersection of local tools
         and any operator-surfaced MCP tools.
     """
+    from src.tools.spawn_agent_tool import is_trading_state_tool
+
     swarm_agent_config, swarm_local_server_names = _prune_agent_config_for_swarm_tools(
         agent_config,
         tool_names,
@@ -475,6 +478,7 @@ def build_swarm_registry(
         tool_names,
         include_shell_tools=include_shell_tools,
         skill_allowlist=skill_allowlist,
+        excluded=lambda tool: is_trading_state_tool(tool, include_unclassified_remote=False),
     )
 
 
@@ -515,6 +519,7 @@ def _filter_registry(
     *,
     include_shell_tools: bool,
     skill_allowlist: list[str] | None = None,
+    excluded: Callable[[BaseTool], bool] | None = None,
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
     filtered = ToolRegistry(policy=full.policy)
@@ -522,6 +527,9 @@ def _filter_registry(
     filtered.hooks = getattr(full, "hooks", None)
     for name in tool_names:
         tool = full.get(name)
+        if tool is not None and excluded is not None and excluded(tool):
+            logger.warning("Requested tool %r is excluded from the worker registry.", name)
+            continue
         if tool:
             filtered.register(tool)
         else:

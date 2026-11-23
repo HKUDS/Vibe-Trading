@@ -296,3 +296,22 @@ def test_build_swarm_registry_with_empty_mcp_servers_is_local_only() -> None:
     assert "read_file" in registry.tool_names
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_")]
     assert mcp_names == []
+
+
+def test_swarm_registry_excludes_broker_mutations() -> None:
+    """A preset can read broker state but cannot request an order mutation."""
+    from src.live.order_guard import LiveOrderGuardTool
+
+    remote = MagicMock(spec=LiveOrderGuardTool)
+    remote.name = "mcp_broker_submit"
+    remote.is_readonly = False
+    cfg = _make_agent_config({"broker": {"command": "unused"}})
+    with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[remote]):
+        registry = build_swarm_registry(
+            ["trading_positions", "trading_place_order", "trading_cancel_order",
+             "etoro_close_position", "mcp_broker_submit"],
+            agent_config=cfg,
+            policy=ToolPolicy.from_config(get_env_config()),
+        )
+
+    assert registry.tool_names == ["trading_positions"]
