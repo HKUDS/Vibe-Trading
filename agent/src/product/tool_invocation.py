@@ -76,6 +76,7 @@ class ToolInvocation:
         self.hooks = hooks
         self.cancelled = cancelled
         self.progress = progress
+        self.stop_on_unknown = None
         self._order_attempts = set()
         self._order_attempt_lock = threading.Lock()
 
@@ -126,13 +127,22 @@ class ToolInvocation:
             return HeartbeatTimer(tool_name=tool_name, interval=_heartbeat_interval_s(), emit=emit)
 
         limit = _tool_timeout_seconds()
-        return wait_for_tool(
+        result, elapsed_ms = wait_for_tool(
             tool_name, call_id, lambda: self.env.registry.execute(tool_name, effective_args),
             readonly=readonly, detachable=not order_tool,
             timeout=limit if not order_tool and limit > 0 else None,
             cancelled=self.cancelled, progress=self.progress,
             heartbeat=heartbeat, set_emitter=_set_emitter, post_result=prepared.post_result,
         )
+
+        if self.stop_on_unknown is not None:
+            try:
+                payload = json.loads(result)
+            except (TypeError, ValueError):
+                payload = None
+            if isinstance(payload, dict) and payload.get("outcome") == "unknown":
+                self.stop_on_unknown()
+        return result, elapsed_ms
 
     def _is_order_tool(self, tool_name: str) -> bool:
         """Return whether a tool name can submit or cancel an order."""

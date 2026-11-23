@@ -423,6 +423,7 @@ def build_swarm_registry(
     skill_allowlist: list[str] | None = None,
     background_manager: Any | None = None,
     background_scope: Any | None = None,
+    workspace: Path | None = None,
 ) -> ToolRegistry:
     """Build a per-worker registry that merges local + remote MCP tools.
 
@@ -473,13 +474,19 @@ def build_swarm_registry(
         background_scope=background_scope,
         _mcp_server_tool_name_segments=swarm_local_server_names,
     )
-    return _filter_registry(
+    registry = _filter_registry(
         full,
         tool_names,
         include_shell_tools=include_shell_tools,
         skill_allowlist=skill_allowlist,
         excluded=lambda tool: is_trading_state_tool(tool, include_unclassified_remote=False),
     )
+    if workspace is not None:
+        from src.tools.spawn_agent_tool import _WorkspaceTool
+
+        for name in registry.tool_names:
+            registry.register(_WorkspaceTool(registry.get(name), workspace.resolve()))
+    return registry
 
 
 def _prune_agent_config_for_swarm_tools(

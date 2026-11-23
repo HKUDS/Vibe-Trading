@@ -73,6 +73,8 @@ class AgentRuntime:
         background_manager: Optional[Any] = None,
         thread_recorder: Optional[Any] = None,
         queued_inputs: Optional[Any] = None,
+        system_prompt: str | None = None,
+        local_thread_path: Path | None = None,
     ) -> None:
         """Initialize AgentRuntime.
 
@@ -106,8 +108,10 @@ class AgentRuntime:
                 takes none.
         """
         self._owns_recorder = thread_recorder is None
+        self._system_prompt = system_prompt
+        self._local_thread_path = local_thread_path
         self._conversation = ConversationState(thread_recorder, queued_inputs)
-        self.registry = prepare_registry(registry)
+        self.registry = registry if system_prompt is not None else prepare_registry(registry)
         self._hooks = getattr(self.registry, "hooks", None)
         if self._hooks is not None and thread_recorder is not None:
             self._hooks.set_audit_sink(thread_recorder)
@@ -298,7 +302,7 @@ class AgentRuntime:
         """Build run resources and per-turn state before iteration."""
         if isinstance(self.registry, DeferredToolRegistry):
             self.registry.reset_exposure()
-        else:
+        elif self._system_prompt is None:
             self.tool_env.registry = self.registry = prepare_registry(self.registry)
         if self.memory.session_workspace:
             setattr(self.registry, "session_workspace", self.memory.session_workspace)
@@ -325,10 +329,11 @@ class AgentRuntime:
             from src.session.thread import ThreadLog
 
             record_dir = SESSIONS_DIR / session_id if session_id else run_dir
-            runtime = SessionRuntime(ThreadLog(record_dir / "thread.jsonl"), session_id)
+            runtime = SessionRuntime(ThreadLog(self._local_thread_path or record_dir / "thread.jsonl"), session_id)
             self._conversation.thread = runtime.begin_turn(uuid.uuid4().hex[:12])
-            self.memory.session_workspace = str(runtime.workspace_path)
-            setattr(self.registry, "session_workspace", self.memory.session_workspace)
+            if self._local_thread_path is None:
+                self.memory.session_workspace = str(runtime.workspace_path)
+                setattr(self.registry, "session_workspace", self.memory.session_workspace)
             if self._hooks is not None:
                 self._hooks.set_audit_sink(self._conversation.thread)
 
@@ -373,7 +378,11 @@ class AgentRuntime:
                 f"{goal_context}\n\n"
                 f"<user-message>\n{user_message}\n</user-message>"
             )
-        messages = context.build_messages(llm_user_message, history)
+        messages = (
+            [{"role": "system", "content": self._system_prompt}, *(history or []),
+             {"role": "user", "content": llm_user_message}]
+            if self._system_prompt is not None else context.build_messages(llm_user_message, history)
+        )
         self._conversation.turn_messages = messages
         if self._conversation.thread is not None:
             # Before any model call: the user message exactly as it is sent,
