@@ -588,17 +588,21 @@ class ClaudeCliLLM:
         Returns:
             The final answer, or the tool calls to execute next.
         """
-        decision = _decide(
+        return self._message(self._decision(messages, self._budget(config), threading.Event()) or _Decision())
+
+    def _decision(
+        self, messages: list[Any], timeout: float, cancel_event: threading.Event,
+    ) -> Optional[_Decision]:
+        return _decide(
             policy=self.policy,
             model=self.model,
             effort=self.reasoning_effort,
             messages=messages,
             tools=self.tools,
-            timeout=self._budget(config),
-            cancel_event=threading.Event(),
+            timeout=timeout,
+            cancel_event=cancel_event,
             environment=self.environment,
         )
-        return self._message(decision or _Decision())
 
     def stream(
         self, messages: list[Any], config: Optional[dict[str, Any]] = None, **_: Any
@@ -621,16 +625,7 @@ class ClaudeCliLLM:
 
         def run() -> None:
             try:
-                decision = _decide(
-                    policy=self.policy,
-                    model=self.model,
-                    effort=self.reasoning_effort,
-                    messages=messages,
-                    tools=self.tools,
-                    timeout=budget,
-                    cancel_event=cancel_event,
-                    environment=self.environment,
-                )
+                decision = self._decision(messages, budget, cancel_event)
                 if decision is not None:
                     chunks.put(
                         AIMessageChunk(

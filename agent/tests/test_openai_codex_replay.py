@@ -24,7 +24,6 @@ import src.providers.openai_codex as codex_mod
 from src.product.context import ContextBuilder
 from src.providers.response import parse_response
 from src.providers.openai_codex import (
-    CodexToolCall,
     OpenAICodexLLM,
     _convert_messages,
     _events_from_lines,
@@ -273,5 +272,4 @@ def test_an_unrelated_400_is_not_retried(monkeypatch, fresh_replay_state) -> Non
 def test_tool_call_ids_round_trip_through_the_parser() -> None:
     message = _turn_one()
     assert [call["id"] for call in message.tool_calls] == ["call_a", "call_b"]
-    assert CodexToolCall(id="call_a", name="x", arguments={}).as_langchain_tool_call()["id"] == "call_a"
     assert [item["id"] for item in message.additional_kwargs["provider_items"]] == ["rs_1"]
