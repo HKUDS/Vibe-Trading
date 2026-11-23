@@ -43,9 +43,16 @@ MARKET_BENCHMARKS: dict[str, Optional[str]] = {
 class BenchmarkResult:
     ticker:     str
     ret_series: pd.Series       # per-bar returns, index = timestamps
-    total_ret: float          # total return over the FETCHED period
+    total_ret: Optional[float]  # close-based return over the loaded prices
     close:      pd.Series       # benchmark closes, index = timestamps
     open:       Optional[pd.Series] = None  # benchmark opens, same index
+
+    def input_prices(self) -> pd.DataFrame:
+        """Return the exact reference prices used to evaluate this benchmark."""
+        prices = self.close.to_frame("close")
+        if self.open is not None:
+            prices.insert(0, "open", self.open.reindex(prices.index))
+        return prices
 
     def total_return_over(self, dates: pd.DatetimeIndex) -> Optional[float]:
         """Return the buy-and-hold return restricted to ``dates``.
@@ -70,14 +77,25 @@ class BenchmarkResult:
             The buy-and-hold return over the overlap, or ``None`` when fewer
             than two benchmark closes fall inside it.
         """
-        window = self.close.reindex(dates).dropna()
-        if len(window) < 2:
+        equity = self.normalized_equity_over(dates)
+        return float(equity.iloc[-1]) - 1.0 if equity is not None else None
+
+    def normalized_equity_over(self, dates: pd.DatetimeIndex) -> Optional[pd.Series]:
+        """Mark one fixed benchmark position against its entry price.
+
+        Keep cash before entry and carry the last close through missing bars.
+        Compounding per-bar returns would lose moves after a negative close.
+        """
+        aligned = self.close.reindex(dates)
+        observed = aligned.dropna()
+        if len(observed) < 2:
             return None
-        entry = self._entry_open(window.index[0])
+        entry = self._entry_open(observed.index[0])
         if entry is None:
-            return buy_and_hold_return(window)
-        last = float(window.iloc[-1])
-        return last / entry - 1.0 if np.isfinite(last) else None
+            entry = float(observed.iloc[0])
+        if not (np.isfinite(entry) and entry > 0 and np.isfinite(observed.iloc[-1])):
+            return None
+        return aligned.ffill().fillna(entry) / entry
 
     def returns_over(self, dates: pd.DatetimeIndex) -> pd.Series:
         """Per-bar returns of the same position on the evaluated bar index.
@@ -147,24 +165,26 @@ def resolve_benchmark(
     except Exception:
         return None
 
-    if bench_df.empty or "close" not in bench_df.columns:
-        return None
+    result = benchmark_from_prices(ticker, bench_df)
+    # Keep the full-fetch admission rule. A frozen result was already admitted;
+    # a shorter trial window should apply the window's own entry-price rules.
+    return result if result is not None and result.total_ret is not None else None
 
-    close = bench_df["close"].dropna()
+
+def benchmark_from_prices(ticker: str, prices: pd.DataFrame) -> BenchmarkResult | None:
+    """Build a benchmark from bars already at the requested interval."""
+    if prices.empty or "close" not in prices.columns:
+        return None
+    close = prices["close"].dropna()
     if len(close) < 2:
         return None
-
-    ret_series = bar_returns(close, label=f"benchmark {ticker}")
-    # Price relative, not the compounded product: identical while prices are
-    # positive, and it is the only one of the two that stays honest once they
-    # are not (#872).
-    total = buy_and_hold_return(close)
-    if total is None:
-        return None
-
-    opens = bench_df["open"].reindex(close.index) if "open" in bench_df.columns else None
+    opens = prices["open"].reindex(close.index) if "open" in prices.columns else None
     return BenchmarkResult(
-        ticker=ticker, ret_series=ret_series, total_ret=total, close=close, open=opens
+        ticker=ticker,
+        ret_series=bar_returns(close, label=f"benchmark {ticker}"),
+        total_ret=buy_and_hold_return(close),
+        close=close,
+        open=opens,
     )
 
 

@@ -2786,6 +2786,7 @@
     "failed": "ناموفق",
     "report": "گزارش پژوهش",
     "download": "دریافت JSON",
+    "downloadOosCsv": "CSV ارزش پرتفوی خارج از نمونه",
     "scenario": "سناریو",
     "return": "بازده",
     "drawdown": "افت سرمایه",

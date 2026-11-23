@@ -221,6 +221,10 @@ def test_schema_accepts_supported_mask_combinations(
     [
         {"position_adjustment": "hold", "rebalance_mask": "MS"},
         {"position_adjustment": "rebalance", "rebalance_mask": "monthly"},
+        {"position_adjustment": "rebalance", "rebalance_mask": "0D"},
+        {"position_adjustment": "rebalance", "rebalance_mask": "-1D"},
+        {"position_adjustment": "rebalance", "rebalance_mask": "0MS"},
+        {"position_adjustment": "rebalance", "rebalance_mask": "-1MS"},
     ],
 )
 def test_schema_rejects_ambiguous_or_invalid_mask(overrides: dict[str, object]) -> None:

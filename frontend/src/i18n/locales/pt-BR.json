@@ -2786,6 +2786,7 @@
     "failed": "Falhou",
     "report": "Relatório de pesquisa",
     "download": "Baixar JSON",
+    "downloadOosCsv": "CSV do patrimônio fora da amostra",
     "scenario": "Cenário",
     "return": "Retorno",
     "drawdown": "Rebaixamento",

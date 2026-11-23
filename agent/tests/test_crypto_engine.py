@@ -345,18 +345,69 @@ class TestFundingFee:
         # Each day: 3 × 60000 × 0.0001 = $18; three days = $54
         assert initial - after_day3 == pytest.approx(54.0)
 
-    def test_intraday_four_hour_bars_keep_slot_and_fallback(self) -> None:
-        """4H bars are below the span threshold: slot + daily fallback, as before."""
+    def test_intraday_four_hour_bars_skip_daily_fallback(self) -> None:
+        """4H bars settle only at the three documented UTC funding slots."""
         engine = _make_engine(funding_rate=0.0001, interval="4H")
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
         initial = engine.capital
         bar = _make_bar(close=60000.0)
-        # 00:00 slot, 04:00 fallback, 08:00 slot, 16:00 slot -> 4 settlements
+        # Only 00:00, 08:00, and 16:00 settle; 04:00, 12:00, and 20:00 do not.
         for hour in (0, 4, 8, 12, 16, 20):
             engine.on_bar("BTC-USDT", bar, pd.Timestamp(f"2025-01-01 {hour:02d}:00:00"))
-        assert initial - engine.capital == pytest.approx(4 * 6.0)
+        assert initial - engine.capital == pytest.approx(3 * 6.0)
+
+    @pytest.mark.parametrize(
+        ("interval", "frequency"),
+        [
+            ("1m", "1min"),
+            ("5m", "5min"),
+            ("15m", "15min"),
+            ("30m", "30min"),
+            ("1H", "1h"),
+            ("4H", "4h"),
+            ("6H", "6h"),
+            ("8H", "8h"),
+            ("12H", "12h"),
+            ("1D", "1D"),
+        ],
+    )
+    def test_daily_funding_is_interval_independent(self, interval, frequency) -> None:
+        engine = _make_engine(funding_rate=0.0001, interval=interval)
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial = engine.capital
+        bar = _make_bar(close=60000.0)
+        timestamps = pd.date_range("2025-01-01", "2025-01-02", freq=frequency, inclusive="left")
+        for timestamp in timestamps:
+            engine.on_bar("BTC-USDT", bar, timestamp)
+        assert initial - engine.capital == pytest.approx(18.0)
+
+    def test_intraday_funding_uses_utc_slots_and_deduplicates(self) -> None:
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial = engine.capital
+        bar = _make_bar(close=60000.0)
+        # This bar contains 08:00 UTC, the next bar does not.
+        bar_start = pd.Timestamp("2025-01-01 15:30:00+08:00")
+        engine.on_bar("BTC-USDT", bar, bar_start)
+        assert initial - engine.capital == pytest.approx(6.0)
+        engine.on_bar("BTC-USDT", bar, bar_start)
+        engine.on_bar("BTC-USDT", bar, bar_start + pd.Timedelta(hours=1))
+        assert initial - engine.capital == pytest.approx(6.0)
+
+    def test_unknown_interval_keeps_daily_fallback(self) -> None:
+        engine = _make_engine(funding_rate=0.0001, interval="nonsense")
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial = engine.capital
+        engine.on_bar("BTC-USDT", _make_bar(), pd.Timestamp("2025-01-01 05:00:00"))
+        assert initial - engine.capital == pytest.approx(6.0)
 
     def test_interval_span_hours_parser(self) -> None:
         from backtest.engines._market_hooks import _interval_span_hours

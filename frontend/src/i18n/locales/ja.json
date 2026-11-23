@@ -2786,6 +2786,7 @@
     "failed": "失敗",
     "report": "リサーチレポート",
     "download": "JSONをダウンロード",
+    "downloadOosCsv": "アウト・オブ・サンプルの資産推移 CSV",
     "scenario": "シナリオ",
     "return": "リターン",
     "drawdown": "ドローダウン",
