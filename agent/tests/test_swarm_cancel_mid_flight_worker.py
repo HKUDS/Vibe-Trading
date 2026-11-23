@@ -73,6 +73,50 @@ def test_cancel_mid_flight_worker_stops_promptly(tmp_path, monkeypatch):
     )
 
 
+def test_cross_process_cancel_request_stops_in_flight_worker(tmp_path, monkeypatch):
+    """Regression for #2306 (remainder): a cancel request left in the run dir
+    by a foreign process (SwarmStore.request_cancel, as a separate
+    `--swarm-cancel` process does) must stop an in-flight worker, not just a
+    run waiting between layers. The request is written through a second
+    SwarmStore instance on the same directory -- the closest a unit test gets
+    to a second process -- while the worker only polls the cancel signal it
+    was given, exactly like a real worker.
+    """
+    def slow_worker(agent_spec, task, **kwargs):
+        cancel_event = kwargs.get("cancel_event")
+        for _ in range(150):
+            if cancel_event is not None and cancel_event.is_set():
+                return WorkerResult(status="cancelled", summary="cancelled")
+            time.sleep(0.01)
+        return WorkerResult(status="completed", summary="done")
+
+    monkeypatch.setattr(rt, "run_worker", slow_worker)
+    store, runtime, run = _make_run(tmp_path)
+    cancel_event = threading.Event()
+
+    def _request_cancel_from_another_store():
+        # Another process would build its own store on the same run dir.
+        time.sleep(0.1)
+        assert SwarmStore(base_dir=tmp_path).request_cancel(run.id)
+
+    thread = threading.Thread(target=runtime._execute_run, args=(run, cancel_event))
+    requester = threading.Thread(target=_request_cancel_from_another_store)
+    t0 = time.monotonic()
+    thread.start()
+    requester.start()
+    thread.join(timeout=5)
+    requester.join(timeout=5)
+    elapsed = time.monotonic() - t0
+
+    assert not thread.is_alive(), "run did not stop after a cross-process cancel request"
+    assert elapsed < 0.5, (
+        f"cross-process cancel did not reach the in-flight worker promptly: "
+        f"run took {elapsed:.2f}s despite the request landing after 0.1s."
+    )
+    assert store.load_run(run.id).status == RunStatus.cancelled
+    assert TaskStore(store.run_dir(run.id)).load_task("t1").status == TaskStatus.cancelled
+
+
 def test_run_worker_receives_cancel_event_kwarg(tmp_path, monkeypatch):
     """The retry wrapper must actually forward cancel_event to run_worker,
     not just accept it."""
