@@ -520,8 +520,8 @@ class SwarmTool(BaseTool):
             include_shell_tools: Whether worker registries may include shell
                 execution tools requested by presets.
             event_callback: Optional session event bridge used by the web chat.
-            session_id: Session that owns this call. Used to index the run so a
-                later user stop from the same session can still reach it.
+            session_id: Session that owns this call. The run is indexed by ID
+                for explicit cancellation after the tool returns.
             cancel_event: Cancellation flag shared with the hosting AgentRuntime.
                 Polled while waiting on the run so a user stop ends the wait
                 instead of leaving the tool blocked for the whole budget.
@@ -531,6 +531,15 @@ class SwarmTool(BaseTool):
         self._event_callback = event_callback
         self._session_id = session_id
         self._cancel_event = cancel_event
+        self._capture_usage = None
+
+    def bind_turn_cancel(self, cancel_event: Any) -> None:
+        """Share the host's cancellation signal for the duration of the tool wait."""
+        self._cancel_event = cancel_event
+
+    def bind_turn_usage(self, capture_usage: Any) -> None:
+        """Capture the originating turn's usage sink at launch."""
+        self._capture_usage = capture_usage
 
     def _emit_session_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Forward swarm status to the hosting session SSE channel if present."""
@@ -631,6 +640,7 @@ class SwarmTool(BaseTool):
                     {"run_id": current_run_id, "event": payload},
                 )
 
+            record_usage = self._capture_usage() if self._capture_usage is not None else None
             run = runtime.start_run(
                 preset,
                 variables,
@@ -638,6 +648,7 @@ class SwarmTool(BaseTool):
                 include_shell_tools=self.include_shell_tools,
                 **({"resume_from": resume_from} if resume_from is not None else {}),
                 **({"session_id": self._session_id} if self._session_id is not None else {}),
+                **({"record_usage": record_usage} if record_usage is not None else {}),
             )
         except FileNotFoundError as exc:
             return json.dumps(
@@ -698,6 +709,10 @@ class SwarmTool(BaseTool):
             reconciled = store.reconcile_run(loaded, write=True)
             if reconciled.status.value in ("completed", "failed", "cancelled"):
                 return _format_result(reconciled, preset, variables)
+
+        # Honor a parent stop through the end of the wait budget.
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            return self._stop_cancelled_run(runtime, store, run_id, preset, variables)
 
         # Wait budget elapsed. Return the run ID without cancelling the run.
         loaded = store.load_run(run_id)

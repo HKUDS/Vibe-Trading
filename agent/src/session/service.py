@@ -54,16 +54,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _cancel_session_swarm_runs(session_id: str) -> int:
-    """Cancel this session's live swarms, loading the optional worker runtime on demand."""
-    try:
-        from src.swarm.runtime import cancel_runs_for_session
-    except Exception:  # pragma: no cover - swarm extra missing in slim installs
-        logger.debug("Swarm runtime unavailable; skipping swarm cancel", exc_info=True)
-        return 0
-    return cancel_runs_for_session(session_id)
-
-
 class SessionService:
     """Session lifecycle service.
 
@@ -641,8 +631,8 @@ class SessionService:
             session_id: Session ID.
 
         Returns:
-            Whether cancellation succeeded. True means an active loop, task,
-            swarm run, or owned background task received a cancel signal.
+            Whether cancellation succeeded. True means an active loop, in-flight task,
+            or owned background task received a cancel signal.
         """
         background_handle = self._background_handles.get(session_id)
         background_cancelled = False
@@ -651,9 +641,6 @@ class SessionService:
         loop = self._active_loops.get(session_id)
         if loop is not None:
             loop.cancel()
-            # The loop only stops the ReAct cycle; tools that spawned their own
-            # background work (swarm) keep burning tokens unless told directly.
-            _cancel_session_swarm_runs(session_id)
             return True
         # No loop yet: the run is still building its registry. Cancel the task
         # itself so the claim is released instead of stranding the session.
@@ -661,11 +648,6 @@ class SessionService:
         if task is not None and not task.done():
             self._user_cancel_requests.add(session_id)
             task.cancel()
-            _cancel_session_swarm_runs(session_id)
-            return True
-        # Loop already returned (budget exhausted, turn ended) but a swarm it
-        # started may still be running in the background.
-        if _cancel_session_swarm_runs(session_id):
             return True
         return background_cancelled
 

@@ -428,9 +428,11 @@ def run_worker(
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
     cancel_event: _CancellationSignal | None = None,
+    record_usage: Callable[[UsageMeasure, dict], None] | None = None,
     resume: bool = False,
     *,
     policy: ToolPolicy,
+    successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
 
@@ -447,6 +449,7 @@ def run_worker(
         user_vars: User-provided variables for template rendering.
         run_dir: Path to .swarm/runs/{run_id}/ directory.
         event_callback: Optional callback for swarm events.
+        successful_reads: Successful read results retained across node retries.
         include_shell_tools: Whether this worker may register shell tools.
         grounding_block: Optional pre-rendered "Ground Truth" markdown that
             anchors the worker on real recent prices for symbols mentioned in
@@ -479,7 +482,9 @@ def run_worker(
             grounding_block=grounding_block,
             agent_config=agent_config,
             cancel_event=cancel_event,
+            record_usage=record_usage,
             resume=resume,
+            successful_reads=successful_reads,
         )
         return result
     finally:
@@ -511,7 +516,9 @@ def _run_worker_impl(
     llm: ChatLLM,
     policy: ToolPolicy,
     cancel_event: _CancellationSignal | None = None,
+    record_usage: Callable[[UsageMeasure, dict], None] | None = None,
     resume: bool = False,
+    successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
     """Prepare a worker task, bind its kernel ports, and deliver its result.
 
@@ -637,6 +644,14 @@ def _run_worker_impl(
         nonlocal total_input_tokens, total_output_tokens
         nonlocal total_cache_read_tokens, total_cache_creation_tokens, token_source
         measured = _measure_usage(messages, response)
+        if record_usage is not None:
+            record_usage(
+                measured,
+                response.usage_metadata if measured.token_source == "provider" else {
+                    "input_tokens": measured.input_tokens,
+                    "output_tokens": measured.output_tokens,
+                },
+            )
         total_input_tokens += measured.input_tokens
         total_output_tokens += measured.output_tokens
         total_cache_read_tokens += measured.cache_read_tokens
@@ -654,6 +669,9 @@ def _run_worker_impl(
     # Threshold for injecting a "wrap up" nudge (80% of budget)
     wrap_up_at = max(1, int(max_iterations * 0.8))
     last_assistant_content = ""
+    if successful_reads is None:
+        successful_reads = {}
+
     resume_key = checkpoint.context_key(messages)
     if resume:
         restored = checkpoint.restore(artifact_dir, key=resume_key, system=messages[0], run_dir=run_dir)
@@ -661,6 +679,7 @@ def _run_worker_impl(
             messages, last_assistant_content = restored
             _emit(event_callback, "worker_resumed", agent_id, task_id, {"messages": len(messages)})
         else:
+            successful_reads.clear()
             _emit(event_callback, "worker_resume_unavailable", agent_id, task_id,
                   {"reason": "Saved conversation is unavailable or incompatible; restarting from supplied reports."})
 
@@ -802,13 +821,18 @@ def _run_worker_impl(
                     emit=_on_llm_heartbeat,
                 ):
                     try:
-                        return llm.stream_chat(
+                        received = llm.stream_chat(
                             repair_provider_messages(view.messages),
                             tools=view.tools,
                             timeout=remaining_timeout,
                             on_text_chunk=_on_text_chunk,
                             **stream_kwargs,
                         )
+                        # An interrupted response without usage has no billable
+                        # count to record. Keep usage the provider did report.
+                        if not stop_requested() or _normalize_llm_usage(received.usage_metadata):
+                            account_response(received)
+                        return received
                     except ProviderStreamError as error:
                         usage = getattr(error, "usage_metadata", None)
                         account_response(LLMResponse(usage_metadata=usage))
@@ -884,7 +908,6 @@ def _run_worker_impl(
         # runtime._merge_token_source: one heuristic iteration contaminates the
         # cumulative total, so a partly-estimated sum never reads as billed.
         worker_context.observe(view.messages, view.tools, getattr(response, "usage_metadata", None))
-        account_response(response)
 
         # Track last meaningful assistant content
         if response.content:
@@ -973,6 +996,7 @@ def _run_worker_impl(
                           "arguments": _preview_tool_arguments(tc.arguments), **mcp_meta}},
             )
             tc_start = time.monotonic()
+            read_key = None
             tool = registry.get(tc.name)
             args, run_dir_refusal = _tool_arguments(tool, tc.arguments, artifact_dir)
 
@@ -1014,13 +1038,20 @@ def _run_worker_impl(
                     elif stop_requested():
                         break
                     else:
-                        result = registry.execute(tc.name, prepared.arguments)
-                        if prepared.post_result is not None:
-                            prepared.post_result(result, "ok")
-            # The model and persisted conversation need the same protection as
-            # event previews, before truncation can cut a credential envelope.
+                        if getattr(tool, "is_readonly", False) is True:
+                            read_key = (tc.name, json.dumps(prepared.arguments, sort_keys=True))
+                        if read_key in successful_reads:
+                            result = _repeat_read_result(successful_reads[read_key])
+                            read_key = None
+                        else:
+                            result = registry.execute(tc.name, prepared.arguments)
+                            if prepared.post_result is not None:
+                                prepared.post_result(result, "ok")
+            # Redact before storing or previewing any tool payload.
             result = redact_tool_result(result)
             result_is_error = _is_error_result(result)
+            if read_key is not None and not result_is_error:
+                successful_reads[read_key] = result
             tc_elapsed = time.monotonic() - tc_start
             _emit(
                 event_callback,
@@ -1209,6 +1240,18 @@ _UNPARSED_TOOL_MARKERS = (
     "<tool_sep>",
     "tool\u2581sep",
 )
+def _repeat_read_result(result: str) -> str:
+    """Identify reused evidence while retaining its original payload."""
+    try:
+        payload = json.loads(result)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        payload["_vibe_repeat"] = True
+        return json.dumps(payload, ensure_ascii=False)
+    return f"{result}\n\n[Repeat: prior successful read]"
+
+
 def _is_error_result(result: str) -> bool:
     """Did a tool call return a top-level error envelope?
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -154,6 +155,30 @@ class UsageLedger:
         self.activity = activity
         self.goals = goals
         self.memory = memory
+        self._lock = threading.Lock()
+
+    def begin_turn(self, llm, goals) -> None:
+        """Start a fresh ledger while existing background charges retain theirs."""
+        with self._lock:
+            self.summary = _new_llm_usage_summary(llm)
+            self.goals = goals
+
+    def capture_swarm_usage(self):
+        """Bind a background run to the originating turn and goal."""
+        if not self.memory.run_dir:
+            return None
+        run_dir = Path(self.memory.run_dir)
+        iteration = self.activity.iteration
+        with self._lock:
+            summary, goals = self.summary, self.goals
+
+        def record(usage):
+            with self._lock:
+                delta = _normalize_llm_usage(usage)
+                if delta is not None and goals.account(delta):
+                    _record_llm_usage(run_dir, summary, usage, iteration, purpose="swarm")
+
+        return record
 
     def record(
         self,
@@ -165,22 +190,25 @@ class UsageLedger:
         include_call_index: bool = True,
     ) -> None:
         """Persist usage and emit usage through the item/run vocabulary."""
-        delta = _record_llm_usage(run_dir, self.summary, usage, iteration, purpose=purpose)
-        self.goals.account(delta)
+        with self._lock:
+            delta = _record_llm_usage(run_dir, self.summary, usage, iteration, purpose=purpose)
+            self.goals.account(delta)
+            call_index = self.summary["totals"]["calls"]
         metadata: dict[str, Any] = {"iter": iteration}
         if purpose is not None:
             metadata["purpose"] = purpose
         if delta:
             event = {**delta, **metadata}
             if include_call_index:
-                event["call_index"] = self.summary["totals"]["calls"]
+                event["call_index"] = call_index
             self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE, **event})
         elif purpose is None and not self.activity.cancel.is_set():
             self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
         else:
             if purpose == "subagent":
                 self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.RUN_USAGE_UNAVAILABLE, **metadata})
-            _record_unreported_llm_call(run_dir, self.summary)
+            with self._lock:
+                _record_unreported_llm_call(run_dir, self.summary)
 
     def record_subagent(self, event_type: str, data: dict[str, Any]) -> bool:
         """Account one child event in the parent's run."""

@@ -21,6 +21,7 @@ from concurrent.futures import (
     as_completed,
 )
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Callable
 
@@ -53,7 +54,7 @@ from src.swarm.task_store import (
 )
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
-from src.swarm.worker import _CancellationSignal, run_worker
+from src.swarm.worker import UsageMeasure, _CancellationSignal, run_worker
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,7 @@ logger = logging.getLogger(__name__)
 # ``run_swarm`` builds one instance per tool call — so an HTTP cancel handler
 # holding a different runtime cannot reach a run started by the agent, and once
 # the tool call returns (wait budget exhausted) nobody polls that instance at
-# all. This module-level index is the only handle that outlives both: the owning
-# session can still stop the run while its worker threads are burning tokens.
+# all. The index routes explicit cancellation by run ID after the tool returns.
 _ACTIVE_RUNS: dict[str, tuple[str, Callable[[], bool]]] = {}
 _ACTIVE_RUNS_LOCK = threading.Lock()
 
@@ -104,35 +104,6 @@ def active_run_ids(session_id: str) -> list[str]:
     """Return the run ids currently indexed for ``session_id``."""
     with _ACTIVE_RUNS_LOCK:
         return [rid for rid, (sid, _) in _ACTIVE_RUNS.items() if sid == session_id]
-
-
-def cancel_runs_for_session(session_id: str) -> int:
-    """Signal every indexed run of ``session_id``; return how many were reached.
-
-    Cancellation is requested for all of them before any is waited on, so a
-    session with parallel runs stops them together instead of serially. Runs
-    that accepted the signal leave the index: nothing else can be done for them,
-    and keeping dead ids around would make ``cancel_current`` report success for
-    a stop that changes nothing.
-    """
-    with _ACTIVE_RUNS_LOCK:
-        targets = [
-            (rid, cancel)
-            for rid, (sid, cancel) in _ACTIVE_RUNS.items()
-            if sid == session_id
-        ]
-    signalled: list[str] = []
-    for run_id, cancel in targets:
-        try:
-            if cancel():
-                signalled.append(run_id)
-        except Exception:
-            logger.warning("Swarm cancel callback failed for session %s", session_id, exc_info=True)
-    if signalled:
-        with _ACTIVE_RUNS_LOCK:
-            for run_id in signalled:
-                _ACTIVE_RUNS.pop(run_id, None)
-    return len(signalled)
 
 
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
@@ -220,6 +191,44 @@ def _merge_token_source(current: str | None, incoming: str | None) -> str | None
     if current is None or incoming == "estimated":
         return incoming
     return current
+
+
+class _RunUsage:
+    """Combine node calls and serialize usage with run snapshots."""
+
+    def __init__(self, run: SwarmRun, store: SwarmStore, parent: Callable[[dict], None] | None):
+        self.run = run
+        self.store = store
+        self.parent = parent
+        self._lock = threading.Lock()
+        self._reported: set[str] = set()
+        self._finalized = False
+
+    def record(self, task_id: str, measured: UsageMeasure, raw: dict) -> None:
+        with self._lock:
+            self._reported.add(task_id)
+            self._add(measured)
+            if self._finalized:
+                self.store.update_run(self.run)
+        if self.parent is not None:
+            self.parent(raw)
+
+    def settle(self, task_id: str, result: WorkerResult) -> None:
+        with self._lock:
+            if task_id not in self._reported:
+                self._add(result)
+
+    def persist(self, *, final: bool = False) -> None:
+        with self._lock:
+            self.store.update_run(self.run)
+            self._finalized = final
+
+    def _add(self, usage: UsageMeasure | WorkerResult) -> None:
+        self.run.total_input_tokens += usage.input_tokens
+        self.run.total_output_tokens += usage.output_tokens
+        self.run.cache_read_tokens += usage.cache_read_tokens
+        self.run.cache_creation_tokens += usage.cache_creation_tokens
+        self.run.token_source = _merge_token_source(self.run.token_source, usage.token_source)
 
 
 def _rehome_artifact_paths(
@@ -425,6 +434,7 @@ class SwarmRuntime:
         resume_from: SwarmRun | None = None,
         *,
         session_id: str | None = None,
+        record_usage: Callable[[dict], None] | None = None,
     ) -> SwarmRun:
         """Start a swarm run. Returns immediately, execution happens in background.
 
@@ -440,6 +450,7 @@ class SwarmRuntime:
                 ``None`` (default) starts a fully fresh run.
             session_id: Owning session, if the run should be reachable after
                 its initiating tool call returns.
+            record_usage: Optional sink bound to the turn that launched the run.
 
         Returns:
             The created SwarmRun instance (status=pending initially).
@@ -484,7 +495,7 @@ class SwarmRuntime:
         cancel_event = threading.Event()
         thread = threading.Thread(
             target=self._run_with_cleanup,
-            args=(run, cancel_event, include_shell_tools, resume_from),
+            args=(run, cancel_event, include_shell_tools, resume_from, record_usage),
             name=f"swarm-{run.id}",
             daemon=True,
         )
@@ -515,9 +526,10 @@ class SwarmRuntime:
         cancel_event: threading.Event,
         include_shell_tools: bool,
         resume_from: SwarmRun | None,
+        record_usage: Callable[[dict], None] | None = None,
     ) -> None:
         try:
-            self._execute_run(run, cancel_event, include_shell_tools, resume_from)
+            self._execute_run(run, cancel_event, include_shell_tools, resume_from, record_usage)
         finally:
             self._forget_run(run.id)
 
@@ -590,6 +602,7 @@ class SwarmRuntime:
         cancel_event: threading.Event,
         include_shell_tools: bool = False,
         resume_from: SwarmRun | None = None,
+        record_usage: Callable[[dict], None] | None = None,
     ) -> None:
         """Core orchestration loop (runs in background thread).
 
@@ -612,6 +625,7 @@ class SwarmRuntime:
         """
         run_id = run.id
         run_dir = self._store.run_dir(run_id)
+        usage = _RunUsage(run, self._store, record_usage)
 
         # Ensure fresh MCP tool discovery for this run — prior run's cached
         # specs may be stale if operator edited mcp_servers config between runs.
@@ -686,18 +700,12 @@ class SwarmRuntime:
                     cancel_event=cancel_event,
                     include_shell_tools=include_shell_tools,
                     grounding_block=grounding_block,
+                    usage=usage,
                 )
 
                 # Process results
                 for tid, result in layer_results.items():
-                    # Accumulate token counts to run totals
-                    run.total_input_tokens += result.input_tokens
-                    run.total_output_tokens += result.output_tokens
-                    run.cache_read_tokens += result.cache_read_tokens
-                    run.cache_creation_tokens += result.cache_creation_tokens
-                    run.token_source = _merge_token_source(
-                        run.token_source, result.token_source
-                    )
+                    usage.settle(tid, result)
 
                     if result.status == "completed":
                         task_summaries[tid] = result.summary
@@ -802,7 +810,7 @@ class SwarmRuntime:
                 # Snapshot run.json at the layer boundary so list_runs and any
                 # client that reads run.json directly sees fresh task statuses
                 # without per-task I/O spam. One write per layer is cheap.
-                self._sync_run_tasks_snapshot(run, task_store)
+                self._sync_run_tasks_snapshot(run, task_store, usage)
 
         except Exception as exc:
             logger.error("Run %s failed with exception", run_id, exc_info=True)
@@ -825,10 +833,10 @@ class SwarmRuntime:
         from src.swarm.delivery import refresh_report
         refresh_report(run, layers[-1] if layers else [])
 
-        self._store.update_run(run)
+        usage.persist(final=True)
         self._emit_event(run_id, self._make_event("run_completed", data={"status": final_status.value, "report_is_partial": run.report_is_partial, "final_report": run.final_report}))
 
-    def _sync_run_tasks_snapshot(self, run: SwarmRun, task_store: TaskStore) -> None:
+    def _sync_run_tasks_snapshot(self, run: SwarmRun, task_store: TaskStore, usage: _RunUsage) -> None:
         """Mirror live ``tasks/*.json`` back into ``run.json`` at a safe point.
 
         Called at layer boundaries only — not per-task — to keep run.json a
@@ -838,7 +846,7 @@ class SwarmRuntime:
         """
         try:
             run.tasks = task_store.load_all()
-            self._store.update_run(run)
+            usage.persist()
         except Exception:
             logger.warning("Layer-boundary run.json sync failed", exc_info=True)
 
@@ -1062,6 +1070,7 @@ class SwarmRuntime:
         cancel_event: threading.Event,
         include_shell_tools: bool = False,
         grounding_block: str = "",
+        usage: _RunUsage | None = None,
     ) -> dict[str, WorkerResult]:
         """Execute all tasks in a single layer in parallel, with retry on failure.
 
@@ -1185,6 +1194,7 @@ class SwarmRuntime:
                     include_shell_tools=include_shell_tools,
                     grounding_block=grounding_block,
                     cancel_event=layer_stop,
+                    **({"record_usage": partial(usage.record, tid)} if usage is not None else {}),
                 )
                 futures[future] = tid
                 per_task_budget = (
@@ -1254,6 +1264,7 @@ class SwarmRuntime:
         include_shell_tools: bool = False,
         grounding_block: str = "",
         cancel_event: _CancellationSignal | None = None,
+        record_usage: Callable[[UsageMeasure, dict], None] | None = None,
     ) -> WorkerResult:
         """Run a worker with automatic retry on failure.
 
@@ -1275,6 +1286,7 @@ class SwarmRuntime:
                 symbols were extracted from user_vars.
             cancel_event: Cooperative stop signal for the run or this layer.
                 Forwarded to run_worker() and checked before another attempt.
+            record_usage: Optional sink for each model attempt by this task.
 
         Returns:
             WorkerResult from the last attempt.
@@ -1286,6 +1298,7 @@ class SwarmRuntime:
         cumulative_cache_creation_tokens = 0
         cumulative_token_source: str | None = None
         result: WorkerResult | None = None
+        successful_reads: dict[tuple[str, str], str] = {}
 
         def stop_requested() -> bool:
             return cancel_event is not None and cancel_event.is_set()
@@ -1338,6 +1351,7 @@ class SwarmRuntime:
                     if stop_requested():
                         return cancelled_result()
                     clear_agent_artifacts(artifact_dir)
+                    successful_reads.clear()
 
             resume_kwargs = {}
             if (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
@@ -1356,6 +1370,8 @@ class SwarmRuntime:
                 grounding_block=grounding_block,
                 agent_config=self._agent_config,
                 cancel_event=cancel_event,
+                successful_reads=successful_reads,
+                **({"record_usage": record_usage} if record_usage is not None else {}),
                 **resume_kwargs,
             )
 
