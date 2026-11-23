@@ -431,6 +431,7 @@ def run_worker(
     resume: bool = False,
     *,
     policy: ToolPolicy,
+    successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
 
@@ -447,6 +448,7 @@ def run_worker(
         user_vars: User-provided variables for template rendering.
         run_dir: Path to .swarm/runs/{run_id}/ directory.
         event_callback: Optional callback for swarm events.
+        successful_reads: Successful read results retained across node retries.
         include_shell_tools: Whether this worker may register shell tools.
         grounding_block: Optional pre-rendered "Ground Truth" markdown that
             anchors the worker on real recent prices for symbols mentioned in
@@ -480,6 +482,7 @@ def run_worker(
             agent_config=agent_config,
             cancel_event=cancel_event,
             resume=resume,
+            successful_reads=successful_reads,
         )
         return result
     finally:
@@ -512,6 +515,7 @@ def _run_worker_impl(
     policy: ToolPolicy,
     cancel_event: _CancellationSignal | None = None,
     resume: bool = False,
+    successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
     """Prepare a worker task, bind its kernel ports, and deliver its result.
 
@@ -654,6 +658,9 @@ def _run_worker_impl(
     # Threshold for injecting a "wrap up" nudge (80% of budget)
     wrap_up_at = max(1, int(max_iterations * 0.8))
     last_assistant_content = ""
+    if successful_reads is None:
+        successful_reads = {}
+
     resume_key = checkpoint.context_key(messages)
     if resume:
         restored = checkpoint.restore(artifact_dir, key=resume_key, system=messages[0], run_dir=run_dir)
@@ -661,6 +668,7 @@ def _run_worker_impl(
             messages, last_assistant_content = restored
             _emit(event_callback, "worker_resumed", agent_id, task_id, {"messages": len(messages)})
         else:
+            successful_reads.clear()
             _emit(event_callback, "worker_resume_unavailable", agent_id, task_id,
                   {"reason": "Saved conversation is unavailable or incompatible; restarting from supplied reports."})
 
@@ -949,8 +957,6 @@ def _run_worker_impl(
             return finish(WorkerStatus.incomplete, summary, iteration + 1, warning_iterations=iteration + 1, error=reason)
         _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
         return finish(WorkerStatus.completed, summary, iteration + 1, warning_iterations=iteration + 1)
-
-    successful_reads: dict[tuple[str, str], str] = {}
 
     def run_tools(response: LLMResponse) -> Continue | Stop:
         # Append assistant message with tool calls

@@ -1256,6 +1256,7 @@ class SwarmRuntime:
         cumulative_cache_creation_tokens = 0
         cumulative_token_source: str | None = None
         result: WorkerResult | None = None
+        successful_reads: dict[tuple[str, str], str] = {}
 
         def stop_requested() -> bool:
             return cancel_event is not None and cancel_event.is_set()
@@ -1308,6 +1309,7 @@ class SwarmRuntime:
                     if stop_requested():
                         return cancelled_result()
                     clear_agent_artifacts(artifact_dir)
+                    successful_reads.clear()
 
             resume_kwargs = {}
             if (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
@@ -1326,6 +1328,7 @@ class SwarmRuntime:
                 grounding_block=grounding_block,
                 agent_config=self._agent_config,
                 cancel_event=cancel_event,
+                successful_reads=successful_reads,
                 **resume_kwargs,
             )
 

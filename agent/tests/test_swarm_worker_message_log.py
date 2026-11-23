@@ -20,11 +20,13 @@ from pathlib import Path
 
 import pytest
 
+import src.swarm.runtime as runtime_mod
 import src.swarm.worker as worker_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.swarm.presets import build_run_from_preset
+from src.swarm.store import SwarmStore
 from src.tools import web_reader_tool
 from src.swarm.artifacts import agent_artifact_dir
 from src.swarm.worker import run_worker
@@ -168,7 +170,8 @@ def test_worker_reuses_only_successful_identical_reads(tmp_path, monkeypatch, re
     assert invocations[-1]["window"] == 8
 
 
-def test_credit_research_rate_node_reuses_read_url_result(tmp_path, monkeypatch):
+@pytest.mark.parametrize("retry_node", [False, True])
+def test_credit_research_rate_node_reuses_read_url_result(tmp_path, monkeypatch, retry_node):
     url = "https://example.com/central-bank-calendar"
     result_json = {"status": "ok", "url": url, "content": "Next announcement: November 23."}
     fetches = []
@@ -184,17 +187,36 @@ def test_credit_research_rate_node_reuses_read_url_result(tmp_path, monkeypatch)
         )
 
     model = _ScriptedLLM()
-    model._responses[:1] = [request("first"), request("repeat")]
+    if retry_node:
+        first_model = _ScriptedLLM()
+        first_model._responses[:] = [request("first")]
+        model._responses[:1] = [request("repeat")]
+        models = iter([first_model, model])
+    else:
+        model._responses[:1] = [request("first"), request("repeat")]
+        models = iter([model])
     monkeypatch.setattr(web_reader_tool, "read_url", read)
-    monkeypatch.setattr(worker_mod, "ChatLLM", lambda *args, **kwargs: model)
+    monkeypatch.setattr(worker_mod, "ChatLLM", lambda *args, **kwargs: next(models))
     preset = build_run_from_preset("credit_research_team", {"target": "AAPL", "market": "US"})
     task = next(task for task in preset.tasks if task.id == "task-rate")
     agent = next(agent for agent in preset.agents if agent.id == task.agent_id)
-    result = run_worker(
-        policy=ToolPolicy.from_config(get_env_config()),
+    policy = ToolPolicy.from_config(get_env_config())
+    kwargs = dict(
         agent_spec=agent, task=task, upstream_summaries={},
         user_vars=preset.user_vars, run_dir=tmp_path,
     )
+    if retry_node:
+        events = []
+        host = runtime_mod.SwarmRuntime(store=SwarmStore(tmp_path), policy=policy)
+        monkeypatch.setattr(runtime_mod, "_worker_retry_delay_s", lambda _: 0)
+        result = host._run_worker_with_retries(
+            **kwargs, event_callback=events.append, run_id=preset.id,
+        )
+        assert [event.type for event in events if event.type in {"task_retry", "worker_resumed"}] == [
+            "task_retry", "worker_resumed",
+        ]
+    else:
+        result = run_worker(policy=policy, **kwargs)
     assert result.status == "completed", result.error
     assert fetches == [(url, False)]
     artifact_dir = agent_artifact_dir(tmp_path, agent.id, task.id)
