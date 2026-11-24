@@ -68,7 +68,11 @@ class IdentityConstraint:
     explicit: bool = True
 
     def audit_record(self) -> dict[str, Any]:
-        """Return a trace-safe record without copying conversation text."""
+        """Build a trace-safe record of the identity constraint.
+
+        Returns:
+            The constraint dimension, value, source ID and span, and explicitness flag.
+        """
         return {
             "dimension": self.dimension,
             "value": self.value,
@@ -93,7 +97,16 @@ class ResolutionContext:
         *,
         enabled: bool = True,
     ) -> ResolutionContext:
-        """Build context from user-authored text while preserving that text verbatim."""
+        """Build context from user-authored text while preserving that text verbatim.
+
+        Args:
+            raw_user_message: Current user message, kept exactly as submitted.
+            history: Prior messages from which user-authored market constraints may be extracted.
+            enabled: Whether to extract constraints. When false, retain only the current text.
+
+        Returns:
+            The raw message and extracted constraints, respecting any history reset.
+        """
         if not enabled:
             return cls(raw_user_message=raw_user_message)
         extracted: list[IdentityConstraint] = []
@@ -114,7 +127,14 @@ class ResolutionContext:
         return cls(raw_user_message=raw_user_message, constraints=tuple(extracted))
 
     def constraints_for(self, query: str) -> tuple[IdentityConstraint, ...]:
-        """Return only constraints that can be tied to this resolver query."""
+        """Select constraints that can be tied to this resolver query.
+
+        Args:
+            query: Instrument query to compare with the constraint subjects.
+
+        Returns:
+            The highest-ranked matching constraints for each dimension, retaining ties.
+        """
         normalized_query = _comparable_text(query)
         ranked: list[tuple[tuple[int, int], IdentityConstraint]] = []
         for constraint in self.constraints:
@@ -141,7 +161,14 @@ class ResolutionContext:
 
 
 def candidate_market(candidate: Mapping[str, Any]) -> str | None:
-    """Normalize a resolver candidate's market without provider coupling."""
+    """Normalize a resolver candidate's market from its symbol or metadata.
+
+    Args:
+        candidate: Resolver result with an optional symbol, market, or exchange.
+
+    Returns:
+        The normalized CN, HK, or US market code in lowercase, or None if unrecognized.
+    """
     symbol = str(candidate.get("symbol") or "").strip().upper()
     if symbol.endswith(".SS"):
         symbol = f"{symbol[:-3]}.SH"

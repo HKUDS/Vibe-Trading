@@ -48,7 +48,12 @@ USER_SKILLS_DIR = Path.home() / ".vibe-trading" / "skills" / "user"
 
 
 class SkillsLoader:
-    """Load skills from bundled skills/ directory and user skills directory."""
+    """Load skills from the bundled and user skills directories.
+
+    Args:
+        skills_dir: Bundled skills directory to scan, if overriding the package default.
+        user_skills_dir: User skills directory to scan, if overriding the runtime default.
+    """
 
     def __init__(self, skills_dir: Optional[Path] = None,
                  user_skills_dir: Optional[Path] = None) -> None:
@@ -77,7 +82,11 @@ class SkillsLoader:
     ]
 
     def get_descriptions(self) -> str:
-        """Return skills grouped by category for the system prompt."""
+        """Return skills grouped by category for the system prompt.
+
+        Returns:
+            Grouped skill list with category headers, or a marker when no skills are loaded.
+        """
         if not self.skills:
             return "(no skills)"
 
@@ -96,7 +105,16 @@ class SkillsLoader:
         return "\n".join(lines)
 
     def get_content(self, name: str) -> str:
-        """Return the full documentation for a skill (used by the load_skill tool)."""
+        """Return the full documentation for a skill used by the load_skill tool.
+
+        Falls back to disk lookup for user skills created mid-session.
+
+        Args:
+            name: Skill name to look up.
+
+        Returns:
+            XML-wrapped full skill document, or an error message listing available skills.
+        """
         for skill in self.skills:
             if skill.name == name:
                 return f'<skill name="{name}">\n{skill.body}\n</skill>'
@@ -132,12 +150,27 @@ class SkillSection:
 
     @property
     def chars(self) -> int:
-        """Length of the section including every nested subsection."""
+        """Measure the section including every nested subsection.
+
+        Returns:
+            Number of characters between the section's start and end offsets.
+        """
         return self.end - self.start
 
 
 def split_sections(document: str) -> List[SkillSection]:
-    """Map a markdown document to its heading structure."""
+    """Map a markdown document to its heading structure.
+
+    A section runs from its heading to the next heading of the same or shallower
+    level, so it includes the entire subtree.
+
+    Args:
+        document: Full markdown text.
+
+    Returns:
+        Sections in document order, or an empty list when no headings appear
+        outside fenced code blocks.
+    """
     raw: List[Tuple[int, str, int, str]] = []  # level, title, start, summary
     offset = 0
     fenced = False
@@ -183,7 +216,15 @@ PATH_SEPARATOR = ">"
 
 
 def ancestor_titles(sections: List[SkillSection], index: int) -> List[str]:
-    """Return the enclosing heading titles of ``sections[index]``, outermost first."""
+    """Return the enclosing heading titles of sections[index], outermost first.
+
+    Args:
+        sections: Sections in the document order produced by split_sections.
+        index: Position of the section whose ancestors are wanted.
+
+    Returns:
+        Titles from the outermost enclosing heading inwards, or an empty list at top level.
+    """
     ancestors: List[str] = []
     level = sections[index].level
     for candidate in reversed(sections[:index]):
@@ -195,16 +236,29 @@ def ancestor_titles(sections: List[SkillSection], index: int) -> List[str]:
 
 
 def qualified_path(sections: List[SkillSection], index: int) -> str:
-    """Render the full ``"Parent > Child"`` address of one section."""
+    """Render the full "Parent > Child" address of one section.
+
+    Args:
+        sections: Sections in the document order produced by split_sections.
+        index: Position of the section to address.
+
+    Returns:
+        The heading title preceded by its enclosing headings, if any.
+    """
     parts = ancestor_titles(sections, index) + [sections[index].title]
     return f" {PATH_SEPARATOR} ".join(parts)
 
 
 def find_sections(sections: List[SkillSection], wanted: str) -> List[SkillSection]:
-    """Return matches in document order using case-exact, folded, then prefix search.
+    """Locate every section matching a heading address.
 
     Args:
+        sections: Sections in the document order produced by split_sections.
         wanted: A title or an ordered chain of ancestor titles separated by `>`.
+
+    Returns:
+        All matches in document order at the first successful tier of
+        case-exact, case-folded, or prefix search. Multiple results indicate ambiguity.
     """
     parts = [part.strip() for part in wanted.split(PATH_SEPARATOR)]
     parts = [part for part in parts if part]
@@ -240,6 +294,14 @@ def find_sections(sections: List[SkillSection], wanted: str) -> List[SkillSectio
 
 
 def find_section(sections: List[SkillSection], wanted: str) -> Optional[SkillSection]:
-    """Locate a single section by heading address."""
+    """Locate a single section by heading address.
+
+    Args:
+        sections: Sections in the document order produced by split_sections.
+        wanted: Section address as the caller typed it.
+
+    Returns:
+        The first matching section, or None if there are no matches.
+    """
     matches = find_sections(sections, wanted)
     return matches[0] if matches else None

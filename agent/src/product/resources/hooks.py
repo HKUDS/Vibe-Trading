@@ -41,7 +41,11 @@ class HookDecision:
 
     @property
     def denied(self) -> bool:
-        """Whether this hook adds a refusal to the normal safety gates."""
+        """Check whether this hook adds a refusal to the normal safety gates.
+
+        Returns:
+            True when the hook decision is deny.
+        """
         return self.decision == "deny"
 
 
@@ -86,7 +90,14 @@ def _command_specs(raw: Any) -> list[tuple[Any, str]]:
 
 
 class HookManager:
-    """Load and run command hooks for one runtime root."""
+    """Load and run command hooks for one runtime root.
+
+    Args:
+        runtime_root: Directory in which hook commands run, defaulting to the active runtime.
+        config_path: Optional hooks file. Paths outside the runtime root fall back to its hooks.json.
+        timeout_seconds: Command timeout in seconds, defaulting to the runtime setting and clamped to 0.01 or more.
+        audit: Optional callback receiving structured hook decisions.
+    """
 
     def __init__(
         self,
@@ -142,7 +153,11 @@ class HookManager:
         return loaded
 
     def set_audit_sink(self, sink: Any | None) -> None:
-        """Attach a thread recorder or callback after a turn is created."""
+        """Attach a thread recorder or callback after a turn is created.
+
+        Args:
+            sink: Callback or recorder with a hook method, or None to clear the sink.
+        """
         if sink is None:
             self.audit = None
         elif callable(sink):
@@ -151,7 +166,21 @@ class HookManager:
             self.audit = getattr(sink, "hook", None)
 
     def run(self, event: str, payload: Mapping[str, Any] | None = None) -> HookDecision:
-        """Run matching hooks and return the first refusal."""
+        """Run matching hooks and return the first refusal.
+
+        A pre-hook timeout, crash, or nonzero exit denies the tool. Other
+        lifecycle hooks record execution errors and continue.
+
+        Args:
+            event: Supported lifecycle event whose matching commands should run.
+            payload: Context for matching and for the command's JSON input, if any.
+
+        Returns:
+            The first refusal, otherwise the first error if any, or an allow decision.
+
+        Raises:
+            ValueError: The event is not a supported hook event.
+        """
         if event not in HOOK_EVENTS:
             raise ValueError(f"unknown hook event {event!r}")
         context = dict(payload or {})
@@ -237,7 +266,14 @@ class HookManager:
 
 
 def load_hooks(*, audit: Callable[[dict[str, Any]], None] | None = None) -> HookManager:
-    """Construct the manager bound to the active runtime root."""
+    """Construct the manager bound to the active runtime root.
+
+    Args:
+        audit: Optional callback receiving structured hook decisions.
+
+    Returns:
+        The hook manager for the active runtime.
+    """
     return HookManager(audit=audit)
 
 

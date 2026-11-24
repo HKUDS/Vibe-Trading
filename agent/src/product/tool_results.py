@@ -18,7 +18,14 @@ ARCHIVE_MANIFEST = ".archived_backtest.json"
 logger = logging.getLogger(__name__)
 
 def parse_tool_payload(result: str) -> dict | None:
-    """Decode a structured result while allowing plain text."""
+    """Decode a structured result while allowing plain text.
+
+    Args:
+        result: Tool result text, which may contain a JSON object.
+
+    Returns:
+        The decoded object, or None for invalid JSON or any other JSON type.
+    """
     try:
         value = json.loads(result)
     except (TypeError, ValueError):

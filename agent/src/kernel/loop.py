@@ -11,7 +11,18 @@ def run_loop(
     context: LoopContext, ports: LoopPorts, limits: RunLimits,
     cancel: CancellationToken, emit: EventSink,
 ) -> LoopResult:
-    """Schedule a prepared turn and return its delivered messages and usage."""
+    """Schedule a prepared turn and return its delivered messages and usage.
+
+    Args:
+        context: Mutable model input and tool definitions managed by the host.
+        ports: Callbacks for requesting responses, handling steps, and reading results.
+        limits: Regular iteration limit and finish reasons that retain partial answers.
+        cancel: Token checked before starting each iteration.
+        emit: Event sink passed to the model request callback.
+
+    Returns:
+        The delivered message delta, terminal reason, iteration count, and usage totals.
+    """
     count = 0
     final_retry = False
     reason = "max_iterations"

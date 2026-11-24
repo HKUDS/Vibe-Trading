@@ -38,13 +38,18 @@ def _replay_context_result(result: str) -> str:
 
 
 class ToolReplay:
-    """Track exact successful calls and the visibility of restored results."""
+    """Track exact successful calls and the visibility of restored results.
+
+    Args:
+        env: Tool environment supplying registry metadata for caching decisions.
+    """
 
     def __init__(self, env):
         self.env = env
         self.reset()
 
     def reset(self) -> None:
+        """Clear successful-call history, caches, and replay tracking for a new turn."""
         self._called_ok = set()
         self._successful_call_keys = {}
         self._called_identical = {}
@@ -131,7 +136,12 @@ class ToolReplay:
         return (tool_name, canonical)
 
     def record_success(self, call_id: str, key: tuple[str, str] | None) -> None:
-        """Track a successful call and the message carrying its evidence."""
+        """Track a successful call and the message carrying its evidence.
+
+        Args:
+            call_id: Provider identifier of the successful call.
+            key: Canonical call identity, or None to omit it from deduplication.
+        """
         if key is not None:
             self._called_ok.add(key)
             self._successful_call_keys[call_id] = key
@@ -145,7 +155,23 @@ class ToolReplay:
         self.record_success(tc.id, key)
 
     def deliver_cached(self, tc, tool_def, is_repeatable, dedup_key, context, messages, trace, iteration, delivery):
-        """Deliver or skip an already authorized call when its replay policy permits."""
+        """Deliver or skip an already authorized call when its replay policy permits.
+
+        Args:
+            tc: Provider tool call being considered for reuse.
+            tool_def: Registered tool definition, if available, supplying replay flags.
+            is_repeatable: Whether ordinary duplicate execution is allowed.
+            dedup_key: Canonical call identity, or None if it could not be computed.
+            context: Context builder used to format any delivered result.
+            messages: Conversation messages that receive the cached result or skip notice.
+            trace: Writer for cache, replay, and skip events.
+            iteration: Current iteration number for trace events.
+            delivery: Tool delivery state used for messages, events, and progress.
+
+        Returns:
+            True if the call was satisfied from cache or skipped as a duplicate, or
+            False if it still needs execution.
+        """
         if (
             dedup_key is not None
             and dedup_key in self._readonly_replay_ready
@@ -211,6 +237,13 @@ class ToolReplay:
         return False
 
     def remember(self, tc, result, update_memory):
+        """Store an eligible result and invalidate replayable reads after a mutation.
+
+        Args:
+            tc: Executed provider tool call whose arguments identify the cache entry.
+            result: Tool result payload to cache when eligible.
+            update_memory: Whether a mutable tool call should invalidate cached reads.
+        """
         try:
             tool_def = self.env.registry.get(tc.name)
         except Exception:  # noqa: BLE001

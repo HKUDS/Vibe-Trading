@@ -30,7 +30,15 @@ class ToolAuthorization:
     symbols: tuple[str, ...] = ()
 
     def error_payload(self, tool_name: str, identity: Mapping[str, Any]) -> str:
-        """Render a blocked tool call as a normal structured error result."""
+        """Render a blocked tool call as a normal structured error result.
+
+        Args:
+            tool_name: Name of the blocked consumer tool.
+            identity: Ledger summary to include in the error.
+
+        Returns:
+            A JSON error with the decision, affected symbols, and resolver guidance.
+        """
         return json.dumps(
             {
                 "status": "error",
@@ -55,7 +63,16 @@ def venue_mismatch_hints(
     requested_symbol: str,
     authorized_symbols: Iterable[str],
 ) -> list[str]:
-    """Turn a same-issuer venue mismatch into an actionable resolver hint."""
+    """Turn a same-issuer venue mismatch into an actionable resolver hint.
+
+    Args:
+        requested_symbol: Model-supplied symbol to compare with the locked venues.
+        authorized_symbols: Symbols already locked for use.
+
+    Returns:
+        Guidance to resolve a second listing or disambiguate a bare ticker, or an
+        empty list when neither case applies.
+    """
     requested = _normalize_symbol(requested_symbol)
     authorized = {_normalize_symbol(item) for item in authorized_symbols}
     base, separator, _ = requested.rpartition(".")
@@ -78,7 +95,18 @@ def match_authorized_symbol(
     requested_symbol: str,
     authorized_symbols: Iterable[str],
 ) -> str | None:
-    """Map a consumer argument to one unique locked canonical symbol."""
+    """Map a consumer argument to one unique locked canonical symbol.
+
+    Both sides are canonicalized first. A bare code carries no venue, so it
+    is accepted only when exactly one locked identity has it as its base.
+
+    Args:
+        requested_symbol: Model-supplied symbol argument.
+        authorized_symbols: Symbols locked before the tool batch.
+
+    Returns:
+        The unique canonical identity consumed by the argument, or None.
+    """
     requested = _normalize_symbol(requested_symbol)
     authorized = {_normalize_symbol(item) for item in authorized_symbols}
     if requested in authorized:
@@ -94,7 +122,14 @@ def _matching_listings(base: str, symbols: Iterable[str]) -> list[str]:
 
 
 def extract_symbol_arguments(arguments: Mapping[str, Any]) -> list[str]:
-    """Extract model-selected identities from well-known argument keys."""
+    """Extract model-selected identities from well-known argument keys.
+
+    Args:
+        arguments: Tool arguments whose recognized keys may hold symbols or collections.
+
+    Returns:
+        Deduplicated, normalized symbols in encounter order.
+    """
     symbols: list[str] = []
     for key, value in arguments.items():
         if str(key).casefold() not in _SYMBOL_ARGUMENT_KEYS:
@@ -114,7 +149,17 @@ def authorize_symbols(
     authorized: set[str],
     identity_status: str,
 ) -> ToolAuthorization:
-    """Authorize model-selected symbols using the pre-segment snapshot."""
+    """Authorize model-selected symbols using the pre-segment snapshot.
+
+    Args:
+        symbols: Symbols requested in the consumer call.
+        authorized: Canonical symbols locked before this execution segment.
+        identity_status: Aggregate ledger status from the same snapshot.
+
+    Returns:
+        An allow decision when every symbol matches a lock, or a refusal explaining
+        the missing, conflicting, or mismatched identity.
+    """
     if identity_status != "locked" or not authorized:
         return ToolAuthorization(
             allowed=False,

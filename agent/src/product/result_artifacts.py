@@ -15,7 +15,21 @@ logger = logging.getLogger(__name__)
 
 
 def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots: FileRoots, export_csv: bool = False) -> str:
-    """Keep a JSON observation addressable by calculation tools and file readers."""
+    """Keep a JSON observation addressable by calculation tools and file readers.
+
+    Args:
+        result: Full JSON object as text, before any presentation truncation.
+        run_dir: Authorized workspace. None retains the original response.
+        roots: File roots used to validate the supplied run directory.
+        export_csv: Also save normalized market bars from the result as a CSV.
+
+    Returns:
+        Result with a file reference, or a bounded receipt for a large result.
+        Persistence errors remain visible without discarding the calculation.
+
+    Raises:
+        json.JSONDecodeError: A run directory was provided but the result is invalid JSON.
+    """
     if not run_dir:
         return result
 
@@ -82,7 +96,21 @@ def _write_original(path: Path, content: str, root: Path) -> None:
 
 
 def save_result_parts(content: str, folder: Path, root: Path) -> list[str]:
-    """Save immutable parts that fit through the actual read_file JSON envelope."""
+    """Save immutable parts that fit through the actual read_file JSON envelope.
+
+    Args:
+        content: Complete, already redacted result text.
+        folder: Directory for sequentially numbered parts.
+        root: Workspace boundary that every file must stay within.
+
+    Returns:
+        Paths to the parts in their original order.
+
+    Raises:
+        ValueError: The path leaves no room for content in the read envelope,
+            a part escapes the workspace, or an existing part's content differs.
+        OSError: A part or its directory could not be read or written.
+    """
     offset, part_count = 0, 0
     while offset < len(content):
         part = folder / f'{part_count + 1}.txt'
@@ -122,7 +150,18 @@ def _persist_result_files(
 
 
 def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> str:
-    """Keep a large result in full, with a bounded valid JSON receipt."""
+    """Keep a large result in full, with a bounded valid JSON receipt.
+
+    Args:
+        result: Complete tool result. Credentials are scrubbed before saving.
+        run_dir: Current task workspace, if available.
+        registry: Actual registry, used to check for a local file reader.
+
+    Returns:
+        The original bounded result or a receipt naming its full file and readable
+        parts. If saving or local reading is unavailable, returns the bounded
+        presentation without claiming a file was saved.
+    """
     result = redact_tool_result(result)
     if len(result) <= TOOL_RESULT_LIMIT or not run_dir:
         return truncate_tool_result(result)

@@ -9,7 +9,14 @@ from src.product.write_targets import pending_write_directive, record_written_ta
 
 
 class WriteTargetState:
-    """Own the per-run set of files written by the model."""
+    """Own the per-run set of files written by the model.
+
+    Args:
+        memory: Workspace state supplying the current run directory.
+        runtime: Model settings used for write provenance.
+        model_source: Initial source label for the configured model.
+        registry: Tool registry supplying authorized file roots.
+    """
 
     def __init__(self, memory, runtime, model_source, *, registry) -> None:
         self.registry = registry
@@ -24,7 +31,11 @@ class WriteTargetState:
         self.written_files = set()
 
     def record(self, arguments: Mapping[str, Any]) -> None:
-        """Record a write and its model provenance."""
+        """Record a write and its model provenance.
+
+        Args:
+            arguments: Successful write or edit arguments containing a path or file_path.
+        """
         record_written_target(
             arguments,
             written_files=self.written_files,
@@ -36,7 +47,16 @@ class WriteTargetState:
         )
 
     def pending(self, user_message: str, run_started_wall: float) -> str:
-        """Return the pending-write directive for the current run."""
+        """Build the pending-write directive for the current run.
+
+        Args:
+            user_message: User prompt from which to extract requested target paths.
+            run_started_wall: Run start as a Unix timestamp for comparing file modification times.
+
+        Returns:
+            The directive when none of the named targets qualifies as written, otherwise
+            an empty string. Prompts without a recognized write request also return empty.
+        """
         return pending_write_directive(
             user_message, run_started_wall, written_files=self.written_files
         )

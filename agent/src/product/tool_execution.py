@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ToolEnvironment:
+    """Hold the registry and workspace state used during tool execution.
+
+    Args:
+        registry: Registry used to look up, authorize, and execute tools.
+        memory: Workspace memory for file paths and tool counters.
+        identity: Optional ledger for authorizing instrument arguments.
+        data_window: Explicit user market-data window to apply when supported.
+        session_id: Session identifier attached to hook context.
+    """
     registry: ToolRegistry
     memory: WorkspaceMemory
     identity: IdentityLedger | None = None
@@ -32,7 +41,17 @@ class ToolEnvironment:
 
 
 class ToolExecution:
-    """Plan identity dependencies, refusals and ordered runs of authorized calls."""
+    """Plan identity dependencies, refusals and ordered runs of authorized calls.
+
+    Args:
+        env: Registry, workspace, and identity state for the batch.
+        replay: Cache and duplicate tracker consulted before execution.
+        delivery: Publisher for tool progress, refusals, and results.
+        invocation: Runner that checks policy and invokes bound tools.
+        cancel_event: Event that prevents starting pending calls when set.
+        context_budget: Callback calculating compaction thresholds for current messages.
+        prompt_tokens: Callback measuring prompt tokens for compaction requests.
+    """
     def __init__(self, env, replay, delivery, invocation, cancel_event, context_budget, prompt_tokens):
         self.env = env
         self.replay = replay
@@ -94,7 +113,18 @@ class ToolExecution:
         trace: Any,
         iteration: int,
     ) -> tuple[bool, str]:
-        """Pre-process tool calls: handle compact, filter duplicates, batch execute."""
+        """Prepare and execute a provider tool batch, recording results in the conversation.
+
+        Args:
+            tool_calls: Raw tool calls from the model response.
+            context: Context builder for formatting messages.
+            messages: Conversation messages to append to in place.
+            trace: Writer for execution, normalization, and compaction events.
+            iteration: Current iteration number.
+
+        Returns:
+            Whether compaction was requested and its focus topic, which may be empty.
+        """
         # Keep the explicit resolver’s provider call ID when moving it ahead of the read.
         tool_calls = list(tool_calls)
         window = self.env.data_window

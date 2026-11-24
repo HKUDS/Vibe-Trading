@@ -17,6 +17,13 @@ from src.tools.redaction import redact_payload, redact_tool_result
 
 @dataclass(frozen=True)
 class ToolRefusal:
+    """Carry the result of a call refused before tool execution.
+
+    Args:
+        reason: Diagnostic explaining why execution was refused.
+        result: Serialized error to deliver as the tool result.
+        elapsed_ms: Time spent before the refusal, in milliseconds.
+    """
     reason: str
     result: str
     elapsed_ms: int = 0
@@ -24,6 +31,12 @@ class ToolRefusal:
 
 @dataclass(frozen=True)
 class PreparedToolCall:
+    """Carry authorized arguments and an optional result hook.
+
+    Args:
+        arguments: Policy-adjusted arguments to pass to the tool.
+        post_result: Optional callback accepting the serialized result and its status.
+    """
     arguments: dict[str, Any]
     post_result: Callable[[str, str], None] | None = None
 
@@ -37,7 +50,19 @@ def prepare_tool_call(
     call_id: str,
     session_id: str,
 ) -> PreparedToolCall | ToolRefusal:
-    """Apply the mandatory policy before allowing a hook to add a refusal."""
+    """Apply the mandatory policy before allowing a hook to add a refusal.
+
+    Args:
+        name: Requested tool.
+        arguments: Proposed tool arguments before policy adjustment.
+        check_policy: Callback returning an allow flag, reason, and adjusted arguments.
+        hooks: Hook manager to consult before execution and notify afterward, if set.
+        call_id: Provider call identifier included in hook context.
+        session_id: Session identifier included in hook context.
+
+    Returns:
+        Prepared arguments and an optional result callback, or a structured refusal.
+    """
     allowed, reason, arguments = check_policy(name, arguments)
     if not allowed:
         return ToolRefusal(reason, json.dumps(
@@ -69,7 +94,15 @@ def prepare_tool_call(
 
 
 class ToolInvocation:
-    """Bind mandatory preflight, hook audit and non-detachable order handling."""
+    """Bind mandatory preflight, hook audit and non-detachable order handling.
+
+    Args:
+        env: Registry and session context for tool calls.
+        replay: Helper for checking tool mutability and computing call identities.
+        hooks: Optional hook manager. Falls back to the registry's manager when absent.
+        cancelled: Callback checking the run's cancellation state.
+        progress: Sink for tool progress and waiting events.
+    """
 
     def __init__(self, env, replay, hooks, cancelled, progress):
         self.env = env
@@ -85,6 +118,7 @@ class ToolInvocation:
     heartbeat_interval = staticmethod(_heartbeat_interval_s)
 
     def reset(self) -> None:
+        """Clear the recorded order attempts for the next turn."""
         self._order_attempts.clear()
 
     def _invoke_tool(

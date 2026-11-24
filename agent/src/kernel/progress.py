@@ -24,7 +24,11 @@ class ProgressEvent:
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Return a JSON-serializable dict for SSE payloads."""
+        """Serialize progress for transport in an SSE payload.
+
+        Returns:
+            JSON-serializable fields with elapsed seconds rounded to two decimal places.
+        """
         return {
             "tool": self.tool,
             "stage": self.stage,
@@ -61,7 +65,16 @@ def emit_progress(
     total: Optional[int] = None,
     message: str = "",
 ) -> None:
-    """Publish tool progress without raising, or do nothing outside an active tool context."""
+    """Publish a structured progress event from a tool.
+
+    Silently no-ops when called outside an active tool context.
+
+    Args:
+        stage: Short stage label.
+        current: Current unit count, if known.
+        total: Total unit count, if known.
+        message: Free-form human-readable detail.
+    """
     emit = _get_emitter()
     if emit is None:
         return
@@ -79,7 +92,13 @@ def emit_progress(
 
 
 class HeartbeatTimer:
-    """Emit keepalive ticks during a tool invocation and bound the wait on context exit."""
+    """Emit keepalive ticks during a tool invocation and bound the wait on context exit.
+
+    Args:
+        tool_name: Tool name surfaced in each tick payload.
+        interval: Seconds between ticks. Values below 0.5 are clamped.
+        emit: Callback invoked with each tick payload.
+    """
 
     def __init__(
         self,

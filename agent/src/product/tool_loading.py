@@ -13,12 +13,20 @@ from src.agent.tools import BaseTool, ToolRegistry
 
 @lru_cache(maxsize=1)
 def loading_policy() -> dict[str, Any]:
-    """Read the shipped tool-loading policy."""
+    """Read the shipped tool-loading policy.
+
+    Returns:
+        The decoded settings from the JSON file beside this module.
+    """
     return json.loads(Path(__file__).with_suffix(".json").read_text(encoding="utf-8"))
 
 
 class DeferredToolRegistry(ToolRegistry):
-    """Per-conversation schema exposure; execution permissions stay with the source tools."""
+    """Expose schemas per conversation while retaining the source tools' execution permissions.
+
+    Args:
+        source: Registry from which to copy tools, policy, and discovery diagnostics.
+    """
 
     def __init__(self, source: ToolRegistry) -> None:
         super().__init__(policy=source.policy)
@@ -41,24 +49,42 @@ class DeferredToolRegistry(ToolRegistry):
             ])
 
     def exposed_names(self) -> list[str]:
-        """Return the exposed tool names in request order, for a later turn."""
+        """Capture the exposed tool names for use in a later turn.
+
+        Returns:
+            A list of exposed names in request order.
+        """
         with self._lock:
             return list(self._loaded)
 
     def restore_exposure(self, names: list[str]) -> None:
-        """Expose the schemas an earlier turn of the same conversation loaded."""
+        """Expose the schemas an earlier turn of the same conversation loaded.
+
+        Order is kept. Unavailable names are skipped and load_tools stays exposed.
+
+        Args:
+            names: Names returned by exposed_names for the earlier turn.
+        """
         with self._lock:
             restored = dict.fromkeys(name for name in names if name in self._tools)
             restored.setdefault("load_tools")
             self._loaded = restored
 
     def request_definitions(self) -> list[dict[str, Any]]:
-        """Return unmodified schemas for the tools exposed on this question."""
+        """Collect schemas for the tools exposed on this question.
+
+        Returns:
+            Unmodified tool schemas in exposure order.
+        """
         with self._lock:
             return [self._tools[name].to_openai_schema() for name in self._loaded]
 
     def catalog(self) -> str:
-        """List every available name with a short discovery hint, never a top-k."""
+        """List available tools for discovery.
+
+        Returns:
+            One line per discoverable tool, with its exact name and bounded description.
+        """
         limit = loading_policy()["catalog_description_chars"]
         lines = []
         for name, tool in self._tools.items():
@@ -71,7 +97,14 @@ class DeferredToolRegistry(ToolRegistry):
         return "\n".join(lines)
 
     def expose(self, names: list[str]) -> dict[str, Any]:
-        """Load known names atomically without adding tools absent from the registry."""
+        """Load known names atomically without adding tools absent from the registry.
+
+        Args:
+            names: Nonempty list of exact tool names selected from the catalog.
+
+        Returns:
+            An acknowledgement of the loaded schemas, or an error with no exposure change.
+        """
         if not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names):
             return {"status": "error", "error": "names must be a non-empty list of exact tool names"}
         unknown = [name for name in names if name not in self._tools]
@@ -90,7 +123,11 @@ class DeferredToolRegistry(ToolRegistry):
 
 
 class LoadToolsTool(BaseTool):
-    """Select exact schemas from the current run's complete tool catalog."""
+    """Select exact schemas from the current run's complete tool catalog.
+
+    Args:
+        registry: Deferred registry whose next request will expose loaded schemas.
+    """
 
     name = "load_tools"
     description = (
@@ -110,19 +147,39 @@ class LoadToolsTool(BaseTool):
 
     @classmethod
     def check_available(cls) -> bool:
-        """Installed explicitly per run, never by global subclass discovery."""
+        """Reserve the tool for explicit installation by the deferred registry.
+
+        Returns:
+            False to exclude this tool from global subclass discovery.
+        """
         return False
 
     def __init__(self, registry: DeferredToolRegistry) -> None:
         self.registry = registry
 
     def execute(self, names: list[str], **kwargs: Any) -> str:
-        """Expose schemas without invoking a tool or changing its permissions."""
+        """Expose schemas without invoking a tool or changing its permissions.
+
+        Args:
+            names: Nonempty list of exact names to expose.
+            **kwargs: Additional arguments accepted by the tool interface and ignored here.
+
+        Returns:
+            JSON acknowledgement or error from schema exposure.
+        """
         return json.dumps(self.registry.expose(names), ensure_ascii=False)
 
 
 def prepare_registry(registry: ToolRegistry) -> ToolRegistry:
-    """Select deferred exposure for large registries when enabled in config."""
+    """Select deferred exposure for large registries when enabled in config.
+
+    Args:
+        registry: Registry supplying available tools and their execution policy.
+
+    Returns:
+        A fresh deferred registry when the input is already deferred or qualifies
+        for lazy loading, otherwise the input registry.
+    """
     from src.config.accessor import get_env_config
 
     if isinstance(registry, DeferredToolRegistry):
@@ -137,7 +194,15 @@ def prepare_registry(registry: ToolRegistry) -> ToolRegistry:
 
 
 def request_definitions(registry: ToolRegistry) -> list[dict[str, Any]]:
-    """Return this request's schemas without changing the full registry API."""
+    """Collect the tool schemas visible on the current request.
+
+    Args:
+        registry: Registry supplying exposed or ordinary tool definitions.
+
+    Returns:
+        Exposed schemas for a deferred registry, all definitions for a regular
+        registry, or an empty list when definitions are unavailable.
+    """
     if isinstance(registry, DeferredToolRegistry):
         return registry.request_definitions()
     definitions = getattr(registry, "get_definitions", None)

@@ -24,7 +24,17 @@ def record_written_target(
     active_model_id: str | None,
     active_model_source: str,
 ) -> None:
-    """Remember a file written by write_file/edit_file for completion checks."""
+    """Remember a file written by write_file or edit_file for completion checks.
+
+    Args:
+        arguments: Tool arguments containing path or file_path.
+        roots: Authorized file roots used to validate a separate adaptation run.
+        written_files: Set to update with the case-folded target path.
+        run_dir: Current run directory for resolving relative paths and model provenance.
+        llm_runtime: Runtime snapshot supplying the provider for strategy provenance.
+        active_model_id: Model identifier to record for this write, if available.
+        active_model_source: Label for the source of the recorded model identifier.
+    """
     raw = arguments.get("path") or arguments.get("file_path")
     if not raw:
         return
@@ -101,7 +111,17 @@ def record_written_target(
 def pending_write_directive(
     user_message: str, run_started_wall: float, *, written_files: set[str]
 ) -> str:
-    """Return a directive naming task target files not yet written this run."""
+    """Build a reminder when a task asks for file writes and none of its targets is confirmed.
+
+    Args:
+        user_message: User prompt containing write intent and named target paths.
+        run_started_wall: Run start as a Unix timestamp used to recognize recent writes.
+        written_files: Case-folded target paths already recorded for this run.
+
+    Returns:
+        A directive listing the named targets, or an empty string when there is
+        no recognized request or any target was recorded or modified since run start.
+    """
     if not _TARGET_ACTION_RE.search(user_message or ""):
         return ""
     targets = _named_target_paths(user_message)

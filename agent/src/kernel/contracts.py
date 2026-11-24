@@ -49,7 +49,11 @@ class LLMResponse:
 
     @property
     def has_tool_calls(self) -> bool:
-        """Return True if the response contains tool calls."""
+        """Check whether the response contains tool calls.
+
+        Returns:
+            True if at least one tool call is present.
+        """
         return len(self.tool_calls) > 0
 
 
@@ -62,11 +66,23 @@ class Continue(Enum):
 
 @dataclass(frozen=True)
 class Stop:
+    """Tell the loop to stop with the given terminal reason.
+
+    Args:
+        reason: Terminal reason to expose in the loop result.
+    """
     reason: str
 
 
 class CancellationToken(Protocol):
-    def is_set(self) -> bool: ...
+    """Expose the cancellation state of a running turn."""
+    def is_set(self) -> bool:
+        """Check whether cancellation has been requested.
+
+        Returns:
+            True when the loop should stop at its next cancellation check.
+        """
+        ...
 
 
 @dataclass
@@ -80,12 +96,25 @@ class LoopContext:
 
 @dataclass(frozen=True)
 class RunLimits:
+    """Define the turn's iteration budget and partial-output stop conditions.
+
+    Args:
+        max_iterations: Number of regular iterations before any final-answer retry.
+        partial_finish_reasons: Provider finish reasons that retain partial text and stop the loop.
+    """
     max_iterations: int
     partial_finish_reasons: frozenset[str] = frozenset({"length", "max_tokens"})
 
 
 @dataclass(frozen=True)
 class Iteration:
+    """Describe the request mode for one loop iteration.
+
+    Args:
+        number: One-based number of the current iteration.
+        text_only: Whether the host should omit tools from the request.
+        final_answer_retry: Whether this is the extra final-answer attempt.
+    """
     number: int
     text_only: bool
     final_answer_retry: bool
@@ -93,6 +122,14 @@ class Iteration:
 
 @dataclass(frozen=True)
 class LoopResult:
+    """Capture the loop's delivered output and terminal state.
+
+    Args:
+        messages: Model-visible messages delivered during this turn.
+        reason: Terminal reason selected by the loop or host.
+        iterations: Number of iterations started, including any final-answer retry.
+        usage: Usage totals reported by the host.
+    """
     messages: list[ModelMessage]
     reason: str
     iterations: int

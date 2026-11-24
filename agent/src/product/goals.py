@@ -12,7 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 def goal_state_ws_blob(meta: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build a WebSocket payload for the current active goal state."""
+    """Build a WebSocket payload for the current active goal state.
+
+    Args:
+        meta: Session metadata containing a goal_state snapshot or one compact goal.
+
+    Returns:
+        The active flag and active and completed goal lists, or an inactive payload
+        with empty lists when no goal metadata is available.
+    """
     if not isinstance(meta, dict):
         return {"active": False, "active_goals": [], "completed_goals": []}
     goal_state = meta.get("goal_state")
@@ -28,13 +36,23 @@ def goal_state_ws_blob(meta: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"active": False, "active_goals": [], "completed_goals": []}
 
 class GoalBudget:
-    """Charge each model call and count the turn once across parent and child calls."""
+    """Charge each model call and count the turn once across parent and child calls.
+
+    Args:
+        emit: Sink for goal updates after usage accounting.
+    """
 
     def __init__(self, emit):
         self.emit = emit
         self.start("", None)
 
     def start(self, session_id, goal_id):
+        """Reset accounting and check the budget of the selected goal.
+
+        Args:
+            session_id: Session to which usage will be charged when a goal is active.
+            goal_id: Goal to load and check when both identifiers are present.
+        """
         self.session_id = session_id
         self.goal_id = goal_id
         self.store = None
@@ -48,6 +66,11 @@ class GoalBudget:
             self.check(self.store.get_goal_snapshot(goal_id))
 
     def check(self, snapshot: dict[str, Any] | None) -> None:
+        """Record a stop reason when the goal has reached its token budget.
+
+        Args:
+            snapshot: Goal snapshot with its token budget and usage, if available.
+        """
         goal = (snapshot or {}).get("goal") or {}
         limit = goal.get("token_budget")
         if limit is not None and int(goal.get("tokens_used") or 0) >= limit:
@@ -58,6 +81,14 @@ class GoalBudget:
             )
 
     def account(self, usage_delta: dict[str, int] | None) -> bool:
+        """Charge tokens and count the current turn once for an active goal.
+
+        Args:
+            usage_delta: Usage increment containing total_tokens, if available.
+
+        Returns:
+            True when accounting succeeds or no update is needed, or False on an accounting error.
+        """
         if not (self.goal_id and self.session_id):
             return True
         token_delta = int(usage_delta.get("total_tokens") or 0) if usage_delta else 0
@@ -85,7 +116,15 @@ class GoalBudget:
 
 
     def continue_goal(self, state: Any, conversation) -> bool:
-        """Continue an active goal only when progress and budget allow it."""
+        """Continue an active goal when progress and continuation limits allow it.
+
+        Args:
+            state: Turn state supplying the draft answer, messages, and trace.
+            conversation: Recorder used to store the intermediate answer and continuation prompt.
+
+        Returns:
+            True if a continuation was added, or False if the turn should proceed to its answer.
+        """
         if state.final_answer_retry or not self.goal_id or not self.session_id:
             return False
         maximum = _goal_max_continuations()

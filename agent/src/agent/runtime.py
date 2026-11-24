@@ -61,7 +61,23 @@ logger = logging.getLogger(__name__)
 
 
 class AgentRuntime:
-    """Compose and run a research turn with its host resources."""
+    """Compose and run a research turn with its host resources.
+
+    Args:
+        registry: Registry of tools permitted for the host.
+        llm: Model adapter used for turn requests.
+        memory: Workspace state to reuse, or None to start with empty state.
+        event_callback: Optional sink for streamed run events.
+        max_iterations: Maximum research iterations, plus one possible text-only answer retry.
+        persistent_memory: Optional source for the prompt snapshot and memory recall.
+        cancel_event: Optional shared event for requesting cancellation.
+        background_manager: Background handle, defaulting to the registry's handle or the shared manager.
+        thread_recorder: Optional recorder supplied by a host that owns turn finalization.
+        queued_inputs: Optional queue of user messages to deliver between requests.
+        system_prompt: Optional host-supplied prompt used in place of the generated prompt.
+        local_thread_path: Optional path for a runtime-owned thread with durable items required.
+        pacing_type: Turn pacing class to instantiate for each run.
+    """
 
     def __init__(
         self,
@@ -146,15 +162,30 @@ class AgentRuntime:
                 bind(callback)
 
     def request_backoff(self, streak: int) -> float:
-        """Return the retry delay for this host."""
+        """Calculate the retry delay for this host.
+
+        Args:
+            streak: One-based number of consecutive request failures.
+
+        Returns:
+            The capped exponential retry delay in seconds.
+        """
         return _stream_retry_backoff_s(streak)
 
     def request_max_delay(self) -> float:
-        """Return this host's retry delay cap."""
+        """Read this host's retry delay cap.
+
+        Returns:
+            The configured maximum retry delay in seconds.
+        """
         return _stream_retry_max_delay_s()
 
     def run_limits(self) -> RunLimits:
-        """Build the kernel limits, including the host's truncation reasons."""
+        """Build the kernel limits for this host.
+
+        Returns:
+            The host's iteration limit with the kernel's default partial finish reasons.
+        """
         return RunLimits(self.max_iterations)
 
     def _should_stop(self) -> bool:
@@ -169,7 +200,16 @@ class AgentRuntime:
             self._background_manager.cancel_all()
 
     def run(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
-        """Run a turn with its provider session ID bound through cleanup."""
+        """Run a turn with its provider session ID bound through cleanup.
+
+        Args:
+            user_message: User message for this turn.
+            history: Prior conversation messages, if any.
+            session_id: Session ID bound to provider calls and used for turn records.
+
+        Returns:
+            Execution result dict containing status and the turn's output or failure details.
+        """
         token = bind_llm_session_id(session_id)
         result = None
         try:

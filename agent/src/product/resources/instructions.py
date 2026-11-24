@@ -113,7 +113,14 @@ def _read_source(path: Path, loaded: set[str], limit: int) -> Optional[str]:
 
 
 def build_instruction_block(launch_dir: Optional[Path] = None) -> str:
-    """Return the system-prompt block holding the user's instruction files."""
+    """Return the system-prompt block holding the user's instruction files.
+
+    Args:
+        launch_dir: CLI launch directory to search in addition to the runtime root, or None to search only the root.
+
+    Returns:
+        The delimited block, or an empty string when no file contributes.
+    """
     limit = get_env_config().agent_tuning.vibe_trading_instructions_max_bytes
     sources = [("runtime root", get_runtime_root() / INSTRUCTION_FILE_NAME)]
     if launch_dir is not None:

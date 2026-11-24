@@ -14,7 +14,15 @@ from .contracts import BoundCall
 
 
 def execute_batch(calls: list[BoundCall], cancelled: Callable[[], bool]) -> None:
-    """Run adjacent parallel calls together. Serial errors propagate to the run."""
+    """Run adjacent parallel calls together and deliver results in call order.
+
+    Args:
+        calls: Bound calls in execution order, each with its own parallel eligibility.
+        cancelled: Check before each serial call or parallel group to skip pending work.
+
+    Raises:
+        Exception: An error from a serial invocation or a call lifecycle callback.
+    """
     for parallel, group in groupby(calls, key=lambda call: call.parallel):
         batch = list(group)
         if parallel and len(batch) > 1:
@@ -56,7 +64,29 @@ def wait_for_tool(
     set_emitter: Callable,
     progress: Callable[..., None], post_result: Callable[[str, str], None] | None,
 ) -> tuple[str, int]:
-    """Wait for a worker, keeping non-detachable calls attached until completion."""
+    """Run a tool in a worker thread and monitor its progress until the wait ends.
+
+    Args:
+        tool_name: Name used to identify the worker and its progress events.
+        call_id: Identifier attached to progress events for this invocation.
+        invoke: Callable that runs the tool and returns its result payload.
+        readonly: Whether the tool can run without side effects.
+        detachable: Whether cancellation can end the wait while the worker is active.
+        timeout: Maximum wait in seconds, or None to wait without a deadline.
+        cancelled: Callable that reports whether the run has been cancelled.
+        heartbeat: Context manager factory that accepts the waiting-event callback.
+        set_emitter: Worker-local setter called with a progress callback and cleared on exit.
+        progress: Sink for progress and waiting events, including the heartbeat flag.
+        post_result: Optional callback receiving the result payload and its status.
+
+    Returns:
+        The tool payload and elapsed milliseconds, or a JSON error and elapsed time
+        on timeout or detachable cancellation. The error reports an unknown outcome
+        when the call is side-effecting or cannot be detached.
+
+    Raises:
+        BaseException: Propagates an exception raised by the worker when its result is collected.
+    """
     side_effecting = not readonly or not detachable
     timed_out = threading.Event()
 

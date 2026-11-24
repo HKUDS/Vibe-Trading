@@ -136,7 +136,15 @@ def _write_llm_usage(run_dir: Path, summary: dict[str, Any]) -> None:
 
 
 class UsageLedger:
-    """Own one run's usage summary and its event/accounting callbacks."""
+    """Own one run's usage summary and its event and accounting callbacks.
+
+    Args:
+        llm: Model adapter supplying the provider and model for the usage summary.
+        emit: Sink for usage and usage-unavailable events.
+        activity: Run tracker supplying the iteration and cancellation state.
+        goals: Goal budget charged for recorded usage.
+        memory: Workspace state locating usage records for child calls.
+    """
 
     def __init__(self, llm, emit, activity, goals, memory):
         self.summary = _new_llm_usage_summary(llm)
@@ -147,13 +155,23 @@ class UsageLedger:
         self._lock = threading.Lock()
 
     def begin_turn(self, llm, goals) -> None:
-        """Start a fresh ledger while existing background charges retain theirs."""
+        """Start a fresh ledger while existing background charges retain theirs.
+
+        Args:
+            llm: Model adapter supplying usage context for the new summary.
+            goals: Goal budget to charge for the new turn.
+        """
         with self._lock:
             self.summary = _new_llm_usage_summary(llm)
             self.goals = goals
 
     def capture_swarm_usage(self):
-        """Bind a background run to the originating turn and goal."""
+        """Bind a background run to the originating turn and goal.
+
+        Returns:
+            A callback that charges swarm usage to the captured ledger and goal, or
+            None when the originating run has no workspace.
+        """
         if not self.memory.run_dir:
             return None
         run_dir = Path(self.memory.run_dir)
@@ -178,7 +196,15 @@ class UsageLedger:
         purpose: str | None = None,
         include_call_index: bool = True,
     ) -> None:
-        """Persist usage and emit usage through the item/run vocabulary."""
+        """Persist usage and emit usage through the item/run vocabulary.
+
+        Args:
+            run_dir: Directory holding the run's usage records.
+            usage: Provider usage metadata, if reported.
+            iteration: Iteration number attached to the record and event.
+            purpose: Optional label for a specialized model call.
+            include_call_index: Whether to expose the cumulative call index in the event.
+        """
         with self._lock:
             delta = _record_llm_usage(run_dir, self.summary, usage, iteration, purpose=purpose)
             self.goals.account(delta)
@@ -200,7 +226,16 @@ class UsageLedger:
                 _record_unreported_llm_call(run_dir, self.summary)
 
     def record_subagent(self, event_type: str, data: dict[str, Any]) -> bool:
-        """Account one child event in the parent's run."""
+        """Account one child event in the parent's run.
+
+        Args:
+            event_type: Child event type used with the payload kind to recognize usage.
+            data: Child event payload, including token counts on usage events.
+
+        Returns:
+            True if the parent has reached a goal stopping condition, or False if it
+            can continue or has no run directory.
+        """
         run_dir = self.memory.run_dir
         if not run_dir:
             return False

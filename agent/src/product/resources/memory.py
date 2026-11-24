@@ -15,12 +15,24 @@ class WorkspaceMemory:
     counters: Dict[str, int] = field(default_factory=dict)
 
     def increment(self, key: str) -> int:
-        """Increment a counter and return the new value."""
+        """Increment a counter and return the new value.
+
+        Args:
+            key: Counter key, typically a tool name.
+
+        Returns:
+            Updated counter value.
+        """
         self.counters[key] = self.counters.get(key, 0) + 1
         return self.counters[key]
 
     def to_summary(self) -> str:
-        """Generate a state summary for the LLM."""
+        """Generate a state summary for the LLM.
+
+        Returns:
+            Text listing the current run directory, session workspace, and counters
+            when available, or the empty-state marker.
+        """
         lines: list[str] = []
         if self.run_dir:
             lines.append(f"- run_dir: {self.run_dir}")

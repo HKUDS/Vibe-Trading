@@ -27,7 +27,15 @@ class UserDataWindow:
 
     @classmethod
     def parse(cls, message: str):
-        """Read a literal ISO range, leaving ambiguous/multiple windows alone."""
+        """Read a literal ISO range, leaving ambiguous or multiple windows alone.
+
+        Args:
+            message: Current user text containing the date range and canonical symbols.
+
+        Returns:
+            A constraint for one valid range and explicit canonical symbols, or None
+            when the range or symbols cannot be identified.
+        """
         dates = re.findall(_DATE, message)
         ranges = list(_RANGE.finditer(message))
         symbols = _scan_symbols(message)
@@ -39,7 +47,17 @@ class UserDataWindow:
         return cls(start, end, frozenset(symbols))
 
     def normalize(self, arguments: dict) -> dict:
-        """Remove padding from overlapping reads of the explicitly named symbols."""
+        """Remove padding from overlapping reads of the explicitly named symbols.
+
+        Args:
+            arguments: Model's market-data arguments, which are never mutated in place.
+
+        Returns:
+            Effective arguments with an auditable correction when needed. Disjoint
+            comparison windows, new instruments, and invalid arguments pass through.
+            Explicit warmup is separate from the analysis dates and remains available
+            to the market tool after normalization.
+        """
         codes = arguments.get("codes")
         if not isinstance(codes, list) or not codes or any(
             not isinstance(code, str) or _normalize_symbol(code) not in self.symbols for code in codes

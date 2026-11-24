@@ -10,7 +10,14 @@ from src.kernel.events import EventSink
 
 
 class TurnStream:
-    """Stream model text unchanged and throttle progress events."""
+    """Stream model text unchanged and throttle progress events.
+
+    Args:
+        emit: Sink for live assistant events.
+        iteration: Host iteration number carried by emitted events.
+        heartbeat_interval: Callback returning the minimum gap between waiting events in seconds.
+        reasoning_interval: Callback returning the minimum gap between reasoning events in seconds.
+    """
 
     def __init__(
         self, *, emit: EventSink,
@@ -30,7 +37,12 @@ class TurnStream:
         self.last_waiting_emit: float | None = None
 
     def emit(self, event_type: str, data: dict[str, Any]) -> None:
-        """Emit one response lifecycle directly from the streaming owner."""
+        """Emit a stream event, starting the live assistant item on its first delta.
+
+        Args:
+            event_type: Event type passed to the sink.
+            data: Payload whose kind determines whether to attach the live assistant ID.
+        """
         if data.get("kind") in {vocabulary.TEXT_DELTA, vocabulary.TEXT_RESET, vocabulary.REASONING_DELTA}:
             if not self.started:
                 self.started = True
@@ -40,12 +52,23 @@ class TurnStream:
         self._emit(event_type, data)
 
     def on_text(self, delta: str) -> None:
+        """Buffer and emit the next text fragment.
+
+        Args:
+            delta: Provider text fragment to add to the assistant stream.
+        """
         self.thinking_chunks.append(delta)
         self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_DELTA, "delta": delta, "iter": self.iteration})
         self.streamed_chars += len(delta)
 
     def finish(self, content: str) -> None:
-        """Deliver a provider's final text, including adapters that do not stream."""
+        """Deliver a provider's final text, including adapters that do not stream.
+
+        Any remaining text is emitted with the final phase.
+
+        Args:
+            content: Complete provider text. A changed prefix resets the live text.
+        """
         shown = "".join(self.thinking_chunks)[:self.streamed_chars]
         if not content.startswith(shown):
             # Some adapters normalize final text, requiring a reset of the partial stream.
@@ -58,6 +81,7 @@ class TurnStream:
             )
 
     def on_waiting(self) -> None:
+        """Emit a waiting heartbeat when the configured interval allows it."""
         now = _time.monotonic()
         if self.last_waiting_emit is None or now - self.last_waiting_emit >= self.heartbeat_interval():
             self.last_waiting_emit = now
@@ -65,6 +89,11 @@ class TurnStream:
 
     def on_reasoning(self, delta: str) -> None:
         # Throttle reasoning to preserve text and tool events in the SSE replay buffer.
+        """Track reasoning and emit the latest tail at the configured interval.
+
+        Args:
+            delta: Provider reasoning fragment used to update the character count and tail.
+        """
         self.reasoning_chars += len(delta)
         self.reasoning_tail = (self.reasoning_tail + delta)[-600:]
         now = _time.monotonic()

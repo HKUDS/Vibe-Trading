@@ -19,7 +19,21 @@ from src.providers.messages import attach_tool_call_thought_signatures
 
 
 class IterationSteps:
-    """Prepare a turn, request a response, and apply tool results in the host."""
+    """Prepare a turn, request a response, and apply tool results in the host.
+
+    Args:
+        state: Mutable state for the turn being driven.
+        requests: Provider request runner for the prepared context.
+        activity: Run cancellation and activity tracker.
+        goals: Active goal budget checked before and after requests.
+        tools: Executor for the provider's tool batches.
+        compactor: Manager for shrinking context and updating its tool schemas.
+        conversation: Recorder for messages and durable turn state.
+        writes: Tracker for requested file writes.
+        usage: Ledger for provider usage.
+        background: Manager supplying completed background results.
+        pacing: Policy for context, tool progress, and answer delivery.
+    """
 
     def __init__(
         self, *, state: TurnState, requests, activity, goals, tools, compactor,
@@ -38,7 +52,11 @@ class IterationSteps:
         self.pacing = pacing
 
     def ports(self) -> LoopPorts:
-        """Bind this turn's callbacks to the kernel contract."""
+        """Bind this turn's callbacks to the kernel contract.
+
+        Returns:
+            Kernel ports for driving the turn and reading its message delta and usage totals.
+        """
         return LoopPorts(
             before_iteration=self.before_iteration, prepare_request=self.prepare_request,
             request=self.request, record_partial=self.record_partial,
@@ -49,9 +67,18 @@ class IterationSteps:
         )
 
     def on_cancel(self) -> None:
+        """Write a cancellation trace for the next iteration number."""
         self.state.trace.write({"type": "cancelled", "iter": self.activity.iteration + 1})
 
     def before_iteration(self, view: LoopContext) -> Stop | None:
+        """Refresh the available tool schemas and check the goal budget.
+
+        Args:
+            view: Loop context whose tool definitions are refreshed.
+
+        Returns:
+            A stop carrying the goal's reason when present, or None to proceed.
+        """
         view.tools = request_definitions(self.tools.env.registry)
         self.compactor.update_tool_schemas(view.tools)
         if self.goals.stop_reason is not None:
@@ -59,7 +86,16 @@ class IterationSteps:
         return None
 
     def prepare_request(self, view: LoopContext, iteration: Iteration) -> Stop | None:
-        """Compact, deliver background results and select the tools for this request."""
+        """Compact, deliver background results and select the tools for this request.
+
+        Args:
+            view: Mutable request context whose tool definitions may be replaced or cleared.
+            iteration: Kernel iteration number and request-mode flags.
+
+        Returns:
+            A stop if cancellation, goal limits, or context preparation ends the turn,
+            or None when the request is ready.
+        """
         state = self.state
         state.iteration = iteration.number
         state.final_answer_retry = iteration.final_answer_retry
@@ -87,7 +123,16 @@ class IterationSteps:
         return None
 
     def request(self, view: LoopContext, emit: EventSink) -> LLMResponse | Continue | Stop:
-        """Request one response, preserving stream accounting and filtering."""
+        """Request one response, preserving stream accounting and filtering.
+
+        Args:
+            view: Prepared messages and tool definitions for the provider request.
+            emit: Sink for response stream events.
+
+        Returns:
+            A model response, a continuation to skip the iteration, or a stop carrying
+            the terminal reason.
+        """
         state = self.state
         state.stream = TurnStream(
             emit=emit, iteration=state.current_iter, heartbeat_interval=_heartbeat_interval_s,
@@ -140,7 +185,12 @@ class IterationSteps:
         return Continue.NEXT
 
     def record_partial(self, response: LLMResponse, finish_reason: str) -> None:
-        """Retain a truncated answer and its original terminal reason."""
+        """Retain a truncated answer and its original terminal reason.
+
+        Args:
+            response: Provider response whose text is retained and delivered.
+            finish_reason: Provider reason recorded in the truncation status.
+        """
         state = self.state
         state.final_content = response.content or ""
         state.stream.finish(state.final_content)
@@ -148,7 +198,14 @@ class IterationSteps:
         self.conversation.record_final_answer(state.final_content)
 
     def run_tools(self, response: LLMResponse) -> Continue | Stop:
-        """Record the assistant item and process its bound tool batch."""
+        """Record the assistant item and process its bound tool batch.
+
+        Args:
+            response: Model response containing the tool calls and their replay metadata.
+
+        Returns:
+            A stop for user input or lack of progress, or Continue.NEXT after batch handling.
+        """
         state = self.state
         assistant = state.context.format_assistant_tool_calls(response.tool_calls, content=response.content, reasoning_content=response.reasoning_content or state.thinking_text or None, provider_items=getattr(response, "provider_items", None))
         attach_tool_call_thought_signatures(assistant, response.tool_calls)
@@ -172,6 +229,7 @@ class IterationSteps:
         return Continue.NEXT
 
     def poll_inputs(self) -> None:
+        """Deliver queued inputs if cancellation and goal limits still permit delivery."""
         self.conversation.take_queued_inputs(
             self.state.view.messages, cancelled=self.activity.cancel.is_set(),
             budget_spent=self.goals.stop_reason is not None,

@@ -151,7 +151,15 @@ _MEMORY_SECTION = """
 
 
 class ContextBuilder:
-    """Builds message context for AgentRuntime."""
+    """Build message context for AgentRuntime.
+
+    Args:
+        registry: Active tool registry supplying availability and discovery context.
+        memory: Workspace state to summarize on each turn.
+        skills_loader: Skill source, defaulting to the bundled and user skill loader.
+        persistent_memory: Optional source for memory snapshots and relevant recalls.
+        instruction_launch_dir: Optional CLI launch directory to search for instructions.
+    """
 
     def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
                  skills_loader: Optional[SkillsLoader] = None,
@@ -165,7 +173,14 @@ class ContextBuilder:
         self._persistent_memory = persistent_memory
 
     def build_system_prompt(self, user_message: str = "") -> str:
-        """Build the stable prompt from skill summaries, static instructions and the memory snapshot."""
+        """Build the stable prompt from skill summaries, static instructions and the memory snapshot.
+
+        Args:
+            user_message: User message (kept for API compatibility).
+
+        Returns:
+            System prompt text with available-tool guidance and user instructions.
+        """
         memory_section = ""
         if self._persistent_memory and self._persistent_memory.snapshot:
             memory_section = _MEMORY_SECTION.format(
@@ -202,7 +217,15 @@ class ContextBuilder:
         )
 
     def build_messages(self, user_message: str, history: Optional[list[ModelMessage]] = None) -> list[ModelMessage]:
-        """Put volatile workspace state and memory recall in the user message to preserve the prompt cache."""
+        """Put volatile workspace state and memory recall in the user message to preserve the prompt cache.
+
+        Args:
+            user_message: User message to enrich with the current time, state, and any memory recall.
+            history: Prior conversation messages, if any.
+
+        Returns:
+            OpenAI-format message list with a system prompt, history, and the enriched user message.
+        """
         messages: list[ModelMessage] = [
             {"role": "system", "content": self.build_system_prompt(user_message)},
         ]
@@ -241,7 +264,16 @@ class ContextBuilder:
 
     @staticmethod
     def format_tool_result(tool_call_id: str, tool_name: str, result: str) -> ModelMessage:
-        """Format a tool result, preserving local image references as parts."""
+        """Format a tool result, preserving local image references as parts.
+
+        Args:
+            tool_call_id: Identifier of the originating call.
+            tool_name: Name of the tool that produced the result.
+            result: Tool payload, optionally JSON containing local image paths.
+
+        Returns:
+            A tool message with string content or text and image parts.
+        """
         content: Any = result
         try:
             payload = json.loads(result)
@@ -270,7 +302,17 @@ class ContextBuilder:
         reasoning_content: Optional[str] = None,
         provider_items: Optional[list] = None,
     ) -> ModelMessage:
-        """Format an assistant tool_calls message, preserving thinking text."""
+        """Format an assistant tool_calls message, preserving thinking text.
+
+        Args:
+            tool_calls: Provider tool-call objects whose arguments will be JSON encoded.
+            content: Optional assistant text.
+            reasoning_content: Optional provider-specific reasoning text.
+            provider_items: Opaque items to attach verbatim for provider replay when nonempty.
+
+        Returns:
+            OpenAI-format assistant message with any call metadata and provider items.
+        """
         formatted_tool_calls = []
         for tc in tool_calls:
             tool_call = {

@@ -19,7 +19,16 @@ logger = logging.getLogger(__name__)
 
 
 class ToolDelivery:
-    """Publish a sanitized result to every model, recording and artifact sink."""
+    """Publish a sanitized result to every model, recording and artifact sink.
+
+    Args:
+        env: Registry, workspace, and identity state for delivered results.
+        replay: Cache and duplicate tracker for eligible tool results.
+        conversation: Recorder used to append results to the turn.
+        emit: Sink for tool lifecycle and progress events.
+        activity: Callback marking activity when a result is finalized.
+        record_write: Callback recording successful writes and their provenance.
+    """
 
     raw_event_arguments = False
     truncate_preview_with_ellipsis = False
@@ -35,6 +44,7 @@ class ToolDelivery:
         self.reset()
 
     def reset(self) -> None:
+        """Clear the pending user question and start a fresh tool-progress tracker."""
         self.waiting_user = None
         self.progress = ToolProgress()
 
@@ -49,7 +59,17 @@ class ToolDelivery:
         *,
         blocked: bool = True,
     ) -> None:
-        """Record a blocked call without invoking its implementation."""
+        """Record a blocked call without invoking its implementation.
+
+        Args:
+            tc: Provider tool-call object.
+            result: Serialized error payload to deliver as the tool result.
+            context: Context builder used to format the result.
+            messages: Conversation messages that receive the result.
+            trace: Persistent trace writer.
+            iteration: Current iteration.
+            blocked: Whether to mark the start and execution records as blocked.
+        """
         self.progress.note("blocked", tc.name, _failure_code(result))
         args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
         self._emit_tool_started(tc, args, iteration, blocked=blocked)
@@ -81,7 +101,15 @@ class ToolDelivery:
         trace: Any,
         iteration: int,
     ) -> None:
-        """Record calls skipped after cancellation as explicit tool errors."""
+        """Record calls skipped after cancellation as explicit tool errors.
+
+        Args:
+            tool_calls: Provider calls skipped before execution.
+            context: Context builder used to format the cancellation results.
+            messages: Conversation messages that receive the results.
+            trace: Persistent trace writer.
+            iteration: Current iteration.
+        """
         result = json.dumps(
             {
                 "status": "error",
@@ -288,7 +316,16 @@ class ToolDelivery:
 
 
 def write_run_manifest(trace_dir: Path, messages: list, registry, iteration: int) -> None:
-    """Record the prompt hash, tool catalog and package versions for reproducibility."""
+    """Record the prompt hash, tool catalog and package versions for reproducibility.
+
+    A manifest write failure is logged and the run continues.
+
+    Args:
+        trace_dir: Directory holding this run's trace.
+        messages: The fully built message list about to be sent.
+        registry: Registry supplying tool names for the manifest.
+        iteration: Number of host iterations already started, incremented for the manifest identifier.
+    """
     try:
         from datetime import datetime, timezone
 

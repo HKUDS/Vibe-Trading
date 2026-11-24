@@ -47,7 +47,14 @@ class RunOutcome:
 
 
 def resolve_final_status(inputs: OutcomeInputs) -> RunOutcome:
-    """Run the terminal-status decision ladder."""
+    """Select the terminal run status and any state update it requires.
+
+    Args:
+        inputs: Run facts used to resolve stop conditions, partial output, and delivery.
+
+    Returns:
+        The status, optional reason, requested state-store mark, and degradation flag.
+    """
     if inputs.stall_reason is not None:
         # The watchdog already wrote this failure.
         return RunOutcome("failed", inputs.stall_reason, None, False)
@@ -103,7 +110,16 @@ def build_end_event(
     run_iteration: int,
     iterations: int,
 ) -> dict[str, Any]:
-    """The ``end`` trace event for a finished run."""
+    """Build the end trace event for a finished run.
+
+    Args:
+        outcome: Terminal decision supplying status, degradation, and reason.
+        run_iteration: Host iteration number used in the trace.
+        iterations: Number of iterations started during this turn.
+
+    Returns:
+        An end event containing status and counts, with reason and degradation when present.
+    """
     end_event: dict[str, Any] = {
         "type": "end",
         "iter": run_iteration,
@@ -127,7 +143,21 @@ def build_result_dict(
     last_response_model: Optional[str],
     content_filter_count: int,
 ) -> dict[str, Any]:
-    """The caller-facing result dict for a finished run."""
+    """Build the caller-facing result for a finished run.
+
+    Args:
+        outcome: Terminal decision supplying status, degradation, and reason.
+        run_dir: Run directory whose name is used as the run identifier.
+        iterations: Number of iterations started.
+        max_iterations: Configured regular iteration limit.
+        final_content: Delivered text, if any.
+        runtime: Snapshot of the configured provider, model, and reasoning effort.
+        last_response_model: Last provider-reported model ID, if available.
+        content_filter_count: Number of responses blocked by moderation.
+
+    Returns:
+        Run status, location, content, iteration counts, and model metadata, plus any warnings.
+    """
     result: dict[str, Any] = {
         "status": outcome.status,
         "run_dir": str(run_dir),
@@ -159,7 +189,21 @@ def build_result_dict(
 
 
 def finish_outcome(state, *, iterations, activity, runtime, max_iterations, budget_reason, waiting_user, pending_write):
-    """Commit the terminal status and event before the recorder flushes the turn."""
+    """Commit the terminal status and event before the recorder flushes the turn.
+
+    Args:
+        state: Turn state carrying final content, stop conditions, and trace.
+        iterations: Number of iterations started during the turn.
+        activity: Run activity tracker supplying cancellation and watchdog state.
+        runtime: Provider and model settings used to describe the result.
+        max_iterations: Configured regular iteration limit.
+        budget_reason: Goal budget stop reason, if any.
+        waiting_user: Whether delivery paused to ask for user input.
+        pending_write: Callback that checks for unwritten targets using the user prompt and start time.
+
+    Returns:
+        The caller-facing result after terminal state and trace updates.
+    """
     run_dir = state.run_dir
     state_store = state.state_store
     outcome = resolve_final_status(

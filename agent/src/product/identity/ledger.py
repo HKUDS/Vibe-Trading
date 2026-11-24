@@ -41,7 +41,14 @@ _REQUEST_IS_USER_AUTHORED: ContextVar[bool] = ContextVar(
 
 @contextmanager
 def agent_authored_request() -> Iterator[None]:
-    """Mark ledgers created in this context as serving an agent-written request."""
+    """Mark ledgers created in this context as serving an agent-written request.
+
+    Symbols in such a request are resolved through the resolver instead of
+    seeded as user-authorized. Resolution constraints read from the text still apply.
+
+    Yields:
+        None, while the marking is active in the current context.
+    """
     token = _REQUEST_IS_USER_AUTHORED.set(False)
     try:
         yield
@@ -72,7 +79,16 @@ class IdentityRecord:
 
 
 class IdentityLedger:
-    """Instrument resolution and tool authorization; no answer inspection."""
+    """Track instrument resolution and authorize tool requests.
+
+    Args:
+        run_dir: Workspace for persisted identity state.
+        user_message: Current request whose canonical symbols can seed state if user-authored.
+        history: Prior user text used only to narrow resolver queries.
+        contextual_identity_constraints: Whether to extract market constraints from user text.
+        restored_state: Earlier ledger export carrying the conversation's locks.
+        seed_prompt_symbols: Whether a user-authored prompt can introduce symbol locks.
+    """
 
     def __init__(
         self,
@@ -106,7 +122,11 @@ class IdentityLedger:
         self.persist()
 
     def export_state(self) -> dict[str, Any]:
-        """Return the ledger's records, keyed as held, for a later turn to restore."""
+        """Return the ledger's records, keyed as held, for a later turn to restore.
+
+        Returns:
+            JSON-serialisable ledger state with its schema version and identity requirement flag.
+        """
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
             "identity_required": self._identity_required,
@@ -139,7 +159,16 @@ class IdentityLedger:
         self._identity_required = bool(state.get("identity_required"))
 
     def pending_resolution_query(self, arguments: Mapping[str, Any], field: str) -> str | None:
-        """Find a new dependency without re-resolving a failed query or a contradiction."""
+        """Find a new dependency without re-resolving a failed query or a contradiction.
+
+        Args:
+            arguments: Tool arguments that may contain an unresolved instrument query.
+            field: Key holding the candidate query.
+
+        Returns:
+            The stripped query if it needs a new resolution, or None if it is invalid,
+            already known, or conflicts with existing identity state.
+        """
         query = arguments.get(field)
         if not isinstance(query, str) or not query.strip():
             return None
@@ -153,7 +182,15 @@ class IdentityLedger:
         return query
 
     def reusable_resolution(self, arguments: Mapping[str, Any]) -> str | None:
-        """Reuse settled exact identities without changing their source of authority."""
+        """Reuse settled exact identities without changing their source of authority.
+
+        Args:
+            arguments: Resolver arguments containing an exact canonical query and optional refresh flag.
+
+        Returns:
+            A JSON resolver payload from the locked session identity, or None when the
+            query, refresh flag, or applicable constraints require normal resolution.
+        """
         if arguments.get("refresh") or self.identity_status != "locked":
             return None
         query = str(arguments.get("query") or "").strip()
@@ -186,7 +223,19 @@ class IdentityLedger:
         call_id: str,
         batch_identity_status: str | None = None,
     ) -> ToolAuthorization:
-        """Authorize against the identity state before this execution segment."""
+        """Authorize against the identity state before this execution segment.
+
+        Args:
+            tool_name: Requested tool.
+            arguments: Model-supplied arguments.
+            batch_authorized_symbols: Canonical symbol snapshot taken before this execution segment.
+            call_id: Provider tool-call identity.
+            batch_identity_status: Pre-segment identity status, defaulting to the current status when omitted.
+
+        Returns:
+            An allow or block decision. Resolver calls are allowed and their results can
+            affect dependent calls scheduled in the next execution segment.
+        """
         if tool_name == _RESOLVER_TOOL:
             self._identity_required = True
             self._record_unsettled(str(arguments.get("query") or ""), call_id, "unresolved")
@@ -379,12 +428,21 @@ class IdentityLedger:
 
     @property
     def authorized_symbols(self) -> set[str]:
-        """Return exact symbols locked before the next tool batch."""
+        """Collect exact symbols locked before the next tool batch.
+
+        Returns:
+            The set of canonical symbols from locked records.
+        """
         return {record.symbol for record in self._identities.values() if record.status == "locked" and record.symbol}
 
     @property
     def identity_status(self) -> str:
-        """Rank contradictions above locks; a failed side query cannot retract a lock."""
+        """Rank contradictions above locks when summarizing the ledger.
+
+        Returns:
+            The highest-priority record status, or an unresolved or not-required
+            status when no recognized record status applies.
+        """
         statuses = {record.status for record in self._identities.values()}
         for status in ("conflicting", "locked", "ambiguous", "invalidated", "unresolved", "not_found"):
             if status in statuses:
@@ -392,7 +450,11 @@ class IdentityLedger:
         return "unresolved" if statuses or self._identity_required else "not_required"
 
     def identity_summary(self) -> dict[str, Any]:
-        """Return instrument state for tool errors and persisted traces."""
+        """Summarize instrument state for tool errors and persisted traces.
+
+        Returns:
+            The aggregate status, sorted authorized symbols, and serialized records.
+        """
         return {
             "status": self.identity_status,
             "authorized_symbols": sorted(self.authorized_symbols),
@@ -402,7 +464,15 @@ class IdentityLedger:
     def ingest_tool_result(
         self, *, tool_name: str, arguments: Mapping[str, Any], result: str, call_id: str, success: bool
     ) -> None:
-        """Update resolution from a resolver result; other tools cannot lock identities."""
+        """Update resolution from a resolver result.
+
+        Args:
+            tool_name: Tool that produced the result. Only the resolver updates the ledger.
+            arguments: Original resolver arguments identifying the query.
+            result: Serialized tool payload to parse on success.
+            call_id: Provider ID of the resolver call.
+            success: Whether to ingest the payload or mark resolution as failed.
+        """
         if tool_name != _RESOLVER_TOOL:
             return
         if success:

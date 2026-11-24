@@ -57,7 +57,13 @@ class ToolProgress:
         self._stall_notes: list[tuple[str, str, str]] = []
 
     def note(self, kind: str, tool: str, detail: str = "") -> None:
-        """Record why a call in this iteration produced nothing new."""
+        """Record why a call in this iteration produced nothing new.
+
+        Args:
+            kind: Outcome category used to label the note in the recovery message.
+            tool: Tool name.
+            detail: Error code or message, when there is one.
+        """
         self._notes.append((kind, tool, detail))
 
     def record(
@@ -69,7 +75,15 @@ class ToolProgress:
         success: bool,
         is_readonly: bool = True,
     ) -> None:
-        """Record an executed call; synthetic skips must not enter this ledger."""
+        """Record the result of an executed call in the progress ledger.
+
+        Args:
+            name: Tool name used to group observations.
+            key: Canonical call identity, or None for an unkeyed call.
+            result: Payload used to identify a new observation or describe a failure.
+            success: Whether the call succeeded.
+            is_readonly: Whether the call was read-only. Successful mutations clear failed-call counts.
+        """
         if not success:
             if key is not None:
                 self.failed[key] = self.failed.get(key, 0) + 1
@@ -103,11 +117,23 @@ class ToolProgress:
         self._context_restored = True
 
     def is_blocked(self, key: tuple[str, str]) -> bool:
-        """Whether this exact call failed often enough to refuse a repeat."""
+        """Check whether this exact call failed often enough to refuse a repeat.
+
+        Args:
+            key: Canonical call identity (name, serialized arguments).
+
+        Returns:
+            True once the identity reached FAILURE_BLOCK_THRESHOLD failures without
+            an intervening successful mutation.
+        """
         return self.failed.get(key, 0) >= FAILURE_BLOCK_THRESHOLD
 
     def finish_iteration(self) -> bool:
-        """Return whether the run exhausted its consecutive no-progress budget."""
+        """Update the streak of no-progress iterations and clear this iteration's tracking state.
+
+        Returns:
+            True when the consecutive no-progress budget is exhausted.
+        """
         if self._new_observation:
             self.stalled_iterations = 0
             self._stall_notes.clear()
@@ -123,7 +149,11 @@ class ToolProgress:
         return self.stalled_iterations >= NO_PROGRESS_LIMIT
 
     def recovery_message(self) -> str:
-        """Summarize the repeated operations that stalled the run."""
+        """Summarize the repeated operations that stalled the run.
+
+        Returns:
+            The stop message shown to the user, with repeated failure details when available.
+        """
         if not self._stall_notes:
             return RECOVERY_MESSAGE
         counts = Counter(self._stall_notes)

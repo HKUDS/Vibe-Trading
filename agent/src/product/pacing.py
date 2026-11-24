@@ -14,12 +14,24 @@ MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS = 1
 
 
 class TurnPacing:
-    """Own forced-text retries, empty responses, and goal continuation."""
+    """Own forced-text retries, empty responses, and goal continuation.
+
+    Args:
+        conversation: Recorder used to deliver drafts, final answers, and directives.
+        provider: Provider identifier used in empty-response diagnostics.
+        llm: Model adapter used to find the configured model for diagnostics.
+        max_iterations: Regular iteration limit used to schedule write reminders.
+        goals: Goal budget and continuation state for the current turn.
+    """
 
     manages_context = False
 
     def capture_interrupted_response(self, state) -> None:
-        """Allow a task delivery policy to retain an interrupted draft."""
+        """Allow a task delivery policy to retain an interrupted draft.
+
+        Args:
+            state: Turn state holding the interrupted stream. The default policy leaves it untouched.
+        """
 
     def __init__(self, conversation, provider, llm, max_iterations, goals) -> None:
         self.conversation = conversation
@@ -29,7 +41,15 @@ class TurnPacing:
         self.goals = goals
 
     def handle(self, state: Any, response: LLMResponse) -> Continue | Stop:
-        """Handle a response with no executable tool batch."""
+        """Handle a response with no executable tool batch.
+
+        Args:
+            state: Turn state holding the draft, retry counters, and message context.
+            response: Provider response to check for empty output, tool syntax, or an answer.
+
+        Returns:
+            A continuation when another request is needed, or a stop after answer release.
+        """
         state.final_content = response.content or ""
         if not state.final_content and not response.has_tool_calls:
             if self._empty_response(state):
@@ -91,7 +111,12 @@ class TurnPacing:
         self.conversation.record_final_answer(state.final_content)
 
     def write_directives(self, state, writes) -> None:
-        """Add wrap-up and pending-write directives at their original points."""
+        """Inject wrap-up and outstanding-write instructions as the iteration budget runs low.
+
+        Args:
+            state: Turn state supplying the current iteration, prompt, and trace.
+            writes: Write tracker used to find targets still outstanding for the turn.
+        """
         remaining = _wrap_up_nudge_remaining()
         wrap_at = max(2, self.max_iterations - remaining) if remaining > 0 else None
         if wrap_at is not None and state.iteration == wrap_at and 1 < state.iteration < self.max_iterations:
@@ -109,7 +134,17 @@ class TurnPacing:
                 self.conversation.inject(state.view.messages, f"<system>{directive}</system>")
 
     def after_tools(self, state, response, progress, cancel) -> bool:
-        """Return whether to stop after publishing a no-progress answer."""
+        """Update pacing after a tool batch and publish a recovery answer if progress stalls.
+
+        Args:
+            state: Turn state holding evidence, commentary counters, and the output stream.
+            response: Assistant response preceding the tool batch.
+            progress: Tracker used to detect stalled iterations and build the recovery answer.
+            cancel: Cancellation event that suppresses the no-progress answer when set.
+
+        Returns:
+            True if a recovery answer was published and the loop should stop.
+        """
         state.no_commentary_rounds = 0 if response.content and response.content.strip() else state.no_commentary_rounds + 1
         if state.mid_turn_nudge_rounds > 0 and state.no_commentary_rounds >= state.mid_turn_nudge_rounds and self._has_successful_data_result(state.view.messages):
             self.conversation.inject(state.view.messages, "<system>Evidence is already in hand. Answer the user's request now using the available evidence. Do not start extra analysis unless the user requested it.</system>")

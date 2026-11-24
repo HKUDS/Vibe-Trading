@@ -49,7 +49,14 @@ class ToolPolicy:
 
     @classmethod
     def from_config(cls, config: EnvConfig) -> ToolPolicy:
-        """Snapshot generic policy and Claude CLI's historical defaults."""
+        """Snapshot general and Claude CLI tool-policy settings.
+
+        Args:
+            config: Resolved LLM and API settings supplying policy and filesystem limits.
+
+        Returns:
+            Policy holding both sets of tool restrictions, sandbox settings, and file roots.
+        """
         from src.tools.path_utils import FileRoots
         from src.tools.sandbox import SandboxSettings
 
@@ -76,18 +83,46 @@ class ToolPolicy:
         )
 
     def denies(self, name: str, *, legacy_defaults: bool = False) -> bool:
-        """Check the tool name against the applicable deny prefixes."""
+        """Check the tool name against the applicable deny prefixes.
+
+        Args:
+            name: Tool name to check.
+            legacy_defaults: Whether to select the Claude CLI policy.
+
+        Returns:
+            True if the name starts with a configured deny prefix.
+        """
         return name.startswith(self.claude_prefixes if legacy_defaults else self.prefixes)
 
     def bash_policy(self, *, legacy_defaults: bool = False) -> str:
-        """Validate the selected bash policy at the enforcement boundary."""
+        """Validate the selected bash policy at the enforcement boundary.
+
+        Args:
+            legacy_defaults: Whether to select the Claude CLI policy.
+
+        Returns:
+            The validated policy value, either python-only or off.
+
+        Raises:
+            RuntimeError: The selected policy value is unsupported.
+        """
         value, source = (self.claude_bash, self.claude_bash_source) if legacy_defaults else (self.bash, self.bash_source)
         if value not in {"python-only", "off"}:
             raise RuntimeError(f"{source} must be python-only or off, got {value!r}")
         return value
 
     def status(self, *, legacy_defaults: bool) -> dict[str, Any]:
-        """Report the selected policy and its configuration sources."""
+        """Report the selected policy and its configuration sources.
+
+        Args:
+            legacy_defaults: Whether to select the Claude CLI policy.
+
+        Returns:
+            The active deny prefixes, bash policy, and source of each setting.
+
+        Raises:
+            RuntimeError: The selected bash policy value is unsupported.
+        """
         return {
             "deny_tool_prefixes": list(self.claude_prefixes if legacy_defaults else self.prefixes),
             "deny_tool_prefixes_source": self.claude_deny_source if legacy_defaults else self.deny_source,
@@ -96,13 +131,33 @@ class ToolPolicy:
         }
 
     def offered_tools(self, tools: list[dict[str, Any]], *, legacy_defaults: bool = False) -> list[dict[str, Any]]:
-        """Keep tool definitions that the applicable policy allows."""
+        """Keep tool definitions that the applicable policy allows.
+
+        Args:
+            tools: Tool definitions to screen in their existing order.
+            legacy_defaults: Whether to select the Claude CLI policy.
+
+        Returns:
+            The definitions whose names do not match the selected deny prefixes.
+        """
         return [tool for tool in tools if not self.denies(tool_name(tool), legacy_defaults=legacy_defaults)]
 
     def screen_calls(
         self, calls: list[dict[str, Any]], offered: set[str], *, legacy_defaults: bool = False
     ) -> tuple[list[dict[str, Any]], list[str]]:
-        """Return calls the host may execute, plus one rejection note per refused call."""
+        """Screen requested calls before handing them to the host.
+
+        Args:
+            calls: Requested calls with tool names and argument mappings.
+            offered: Names available for this request.
+            legacy_defaults: Whether to select the Claude CLI policy.
+
+        Returns:
+            Accepted calls with any policy-adjusted arguments and one note per refusal.
+
+        Raises:
+            RuntimeError: The selected bash policy value is unsupported.
+        """
         policy = self.bash_policy(legacy_defaults=legacy_defaults)
         accepted: list[dict[str, Any]] = []
         notes: list[str] = []
@@ -140,6 +195,14 @@ class ToolPolicy:
 
 
 def tool_name(definition: dict[str, Any]) -> str:
+    """Read a tool's name from a function definition.
+
+    Args:
+        definition: Tool schema with a nested function definition or a top-level name.
+
+    Returns:
+        The name as a string, or an empty string when absent.
+    """
     return str((definition.get("function") or definition).get("name") or "")
 
 
@@ -153,7 +216,15 @@ def _hidden_path(token: str) -> bool:
 
 
 def check_bash_command(command: str) -> tuple[Optional[str], Optional[str]]:
-    """Apply the ``python-only`` policy to one shell command."""
+    """Apply the python-only policy to one shell command.
+
+    Args:
+        command: The command the model asked bash to run.
+
+    Returns:
+        The rewritten command and no reason when allowed, or None and a refusal
+        reason otherwise. Allowed Python calls use this process's interpreter.
+    """
     if "\n" in command or "`" in command or "$(" in command:
         return None, "newlines, backticks and $( ) are not allowed"
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
