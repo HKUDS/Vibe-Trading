@@ -1,12 +1,4 @@
-"""SQLite FTS5 session search index for cross-session full-text search.
-
-Stores an inverted index of all conversation messages. The primary data
-remains in the file-based SessionStore; this module provides a fast search
-layer on top.
-
-Database location: ``sessions.db`` under the runtime root (default
-``~/.vibe-trading``; WAL mode for concurrent reads).
-"""
+"""Index session messages in a derived SQLite FTS5 database under the runtime root."""
 
 from __future__ import annotations
 

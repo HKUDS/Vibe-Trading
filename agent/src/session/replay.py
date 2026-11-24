@@ -1,8 +1,4 @@
-"""Derive model input, display rows and diagnostics from canonical thread items.
-
-Repairs affect only the request. Replayed text never grants tool permission
-or instrument authorization.
-"""
+"""Project canonical thread items without granting tool or instrument permissions."""
 from __future__ import annotations
 
 import copy
@@ -93,28 +89,7 @@ def replay(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> list[ModelMessage]:
-    """Build the OpenAI-format history a new turn sends to the model.
-
-    1. Start after the last ``compaction``'s ``replaces_through_seq``, with
-       its summary first as a user message.
-    2. ``user`` becomes its ``llm_content`` verbatim; ``assistant``,
-       ``tool_result`` and ``inject`` are rebuilt verbatim; ``state``,
-       ``turn_start`` and ``turn_end`` are not model input.
-    3. Tool-call pairing is repaired in the returned list only (see
-       :class:`MessagePairing`); the items are not modified.
-    4. A turn that ended ``cancelled`` / ``interrupted`` / ``failed``, or has
-       no ``turn_end`` when another turn starts, gets one note after its last
-       item, unless the compaction summary already covers all of it.
-
-    Replay assumes no turn is in flight: a trailing turn without ``turn_end``
-    is replayed as it stands, with its unanswered calls marked interrupted.
-
-    Args:
-        items: Thread items in write order.
-
-    Returns:
-        A fresh list of message dicts; mutating it does not touch ``items``.
-    """
+    """Project compacted history into fresh model messages with repaired tool pairs and interruption notices."""
     return replay_with_seqs(items, provider=provider, model=model)[0]
 
 
@@ -199,7 +174,7 @@ def replay_with_seqs(
     return replayer.messages, [source_seqs.get(id(message)) for message in replayer.messages]
 
 
-# ---- Display projection ----
+# Display projection
 
 
 @dataclass

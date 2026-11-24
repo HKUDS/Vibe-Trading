@@ -38,7 +38,7 @@ class SlashCompleter(Completer):
         # so the snapshot itself is effectively immutable.
         self._commands = tuple(commands)
 
-    # ----------------------------------------------------------------- API
+    # API
     def get_completions(
         self,
         document: Document,
@@ -47,9 +47,6 @@ class SlashCompleter(Completer):
         text = document.text_before_cursor
         stripped = text.lstrip()
 
-        # Bail unless the line starts with ``/`` AND we are still typing the
-        # command token (no space yet). This means ``/help <enter args>``
-        # stops triggering completions once the user moves past the keyword.
         if not stripped.startswith("/"):
             return
         # Find the slash position (the leading whitespace is irrelevant once

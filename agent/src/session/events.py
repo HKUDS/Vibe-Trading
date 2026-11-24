@@ -146,10 +146,7 @@ class EventBus:
                     _mark_overflow(queue)
 
     def add_listener(self, listener: Callable[[SSEEvent], None]) -> None:
-        """Register a synchronous callback for every session's events.
-
-        The callback runs on the publisher's thread and should only record or schedule work.
-        """
+        """Register a callback that runs synchronously on the publisher thread."""
         with self._lock:
             if listener not in self._listeners:
                 self._listeners.append(listener)
@@ -198,11 +195,7 @@ class EventBus:
             )
 
     def attach(self, session_id: str) -> Tuple["SubscriberQueue", List[SSEEvent]]:
-        """Register a subscriber and take its buffer snapshot under one lock.
-
-        Returns:
-            The queue and buffered events. Pass the queue to listen or detach.
-        """
+        """Return a subscriber queue and its buffer snapshot taken under one lock."""
         queue = SubscriberQueue(maxsize=200)
         with self._lock:
             buffer = list(self._buffers.get(session_id, []))

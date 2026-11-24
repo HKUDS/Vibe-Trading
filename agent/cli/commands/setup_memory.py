@@ -314,10 +314,7 @@ def cmd_setup(frontend_dir: common.Path) -> int:
         )
         return common.EXIT_USAGE_ERROR
 
-    # On Windows, ``npm`` is shipped as ``npm.cmd``; ``subprocess.run`` does
-    # not consult ``PATHEXT`` for bare command names, so it would raise
-    # ``FileNotFoundError`` even though ``shutil.which("npm")`` returned a
-    # valid path. Resolve to the full path before invoking.
+    # Resolve npm explicitly because Windows subprocess lookup skips PATHEXT.
     npm_path = npm
     if _is_windows():
         steps = [
@@ -357,12 +354,7 @@ def cmd_dev(
         )
         return common.EXIT_USAGE_ERROR
 
-    # `npm run dev` invokes the local Vite binary at
-    # ``frontend/node_modules/.bin/vite``. If ``node_modules`` does not
-    # exist (or is missing the Vite package), npm's bare-script
-    # resolution will print a confusing "vite is not a command" error
-    # and exit. Detect this case up front and point the user at
-    # ``vibe-trading setup`` instead.
+    # Check for local Vite so missing dependencies lead to setup instructions.
     vite_bin = frontend_dir / "node_modules" / ".bin" / ("vite.cmd" if _is_windows() else "vite")
     if not vite_bin.exists():
         common.console.print(
@@ -390,10 +382,7 @@ def cmd_dev(
         return common.EXIT_USAGE_ERROR
 
     backend_cmd = [common.sys.executable, "-m", "cli", "serve", "--port", str(backend_port)]
-    # On Windows, ``npm`` is typically ``npm.cmd``. ``subprocess.Popen`` does
-    # not consult ``PATHEXT`` for bare command names, so the call would fail
-    # with ``FileNotFoundError`` even though ``shutil.which("npm")`` returned
-    # a path. Use the resolved executable path directly.
+    # Resolve npm explicitly so Windows can launch npm.cmd.
     npm_executable = npm if _is_windows() else "npm"
     frontend_cmd = [npm_executable, "run", "dev", "--", "--port", str(frontend_port)]
 
@@ -427,9 +416,7 @@ def cmd_dev(
         frontend = common.subprocess.Popen(frontend_cmd, cwd=str(frontend_dir))
         children.append(frontend)
 
-        # Wire signal handlers only after both children are tracked. On
-        # Windows, SIGTERM may not exist and handlers must be installed from
-        # the main thread; KeyboardInterrupt remains the portable Ctrl+C path.
+        # Install signal handlers after tracking both children so shutdown can reach them.
         if common.threading.current_thread() is common.threading.main_thread():
             try:
                 common.signal.signal(common.signal.SIGINT, lambda *_: _terminate_all())

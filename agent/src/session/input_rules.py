@@ -1,9 +1,4 @@
-"""Limits on what a caller may hand the session layer.
-
-One definition for every entry point that accepts a session id or a user
-message from outside the kernel: the HTTP routes (``SendMessageRequest`` and
-``_validate_path_param``) and the embeddable ``vibe_trading.Client``.
-"""
+"""Share session input limits across HTTP and SDK entry points."""
 
 from __future__ import annotations
 

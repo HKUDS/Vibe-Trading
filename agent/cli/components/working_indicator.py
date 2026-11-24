@@ -56,7 +56,7 @@ class ThinkingSpinner:
         self._spinner_name = spinner_name
         self._live: Optional[Live] = None
 
-    # --------------------------------------------------------- lifecycle ----
+    # lifecycle
     def __enter__(self) -> "ThinkingSpinner":
         self._live = Live(
             self._renderable(),
@@ -77,7 +77,7 @@ class ThinkingSpinner:
         if live is not None:
             live.__exit__(exc_type, exc, tb)
 
-    # ------------------------------------------------------------- helpers --
+    # helpers
     def _renderable(self) -> Spinner:
         # ``Spinner.text`` accepts Rich Text for styling — keep the verb in
         # the dim style so the live region is unobtrusive.

@@ -120,9 +120,7 @@ class SwarmStore:
         run_file = self.run_dir(run_id) / "run.json"
         if not run_file.exists():
             return None
-        # The file may be read mid-replace by a concurrent writer; retry a
-        # transient read/parse failure before giving up (same race as
-        # _replace_with_retry, reader side).
+        # Retry transient reads during a concurrent replace.
         last: Exception | None = None
         for attempt in range(_REPLACE_ATTEMPTS):
             try:
@@ -212,11 +210,7 @@ class SwarmStore:
         events: list[SwarmEvent] = []
         text = events_file.read_bytes()
         lines = text.splitlines()
-        # ``append_event`` is not atomic across processes/instances: a reader
-        # (the SSE poll loop, ``_persist_recovery``) can observe a final line
-        # that is still being written, or one cut short by a crashed host. That
-        # unterminated tail is not an event yet, so skip it instead of raising
-        # and killing the stream; the next poll sees it whole.
+        # Ignore an unterminated JSONL tail so partial writes cannot break SSE polling.
         tail_unterminated = bool(text) and not text.endswith(b"\n")
         for position, line in enumerate(lines[after_index:], start=after_index):
             stripped = line.strip()
@@ -246,9 +240,7 @@ class SwarmStore:
             return run
         by_id = {task.id: task for task in live}
         merged = [by_id.get(task.id, task) for task in run.tasks]
-        # Surface any task that only exists in the live store (defensive — DAG
-        # validation runs at start_run so it shouldn't happen, but a future
-        # caller that mutates the task set will not silently drop tasks).
+        # Include tasks present only in the live store so changed task sets remain visible.
         seen = {task.id for task in merged}
         merged.extend(task for tid, task in by_id.items() if tid not in seen)
         from src.swarm.delivery import refresh_report
@@ -375,8 +367,7 @@ class SwarmStore:
                     )
                 )
 
-        # Same derivation as terminal recovery — if every task happened to be
-        # completed before the host died, the run is completed, not failed.
+        # Preserve completion when all tasks finished before the host died.
         post = run.model_copy(update={"tasks": updated_tasks})
         return self._recover_terminal(post, now=now)
 
@@ -440,14 +431,7 @@ class SwarmStore:
 
     def _atomic_write(self, path: Path, content: str) -> None:
         """Atomically write a file: write to .tmp then rename."""
-        # self._write_lock only serializes callers on this SwarmStore
-        # instance; mcp_server._get_swarm_store() builds a fresh instance
-        # per tool call, so two concurrent pollers of the same run each get
-        # their own lock. A shared ".tmp" name let one writer's rename
-        # consume the other's still-unwritten temp file, silently losing an
-        # update or raising FileNotFoundError. A per-write unique name keeps
-        # each writer's temp file private regardless of how many SwarmStore
-        # instances are racing.
+        # Use unique temp files because concurrent store instances have separate locks.
         tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         with self._write_lock:
             tmp_path.write_text(content, encoding="utf-8")

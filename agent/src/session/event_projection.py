@@ -47,9 +47,7 @@ class _Tail:
     assistant: Optional[_LiveItem] = None
     tools: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
     interactions: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
-    # Queued user inputs, oldest first: (input_id, content, live item). Each
-    # stays until its ``user`` item is recorded or it is discarded; it
-    # outlives the turn it was sent during.
+    # Retain queued live items across turns until their user item is recorded or discarded.
     inputs: List[Tuple[str, str, _LiveItem]] = field(default_factory=list)
     completed_tools: set[Tuple[str, str]] = field(default_factory=set)
     counter: int = 0
@@ -87,7 +85,7 @@ class ThreadEvents:
         self._lock = threading.RLock()
         self._tails: Dict[str, _Tail] = {}
 
-    # ---- Publishing ----
+    # Publishing
 
     def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> Optional[SSEEvent]:
         """Publish durable items and a canonical live event from a callback."""
@@ -120,7 +118,7 @@ class ThreadEvents:
             self._pump(session_id, tail)
             return tail.last_seq
 
-    # ---- Subscribing ----
+    # Subscribing
 
     async def stream(
         self,
@@ -195,7 +193,7 @@ class ThreadEvents:
                 if _event_key(event) > last_key:
                     yield event
 
-    # ---- Reading the thread ----
+    # Reading the thread
 
     def _read(self, session_id: str) -> List[ThreadItem]:
         from src.session.migration import migrate_session
@@ -244,7 +242,7 @@ class ThreadEvents:
             tail.last_seq = item.seq
             self._publish_item(session_id, tail, item)
 
-    # ---- Event construction ----
+    # Event construction
 
     def _publish(
         self,

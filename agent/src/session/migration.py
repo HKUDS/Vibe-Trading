@@ -283,8 +283,7 @@ def _migrate_session(session_dir: Path, *, session_id: str | None = None) -> Mig
         attempt_id = (record.get("assistant") or {}).get("linked_attempt_id") or record.get("attempt_id")
         record["attempt_id"] = _turn_id(prompt, index, attempt_id)
     records = [record for record in records if record["attempt_id"] not in existing_turns]
-    # Never expose a half-written thread: interruption before replace
-    # leaves the legacy source available for an exact retry.
+    # Publish the thread atomically so interruption leaves an exact retry source.
     with tempfile.TemporaryDirectory(dir=session_dir, prefix=".migration-") as scratch:
         staged = Path(scratch) / "thread.jsonl"
         log = ThreadLog(staged)

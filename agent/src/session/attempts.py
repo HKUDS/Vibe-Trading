@@ -55,9 +55,7 @@ class AttemptRunner:
 
         except asyncio.CancelledError:
             if session.session_id in self.user_cancel_requests:
-                # cancel_current() cancels this task when the run has not
-                # reached its AgentRuntime yet. Keep that explicit user action
-                # distinct from event-loop cancellation during server shutdown.
+                # Distinguish explicit cancellation before runtime creation from service shutdown.
                 attempt.mark_cancelled(reason="cancelled by user")
                 self._finish_thread_turn_quietly(session.session_id, attempt)
                 self.store.update_attempt(attempt)

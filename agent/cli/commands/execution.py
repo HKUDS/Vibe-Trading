@@ -214,9 +214,7 @@ def _run_agent(
     )
     from src.agent.runtime import AgentRuntime
 
-    # Closure-level state for the no-rich path so dots and progress lines
-    # don't shoulder-bump each other (M3) and progress prints are throttled
-    # to ≤1/0.5s per tool (M1).
+    # Keep dots and progress lines separate (M3) and throttle per-tool updates (M1).
     no_rich_state: dict[str, common.Any] = {
         "dot_pending": False,
         "last_progress_ts": {},  # type: ignore[var-annotated]
@@ -238,23 +236,14 @@ def _run_agent(
             streamed_text.clear()
         elif kind == "text.delta" and isinstance(data.get("delta"), str):
             streamed_text.append(data["delta"])
-        # Live mandate proposals are surfaced to the REPL out-of-band so the
-        # user's pick is intercepted before the model (SPEC.md Consent §2).
-        # This fires regardless of stream_output / rich state — capturing the
-        # proposal must not depend on rendering.
+        # Capture consent proposals independently of rendering (SPEC.md Consent §2).
         if event_type == "mandate.proposal" and proposal_sink is not None:
             try:
                 proposal_sink(data)
             except Exception:  # noqa: BLE001 — capture must never kill the turn
                 pass
             return
-        # The agent loop never emits a top-level ``mandate.proposal`` — it only
-        # emits the propose tool's output as a generic ``tool_result``. Relay it
-        # here (CLI mirror of api_server's SSE relay) so the REPL arms
-        # ``ctx.pending_proposal`` and intercepts the pick before the model
-        # (SPEC.md Consent §1/§2). Fires regardless of stream_output / rich
-        # state — arming must not depend on rendering — and does NOT return:
-        # the tool_result still flows on to the dashboard / no-rich printers.
+        # Relay proposal results so the REPL can handle the user’s pick before the model (SPEC.md Consent §1/§2).
         if kind == "tool.completed" and proposal_sink is not None:
             proposal = _mandate_proposal_from_tool_result(data)
             if proposal is None:
@@ -369,9 +358,7 @@ def _run_agent(
         else:
             common.console.print(f"[yellow]WARNING:[/yellow] {msg}")
 
-    # One owner for the whole CLI run: background results stay with the
-    # conversation that started them, and a bare run gets a private owner
-    # instead of a view shared with every other run in the process.
+    # Scope background results to the conversation that started them.
     from src.tools.background_tools import BackgroundScope, get_background_manager
 
     background_scope = BackgroundScope(
@@ -398,9 +385,7 @@ def _run_agent(
         cancel_event=cancel_event,
     )
 
-    # Opened only once the agent can run: it writes the user's message and
-    # replays the session's history, and a turn left open would be replayed
-    # as interrupted.
+    # Open the durable turn only when ready to run so setup failures leave no open turn.
     turn = None
     if session_id:
         from cli.conversation import open_turn
@@ -725,9 +710,7 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
         return _result_exit_code(result)
     _print_result(result, common.time.perf_counter() - start, no_rich=no_rich)
     if result.get("run_id") and result.get("run_dir"):
-        # Point at the dashboard without starting anything. Spawning a server
-        # from a result-printing path would leave an unsupervised process behind
-        # after the command exits.
+        # Avoid leaving an unsupervised server after printing the result.
         if inspection._read_metric_values(common.Path(result["run_dir"]) / "artifacts" / "metrics.csv"):
             hint = (
                 f"Dashboard: run `vibe-trading serve`, then open "
@@ -766,11 +749,7 @@ def cmd_continue(
     trace_dir = session_trace_dir if session_trace_dir.exists() else run_dir
     trace_dir.mkdir(parents=True, exist_ok=True)
 
-    # Continuations of one run share a session so goals and evidence accumulate
-    # across them, and so does the history the model sees: ``_run_agent``
-    # replays it from that session's thread log. A session-backed run_id
-    # already *is* a session id (sessions and their traces share
-    # ``SESSIONS_DIR``); a plain run gets a derived id.
+    # Share a session across continuations so goals, evidence and model history accumulate.
     session_id = _ensure_session_id(
         prompt,
         session_id=run_id if session_trace_dir.exists() else f"run-{run_id}",

@@ -7,14 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Step:
-    """One step of a playbook's execution skeleton.
-
-    Attributes:
-        title: Short imperative label, e.g. ``"Fix the peer set"``.
-        inputs: What the step consumes (data, prior-step artifacts).
-        compute: The transformation to perform.
-        output: The artifact the step must produce before moving on.
-    """
+    """Describe a playbook step and the artifact it must produce."""
 
     title: str
     inputs: str
@@ -24,20 +17,7 @@ class Step:
 
 @dataclass(frozen=True)
 class Playbook:
-    """A single institutional workflow exposed as a slash command.
-
-    Attributes:
-        slug: Slash command keyword, without the leading ``/``.
-        summary: One-line description shown in ``/help`` and the typeahead.
-        usage: Usage line, e.g. ``"/dcf <ticker> [horizon=5y] [wacc=9%]"``.
-        examples: Concrete invocations to show when arguments are missing.
-        ask: Friendly follow-up question printed when arguments are missing.
-        objective: One sentence stating what a finished run delivers.
-        steps: Ordered execution skeleton.
-        worked_example: Pre-rendered lines of the numeric walkthrough.
-        tools: Registered tool names the agent should prefer.
-        aliases: Extra keywords resolving to this command.
-    """
+    """Define an institutional slash workflow and its worked example."""
 
     slug: str
     summary: str

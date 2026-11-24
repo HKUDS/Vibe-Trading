@@ -13,14 +13,7 @@ from src.config.accessor import get_env_config
 
 from .playbooks import GAP_POLICY, NOT_ADVICE, PLAYBOOKS_BY_SLUG, Playbook
 
-# Defensive ceiling on the free-text argument so a paste bomb cannot blow up
-# the queued prompt (and, downstream, the model context).
-#
-# A malformed override must not be fatal: this module is imported by
-# ``cli.main._dispatch_slash``, whose import guard only catches ``ImportError``,
-# so an exception raised here would escape the dispatcher and take down the
-# whole REPL. The config layer drops an unparseable value and hands back the
-# declared default, so this cannot raise.
+# Bound free text before queuing it, with a config default that keeps malformed overrides from breaking REPL imports.
 def _arg_max_chars() -> int:
     """Resolve the argument length cap, ignoring a malformed override."""
     return max(32, get_env_config().agent_tuning.vibe_trading_slash_arg_max)
@@ -109,10 +102,7 @@ def build_prompt(playbook: Playbook, subject: str) -> str:
     lines.append("")
 
     lines.append(f"Preferred tools: {', '.join(playbook.tools)}.")
-    # Some of these are key-gated (``get_macro_series`` needs FRED_API_KEY,
-    # ``iwencai_search`` needs VIBE_TRADING_IWENCAI_KEY) and are absent from the
-    # registry unless configured. Say so explicitly: an unavailable tool must
-    # become a declared gap, never a remembered number.
+    # Report key-gated tools as gaps when unavailable so the model does not substitute remembered figures.
     lines.append(
         "Any preferred tool that is not registered in this session is simply "
         "unavailable — skip it, record what it would have supplied as a gap under "

@@ -169,12 +169,7 @@ class SessionService:
         *,
         title: str = "",
     ) -> Session:
-        """Create an independent session copied through one completed turn.
-
-        The source thread is read once and appended to a fresh log. State
-        snapshots are copied only through the selected turn, so identity and
-        loaded-tool state cannot include authorisations earned later.
-        """
+        """Copy through one completed turn so later identity and tool authorisations cannot enter the fork."""
         source = self.store.get_session(source_session_id)
         if source is None:
             raise ValueError(f"Session {source_session_id} not found")
@@ -286,18 +281,18 @@ class SessionService:
         include_shell_tools: bool = False,
         queue_if_busy: bool = False,
     ) -> Dict[str, Any]:
-        """Accept a message and start or queue a user turn.
+        """Start a user turn or enqueue its message durably when busy.
 
         Args:
             include_shell_tools: Shell entitlement of the sending request.
-            queue_if_busy: Durably enqueue instead of refusing a busy session.
+            queue_if_busy: Allow durable enqueue when a session is busy.
 
         Returns:
-            A message/attempt receipt or a queued receipt with a 1-based position.
+            A message and attempt receipt, or a queued receipt with a 1-based position.
 
         Raises:
             ValueError: The session is missing.
-            SessionBusyError: The service is shutting down or the session cannot accept the request.
+            SessionBusyError: The session is busy or the service is closing.
             PendingInputLimitError: The durable queue is full.
         """
         session = self.store.get_session(session_id)
@@ -495,15 +490,7 @@ class SessionService:
         return self.store.get_messages(session_id, limit)
 
     def cancel_current(self, session_id: str) -> bool:
-        """Cancel the currently running AgentRuntime for a session.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            Whether cancellation succeeded. True means an active loop, in-flight task,
-            or owned background task received a cancel signal.
-        """
+        """Return whether a loop, in-flight task or owned background task received cancellation."""
         background_handle = self._background_handles.get(session_id)
         background_cancelled = False
         if background_handle is not None:

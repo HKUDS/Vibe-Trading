@@ -55,16 +55,7 @@ def _encode_record(record: Mapping[str, Any]) -> bytes:
 
 
 class ThreadLog:
-    """Append-only, fsynced ``thread.jsonl`` for one session.
-
-    ``seq`` is assigned under a lock shared by every instance open on the same
-    path in this process and an advisory file lock for writers in other
-    processes. It is recovered from the file whenever the file is not the size
-    this process last left it (first use, reopen, external append).
-
-    Attributes:
-        path: Location of ``thread.jsonl``.
-    """
+    """Append and fsync thread items with sequence numbers coordinated across processes."""
 
     def __init__(self, path: Path, *, clock: Callable[[], float] = time.time) -> None:
         """Open a thread log."""
@@ -72,7 +63,7 @@ class ThreadLog:
         self._clock = clock
         self._state = _path_state(self.path)
 
-    # ---- Writing ----
+    # Writing
 
     def append(self, item_type: str, turn_id: str, **payload: Any) -> ThreadItem:
         """Validate, number and durably append one item."""
@@ -93,8 +84,7 @@ class ThreadLog:
                 )
                 encoded = _encode_record(item.to_dict())
                 if needs_separator:
-                    # A torn last line (crash mid-write) must stay its own
-                    # corrupt line, not swallow this record.
+                    # Separate a torn tail so it cannot swallow the new record.
                     log.write(b"\n")
                 log.seek(0, os.SEEK_END)
                 log.write(encoded)
@@ -140,13 +130,12 @@ class ThreadLog:
                 seq = _peek_seq(raw_line)
                 if seq is not None and seq > last_seq:
                     last_seq = seq
-        # Never move backwards: a truncated or replaced file must not reuse a
-        # seq this process already handed out.
+        # Prevent sequence reuse after truncation or replacement.
         state.last_seq = max(state.last_seq, last_seq)
         state.known_size = size
         return size > 0 and not ends_with_newline
 
-    # ---- Reading ----
+    # Reading
 
     def read(self, *, strict: bool = False) -> List[ThreadItem]:
         """Read valid items in file order.

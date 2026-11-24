@@ -463,12 +463,7 @@ class RailRunDashboard:
     def _active_step(self, tool: str, call_id: str = "") -> RailStep:
         raw_tool = str(tool or "")
         raw_call_id = str(call_id or "")
-        # Concurrent calls to the same tool (the loop runs consecutive
-        # readonly tool calls in parallel) can have more than one step
-        # "active" at once with the same tool name. Matching on the call's
-        # own id -- always present on tool_call/tool_progress/tool_heartbeat/
-        # tool_result payloads -- keeps each event paired with the step it
-        # actually belongs to, instead of guessing by tool name and recency.
+        # Match by call ID because several active calls may share a tool name.
         if raw_call_id:
             for step in self.steps:
                 if step.call_id == raw_call_id:

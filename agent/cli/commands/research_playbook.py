@@ -11,10 +11,7 @@ _HELP_TOKENS = frozenset({"help", "-h", "--help", "?"})
 _LIST_TOKENS = frozenset({"list", "ls", "all"})
 _VAR_TOKEN_RE = re.compile(r"^([A-Za-z0-9_]+)=(.*)$")
 
-# Defensive ceilings. ``ResearchPlaybook.render`` already caps a single
-# substituted value at 4000 chars; these bound the *number* of tokens and the
-# raw argument string so a paste accident cannot make the CLI do silly work
-# before that cap is reached.
+# Bound raw input and token count before substitution applies its per-value cap.
 _MAX_VARIABLES = 32
 _MAX_ARG_CHARS = 20000
 
@@ -35,9 +32,7 @@ def _print(message: str) -> None:
     _console().print(message)
 
 
-# ---------------------------------------------------------------------------
 # Argument parsing helpers
-# ---------------------------------------------------------------------------
 
 
 def parse_variable_tokens(tokens: Sequence[str]) -> Tuple[Dict[str, str], Optional[str]]:
@@ -74,9 +69,7 @@ def _parse_var_options(raw: Sequence[str]) -> Tuple[Dict[str, str], Optional[str
     return variables, None
 
 
-# ---------------------------------------------------------------------------
 # Catalogue access
-# ---------------------------------------------------------------------------
 
 
 def _load_catalogue() -> Tuple[List[Any], Optional[str]]:
@@ -185,9 +178,7 @@ def _schedule_note(job: Any) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
 # Rendering
-# ---------------------------------------------------------------------------
 
 
 def _describe_schedule(schedule: str, tz: Optional[str]) -> str:
@@ -279,9 +270,7 @@ def _job_summary(job: Any, slug: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
 # Slash command: /playbook
-# ---------------------------------------------------------------------------
 
 
 def _queue_prompt(ctx: Any, prompt: str) -> bool:
@@ -381,9 +370,7 @@ def run(ctx: Any = None, *args: str) -> int:
     return 0
 
 
-# ---------------------------------------------------------------------------
 # argparse subcommand: vibe-trading playbook ...
-# ---------------------------------------------------------------------------
 
 _PLAYBOOK_PARSER: Optional[argparse.ArgumentParser] = None
 

@@ -1,14 +1,4 @@
-"""Chat-flow slash commands: ``/model``, ``/clear``, ``/journal``,
-``/shadow``, ``/swarm``, ``/debug``, ``/quit``.
-
-``/model`` renders the current configuration via the legacy
-``_show_settings`` helper, and ``/model set`` / ``/model clear`` change the
-current session's own model selection. ``/swarm`` dispatches to the legacy
-``cli.commands.swarm`` so the existing presets keep working. ``/clear``
-clears the screen and reprints the banner. ``/journal``, ``/shadow``, and
-``/debug`` show a "Coming soon" placeholder pointing at the established
-fallback workflows.
-"""
+"""Dispatch model selection and chat-flow slash commands."""
 
 from __future__ import annotations
 
@@ -42,7 +32,7 @@ def _coming_soon(command: str, *, hint: str) -> int:
     return 0
 
 
-# --- /model ----------------------------------------------------------------
+# /model
 
 
 _MODEL_USAGE = "/model set <provider> <model> [reasoning_effort]  |  /model clear"
@@ -173,7 +163,7 @@ def cmd_compact(ctx: Any = None, *args: str) -> int:
     return 0
 
 
-# --- /clear, /journal, /shadow, /swarm, /debug, /quit ----------------------
+# /clear, /journal, /shadow, /swarm, /debug, /quit
 
 
 def cmd_clear(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
@@ -183,9 +173,7 @@ def cmd_clear(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
         console.clear()
     except Exception:  # noqa: BLE001 — clear can fail on dumb terminals
         pass
-    # Best-effort: reprint the banner so the conversation appears fresh.
-    # Reuse the cached stats populated at startup so the redrawn banner
-    # shows the real skills / tools / sessions counts, not zeros.
+    # Reuse startup stats so the redrawn banner shows the current counts.
     try:
         from cli.intro import print_banner
         from cli.main import _collect_banner_stats
@@ -193,9 +181,7 @@ def cmd_clear(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
         print_banner(console, **_collect_banner_stats())
     except Exception:  # noqa: BLE001
         console.print(Text("Conversation cleared.", style="dim"))
-    # The model's history is the session's thread log, so a cleared
-    # conversation has to leave the session: the next turn opens a new one.
-    # (The old session stays on disk and can be resumed.)
+    # Start a fresh session so clearing the screen also clears model history.
     if ctx is not None:
         try:
             if hasattr(ctx, "transcript"):
@@ -301,7 +287,7 @@ def cmd_quit(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
     return 2
 
 
-# --- Module-level dispatch table -----------------------------------------
+# Module-level dispatch table
 
 _DISPATCH = {
     "model": cmd_model,

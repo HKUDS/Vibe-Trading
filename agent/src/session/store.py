@@ -52,7 +52,7 @@ class SessionStore:
     def _attempt_file(self, session_id: str, attempt_id: str) -> Path:
         return self._attempt_dir(session_id, attempt_id) / "attempt.json"
 
-    # ---- Session CRUD ----
+    # Session CRUD
 
     def create_session(self, session: Session) -> Session:
         """Create and persist a session."""
@@ -112,7 +112,7 @@ class SessionStore:
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         return sessions[:limit]
 
-    # ---- Derived message views ----
+    # Derived message views
 
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
@@ -167,9 +167,7 @@ class SessionStore:
                 metadata={**projection.metadata, "status": projection.status},
             ))
         if not starts:
-            # A task can be accepted before its worker gets a chance to open
-            # the thread. Expose that durable attempt prompt as the live user
-            # row until the worker writes the terminal projection.
+            # Show the durable prompt while the accepted attempt still lacks a terminal projection.
             for attempt in self.list_attempts():
                 if attempt.session_id != session_id:
                     continue
@@ -181,7 +179,7 @@ class SessionStore:
                     ))
         return rows if limit is None else rows[-limit:]
 
-    # ---- Attempt CRUD ----
+    # Attempt CRUD
 
     def create_attempt(self, attempt: Attempt) -> Attempt:
         """Create an execution attempt."""
@@ -237,7 +235,7 @@ class SessionStore:
             metadata={**projection.metadata, "status": projection.status},
         )
 
-    # ---- IO Helpers ----
+    # IO Helpers
 
     @staticmethod
     def _write_json(path: Path, data: Dict[str, Any], *, indent: Optional[int] = 2) -> None:

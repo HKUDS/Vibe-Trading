@@ -10,9 +10,7 @@ from typing import Final
 from rich.console import Console
 from rich.style import Style
 
-# ---------------------------------------------------------------------------
 # Brand palette (single source of truth — mirrored in frontend/src/index.css)
-# ---------------------------------------------------------------------------
 
 BRAND_ORANGE_LIGHT: Final[str] = "#d97706"
 """Wordmark / primary CTA colour on light terminals (web ``--primary`` light)."""
@@ -120,9 +118,7 @@ def _build_styles(dark: bool, no_color: bool) -> _ThemeStyles:
     )
 
 
-# ---------------------------------------------------------------------------
 # Singleton console + style accessors
-# ---------------------------------------------------------------------------
 
 
 def _make_console() -> Console:

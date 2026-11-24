@@ -19,10 +19,7 @@ logger = logging.getLogger(__name__)
 def recover_interrupted_attempts(
     store: SessionStore, runtime_for: Callable[[str], SessionRuntime], search_index: SessionSearchIndex,
 ) -> None:
-    """Finalize pending or running attempts after service restart.
-
-    Only use this when no other process is executing attempts in the store.
-    """
+    """Finalize interrupted attempts only under exclusive ownership of the session store."""
     recoverable = {AttemptStatus.PENDING, AttemptStatus.RUNNING}
     for attempt in store.list_attempts():
         if attempt.status not in recoverable:

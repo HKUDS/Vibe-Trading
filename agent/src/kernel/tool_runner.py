@@ -78,24 +78,11 @@ def wait_for_tool(
     timeout_label = _format_timeout(timeout) if timeout is not None else ""
 
     def _elapsed_ms() -> int:
-        """Return milliseconds elapsed since tool start.
-
-        Returns:
-            Elapsed wall-clock time in milliseconds.
-        """
+        """Return milliseconds elapsed since tool start."""
         return int((_time.perf_counter() - t0) * 1000)
 
     def _emit_timeout_progress(stage: str, message: str, **extra: Any) -> int:
-        """Emit a timeout-related tool_progress event.
-
-        Args:
-            stage: Progress stage label ("timeout" or "timeout_warning").
-            message: Human-readable timeout message.
-            **extra: Additional payload fields.
-
-        Returns:
-            Elapsed milliseconds at emission time.
-        """
+        """Publish timeout progress and return elapsed milliseconds."""
         elapsed_ms = _elapsed_ms()
         payload: dict[str, Any] = {
             "tool": tool_name,
@@ -108,12 +95,7 @@ def wait_for_tool(
         progress(payload)
         return elapsed_ms
 
-    # Every tool runs in a daemon worker. Python cannot safely kill an
-    # arbitrary thread, so the caller stops waiting at the deadline or
-    # cancellation point, records an explicit result, and discards any
-    # late worker value. Subprocess-backed tools retain their own tree-kill
-    # guarantees. A still-running in-process worker is orphaned and ends
-    # on its own without emitting after this invocation is terminal.
+    # Discard late daemon-worker results because Python cannot safely stop a blocked thread.
     result_queue: queue.Queue[tuple[str | None, BaseException | None]] = queue.Queue(maxsize=1)
 
     def _worker() -> None:

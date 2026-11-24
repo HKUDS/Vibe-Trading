@@ -18,11 +18,7 @@ logger = logging.getLogger(__name__)
 TOOL_RESULTS_DIRNAME = "tool-results"
 
 class TurnRecorder:
-    """Write one turn's items and retain sequence references for compaction.
-
-    Failed writes mark the recorder degraded. Closing it blocks writes from
-    a worker that outlives the turn.
-    """
+    """Append turn items and reject late worker writes after closing."""
 
     def __init__(
         self,
@@ -64,7 +60,7 @@ class TurnRecorder:
                 self._remember(message, seq)
         self._last_state: Optional[Dict[str, Any]] = None
 
-    # ---- Writing ----
+    # Writing
 
     def start(
         self,
@@ -221,7 +217,7 @@ class TurnRecorder:
         with self._lock:
             self._closed = True
 
-    # ---- Reading ----
+    # Reading
 
     def seq_of(self, message: Mapping[str, Any]) -> Optional[int]:
         """Return the seq of the item a message was recorded as."""
@@ -230,7 +226,7 @@ class TurnRecorder:
             return entry[0]
         return None
 
-    # ---- Internals ----
+    # Internals
 
     def _remember(self, message: Dict[str, Any], seq: int) -> None:
         self._seqs[id(message)] = (seq, message)
@@ -259,17 +255,11 @@ class TurnRecorder:
             return item
 
 
-# ---- Runtime ----
+# Runtime
 
 
 class SessionRuntime:
-    """Per-session state that outlives one turn.
-
-    Attributes:
-        session_id: Session id.
-        thread: The session's thread log.
-        state: Folded ``state`` items (identity, loaded_tools, workspace).
-    """
+    """Keep the thread and folded state across turns."""
 
     def __init__(self, thread: ThreadLog, session_id: str, *, require_durable_items: bool = False) -> None:
         """Open the runtime and rebuild its state from the thread."""
@@ -287,11 +277,7 @@ class SessionRuntime:
         self.state.setdefault("workspace_dir", str(self.workspace_path))
 
     def update_state(self, snapshot: Mapping[str, Any]) -> None:
-        """Fold a recorded snapshot into the live state.
-
-        Args:
-            snapshot: The snapshot just written.
-        """
+        """Fold a recorded snapshot into the live state."""
         with self._lock:
             self.state.update(copy.deepcopy(dict(snapshot)))
 
@@ -328,18 +314,7 @@ class SessionRuntime:
         provider: Optional[str] = None,
         model: Optional[str] = None,
     ) -> TurnRecorder:
-        """Prepare one turn: close stale turns, replay history, open a recorder.
-
-        A turn that started in this thread and never ended belongs to a run the
-        process lost (an event-loop shutdown it survived, for instance). It is
-        closed as ``interrupted`` before this turn starts, so replay closes its
-        tool block where it really ended.
-
-        Args:
-            turn_id: The new turn (attempt) id.
-        Returns:
-            The turn's recorder, carrying its replayed history.
-        """
+        """Close stale turns as interrupted before replay and return the new recorder."""
         items = self.thread.read()
         for stale in open_turns(items):
             if stale != turn_id:

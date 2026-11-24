@@ -58,12 +58,7 @@ from src.swarm.node import (
 logger = logging.getLogger(__name__)
 
 
-# Swarm runs that are still in flight, keyed by run id and owned by the session
-# that started them. ``SwarmRuntime`` keeps its cancel events per instance, and
-# ``run_swarm`` builds one instance per tool call — so an HTTP cancel handler
-# holding a different runtime cannot reach a run started by the agent, and once
-# the tool call returns (wait budget exhausted) nobody polls that instance at
-# all. The index routes explicit cancellation by run ID after the tool returns.
+# Index in-flight runs by ID so another runtime can cancel them after the launching tool returns.
 _ACTIVE_RUNS: dict[str, tuple[str, Callable[[], bool]]] = {}
 _ACTIVE_RUNS_LOCK = threading.Lock()
 
@@ -257,9 +252,7 @@ def _rehome_artifact_paths(
             continue
         dst = target_run_dir / rel
         try:
-            # Validate containment BEFORE mkdir: creating parent dirs through a
-            # symlinked component (e.g. artifacts -> /outside) would already
-            # write outside the run dir.
+            # Check containment before mkdir so symlinked parents cannot write outside the run.
             resolved_dst = dst.resolve(strict=False)
             if not (
                 resolved_dst.is_relative_to(target_root)
@@ -373,10 +366,7 @@ class SwarmRuntime:
                 raise ValueError("Cannot resume a swarm run created before the AgentRuntime cutover. Start a new run explicitly.")
 
         _ensure_dotenv()
-        # Reap any previously running runs whose host process died without
-        # finalizing them. Threshold is computed per-run from agent timeouts +
-        # heartbeat interval (see SwarmStore.compute_stale_threshold), so a
-        # legitimately slow long-running task is not killed.
+        # Allow for task timeouts and heartbeats when deciding whether an active run is stale.
         try:
             reaped = self._store.reap_stale_running_runs()
             if reaped:
@@ -387,12 +377,7 @@ class SwarmRuntime:
         run = build_run_from_preset(preset_name, user_vars)
         validate_dag(run.tasks)
 
-        # Capture which provider/model the run was launched against so the
-        # serialized run.json carries enough context for cost audits and
-        # post-hoc debugging. Read directly from the same env vars the
-        # provider layer uses (src/providers/llm.py:136,195) — that way an
-        # override applied via os.environ still shows up. Per-agent overrides
-        # remain visible on SwarmAgentSpec.model_name.
+        # Pin the provider settings used at launch for cost audits, including environment overrides.
         _cfg = get_env_config()
         run.provider = public_provider_metadata(_cfg.llm.langchain_provider.lower())
         run.model = public_model_metadata(_cfg.llm.langchain_model_name)
@@ -520,11 +505,9 @@ class SwarmRuntime:
         run_dir = self._store.run_dir(run_id)
         usage = _RunUsage(run, self._store, record_usage)
 
-        # Ensure fresh MCP tool discovery for this run — prior run's cached
-        # specs may be stale if operator edited mcp_servers config between runs.
+        # Rediscover MCP tools because operator configuration can change between runs.
         invalidate_mcp_specs_cache()
 
-        # Mark as running
         run.status = RunStatus.running
         self._store.update_run(run)
         self._emit_event(run_id, self._make_event("run_started"))
@@ -536,37 +519,25 @@ class SwarmRuntime:
         else:
             self._prefetch_grounding_data(run)
 
-        # Initialize task store
         task_store = TaskStore(run_dir)
         for task in run.tasks:
             task_store.save_task(task)
 
-        # Build agent lookup
         agent_map: dict[str, SwarmAgentSpec] = {a.id: a for a in run.agents}
 
-        # Render the grounding block once and pass it to every worker on
-        # this run. The block is empty when no symbols were detected, in
-        # which case workers see no extra section.
+        # Share one grounding snapshot among all workers.
         grounding_block = grounding.format_grounding_block(run.grounding_data or {})
 
-        # Compute execution layers
         layers = topological_layers(run.tasks)
         all_succeeded = True
 
         try:
-            # The overlay runs inside the try so a failure here finalizes the
-            # run (run_error event + failed status) instead of leaving a
-            # zombie "running" run on disk. run.tasks is re-synced from the
-            # store afterwards: _cancel_remaining_tasks and the final snapshot
-            # read in-memory task state, which must see kept tasks as
-            # completed — otherwise a cancellation in the pre-layer window
-            # would relabel them cancelled.
+            # Finalize overlay failures and sync kept tasks before cancellation can relabel them.
             if resume_from is not None:
                 self._apply_resume_overlay(run, run_dir, task_store, resume_from)
                 run.tasks = task_store.load_all()
 
             for layer_idx, layer_task_ids in enumerate(layers):
-                # Check cancellation between layers
                 if cancel_event.is_set():
                     logger.info("Run %s cancelled at layer %d", run_id, layer_idx)
                     self._cancel_remaining_tasks(task_store, run.tasks)
@@ -581,7 +552,6 @@ class SwarmRuntime:
                     ),
                 )
 
-                # Execute all tasks in this layer in parallel
                 layer_results = self._execute_layer(
                     run=run,
                     task_store=task_store,
@@ -594,7 +564,6 @@ class SwarmRuntime:
                     usage=usage,
                 )
 
-                # Process results
                 for tid, result in layer_results.items():
                     usage.settle(tid, result)
 
@@ -628,16 +597,12 @@ class SwarmRuntime:
                         run_id, self._make_event(f"task_{status.value}", task_id=tid, data=data),
                     )
 
-                # Missing/nonterminal dependencies still prevent dispatch.
-                # Retained completed tasks are also absent from layer_results,
-                # but are not failures.
+                # Retained completed tasks also have no new layer result.
                 for tid in layer_task_ids:
                     if tid not in layer_results and task_store.load_task(tid).status != TaskStatus.completed:
                         all_succeeded = False
 
-                # Snapshot run.json at the layer boundary so list_runs and any
-                # client that reads run.json directly sees fresh task statuses
-                # without per-task I/O spam. One write per layer is cheap.
+                # Publish task statuses once per layer for run readers without per-task writes.
                 self._sync_run_tasks_snapshot(run, task_store, usage)
 
         except Exception as exc:
@@ -648,14 +613,12 @@ class SwarmRuntime:
                 self._make_event("run_error", data={"error": redact_internal_paths(str(exc))}),
             )
 
-        # Finalize run
         final_status = (
             RunStatus.cancelled if cancel_event.is_set() else RunStatus.completed if all_succeeded else RunStatus.failed
         )
         run.status = final_status
         run.completed_at = datetime.now(timezone.utc).isoformat()
 
-        # Sync tasks back to run model
         run.tasks = task_store.load_all()
 
         from src.swarm.delivery import refresh_report
@@ -716,11 +679,7 @@ class SwarmRuntime:
                 continue
             to_keep.add(task.id)
 
-        # Phase 2: a kept result is only valid if every transitive upstream is
-        # also kept — a dependent whose upstream re-executes must itself
-        # re-execute, or its kept summary would be stale with respect to the
-        # fresh upstream output flowing into it. Iterate to fixpoint (DAGs are
-        # small; worst case is quadratic).
+        # Invalidate retained results transitively when an upstream task reruns.
         invalidated = True
         while invalidated:
             invalidated = False
@@ -769,8 +728,7 @@ class SwarmRuntime:
                     },
                 ),
             )
-        # An unfinished task can reuse its checkpoint only when its inputs
-        # and definition are unchanged. Never continue against stale upstreams.
+        # Resume unfinished tasks only when their inputs and definitions still match.
         for task in run.tasks:
             prev = prev_by_id.get(task.id)
             if prev is None or task.id in to_keep or prev.status == TaskStatus.completed:
@@ -819,10 +777,7 @@ class SwarmRuntime:
             )
             symbols = symbols[:symbol_limit]
 
-        # Multi-symbol grounding fetch can take 30s+ on slow loaders. Wrap it
-        # in a heartbeat so events.jsonl gets fresh entries during the fetch
-        # — without this, the stale-run reaper would false-positive-mark a
-        # healthy fresh run that's just waiting on OHLCV API calls.
+        # Emit heartbeats during grounding so the stale-run sweep leaves a healthy fetch alone.
         from src.kernel.progress import HeartbeatTimer
 
         def _on_grounding_heartbeat(payload: dict) -> None:
@@ -928,7 +883,6 @@ class SwarmRuntime:
                     )
                     continue
 
-                # Mark task as in_progress
                 task_store.update_status(
                     tid,
                     TaskStatus.in_progress,
@@ -940,8 +894,7 @@ class SwarmRuntime:
                     self._make_event("task_started", agent_id=agent_spec.id, task_id=tid),
                 )
 
-                # Carry available work and name missing/unfinished inputs. A
-                # downstream model may synthesize it, but must not invent results.
+                # Name missing inputs so the downstream model does not invent their results.
                 upstream: dict[str, str] = {}
                 for context_key, source_task_id in task.input_from.items():
                     source = task_store.load_task(source_task_id)
@@ -977,9 +930,7 @@ class SwarmRuntime:
                 )
                 layer_budget = max(layer_budget, per_task_budget)
 
-            # Collect results with a hard layer-level deadline — defends against
-            # worker threads stuck in C extensions / blocked I/O that bypass the
-            # in-loop timeout check (issue #42).
+            # Bound layer waits because blocked worker I/O can bypass in-loop timeouts (issue #42).
             deadline_buffer = 60
             layer_deadline = layer_budget + deadline_buffer if layer_budget else None
 

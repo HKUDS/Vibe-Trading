@@ -13,9 +13,7 @@ import httpcore
 import httpx
 
 
-# Fake-IP proxies (Clash, Surge, sing-box in TUN mode) answer every lookup
-# from the RFC 2544 benchmarking range and resolve the real name themselves,
-# the way an HTTP proxy does; refusing it refused every endpoint on such hosts.
+# Fake-IP proxies use the RFC 2544 range and resolve the real endpoint themselves.
 _FAKE_IP_RANGE = ipaddress.ip_network("198.18.0.0/15")
 
 

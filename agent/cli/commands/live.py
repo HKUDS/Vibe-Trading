@@ -132,12 +132,7 @@ def cmd_live_authorize(broker: str) -> int:
     try:
         from src.tools.mcp import build_mcp_tool_wrappers
 
-        # The OAuth flow is driven lazily by the first request to the server —
-        # the `list_tools` discovery handshake — which is bounded by the
-        # per-call `tool_timeout` (default 30 s), NOT `init_timeout`. Raise both
-        # to the authorize deadline so a multi-minute human sign-in (e.g.
-        # Robinhood's face scan) does not trip the handshake. Raise-only: never
-        # shrink an already-larger user-configured timeout.
+        # Raise both timeouts so lazy OAuth discovery can finish a multi-minute sign-in.
         authorize_timeout = _authorize_timeout_seconds()
         if hasattr(server_config, "model_copy"):
             updates: dict[str, float] = {}
@@ -156,9 +151,7 @@ def cmd_live_authorize(broker: str) -> int:
             if updates:
                 server_config = server_config.model_copy(update=updates)
 
-        # Single attempt: a transient-retry would open a fresh client context
-        # that starts a SECOND OAuth callback server on a new port, orphaning
-        # the sign-in the user just completed against the first one (see #259).
+        # A retry would start a new callback server and orphan the user’s OAuth sign-in (#259).
         tools = build_mcp_tool_wrappers(
             key, server_config, max_list_tools_attempts=1
         )

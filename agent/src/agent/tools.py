@@ -24,14 +24,9 @@ class BaseTool(ABC):
     parameters: Dict[str, Any] = {}
     repeatable: bool = False
     is_readonly: bool = True
-    # Pure, side-effect-free computation: identical args always produce the
-    # same result, so the loop may serve repeated identical calls from cache
-    # instead of re-executing them (financial_rigor calc/verify, etc.).
+    # Cache identical calls only for pure, side-effect-free tools.
     deterministic: bool = False
-    # Mutable/read-through tools can stay repeatable during normal operation
-    # while opting into replay only when compaction has removed an exact prior
-    # successful result. The loop still bypasses replay for explicit freshness
-    # requests such as ``no_cache=True``.
+    # Mutable tools may replay compacted results when opted in, subject to explicit freshness requests.
     replay_after_compaction: bool = False
 
     @classmethod
@@ -171,9 +166,7 @@ class ToolRegistry:
                 )
             return json.dumps(payload, ensure_ascii=False)
         try:
-            # The registry is shared by agent, Swarm and MCP execution. Keep
-            # explicit policy enforcement here so a direct/unoffered call
-            # cannot bypass it. Claude CLI retains its adapter defaults.
+            # Enforce policy at the shared registry so direct or unoffered calls cannot bypass it.
             allowed, reason, params = self.check_policy(name, params)
             if not allowed:
                 return json.dumps({"status": "error", "skipped": True, "error": reason})

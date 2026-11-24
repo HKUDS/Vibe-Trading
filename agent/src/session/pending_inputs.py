@@ -31,12 +31,7 @@ class PendingInputLimitError(RuntimeError):
 
 @dataclass(frozen=True)
 class PendingInput:
-    """One queued message and its request's shell entitlement.
-
-    Attributes:
-        claimed_by: Turn currently writing the input.
-        claimed_after_seq: Highest thread seq when the claim was persisted.
-    """
+    """Store a queued input, its request entitlement and the claim sequence used for recovery."""
 
     input_id: str
     content: str
@@ -62,14 +57,7 @@ class PendingInput:
 
     @classmethod
     def from_dict(cls, record: Dict[str, Any]) -> Optional["PendingInput"]:
-        """Parse one stored record.
-
-        Args:
-            record: Decoded JSON object.
-
-        Returns:
-            The input, or None for a record that is not a valid input.
-        """
+        """Parse a stored input, returning None when the record is invalid."""
         input_id = record.get("input_id")
         content = record.get("content")
         queued_at = record.get("queued_at")
@@ -105,7 +93,7 @@ class PendingInputQueue:
         self._locks: Dict[str, threading.Lock] = {}
         self._locks_lock = threading.Lock()
 
-    # ---- Reading ----
+    # Reading
 
     def list(self, session_id: str) -> List[PendingInput]:
         """Return a session's pending inputs, oldest first."""
@@ -120,7 +108,7 @@ class PendingInputQueue:
         """Return the inputs no turn has claimed, oldest first."""
         return [item for item in self.list(session_id) if item.claimed_by is None]
 
-    # ---- Writing ----
+    # Writing
 
     def add(self, session_id: str, content: str, *, queued_during: Optional[str], include_shell_tools: bool) -> PendingInput:
         """Accept one input at the end of the queue."""
@@ -151,9 +139,8 @@ class PendingInputQueue:
         """Claim the head of the queue for a turn.
 
         Args:
-            after_seq: Highest thread seq before delivery.
-            shell_tools: True requires the input's shell entitlement. None starts
-                a new turn with the input's own entitlement.
+            after_seq: Highest thread sequence before delivery.
+            shell_tools: True requires queued shell entitlement. None uses the input entitlement for a new turn.
         """
         with self._lock(session_id):
             items = self._read(session_id)
@@ -220,7 +207,7 @@ class PendingInputQueue:
             self._write(session_id, kept)
             return delivered
 
-    # ---- Internals ----
+    # Internals
 
     def _lock(self, session_id: str) -> threading.Lock:
         with self._locks_lock:
@@ -273,14 +260,7 @@ def _was_delivered(
 
 
 class QueuedInputDelivery:
-    """Hands a running turn the inputs queued for its session.
-
-    ``AgentRuntime`` calls :meth:`deliver` at its one injection point, after a
-    tool batch finished and before the next model call. Each input is claimed,
-    written into the thread as a ``user`` item through the turn's recorder,
-    announced, and only then removed from the queue. A write the recorder drops (the turn
-    already finished) or fails returns the input to the queue.
-    """
+    """Deliver inputs between tool batches and model calls, keeping the claim recoverable until the thread write commits."""
 
     def __init__(
         self,
@@ -333,8 +313,7 @@ class QueuedInputDelivery:
             except Exception:  # noqa: BLE001 - the input is in the thread already
                 logger.warning("Delivered input %s but could not publish it", claimed.input_id, exc_info=True)
             if not self._settle(self._queue.complete, claimed):
-                # The claim stays on disk and blocks further claims; the next
-                # start's reconcile finds the item and removes the input.
+                # Keep the claim until startup reconciliation identifies its committed thread item.
                 return delivered
 
     def _settle(self, action: Callable[[str, str], None], claimed: PendingInput) -> bool:

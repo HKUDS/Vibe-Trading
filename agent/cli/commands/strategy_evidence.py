@@ -67,9 +67,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
             _print(f"[bold red]{message}[/bold red]")
         return 2
     except Exception:  # noqa: BLE001 — one line for the operator, never a traceback
-        # Full detail goes to the logs only; the operator-facing message must
-        # not echo raw exception text (it can leak internal paths), mirroring
-        # the MCP envelope redaction.
+        # Keep raw exception details out of operator output because they may contain internal paths.
         logger.exception("strategy-evidence refresh failed")
         message = "evidence refresh failed internally; see logs for detail"
         if getattr(args, "strategy_evidence_json", False):

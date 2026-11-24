@@ -16,9 +16,7 @@ BACK = object()
 CANCEL = object()
 
 
-# ---------------------------------------------------------------------------
 # Provider catalogue — projected from the shared provider registry
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -47,9 +45,7 @@ TIMEOUT_CHOICES: Final[tuple[tuple[str, str], ...]] = (
 )
 
 
-# ---------------------------------------------------------------------------
 # Filesystem helpers (atomic partial save → final rename)
-# ---------------------------------------------------------------------------
 
 
 def _env_dir() -> Path: return Path.home() / ".vibe-trading"
@@ -80,9 +76,7 @@ def _finalize(values: dict[str, str]) -> Path:
     return _env_path()
 
 
-# ---------------------------------------------------------------------------
 # Selector with back-step (custom prompt_toolkit Application)
-# ---------------------------------------------------------------------------
 
 
 def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
@@ -192,9 +186,7 @@ def _select_numeric(choices: Sequence[tuple[str, str]], default_index: int,
     return _select_numeric(choices, default_index, console)
 
 
-# ---------------------------------------------------------------------------
 # Masked / plain prompts
-# ---------------------------------------------------------------------------
 
 
 def _prompt_secret(prompt: str, *, console: Console) -> str | object:
@@ -271,9 +263,7 @@ def _prompt_text(prompt: str, *, default: str = "",
             return CANCEL
 
 
-# ---------------------------------------------------------------------------
 # Wizard
-# ---------------------------------------------------------------------------
 
 
 def _validate_key(provider: Provider, key: str) -> str | None:

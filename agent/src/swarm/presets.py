@@ -14,16 +14,13 @@ from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, Tas
 from src.swarm.task_store import topological_layers, validate_dag
 
 PRESETS_DIR = Path(__file__).resolve().parent / "presets"
-#: User-created presets; searched before the bundled directory so user files
-#: can add to and override the roster by name (mirrors USER_SKILLS_DIR in
-#: ``src/agent/skills.py``). Survives package upgrades.
+#: Search upgrade-safe user presets first so they can override bundled names.
 USER_PRESETS_DIR = Path.home() / ".vibe-trading" / "swarm" / "presets"
 _INTERNAL_TEMPLATE_VARS = {"upstream_context"}
 
 
 def _redact_home(path: Path) -> str:
-    """Render ``path`` with the home prefix collapsed to ``~`` so user-facing
-    errors never leak the absolute home directory (CWE-209)."""
+    """Hide the absolute home directory from user-facing errors (CWE-209)."""
     try:
         return "~/" + str(path.relative_to(Path.home()))
     except ValueError:
@@ -236,7 +233,6 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
     """Create a SwarmRun from a preset with user variables applied."""
     data = load_preset(preset_name)
 
-    # Parse agents
     agents: list[SwarmAgentSpec] = []
     for agent_data in data.get("agents", []):
         agents.append(SwarmAgentSpec(
@@ -251,7 +247,6 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             max_retries=agent_data.get("max_retries", 2),
         ))
 
-    # Parse tasks, initialize blocked_by from depends_on
     tasks: list[SwarmTask] = []
     for task_data in data.get("tasks", []):
         depends_on = task_data.get("depends_on", [])
@@ -266,7 +261,6 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             status=status,
         ))
 
-    # Generate run ID
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y%m%d-%H%M%S")
     short_uuid = uuid.uuid4().hex[:8]

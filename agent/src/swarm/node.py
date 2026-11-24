@@ -111,10 +111,7 @@ def _measure_usage(
                 token_source="provider",
             )
 
-    # Fallback: provider didn't return usage_metadata. Estimate from
-    # serialized message length and response content length. ~4 chars per
-    # English token; under-counts for CJK / Thai / emoji-heavy prompts but
-    # at least preserves the prior behaviour.
+    # Estimate usage from text length when the provider omits token counts.
     try:
         input_tokens = len(json.dumps(messages, ensure_ascii=False)) // 4
     except Exception:
@@ -142,14 +139,7 @@ def build_worker_prompt(
     available_tools: set[str] | None = None,
 ) -> str:
     """Build the worker's system prompt with role, upstream context, and skills."""
-    # Static, agent-invariant blocks first: for a given agent_spec these are
-    # byte-identical on every call (skill_descriptions/tools come from the
-    # agent's own YAML spec, not the current task), so they form one stable
-    # prompt-cache-eligible prefix across a swarm's repeated calls to the
-    # same agent. Anything that varies per call (upstream context, grounding
-    # data, the current date) is appended after, in the same relative order
-    # as before -- a cache hit only needs a stable *prefix*, so moving the
-    # variable tail doesn't need to preserve position, only what precedes it.
+    # Keep agent-invariant guidance first so repeated requests share a prompt cache prefix.
     prompt_parts = [f"## Role\n\n{agent_spec.role}"]
 
     if skill_descriptions and skill_descriptions != "(no matching skills)":
@@ -173,9 +163,6 @@ def build_worker_prompt(
         "or declaration format is required."
     )
 
-    # From here on, content varies per call (upstream context substitution,
-    # grounding data, the date), so none of it extends the cacheable prefix
-    # above -- relative order matches the original layout exactly.
     upstream_block = ""
     if upstream_summaries:
         sections = []
@@ -187,17 +174,13 @@ def build_worker_prompt(
         )
     prompt_parts.append(agent_spec.system_prompt.replace("{upstream_context}", upstream_block))
 
-    # Swarm workers have a purpose-built prompt instead of ContextBuilder, but
-    # they are still agent runs and must receive the runtime-root standing
-    # instructions. A CLI launch directory is intentionally unavailable here.
+    # Read standing instructions from the runtime root because workers have no CLI launch directory.
     instruction_block = build_instruction_block()
     if instruction_block:
         prompt_parts.append(instruction_block)
 
     if grounding_block:
-        # Placed before Execution Rules so it's in scope when the worker
-        # plans its first tool call. The block already contains an explicit
-        # instruction to prefer these prices over training data.
+        # Place grounding before execution rules so it informs the worker’s first tool call.
         prompt_parts.append(grounding_block)
 
     enabled_tools = set(agent_spec.tools or []) if available_tools is None else available_tools

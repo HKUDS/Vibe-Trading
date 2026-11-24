@@ -27,9 +27,7 @@ class TaskStore:
     def save_task(self, task: SwarmTask) -> None:
         """Save or overwrite task state."""
         path = self._task_path(task.id)
-        # self._lock is per instance, and resolve_dependencies() writes the same
-        # files without it; a shared ".tmp" name let one writer's rename consume
-        # another's unwritten temp file (#1536).
+        # Use a unique temp file so concurrent writers cannot consume each other’s writes (#1536).
         tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         with self._lock:
             tmp_path.write_text(task.model_dump_json(indent=2), encoding="utf-8")

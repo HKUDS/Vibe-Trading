@@ -18,16 +18,12 @@ def _is_finite(value: float) -> bool:
     return isinstance(value, (int, float)) and math.isfinite(value)
 
 
-# Window of OHLCV bars to fetch per symbol. 30 calendar days yields
-# roughly 21 US trading days — enough for a "recent" view without
-# bloating the worker prompt.
+# Keep the recent price window small enough for worker prompts.
 DEFAULT_WINDOW_DAYS = 30
 DEFAULT_MAX_SYMBOLS = 8
 MAX_SYMBOLS_ENV = "SWARM_GROUNDING_MAX_SYMBOLS"
 
-# How many of the most-recent rows to render in the worker prompt.
-# The full window is still used to compute the min/max line; the table
-# is truncated for readability.
+# Limit displayed bars while using the full window for extrema.
 PROMPT_TABLE_TAIL = 5
 
 # Symbol patterns understood by the bundled loaders. Anchored on word
@@ -40,15 +36,10 @@ _SYMBOL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b[A-Z]{2,6}-USDT\b"),
 )
 
-# Bare-ticker promotion: 2–5 uppercase letters. Single letters (A, F, T …)
-# collide with ordinary prose far too often to be worth grounding. The
-# lookarounds reject dotted compounds on either side (FOO.USDA promotes
-# neither FOO nor USDA) while still matching a sentence-ending "NVDA.".
+# Exclude single letters and dotted compounds to avoid promoting prose or partial tickers.
 _BARE_US_TICKER_PATTERN = re.compile(r"(?<![\w.])[A-Z]{2,5}(?!\w)(?!\.\w)")
 
-# All-caps tokens that show up in finance prompts but must never be promoted
-# to a .US symbol — either not tickers at all, or colliding with unrelated
-# listed products (CEO and MSCI are both real Yahoo symbols).
+# Exclude finance abbreviations that could resolve to unrelated listings.
 _BARE_TICKER_STOPWORDS = frozenset({
     # geography / venues / index & data providers
     "US", "USA", "UK", "EU", "HK", "CN", "JP", "NYSE", "AMEX", "SSE", "SZSE",
@@ -118,12 +109,7 @@ def fetch_grounding_data(
     start_str = start.isoformat()
     end_str = end.isoformat()
 
-    # Imported lazily so unit tests of the extraction / formatting layer
-    # don't have to drag in pandas + the loader graph just to import.
-    # ``resolve_loader`` expects a *market* key (``"us_equity"`` etc.), not a
-    # raw code; ``_detect_market`` is the function ``runner.py`` already uses
-    # to dispatch the same shapes we extract here, so reusing it keeps the
-    # routing identical to the rest of the codebase.
+    # Defer loader imports and reuse standard market routing for extracted symbols.
     from backtest.loaders.registry import resolve_loader
     from backtest.runner import _detect_market
 
@@ -174,9 +160,7 @@ def format_grounding_block(grounding: dict[str, list[dict]]) -> str:
         window_low = min(closes)
         window_high = max(closes)
         last_close = closes[-1]
-        # Find the last row with a finite close so the "Latest close" label
-        # pairs the price with its correct date, not the final bar's date
-        # (which may have a NaN close in the halted-stock case).
+        # Pair the latest finite close with its own date because the final bar can lack a close.
         last_finite_row = next(
             (r for r in reversed(rows) if _is_finite(r["close"])), rows[-1]
         )

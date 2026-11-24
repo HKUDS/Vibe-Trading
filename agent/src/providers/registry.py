@@ -93,12 +93,7 @@ def onboarding_choices() -> list[dict[str, Any]]:
 
 @dataclass(frozen=True)
 class ProviderCapabilities:
-    """Provider-specific payload and diagnostic behavior.
-
-    Args:
-        top_level_reasoning_effort: Enable only after verifying endpoint support.
-        reasoning_effort_models: Accepted model prefixes, or None for all models.
-    """
+    """Declare verified endpoint capabilities for all models or selected model prefixes."""
 
     name: str
     api_key_env: Optional[str]

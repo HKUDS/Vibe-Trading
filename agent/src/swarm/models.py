@@ -22,10 +22,7 @@ _MODEL_ENDPOINT_PREFIX = re.compile(
 _PUBLIC_MODEL_IDENTIFIER = re.compile(
     r"^(?:[A-Za-z0-9][A-Za-z0-9._:+-]*|[A-Za-z0-9][A-Za-z0-9._:+-]*/(?=[A-Za-z0-9._:+-]*[-.0-9])[A-Za-z0-9][A-Za-z0-9._:+-]*)$"
 )
-#: Credential-shaped tokens that carry no issuer prefix in free-text
-#: redaction but must never reach public metadata: underscore-style key
-#: families (Stripe/OpenAI/Hugging Face), Google/AWS key prefixes, and bare
-#: high-entropy tokens.
+#: Redact unprefixed credential-like tokens before exposing public metadata.
 _CREDENTIAL_TOKEN = re.compile(
     r"^(?:sk|rk|pk|hf)[_-][A-Za-z0-9_-]{4,}$"
     r"|^AIza[A-Za-z0-9_-]{16,}$"

@@ -10,9 +10,6 @@ from rich.text import Text
 Status = Literal["running", "ok", "error"]
 
 
-# Status → (Rich style, marker glyph). The glyph stays the same; the style
-# encodes color + decoration (bold/blink). dexter only changes brightness
-# of the marker rather than swapping glyphs.
 _STATUS_STYLE: dict[Status, str] = {
     # ``blink`` is gracefully ignored by Rich when the terminal does not
     # advertise the capability, so we always include it.
@@ -24,7 +21,7 @@ _STATUS_STYLE: dict[Status, str] = {
 _ARG_VALUE_MAX = 40
 
 
-# ---------------------------------------------------------------- helpers ----
+# helpers
 
 
 def _pretty_tool_name(name: str) -> str:
@@ -105,7 +102,7 @@ def _format_duration(ms: float) -> str:
         return _format_duration_local(ms)
 
 
-# ---------------------------------------------------------------- public ----
+# public
 
 
 def render_tool_event(

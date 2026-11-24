@@ -88,8 +88,8 @@ class IdentityLedger:
 
         Args:
             history: Prior user text used only to narrow resolver queries.
-            restored_state: Earlier ledger export carrying the conversation's locks.
-            seed_prompt_symbols: Whether this prompt can introduce an explicit symbol.
+            restored_state: Earlier ledger export carrying the conversation’s locks.
+            seed_prompt_symbols: Allow an authored prompt to introduce a symbol.
         """
         self.run_dir = Path(run_dir)
         self.resolution_context = ResolutionContext.from_messages(

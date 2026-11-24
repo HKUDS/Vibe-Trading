@@ -18,14 +18,11 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.styles import Style
 
 
-# Sentinel raised by the Ctrl+C path so the caller can distinguish
-# "user pressed Ctrl+C on an empty line" from real EOF. We reuse
-# :class:`EOFError` so prompt_toolkit's existing plumbing keeps working;
-# the caller decides between "show hint" and "exit" via timing.
+# Reuse EOFError for prompt_toolkit while distinguishing Ctrl+C from actual EOF.
 _EXIT_HINT_GAP_SEC = 2.0
 
 
-# ---------------------------------------------------------------- history ----
+# history
 
 
 class SafeFileHistory(FileHistory):
@@ -47,7 +44,7 @@ def _strip_surrogates(text: str) -> str:
     return cleaned.replace("�", "")
 
 
-# ---------------------------------------------------------------- session ----
+# session
 
 
 class _VibePromptSession(PromptSession):
@@ -153,10 +150,7 @@ def _build_keybindings(state: _CtrlCState) -> KeyBindings:
             buf.reset()
             event.app.invalidate()
             return
-        # Empty buffer → record the press (this updates the state so the
-        # outer loop's two-press check has the right prior timestamp) and
-        # propagate EOF so the outer loop can decide whether to print the
-        # exit hint or actually exit.
+        # Update press timing before the outer loop checks for double-press exit.
         state.record_press_and_check_window(_EXIT_HINT_GAP_SEC)
         event.app.exit(exception=EOFError())
 
@@ -220,7 +214,7 @@ def make_session(history_path: Optional[Path] = None) -> PromptSession:
     return session
 
 
-# ---------------------------------------------------------------- helpers ----
+# helpers
 
 
 def get_user_input(

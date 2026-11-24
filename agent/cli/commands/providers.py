@@ -142,10 +142,7 @@ def cmd_provider_login(provider: str) -> int:
         common.console.print(f"[green]Authenticated with OpenAI Codex[/green]  [dim]{account}[/dim]")
         return common.EXIT_SUCCESS
     except EOFError:
-        # ``docker exec`` does not allocate stdin/TTY unless explicitly asked
-        # to do so. oauth-cli-kit prompts for the browser callback URL after
-        # printing the authorization link, so an unattended stdin otherwise
-        # fails with the opaque ``EOF when reading a line`` error.
+        # Allocate stdin and a TTY so the user can paste the OAuth callback URL.
         common.console.print(
             "[red]Authentication error:[/red] OpenAI Codex OAuth needs an "
             "interactive terminal to paste the callback URL."

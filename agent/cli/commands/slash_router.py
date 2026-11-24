@@ -7,13 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Command:
-    """A single slash command entry.
-
-    Attributes:
-        name: The command keyword, without leading ``/``.
-        description: One-line muted description shown in the completion menu.
-        handler_module: Dotted path to the module exposing ``run(ctx, *args)``.
-    """
+    """Register a slash command backed by a module exposing run(ctx, *args)."""
 
     name: str
     description: str
@@ -75,9 +69,7 @@ def _register_institutional_slash_commands() -> None:
         commands[quit_idx:quit_idx] = list(additions)
         SLASH_COMMANDS = tuple(commands)
 
-    # Aliases only ever ADD keys. A key that is already a command name, or is
-    # already claimed by another alias, is left untouched — an alias must never
-    # shadow an existing command.
+    # Preserve existing command and alias names when registering a new alias.
     registered = {cmd.name for cmd in SLASH_COMMANDS}
     new_aliases = {
         alias: pb.slug

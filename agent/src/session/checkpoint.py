@@ -15,12 +15,7 @@ if TYPE_CHECKING:
 
 
 class ResponseCheckpoint:
-    """Persist a bounded-frequency snapshot of streamed assistant text.
-
-    The first text chunk is written immediately. Later chunks are coalesced to
-    avoid an fsync for every provider token, and :meth:`flush` captures the
-    remaining buffer when the run leaves the streaming loop.
-    """
+    """Persist the first text chunk immediately and coalesce later writes until flush."""
 
     def __init__(
         self,

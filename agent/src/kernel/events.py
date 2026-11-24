@@ -15,8 +15,7 @@ RUN_FAILED = "run.failed"
 RUN_CANCELLED = "run.cancelled"
 RUN_WAITING_USER = "run.waiting_user"
 
-#: ``turn_end`` status -> run event. A turn the process lost (``interrupted``)
-#: is reported as a failure whose ``status`` says so.
+#: Report an interrupted turn as a failure carrying its original status.
 RUN_TERMINAL_EVENTS: dict[str, str] = {
     "completed": RUN_COMPLETED,
     "failed": RUN_FAILED,
@@ -26,8 +25,7 @@ RUN_TERMINAL_EVENTS: dict[str, str] = {
 }
 RUN_EVENT_TYPES = frozenset({RUN_STARTED, *RUN_TERMINAL_EVENTS.values()})
 
-#: Kind of a live item that the thread never recorded (a response the loop
-#: dropped, a call cut off by the end of its turn).
+#: Identify discarded items that never reached the thread.
 DISCARDED_KIND = "item.discarded"
 
 # Lifecycle kinds carried inside item events.

@@ -23,10 +23,7 @@ class AuthMethod(str, Enum):
     SHARED_KEY = "shared_key"
     #: No key configured; the request came from loopback and was trusted.
     LOOPBACK_TRUST = "loopback_trust"
-    #: A named human authenticated through an identity provider. Not reachable
-    #: today -- listed so that ``attributable`` has a True case to grow into and
-    #: so downstream code branches on the enum rather than on a string it
-    #: invented.
+    #: Named human authenticated through an identity provider.
     FEDERATED_IDENTITY = "federated_identity"
 
 
@@ -37,11 +34,7 @@ ATTRIBUTABLE_AUTH_METHODS: frozenset[AuthMethod] = frozenset({AuthMethod.FEDERAT
 
 @dataclass(frozen=True)
 class Principal:
-    """Represent the actor established by authentication.
-
-    Shared credentials and loopback trust establish no named identity.
-    Controls requiring a named human must check the derived ``attributable`` flag.
-    """
+    """Represent authentication, with named attribution available only through an identity provider."""
 
     subject: str
     auth_method: AuthMethod
@@ -68,21 +61,10 @@ class Principal:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Principal:
-        """Rebuild a principal from its serialized form.
-
-        ``attributable`` in the input is ignored and recomputed from
-        ``auth_method``: a stored record whose flag was tampered with, or
-        written by an older version, must not be able to assert attribution the
-        auth method never supported.
-
-        Args:
-            data: Dictionary produced by :meth:`to_dict`.
-
-        Returns:
-            A Principal.
+        """Recompute attribution from the authentication method so stored records cannot grant it.
 
         Raises:
-            ValueError: If ``auth_method`` is missing or unknown.
+            ValueError: The authentication method is missing or unknown.
         """
         return cls(
             subject=data["subject"],
@@ -136,14 +118,7 @@ class Session:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Session:
-        """Deserialize a session from a dictionary.
-
-        Args:
-            data: Dictionary produced from parsed JSON.
-
-        Returns:
-            A Session instance.
-        """
+        """Deserialize a session from a dictionary."""
         data = dict(data)
         if "status" in data:
             data["status"] = SessionStatus(data["status"])
@@ -173,14 +148,7 @@ class Message:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Message:
-        """Deserialize a message from a dictionary.
-
-        Args:
-            data: Dictionary produced from parsed JSON.
-
-        Returns:
-            A Message instance.
-        """
+        """Deserialize a message from a dictionary."""
         data = dict(data)
         return cls(**data)
 
@@ -213,14 +181,7 @@ class Attempt:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Attempt:
-        """Deserialize an attempt from a dictionary.
-
-        Args:
-            data: Dictionary produced from parsed JSON.
-
-        Returns:
-            An Attempt instance.
-        """
+        """Deserialize an attempt from a dictionary."""
         data = dict(data)
         if "status" in data:
             data["status"] = AttemptStatus(data["status"])

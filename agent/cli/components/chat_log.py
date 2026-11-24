@@ -46,9 +46,7 @@ def render_history(
         cons.print(_render_turn(turn))
         content = str(turn.get("content", ""))
         if content:
-            # Body intentionally renders as plain text — markdown / katex
-            # / syntax highlighting live in the Web bubble. The CLI keeps
-            # the body monospaced for diff-friendly replay.
+            # Keep the terminal transcript monospaced for diff-friendly replay.
             cons.print(content)
         cons.print()  # blank line between turns
 

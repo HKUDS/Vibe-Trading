@@ -248,17 +248,10 @@ class ThreadItem:
 
     @classmethod
     def from_dict(cls, record: Mapping[str, Any]) -> "ThreadItem":
-        """Parse one on-disk record.
-
-        Args:
-            record: Decoded JSON object.
-
-        Returns:
-            The item.
+        """Parse an on-disk thread item.
 
         Raises:
-            ThreadItemError: A common field is missing or the payload does not
-                match its type schema.
+            ThreadItemError: A common field is missing or the payload violates its schema.
         """
         seq = record.get("seq")
         ts = record.get("ts")

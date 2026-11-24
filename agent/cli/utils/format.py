@@ -7,9 +7,7 @@ from typing import Union
 Number = Union[int, float]
 
 
-# ---------------------------------------------------------------------------
 # Duration
-# ---------------------------------------------------------------------------
 
 
 def format_duration(value: Number | None, *, unit: str = "ms") -> str:
@@ -45,9 +43,7 @@ def format_duration(value: Number | None, *, unit: str = "ms") -> str:
     return f"{hours}h {minutes:02d}m"
 
 
-# ---------------------------------------------------------------------------
 # Tokens
-# ---------------------------------------------------------------------------
 
 
 def format_tokens(count: Number | None) -> str:
@@ -71,9 +67,7 @@ def format_tokens(count: Number | None) -> str:
     return f"{n / 1_000_000_000:.1f}B tokens"
 
 
-# ---------------------------------------------------------------------------
 # Generic abbreviation (dollars / counts / sizes)
-# ---------------------------------------------------------------------------
 
 
 def abbreviate_num(value: Number | None, *, currency: str | None = None) -> str:

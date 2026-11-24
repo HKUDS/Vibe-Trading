@@ -12,9 +12,7 @@ from pathlib import Path
 
 from src.tools.path_utils import safe_run_dir
 
-# ``ARCHIVE_MANIFEST`` names the backtest an archived run currently describes,
-# and the files that archive placed there, so the next one can replace exactly
-# its own output. Offline diagnostics can distinguish the original producer.
+# Track archive ownership so replacement removes only the prior archive’s files.
 ARCHIVE_MANIFEST = ".archived_backtest.json"
 
 logger = logging.getLogger(__name__)
