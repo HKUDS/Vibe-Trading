@@ -118,7 +118,6 @@ class SessionService:
         """Stop accepting work, cancel owned background work, and wait for reaping."""
         with self._inflight_lock:
             self._shutting_down = True
-        with self._inflight_lock:
             tasks = [task for task in self._active_tasks.values() if not task.done()]
         for active_loop in list(self._active_loops.values()):
             active_loop.cancel()
@@ -302,9 +301,9 @@ class SessionService:
             raise SessionBusyError("shutting down; no new runs are accepted")
 
         if role != "user":
-            message = Message(session_id=session_id, role=role, content=content)
+            message_id = Message(session_id=session_id, role=role, content=content).message_id
             log = self.store.thread_log(session_id)
-            turn_id = message.message_id
+            turn_id = message_id
             log.append("turn_start", turn_id, prompt="")
             if role == "assistant":
                 log.append("assistant", turn_id, content=content, phase="final")
@@ -312,8 +311,8 @@ class SessionService:
                 log.append("inject", turn_id, role=role, content=content)
             log.append("turn_end", turn_id, status="completed")
             self._search_index.index_message(session_id, role, content)
-            self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
-            return {"message_id": message.message_id}
+            self._announce_message(session_id, message_id, role, content)
+            return {"message_id": message_id}
 
         # Claim before persisting so concurrent sends cannot both start attempts.
         try:
@@ -345,6 +344,11 @@ class SessionService:
             if not handed_off:
                 self._release_session(session_id)
 
+    def _announce_message(self, session_id: str, message_id: str, role: str, content: str) -> None:
+        self.event_bus.emit(session_id, "message.received", {
+            "message_id": message_id, "role": role, "content": content,
+        })
+
     def _start_turn(
         self,
         session: Session,
@@ -356,12 +360,8 @@ class SessionService:
     ) -> Dict[str, Any]:
         """Record the user message and schedule its turn."""
         session_id = session.session_id
-        message = Message(
-            session_id=session_id,
-            role="user",
-            content=content,
-        )
-        self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": "user", "content": content})
+        message_id = Message(session_id=session_id, role="user", content=content).message_id
+        self._announce_message(session_id, message_id, "user", content)
 
         if attempt is None:
             attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
@@ -377,7 +377,7 @@ class SessionService:
             self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
         )
         self._active_tasks[session_id] = task
-        return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+        return {"message_id": message_id, "attempt_id": attempt.attempt_id}
 
     def _start_queued_turn(self, session: Session) -> Optional[Dict[str, Any]]:
         """Start a turn from the oldest waiting input. The caller holds the claim."""

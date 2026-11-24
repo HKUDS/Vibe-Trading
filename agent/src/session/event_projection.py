@@ -244,19 +244,22 @@ class ThreadEvents:
 
     # Event construction
 
-    def _publish(
-        self,
-        session_id: str,
-        event_type: str,
-        data: Dict[str, Any],
-        *,
-        seq: Optional[int] = None,
-        rank: int = _COMPLETED,
-    ) -> None:
-        event = SSEEvent(event_type=event_type, data=data, session_id=session_id, seq=seq)
-        if seq is not None:
-            event.event_id = durable_event_id(seq, rank)
-        self.bus.publish(event)
+    @staticmethod
+    def _recorded_event(
+        session_id: str, event_type: str, record: ThreadItem, rank: int, data: Dict[str, Any],
+    ) -> SSEEvent:
+        event_id = durable_event_id(record.seq, rank)
+        fields = dict(event_type=event_type, session_id=session_id, seq=record.seq, data=data)
+        if rank == _STARTED:
+            # Preserve the transient allocation when publishing a just-recorded start.
+            event = SSEEvent(**fields)
+            event.event_id = event_id
+            return event
+        return SSEEvent(event_id=event_id, **fields)
+
+    @staticmethod
+    def _item_payload(record: ThreadItem, kind: str, view: Dict[str, Any]) -> Dict[str, Any]:
+        return {"kind": kind, "seq": record.seq, "turn_id": record.turn_id, "item": view, "cursor": record.seq}
 
     def _recorded_events(
         self, session_id: str, item: ThreadItem, live_id: Optional[str],
@@ -268,24 +271,10 @@ class ThreadEvents:
             if view is None:
                 return []
         _, completed_kind = _type_kinds(item.type, item.get("status"))
-        data: Dict[str, Any] = {
-            "kind": completed_kind,
-            "seq": item.seq,
-            "turn_id": item.turn_id,
-            "item": view,
-            "cursor": item.seq,
-        }
+        data = self._item_payload(item, completed_kind, view)
         if live_id:
             data["live_id"] = live_id
-        events = [
-            SSEEvent(
-                event_id=durable_event_id(item.seq, _COMPLETED),
-                event_type=vocabulary.ITEM_COMPLETED,
-                data=data,
-                session_id=session_id,
-                seq=item.seq,
-            )
-        ]
+        events = [self._recorded_event(session_id, vocabulary.ITEM_COMPLETED, item, _COMPLETED, data)]
         run_type = None
         run: Dict[str, Any] = {"turn_id": item.turn_id, "seq": item.seq, "cursor": item.seq}
         if item.type == "turn_start":
@@ -312,15 +301,7 @@ class ThreadEvents:
                    if key not in {"seq", "ts", "turn_id", "type", "status"}},
             )
         if run_type is not None:
-            events.append(
-                SSEEvent(
-                    event_id=durable_event_id(item.seq, _RUN),
-                    event_type=run_type,
-                    data=run,
-                    session_id=session_id,
-                    seq=item.seq,
-                )
-            )
+            events.append(self._recorded_event(session_id, run_type, item, _RUN, run))
         return events
 
     def _publish_item(self, session_id: str, tail: _Tail, item: ThreadItem) -> None:
@@ -352,19 +333,8 @@ class ThreadEvents:
 
         if live is None:
             started_kind, _ = _type_kinds(item.type, item.get("status"))
-            self._publish(
-                session_id,
-                vocabulary.ITEM_STARTED,
-                {
-                    "kind": started_kind,
-                    "seq": item.seq,
-                    "turn_id": item.turn_id,
-                    "item": copy.deepcopy(view),
-                    "cursor": item.seq,
-                },
-                seq=item.seq,
-                rank=_STARTED,
-            )
+            data = self._item_payload(item, started_kind, copy.deepcopy(view))
+            self.bus.publish(self._recorded_event(session_id, vocabulary.ITEM_STARTED, item, _STARTED, data))
         else:
             tail.live_by_seq[item.seq] = live.live_id
             while len(tail.live_by_seq) > _LIVE_ID_MEMORY:
@@ -373,17 +343,17 @@ class ThreadEvents:
             self.bus.publish(event)
 
     def _discard(self, session_id: str, tail: _Tail, live: _LiveItem) -> None:
-        self._publish(
-            session_id,
-            vocabulary.ITEM_COMPLETED,
-            {
+        self.bus.publish(SSEEvent(
+            session_id=session_id,
+            event_type=vocabulary.ITEM_COMPLETED,
+            data={
                 "kind": vocabulary.DISCARDED_KIND,
                 "live_id": live.live_id,
                 "turn_id": live.turn_id,
                 "item": {"type": live.type, "turn_id": live.turn_id, "status": "discarded"},
                 "cursor": tail.last_seq,
             },
-        )
+        ))
 
     def _discard_live(self, session_id: str, tail: _Tail, turn_id: Optional[str]) -> None:
         """Close the live items of a turn (or all) that were never recorded."""

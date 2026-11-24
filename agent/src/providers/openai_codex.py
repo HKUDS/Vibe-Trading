@@ -597,14 +597,13 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
             delta = event.get("delta") or ""
             if delta:
                 yield CodexAIMessage(content=delta)
-        elif event_type == "response.function_call_arguments.delta":
-            call_id = event.get("call_id")
-            if call_id in tool_buffers:
-                tool_buffers[call_id]["arguments"] += event.get("delta") or ""
-        elif event_type == "response.function_call_arguments.done":
-            call_id = event.get("call_id")
-            if call_id in tool_buffers:
-                tool_buffers[call_id]["arguments"] = event.get("arguments") or ""
+        elif event_type in {"response.function_call_arguments.delta", "response.function_call_arguments.done"}:
+            buffer = tool_buffers.get(event.get("call_id"))
+            if buffer is not None:
+                if event_type.endswith(".delta"):
+                    buffer["arguments"] += event.get("delta") or ""
+                else:
+                    buffer["arguments"] = event.get("arguments") or ""
         elif event_type == "response.output_item.done":
             item = event.get("item") or {}
             if item.get("type") == "reasoning" and item.get("encrypted_content"):

@@ -110,39 +110,22 @@ def get_claude_cli_auth_status() -> tuple[bool, str]:
     )
 
 
-def _content_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts: list[str] = []
-        for part in content:
-            if isinstance(part, dict):
-                if part.get("type", "text") != "text":
-                    # Refuse unsupported images before answering without them.
-                    raise RuntimeError(
-                        f"claude-cli supports text input only, not {part.get('type')!r}"
-                    )
-                texts.append(str(part.get("text", "")))
-            else:
-                texts.append(str(part))
-        return "".join(texts)
-    return "" if content is None else str(content)
-
-
-def _tool_content_text(content: Any) -> str:
-    """Render tool image parts as explicit placeholders for text-only Claude CLI."""
+def _content_text(content: Any, *, tool_result: bool = False) -> str:
     if not isinstance(content, list):
-        return _content_text(content)
-    parts = []
+        return "" if content is None else str(content)
+    texts = []
     for part in content:
-        if isinstance(part, dict) and part.get("type") == "image_url":
+        if not isinstance(part, dict):
+            texts.append(str(part))
+        elif tool_result and part.get("type") == "image_url":
             url = (part.get("image_url") or {}).get("url", "")
-            parts.append(f"[image artifact: {url}]")
-        elif isinstance(part, dict):
-            parts.append(str(part.get("text", "")))
+            texts.append(f"[image artifact: {url}]")
+        elif tool_result or part.get("type", "text") == "text":
+            texts.append(str(part.get("text", "")))
         else:
-            parts.append(str(part))
-    return "".join(parts)
+            # Refuse unsupported images before answering without them.
+            raise RuntimeError(f"claude-cli supports text input only, not {part.get('type')!r}")
+    return "".join(texts)
 
 
 def _role(message: Any) -> str:
@@ -168,7 +151,7 @@ def _render(messages: list[Any]) -> tuple[str, str]:
     parts: list[str] = []
     for message in rest:
         role = _role(message)
-        content = _tool_content_text(message_value(message, "content", "")) if role == "tool" else _content_text(message_value(message, "content", ""))
+        content = _content_text(message_value(message, "content", ""), tool_result=role == "tool")
         tool_calls = message_value(message, "tool_calls")
         if role in {"assistant", "ai"} and tool_calls:
             calls = [

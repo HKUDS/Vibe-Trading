@@ -207,21 +207,19 @@ if ChatOpenAI is not None:
             return None
 
         @classmethod
+        def _iter_signatures(cls, tool_calls: Any) -> Iterator[tuple[int, dict[str, Any], str]]:
+            if isinstance(tool_calls, list):
+                for index, tool_call in enumerate(tool_calls):
+                    if signature := cls._extract_tool_call_thought_signature(tool_call):
+                        yield index, tool_call, signature
+
+        @classmethod
         def _collect_tool_call_thought_signatures(cls, tool_calls: Any) -> list[dict[str, Any]]:
-            if not isinstance(tool_calls, list):
-                return []
-
             signatures = []
-            for fallback_index, tool_call in enumerate(tool_calls):
-                signature = cls._extract_tool_call_thought_signature(tool_call)
-                if not signature or not isinstance(tool_call, dict):
-                    continue
-
+            for fallback_index, tool_call, signature in cls._iter_signatures(tool_calls):
                 index = tool_call.get("index")
-                entry: dict[str, Any] = {
-                    "index": index if isinstance(index, int) else fallback_index,
-                    "thought_signature": signature,
-                }
+                entry = {"index": index if isinstance(index, int) else fallback_index,
+                         "thought_signature": signature}
                 if tool_call.get("id"):
                     entry["id"] = tool_call["id"]
                 signatures.append(entry)
@@ -260,17 +258,11 @@ if ChatOpenAI is not None:
         @classmethod
         def _signature_maps(cls, message: Any) -> tuple[dict[str, str], dict[int, str]]:
             by_id, by_index = _tool_call_thought_signature_maps(message)
-            additional_kwargs = getattr(message, "additional_kwargs", {})
-            raw_tool_calls = additional_kwargs.get("tool_calls")
-            if isinstance(raw_tool_calls, list):
-                for index, tool_call in enumerate(raw_tool_calls):
-                    signature = cls._extract_tool_call_thought_signature(tool_call)
-                    if not signature or not isinstance(tool_call, dict):
-                        continue
-                    if tool_call.get("id"):
-                        by_id[str(tool_call["id"])] = signature
-                    by_index[index] = signature
-
+            raw_tool_calls = getattr(message, "additional_kwargs", {}).get("tool_calls")
+            for index, tool_call, signature in cls._iter_signatures(raw_tool_calls):
+                if tool_call.get("id"):
+                    by_id[str(tool_call["id"])] = signature
+                by_index[index] = signature
             return by_id, by_index
 
         @staticmethod
