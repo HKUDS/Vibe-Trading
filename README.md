@@ -220,6 +220,8 @@ The loader supports **28 market-data sources**. With `source: "auto"`, it infers
 
 You can also choose a source explicitly. For example, installing `vibe-trading-ai[ashare]` adds the token-free BaoStock loader for daily A-share bars. The [data source reference](guides/capabilities.md#-data-sources--smart-fallback) lists the full chains and credential requirements.
 
+Yahoo `4H`/`4h` requests aggregate hourly OHLCV into four-hour bars aligned to UTC midnight. Partial buckets are retained; empty buckets are omitted.
+
 ## 🔩 Detailed Capabilities
 
 ### Market research
