@@ -1,16 +1,4 @@
-"""Pure formatting helpers for the CLI surface.
-
-These mirror the formatting conventions used in the web app (see
-``frontend/src/lib/format.ts``) so a duration printed in the CLI reads the
-same as one printed in the chat bubble:
-
-* ``format_duration(ms_or_s)`` → ``"230ms" | "1.4s" | "4m 12s"``
-* ``format_tokens(n)`` → ``"1.2k tokens" | "452 tokens"``
-* ``abbreviate_num(n)`` → ``"$0.003" | "12.4M" | "452"``
-
-All functions are pure and tolerate ``None`` / negative inputs so callers can
-hand them raw counter values without pre-validation.
-"""
+"""Pure formatting helpers for the CLI surface."""
 
 from __future__ import annotations
 
@@ -19,25 +7,11 @@ from typing import Union
 Number = Union[int, float]
 
 
-# ---------------------------------------------------------------------------
 # Duration
-# ---------------------------------------------------------------------------
 
 
 def format_duration(value: Number | None, *, unit: str = "ms") -> str:
-    """Render a duration as a short, human-readable string.
-
-    Args:
-        value: Numeric duration. Treated as milliseconds by default — this
-            matches the rest of the codebase (tool callbacks, ``elapsed_ms``
-            in ``cli/_legacy.py``, the spinner clock). Pass ``unit="s"`` if
-            you already have seconds.
-        unit: Either ``"ms"`` (default) or ``"s"``.
-
-    Returns:
-        Compact label, e.g. ``"230ms"``, ``"1.4s"``, ``"2m 05s"``. ``None``
-        and negative values render as ``"—"``.
-    """
+    """Render a duration as a short, human-readable string."""
 
     if value is None:
         return "—"
@@ -69,20 +43,11 @@ def format_duration(value: Number | None, *, unit: str = "ms") -> str:
     return f"{hours}h {minutes:02d}m"
 
 
-# ---------------------------------------------------------------------------
 # Tokens
-# ---------------------------------------------------------------------------
 
 
 def format_tokens(count: Number | None) -> str:
-    """Render a token count with a thousands-suffix.
-
-    Args:
-        count: Integer-ish token count. ``None`` / negatives → ``"0 tokens"``.
-
-    Returns:
-        E.g. ``"452 tokens"``, ``"1.2k tokens"``, ``"3.4M tokens"``.
-    """
+    """Render a token count with a thousands-suffix."""
 
     if count is None:
         return "0 tokens"
@@ -102,32 +67,11 @@ def format_tokens(count: Number | None) -> str:
     return f"{n / 1_000_000_000:.1f}B tokens"
 
 
-# ---------------------------------------------------------------------------
 # Generic abbreviation (dollars / counts / sizes)
-# ---------------------------------------------------------------------------
 
 
 def abbreviate_num(value: Number | None, *, currency: str | None = None) -> str:
-    """Abbreviate a number with magnitude suffix.
-
-    Use this for status-bar numbers where horizontal space is scarce. Currency
-    amounts under ``$1`` keep 3-decimal precision so per-call cost reads
-    sensibly (e.g. ``$0.003``).
-
-    Args:
-        value: Raw number to abbreviate. ``None`` → ``"—"``.
-        currency: Optional currency symbol prefix (e.g. ``"$"``). When set,
-            small fractional values keep 3 decimals.
-
-    Returns:
-        Abbreviated string. Examples::
-
-            abbreviate_num(452)          → "452"
-            abbreviate_num(12_400)       → "12.4k"
-            abbreviate_num(3_200_000)    → "3.2M"
-            abbreviate_num(0.003, currency="$") → "$0.003"
-            abbreviate_num(1.42,  currency="$") → "$1.42"
-    """
+    """Abbreviate a number with magnitude suffix."""
 
     if value is None:
         return "—"

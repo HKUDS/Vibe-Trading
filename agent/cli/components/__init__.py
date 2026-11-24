@@ -1,8 +1,4 @@
-"""Reusable CLI render components.
-
-Each component returns a Rich renderable (Text / Panel / Table) so callers
-can ``console.print`` or stuff it into a Live group.
-"""
+"""Reusable CLI render components."""
 
 from .chat_log import render_history
 from .hint_bar import render_hint_bar

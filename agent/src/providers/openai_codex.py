@@ -1,10 +1,4 @@
-"""OpenAI Codex OAuth provider.
-
-This provider follows the reference OpenAI Codex OAuth path: a ChatGPT account is
-authenticated by oauth-cli-kit, then requests are sent to the ChatGPT Codex
-Responses endpoint. It is intentionally separate from the standard OpenAI API
-key path because ChatGPT OAuth tokens are not OpenAI API keys.
-"""
+"""OpenAI Codex OAuth provider."""
 
 from __future__ import annotations
 
@@ -20,12 +14,14 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from itertools import chain
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Optional
 from urllib.parse import urlparse
 
 from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
+from src.providers.response import usage_metadata
 from src.providers.session_context import current_llm_session_id
 
 try:  # pragma: no cover - platform-specific imports are exercised via mocks.
@@ -59,16 +55,7 @@ _TOKEN_REFRESH_THREAD_LOCK = threading.Lock()
 
 
 class CodexStreamError(RuntimeError):
-    """Raised when the OpenAI Codex stream responds with an HTTP error.
-
-    Subclasses ``RuntimeError`` to preserve the historical contract (callers
-    historically caught ``RuntimeError`` here) but carries an explicit
-    ``status_code`` so the upstream ``ProviderStreamError`` classification
-    can distinguish transient (5xx/408/429) failures from deterministic
-    4xx that should not be retried. Without this, every Codex failure
-    looked ``status_code=None`` → ``retryable=True`` and codex 400/401/403
-    responses wasted a retry budget.
-    """
+    """Raised when the OpenAI Codex stream responds with an HTTP error."""
 
     def __init__(self, status_code: int, detail: Any) -> None:
         self.status_code = int(status_code)
@@ -96,13 +83,7 @@ class _CodexRefreshError(RuntimeError):
 
 
 def _build_codex_token_storage(path: Path | None = None) -> Any:
-    """Build the Vibe-owned Codex token store.
-
-    The path deliberately does not use oauth-cli-kit's default storage, because
-    that backend imports and copies ``~/.codex/auth.json``. A copied rotating
-    refresh token gives two processes ownership of one OAuth session and causes
-    the ``token_invalidated`` / ``refresh_token_reused`` failure in issue #975.
-    """
+    """Build the Vibe-owned Codex token store."""
     try:
         from oauth_cli_kit.storage import FileTokenStorage
     except ImportError as exc:
@@ -155,7 +136,8 @@ def _unlock_token_file(handle: Any) -> None:
 @contextmanager
 def _codex_refresh_lock(storage: Any) -> Iterator[None]:
     """Serialize refresh-token rotation across threads and processes."""
-    lock_path = storage.get_token_path().with_name(f"{storage.get_token_path().name}.lock")
+    token_path = storage.get_token_path()
+    lock_path = token_path.with_suffix(token_path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with _TOKEN_REFRESH_THREAD_LOCK:
         with lock_path.open("a+b") as handle:
@@ -215,7 +197,7 @@ class CodexAIMessage:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     additional_kwargs: dict[str, Any] = field(default_factory=dict)
     response_metadata: dict[str, Any] = field(default_factory=lambda: {"finish_reason": "stop"})
-    usage_metadata: dict[str, int] | None = None
+    usage_metadata: dict[str, Any] | None = None
 
     def __add__(self, other: "CodexAIMessage") -> "CodexAIMessage":
         finish_reason = other.response_metadata.get(
@@ -274,24 +256,11 @@ def get_openai_codex_login_status() -> Any | None:
 
 
 def _refresh_codex_token(token: Any, storage: Any) -> Any:
-    """Refresh through oauth-cli-kit without accepting its stale fallback.
-
-    Args:
-        token: Current token carrying the rotating refresh credential.
-        storage: Vibe-owned destination store.
-
-    Returns:
-        The refreshed token.
-
-    Raises:
-        _CodexRefreshError: If oauth-cli-kit cannot obtain a replacement token.
-    """
+    """Refresh through oauth-cli-kit without accepting its stale fallback."""
     try:
         from oauth_cli_kit import get_token
 
-        # The very large TTL forces oauth-cli-kit to call the token endpoint.
-        # We compare the result with ``token`` below because oauth-cli-kit may
-        # otherwise return the old, locally-unexpired token after refresh fails.
+        # Force refresh and reject the cached token if the SDK returns it after failure.
         refreshed = get_token(
             provider=_load_codex_oauth_provider(),
             storage=storage,
@@ -322,24 +291,7 @@ def _get_codex_token(
     force_refresh: bool = False,
     rejected_access: str | None = None,
 ) -> Any:
-    """Return a usable Vibe-owned token, refreshing once when required.
-
-    Args:
-        force_refresh: Refresh even when the local expiry clock is still fresh.
-        rejected_access: Access token rejected by the backend. If another
-            process already replaced it while this process waited for the lock,
-            the newer token is used without a second refresh rotation.
-
-    Returns:
-        A usable OAuth token.
-
-    Raises:
-        RuntimeError: If no Vibe-owned credentials exist.
-        CodexAuthenticationError: If the OAuth session was invalidated and an
-            explicit login is required.
-        CodexStreamError: If an expired token cannot be refreshed because of a
-            transient OAuth endpoint failure.
-    """
+    """Return a usable Vibe-owned token, refreshing once when required."""
     storage = _build_codex_token_storage()
     token = storage.load()
     if not (token and token.access and token.refresh and token.account_id):
@@ -382,12 +334,7 @@ def _get_codex_token(
 
 
 def validate_codex_base_url(url: str) -> str:
-    """Validate the only supported ChatGPT Codex OAuth endpoint.
-
-    ChatGPT OAuth tokens must not be sent to arbitrary OpenAI-compatible base
-    URLs. The standard OpenAI API remains API-key authenticated; this provider
-    is limited to the ChatGPT Codex backend endpoint used by Codex OAuth.
-    """
+    """Validate the only supported ChatGPT Codex OAuth endpoint."""
     value = (url or DEFAULT_CODEX_URL).strip().rstrip("/")
     parsed = urlparse(value)
     if parsed.scheme != "https" or parsed.netloc != "chatgpt.com" or parsed.path != "/backend-api/codex/responses":
@@ -414,13 +361,7 @@ def _strip_model_prefix(model: str) -> str:
 
 
 def _prompt_cache_key(instructions: str) -> str:
-    """Cache-routing key shared by every request of one conversation.
-
-    The key hashed the whole message list, so it changed on every request and
-    never routed two turns of a run to the same cache. Codex CLI keys on its
-    conversation id; the bound LLM session id is ours, and the system prompt
-    stands in when no session is bound.
-    """
+    """Cache-routing key shared by every request of one conversation."""
     basis = current_llm_session_id() or instructions
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
@@ -493,18 +434,7 @@ def _convert_messages(
     roots: FileRoots,
     replay_reasoning: bool = True,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Convert loop messages into Responses ``instructions`` + ``input`` items.
-
-    Args:
-        messages: OpenAI-format loop messages.
-        replay_reasoning: Send each turn's encrypted reasoning items back, as
-            Codex CLI does. With ``store: false`` the backend keeps nothing
-            between requests, so without them a reasoning model starts every
-            turn blind to why it made the calls it is now reading results of.
-
-    Returns:
-        ``(instructions, input_items)``.
-    """
+    """Convert loop messages into Responses ``instructions`` + ``input`` items."""
     system_prompt = ""
     instructions_taken = False
     input_items: list[dict[str, Any]] = []
@@ -517,11 +447,7 @@ def _convert_messages(
                 system_prompt = text
                 instructions_taken = True
             elif text:
-                # A system message appended mid-run (the empty-response retry,
-                # the tool-markup retry, the pending-write directive) used to
-                # overwrite `instructions`, so every later request ran without
-                # the 49K-character system prompt. Codex CLI sends added
-                # instructions as developer messages.
+                # Map mid-run instructions to developer messages so the original system prompt persists.
                 input_items.append(
                     {
                         "type": "message",
@@ -557,8 +483,7 @@ def _convert_messages(
                     "name": fn.get("name"),
                     "arguments": fn.get("arguments") or "{}",
                 }
-                # Only an id the backend issued; a made-up one gave every call
-                # of a parallel batch the same "fc_0".
+                # Preserve backend-issued IDs because fabricated IDs collide in parallel batches.
                 if item_id:
                     function_call["id"] = item_id
                 input_items.append(function_call)
@@ -583,10 +508,7 @@ def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
                 "name": name,
                 "description": fn.get("description") or "",
                 "parameters": params if isinstance(params, dict) else {},
-                # The Codex Responses endpoint treats a tool without an explicit
-                # ``strict`` as strict, which makes the model emit every property
-                # (``""`` for an optional string) instead of omitting it. Tool
-                # schemas here are plain JSON Schema with ``required`` honoured.
+                # Disable strict mode so optional schema fields can be omitted.
                 "strict": False,
             }
         )
@@ -616,33 +538,20 @@ def _map_finish_reason(status: str | None) -> str:
 
 
 def _events_from_lines(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
-    buffer: list[str] = []
-
-    def flush() -> dict[str, Any] | None:
-        data_lines = [line[5:].strip() for line in buffer if line.startswith("data:")]
-        buffer.clear()
-        if not data_lines:
-            return None
-        data = "\n".join(data_lines).strip()
-        if not data or data == "[DONE]":
-            return None
-        try:
-            return json.loads(data)
-        except json.JSONDecodeError:
-            return None
-
-    for line in lines:
-        if line == "":
-            if buffer:
-                event = flush()
+    data_lines: list[str] = []
+    for line in chain(lines, ("",)):
+        if line.startswith("data:"):
+            data_lines.append(line[5:].strip())
+        elif not line and data_lines:
+            data = "\n".join(data_lines).strip()
+            data_lines.clear()
+            if data and data != "[DONE]":
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
                 if event is not None:
                     yield event
-            continue
-        buffer.append(line)
-    if buffer:
-        event = flush()
-        if event is not None:
-            yield event
 
 
 #: Models whose backend refused a replayed reasoning item (process lifetime).
@@ -652,6 +561,24 @@ _REASONING_REJECTION_RE = re.compile(r"reasoning|encrypted_content|rs_[A-Za-z0-9
 
 def _has_reasoning_items(body: dict[str, Any]) -> bool:
     return any(item.get("type") == "reasoning" for item in body.get("input") or [])
+
+
+def _response_usage(usage: Any) -> dict[str, Any] | None:
+    if not isinstance(usage, dict):
+        return None
+    keys = ("input_tokens", "output_tokens", "total_tokens")
+    values = (usage.get(key) for key in keys)
+    if any(not isinstance(value, int) or isinstance(value, bool) for value in values):
+        return None
+    cached = (usage.get("input_tokens_details") or {}).get("cached_tokens")
+    reasoning = (usage.get("output_tokens_details") or {}).get("reasoning_tokens")
+    return usage_metadata(
+        usage["input_tokens"],
+        usage["output_tokens"],
+        total=usage["total_tokens"],
+        input_details={"cache_read": cached} if isinstance(cached, int) else None,
+        output_details={"reasoning": reasoning} if isinstance(reasoning, int) else None,
+    )
 
 
 def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[CodexAIMessage]:
@@ -670,14 +597,13 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
             delta = event.get("delta") or ""
             if delta:
                 yield CodexAIMessage(content=delta)
-        elif event_type == "response.function_call_arguments.delta":
-            call_id = event.get("call_id")
-            if call_id in tool_buffers:
-                tool_buffers[call_id]["arguments"] += event.get("delta") or ""
-        elif event_type == "response.function_call_arguments.done":
-            call_id = event.get("call_id")
-            if call_id in tool_buffers:
-                tool_buffers[call_id]["arguments"] = event.get("arguments") or ""
+        elif event_type in {"response.function_call_arguments.delta", "response.function_call_arguments.done"}:
+            buffer = tool_buffers.get(event.get("call_id"))
+            if buffer is not None:
+                if event_type.endswith(".delta"):
+                    buffer["arguments"] += event.get("delta") or ""
+                else:
+                    buffer["arguments"] = event.get("arguments") or ""
         elif event_type == "response.output_item.done":
             item = event.get("item") or {}
             if item.get("type") == "reasoning" and item.get("encrypted_content"):
@@ -707,24 +633,9 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
             model = response.get("model")
             if isinstance(model, str) and model.strip():
                 response_metadata["model_name"] = model.strip()
-            usage = response.get("usage")
-            usage_metadata = None
-            if isinstance(usage, dict):
-                values = {
-                    key: usage.get(key)
-                    for key in ("input_tokens", "output_tokens", "total_tokens")
-                }
-                if all(isinstance(value, int) and not isinstance(value, bool) for value in values.values()):
-                    usage_metadata = values
-                    cached = (usage.get("input_tokens_details") or {}).get("cached_tokens")
-                    reasoning = (usage.get("output_tokens_details") or {}).get("reasoning_tokens")
-                    if isinstance(cached, int):
-                        usage_metadata["input_token_details"] = {"cache_read": cached}
-                    if isinstance(reasoning, int):
-                        usage_metadata["output_token_details"] = {"reasoning": reasoning}
             yield CodexAIMessage(
                 response_metadata=response_metadata,
-                usage_metadata=usage_metadata,
+                usage_metadata=_response_usage(response.get("usage")),
             )
         elif event_type in {"error", "response.failed"}:
             detail = event.get("error") or event.get("message") or event
@@ -845,16 +756,13 @@ class OpenAICodexLLM:
                     and _has_reasoning_items(body)
                     and _REASONING_REJECTION_RE.search(raw)
                 ):
-                    # Replay mirrors Codex CLI but was not verified live against
-                    # every model: if the backend refuses a replayed reasoning
-                    # item, stop sending them for this model and resend once.
+                    # Retry once without encrypted reasoning when the backend rejects replay.
                     _REASONING_REPLAY_REJECTED.add(_strip_model_prefix(self.model))
                     replay = False
                     body = self._body(messages, stream=True, replay_reasoning=False)
                     continue
 
-                # Preserve the typed status so deterministic 4xx failures are
-                # not retried again by the provider-level retry wrapper.
+                # Keep status so the outer retry policy can reject deterministic 4xx failures.
                 raise CodexStreamError(status_code, raw)
 
     def invoke(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> CodexAIMessage:

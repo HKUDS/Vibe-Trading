@@ -1,18 +1,4 @@
-"""Swarm YAML preset loader.
-
-Reads YAML preset files from the bundled ``presets/`` directory next to this
-module and parses them into SwarmRun / SwarmAgentSpec / SwarmTask data models.
-Keeping the YAMLs inside the ``src.swarm`` package guarantees identical
-behavior under editable installs and built wheels.
-
-User-supplied presets are also discovered from ``~/.vibe-trading/swarm/
-presets/`` — the same pattern as user skills (``src/agent/skills.py``):
-the user directory is searched first, so a user preset can both add to and
-override the bundled roster by name, and nothing needs to be copied into
-site-packages (where it would be wiped by the next ``pip install -U``).
-Preset names are validated to a single path segment before any filesystem
-lookup, so a name can never escape either presets directory.
-"""
+"""Swarm YAML preset loader."""
 
 from __future__ import annotations
 
@@ -28,16 +14,13 @@ from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, Tas
 from src.swarm.task_store import topological_layers, validate_dag
 
 PRESETS_DIR = Path(__file__).resolve().parent / "presets"
-#: User-created presets; searched before the bundled directory so user files
-#: can add to and override the roster by name (mirrors USER_SKILLS_DIR in
-#: ``src/agent/skills.py``). Survives package upgrades.
+#: Search upgrade-safe user presets first so they can override bundled names.
 USER_PRESETS_DIR = Path.home() / ".vibe-trading" / "swarm" / "presets"
 _INTERNAL_TEMPLATE_VARS = {"upstream_context"}
 
 
 def _redact_home(path: Path) -> str:
-    """Render ``path`` with the home prefix collapsed to ``~`` so user-facing
-    errors never leak the absolute home directory (CWE-209)."""
+    """Hide the absolute home directory from user-facing errors (CWE-209)."""
     try:
         return "~/" + str(path.relative_to(Path.home()))
     except ValueError:
@@ -45,18 +28,7 @@ def _redact_home(path: Path) -> str:
 
 
 def _validate_preset_name(name: str) -> str:
-    """Reject names that are empty or could escape a presets directory.
-
-    Preset names map directly to ``<dir>/<name>.yaml``; a name carrying a
-    path separator or ``..`` would resolve outside the directory. The bundled
-    path had the same latent exposure — validating here covers both.
-
-    Returns:
-        The stripped name.
-
-    Raises:
-        ValueError: Empty name, path separators, or parent references.
-    """
+    """Reject names that are empty or could escape a presets directory."""
     cleaned = (name or "").strip()
     if not cleaned or cleaned in {".", ".."} or "/" in cleaned or "\\" in cleaned:
         raise ValueError(f"invalid preset name: {name!r}")
@@ -79,20 +51,7 @@ def resolve_preset_path(name: str) -> Path | None:
 
 
 def load_preset(name: str) -> dict:
-    """Load a YAML preset by name (user directory first, then bundled).
-
-    Args:
-        name: Preset name (without .yaml extension).
-
-    Returns:
-        Parsed YAML dict.
-
-    Raises:
-        ValueError: If the name is empty or contains path separators.
-        FileNotFoundError: If the preset file does not exist in either the
-            user directory (``~/.vibe-trading/swarm/presets/``) or the
-            bundled package directory.
-    """
+    """Load a YAML preset by name (user directory first, then bundled)."""
     path = resolve_preset_path(name)
     if path is None:
         available = sorted({
@@ -109,16 +68,7 @@ def load_preset(name: str) -> dict:
 
 
 def list_presets() -> list[dict]:
-    """Return summary info for all available presets, sorted by name.
-
-    User presets (``~/.vibe-trading/swarm/presets/``) are listed alongside the
-    bundled roster; when both directories carry the same file stem, the user
-    preset wins — the same override rule as user skills.
-
-    Returns:
-        List of dicts with keys: name, title, description, agent_count,
-        variables, source (``"user"`` or ``"bundled"``).
-    """
+    """Return summary info for all available presets, sorted by name."""
     by_stem: dict[str, dict] = {}
     for directory, source in ((PRESETS_DIR, "bundled"), (USER_PRESETS_DIR, "user")):
         if not directory.exists():
@@ -169,11 +119,7 @@ def _template_variables(template: str) -> set[str]:
 
 
 def inspect_preset(name: str) -> dict:
-    """Validate a swarm preset and return a dry-run execution plan.
-
-    This does not start workers or call an LLM. It catches common YAML/DAG
-    mistakes early and exposes the topological task layers used by the runtime.
-    """
+    """Validate a swarm preset and return a dry-run execution plan."""
     data = load_preset(name)
     run = build_run_from_preset(name, {})
 
@@ -284,29 +230,9 @@ def inspect_preset(name: str) -> dict:
 
 
 def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmRun:
-    """Create a SwarmRun from a preset with user variables applied.
-
-    Steps:
-        1. Load preset YAML
-        2. Create SwarmAgentSpec list from agents section
-        3. Create SwarmTask list from tasks section
-        4. Generate run_id: f"swarm-{datetime}-{uuid[:8]}"
-        5. Return SwarmRun with all fields populated
-
-    Args:
-        preset_name: Name of the preset to load.
-        user_vars: User-provided variables for prompt template rendering.
-
-    Returns:
-        Fully constructed SwarmRun instance (status=pending).
-
-    Raises:
-        FileNotFoundError: If preset does not exist.
-        ValueError: If preset YAML is malformed.
-    """
+    """Create a SwarmRun from a preset with user variables applied."""
     data = load_preset(preset_name)
 
-    # Parse agents
     agents: list[SwarmAgentSpec] = []
     for agent_data in data.get("agents", []):
         agents.append(SwarmAgentSpec(
@@ -321,7 +247,6 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             max_retries=agent_data.get("max_retries", 2),
         ))
 
-    # Parse tasks, initialize blocked_by from depends_on
     tasks: list[SwarmTask] = []
     for task_data in data.get("tasks", []):
         depends_on = task_data.get("depends_on", [])
@@ -336,7 +261,6 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             status=status,
         ))
 
-    # Generate run ID
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y%m%d-%H%M%S")
     short_uuid = uuid.uuid4().hex[:8]

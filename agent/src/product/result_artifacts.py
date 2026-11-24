@@ -15,17 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots: FileRoots, export_csv: bool = False) -> str:
-    """Keep a JSON observation addressable by calculation tools and file readers.
-
-    Args:
-        result: Full JSON result, before any presentation truncation.
-        run_dir: Authorized workspace; omission retains the original response.
-        export_csv: Also save normalized market bars as a CSV from these rows.
-
-    Returns:
-        Result with a file reference, or a bounded receipt for a large result.
-        Persistence errors remain visible without discarding the calculation.
-    """
+    """Keep a JSON observation addressable by calculation tools and file readers."""
     if not run_dir:
         return result
 
@@ -54,12 +44,9 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots
         'pointer (e.g. /NVDA.US), column=close, index=trade_date, transform=pct_change. '
         'Inspect the saved JSON before requesting more data. Only if rows are explicitly sampled/truncated and consecutive bars are needed, fetch max_rows=0 for the bounded window. Read parts/1.txt onward for prose inspection.'
     )}
-    for key in ('ok', 'status', 'module', 'function', 'input_sources'):
-        if key in payload:
-            receipt[key] = payload[key]
-    for key in ('_csv_file', '_csv_error', '_data_layout', '_request_window'):
-        if key in payload:
-            receipt[key] = payload[key]
+    metadata = ('ok', 'status', 'module', 'function', 'input_sources',
+                '_csv_file', '_csv_error', '_data_layout', '_request_window')
+    receipt.update((key, payload[key]) for key in metadata if key in payload)
     if isinstance(payload.get('_summary'), dict):
         candidate = {**receipt, '_summary': payload['_summary'], '_delivery': (
             'Full bars saved at _result_file. _summary contains observed counts, endpoints, '
@@ -67,14 +54,13 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots
             'Use that summary directly for a snapshot. Read the artifact for calculations needing '
             'other fields or individual bars; no refetch is needed.'
         )}
-        # Preserve the existing receipt discriminator for MCP consumers: no
-        # _preview means the inline response itself contains the full payload.
+        # MCP uses _preview to distinguish receipts from inline results.
         candidate['_preview'] = json.dumps(payload['_summary'], ensure_ascii=False)[:200]
-        for key in ('_unresolved', '_diagnostics', '_recovery', 'complete'):
-            if key in payload:
-                candidate[key] = payload[key]
-        if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT:
-            return json.dumps(candidate, ensure_ascii=False)
+        metadata = ('_unresolved', '_diagnostics', '_recovery', 'complete')
+        candidate.update((key, payload[key]) for key in metadata if key in payload)
+        encoded = json.dumps(candidate, ensure_ascii=False)
+        if len(encoded) <= TOOL_RESULT_LIMIT:
+            return encoded
         receipt['_summary_omitted'] = 'Summary exceeds the tool envelope; read the saved artifact.'
     receipt['_preview'] = result[:1000] + '\n...\n' + result[-1000:]
     if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT:
@@ -96,16 +82,7 @@ def _write_original(path: Path, content: str, root: Path) -> None:
 
 
 def save_result_parts(content: str, folder: Path, root: Path) -> list[str]:
-    """Save immutable parts that fit through the actual read_file JSON envelope.
-
-    Args:
-        content: Complete, already redacted result text.
-        folder: Directory for sequentially numbered parts.
-        root: Workspace boundary that every file must stay within.
-
-    Returns:
-        Absolute paths to parts, in their original order.
-    """
+    """Save immutable parts that fit through the actual read_file JSON envelope."""
     offset, part_count = 0, 0
     while offset < len(content):
         part = folder / f'{part_count + 1}.txt'
@@ -145,18 +122,7 @@ def _persist_result_files(
 
 
 def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> str:
-    """Keep a large result in full, with a bounded valid JSON receipt.
-
-    Args:
-        result: Complete tool result; credentials are scrubbed before saving.
-        run_dir: Current task workspace, never a cross-task data cache.
-        registry: Actual registry, used to check for a local file reader.
-
-    Returns:
-        The original bounded result or a receipt naming its full file and
-        readable parts. If saving or local reading is unavailable, retains
-        the existing explicit truncation behavior without claiming a file.
-    """
+    """Keep a large result in full, with a bounded valid JSON receipt."""
     result = redact_tool_result(result)
     if len(result) <= TOOL_RESULT_LIMIT or not run_dir:
         return truncate_tool_result(result)
@@ -201,19 +167,15 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
         ),
     }
     if isinstance(payload, dict):
-        for key in ('status', 'ok', '_provenance', '_unresolved', '_diagnostics'):
-            if key in payload:
-                receipt[key] = payload[key]
-    # Keep compact calculation bases visible beside the file reference. Curves
-    # and large tables stay intact in the artifact rather than hiding the basis.
-    if isinstance(payload, dict):
+        metadata = ('status', 'ok', '_provenance', '_unresolved', '_diagnostics')
+        receipt.update((key, payload[key]) for key in metadata if key in payload)
+        # Keep compact calculation bases visible beside the artifact reference.
         for key in ('calculation_basis', 'comparisons', 'expiry_scenarios', 'summary', 'inputs'):
             if key in payload:
                 candidate = {**receipt, key: payload[key]}
                 if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT // 2:
                     receipt[key] = payload[key]
-    # Bound the receipt too. Source metadata stays in the complete artifact if
-    # it alone is larger than the delivery budget; no false absence is implied.
+    # Store oversized source metadata in the complete artifact.
     if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT // 2:
         for key in ('_diagnostics', '_provenance', '_unresolved'):
             receipt.pop(key, None)

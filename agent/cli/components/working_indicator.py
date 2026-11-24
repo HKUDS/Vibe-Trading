@@ -1,14 +1,4 @@
-"""Thinking spinner — picks a random verb on entry, hides on exit.
-
-Wraps :class:`rich.live.Live` with ``transient=True`` so the spinner
-erases itself once the context exits — leaving the answer print
-uncluttered (the bug called out in the reference StreamRenderer
-docstring: transient=True avoids the "ghost spinner" duplication).
-
-If :mod:`agent.cli.utils.thinking_verbs` has not landed yet (Parcel α
-ships it) we fall back to ``"Pondering…"`` so the demo build still
-works.
-"""
+"""Thinking spinner — picks a random verb on entry, hides on exit."""
 
 from __future__ import annotations
 
@@ -52,18 +42,7 @@ def _resolve_console() -> Console:
 
 
 class ThinkingSpinner:
-    """Context manager that shows a Rich spinner + thinking verb.
-
-    Usage:
-        with ThinkingSpinner() as spinner:
-            spinner.update_verb("Backtesting…")   # optional mid-run swap
-            ... do agent work ...
-
-    The spinner is ``transient=True`` so it disappears when the block
-    exits. Use :meth:`pause` to temporarily hide the spinner while
-    printing auxiliary lines (e.g. a tool event row) — borrowed from
-    the reference StreamRenderer pattern.
-    """
+    """Context manager that shows a Rich spinner + thinking verb."""
 
     def __init__(
         self,
@@ -77,7 +56,7 @@ class ThinkingSpinner:
         self._spinner_name = spinner_name
         self._live: Optional[Live] = None
 
-    # --------------------------------------------------------- lifecycle ----
+    # lifecycle
     def __enter__(self) -> "ThinkingSpinner":
         self._live = Live(
             self._renderable(),
@@ -98,7 +77,7 @@ class ThinkingSpinner:
         if live is not None:
             live.__exit__(exc_type, exc, tb)
 
-    # ------------------------------------------------------------- helpers --
+    # helpers
     def _renderable(self) -> Spinner:
         # ``Spinner.text`` accepts Rich Text for styling — keep the verb in
         # the dim style so the live region is unobtrusive.
@@ -111,11 +90,7 @@ class ThinkingSpinner:
             self._live.update(self._renderable())
 
     def pause(self) -> "_SpinnerPause":
-        """Yield a context manager that hides the spinner inside its block.
-
-        Useful when callers need to ``console.print`` a tool-event row
-        without the spinner frame racing with the print to stdout.
-        """
+        """Yield a context manager that hides the spinner inside its block."""
         return _SpinnerPause(self)
 
 

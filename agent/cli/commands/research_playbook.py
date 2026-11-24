@@ -1,42 +1,4 @@
-"""User-facing entry points for the scheduled-research playbook catalogue.
-
-The catalogue itself lives in :mod:`src.scheduled_research.playbooks` (markdown
-templates with a YAML frontmatter header). Until this module existed the only
-way to reach it was a Python import, so a shipped template was effectively
-invisible. This module is the single place both non-interactive and interactive
-users enter through:
-
-* ``vibe-trading playbook list | show <slug> | create <slug>`` — the argparse
-  subcommand, wired in :mod:`cli.commands.dispatch` next to ``alpha`` / ``hypothesis``.
-* ``/playbook`` — the REPL slash command, registered in
-  :mod:`cli.commands.slash_router`, dispatched through ``run(ctx, *args)``.
-
-Two properties this layer is built to preserve:
-
-* **The body is never rewritten.** A template states the data it needs in plain
-  language and deliberately names no tool; routing is the agent's job. Both
-  ``/playbook run`` and ``playbook create`` hand over
-  ``ResearchPlaybook.render()`` output verbatim, so the text executed
-  interactively is byte-identical to the ``prompt`` the scheduler later
-  replays. Nothing here appends tool names, hints, or a preamble.
-* **The schedule is validated by the scheduler's own rules.**
-  ``ResearchPlaybook.to_job`` calls
-  :func:`src.scheduled_research.models.validate_schedule` and
-  ``validate_timezone``; this module only catches the resulting ``ValueError``
-  and prints it. There is no second, drifting copy of the grammar here.
-
-``playbook create`` writes straight to
-:class:`src.scheduled_research.store.ScheduledResearchJobStore` — the same file
-the API server and the executor read. It deliberately does not go through HTTP:
-the store is a file under the user's own runtime root, so a local CLI writing it
-carries exactly the trust of the shell that launched it, and requiring a running
-server to schedule a job would be a worse experience with no security gain. The
-HTTP surface for the same operation stays behind ``require_auth``.
-
-Not to be confused with :mod:`cli.commands.institutional.playbooks`, which holds
-the one-shot ``/comps`` / ``/dcf`` workflow cards. These are recurring research
-templates for the scheduler.
-"""
+"""User-facing entry points for the scheduled-research playbook catalogue."""
 
 from __future__ import annotations
 
@@ -49,10 +11,7 @@ _HELP_TOKENS = frozenset({"help", "-h", "--help", "?"})
 _LIST_TOKENS = frozenset({"list", "ls", "all"})
 _VAR_TOKEN_RE = re.compile(r"^([A-Za-z0-9_]+)=(.*)$")
 
-# Defensive ceilings. ``ResearchPlaybook.render`` already caps a single
-# substituted value at 4000 chars; these bound the *number* of tokens and the
-# raw argument string so a paste accident cannot make the CLI do silly work
-# before that cap is reached.
+# Bound raw input and token count before substitution applies its per-value cap.
 _MAX_VARIABLES = 32
 _MAX_ARG_CHARS = 20000
 
@@ -73,25 +32,11 @@ def _print(message: str) -> None:
     _console().print(message)
 
 
-# ---------------------------------------------------------------------------
 # Argument parsing helpers
-# ---------------------------------------------------------------------------
 
 
 def parse_variable_tokens(tokens: Sequence[str]) -> Tuple[Dict[str, str], Optional[str]]:
-    """Parse ``key=value`` tokens, allowing unquoted multi-word values.
-
-    A token that does not look like ``key=`` continues the value of the
-    previous key, so ``home_market=US equities`` works without shell quoting in
-    the REPL. The first token must open a key.
-
-    Args:
-        tokens: Raw whitespace-split arguments.
-
-    Returns:
-        A ``(variables, error)`` pair. ``error`` is ``None`` on success and a
-        user-facing message otherwise; ``variables`` is empty when it is set.
-    """
+    """Parse ``key=value`` tokens, allowing unquoted multi-word values."""
     variables: Dict[str, str] = {}
     order: List[str] = []
     current: Optional[str] = None
@@ -112,11 +57,7 @@ def parse_variable_tokens(tokens: Sequence[str]) -> Tuple[Dict[str, str], Option
 
 
 def _parse_var_options(raw: Sequence[str]) -> Tuple[Dict[str, str], Optional[str]]:
-    """Parse repeated ``--var key=value`` options.
-
-    Unlike :func:`parse_variable_tokens` each option carries one whole
-    assignment, because the shell already did the quoting.
-    """
+    """Parse repeated ``--var key=value`` options."""
     variables: Dict[str, str] = {}
     for item in raw:
         match = _VAR_TOKEN_RE.match(item)
@@ -128,18 +69,11 @@ def _parse_var_options(raw: Sequence[str]) -> Tuple[Dict[str, str], Optional[str
     return variables, None
 
 
-# ---------------------------------------------------------------------------
 # Catalogue access
-# ---------------------------------------------------------------------------
 
 
 def _load_catalogue() -> Tuple[List[Any], Optional[str]]:
-    """Load every playbook, converting a parse failure into a message.
-
-    Returns:
-        A ``(playbooks, error)`` pair. A malformed file is surfaced rather than
-        skipped, matching ``list_playbooks``.
-    """
+    """Load every playbook, converting a parse failure into a message."""
     from src.scheduled_research.playbooks import PlaybookError, list_playbooks
 
     try:
@@ -169,27 +103,7 @@ def build_job_from_playbook(
     delivery_format: Optional[str] = None,
     protect_pdf: bool = False,
 ) -> Tuple[Optional[Any], Optional[str]]:
-    """Build (but do not persist) a scheduled job from a template.
-
-    Every validation rule — schedule grammar, timezone resolution, declared
-    variable names, the cron search window — belongs to
-    ``ResearchPlaybook.to_job``; this only translates the exception into a
-    printable message.
-
-    Args:
-        slug: Template slug.
-        schedule: Schedule override, or ``None`` to keep the suggestion.
-        timezone: Timezone override. Leave at the sentinel to keep the
-            template's suggestion; pass ``None`` to force UTC.
-        variables: Placeholder overrides.
-        job_id: Explicit job id, or ``None`` for a generated one.
-        delivery_target_ref: Configured delivery destination reference.
-        delivery_format: Email format (html/pdf), or None for plain text.
-        protect_pdf: Encrypt a PDF Email report with the configured channel password.
-
-    Returns:
-        A ``(job, error)`` pair; exactly one side is populated.
-    """
+    """Build (but do not persist) a scheduled job from a template."""
     from src.scheduled_research.playbooks import build_job
 
     if job_id:
@@ -264,9 +178,7 @@ def _schedule_note(job: Any) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
 # Rendering
-# ---------------------------------------------------------------------------
 
 
 def _describe_schedule(schedule: str, tz: Optional[str]) -> str:
@@ -306,13 +218,7 @@ def _render_catalogue(playbooks: Sequence[Any]) -> None:
 
 
 def _render_card(playbook: Any, variables: Optional[Dict[str, str]] = None) -> bool:
-    """Print one template: metadata, declared variables and the full body.
-
-    Returns:
-        ``True`` when the card was printed, ``False`` when substitution failed
-        (the error is printed instead). Callers must propagate the failure into
-        their exit code rather than reporting success on an empty card.
-    """
+    """Print one template: metadata, declared variables and the full body."""
     from rich.panel import Panel
     from rich.text import Text
 
@@ -364,9 +270,7 @@ def _job_summary(job: Any, slug: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
 # Slash command: /playbook
-# ---------------------------------------------------------------------------
 
 
 def _queue_prompt(ctx: Any, prompt: str) -> bool:
@@ -381,12 +285,7 @@ def _queue_prompt(ctx: Any, prompt: str) -> bool:
 
 
 def _slash_usage() -> None:
-    """Print the ``/playbook`` usage block.
-
-    The ``\\[k=v ...]`` hints are backslash-escaped: rich treats a bare
-    ``[k=v ...]`` as a markup tag and silently drops it, which would hide the
-    variable syntax — the one thing this help text exists to teach.
-    """
+    """Print the ``/playbook`` usage block."""
     console = _console()
     console.print("[bold]/playbook[/bold] — scheduled research templates")
     console.print("  [cyan]/playbook[/cyan]                            list the templates")
@@ -396,18 +295,7 @@ def _slash_usage() -> None:
 
 
 def run(ctx: Any = None, *args: str) -> int:
-    """Handle a ``/playbook`` slash command line.
-
-    Args:
-        ctx: Interactive context supplying ``pending_prompt``. When it cannot
-            hold a queued prompt (a test stub, a non-interactive caller) the
-            prompt is printed so it can be pasted.
-        *args: Raw slash-command arguments.
-
-    Returns:
-        ``0`` on every user-facing path, including "unknown slug" — a mistyped
-        template is answered with the catalogue, not an error exit code.
-    """
+    """Handle a ``/playbook`` slash command line."""
     console = _console()
     tokens = [token for token in args if token]
 
@@ -482,22 +370,13 @@ def run(ctx: Any = None, *args: str) -> int:
     return 0
 
 
-# ---------------------------------------------------------------------------
 # argparse subcommand: vibe-trading playbook ...
-# ---------------------------------------------------------------------------
 
 _PLAYBOOK_PARSER: Optional[argparse.ArgumentParser] = None
 
 
 def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
-    """Register ``playbook`` and its sub-subcommands on the parent subparsers.
-
-    Args:
-        subparsers: The object returned by ``ArgumentParser.add_subparsers``.
-
-    Returns:
-        The ``playbook`` parser, for test introspection.
-    """
+    """Register ``playbook`` and its sub-subcommands on the parent subparsers."""
     global _PLAYBOOK_PARSER
 
     parser = subparsers.add_parser(
@@ -670,12 +549,7 @@ _DISPATCH = {
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """Dispatch ``playbook <sub>`` to its handler.
-
-    Returns:
-        A process exit code: ``0`` on success, ``1`` on a failed operation,
-        ``2`` on a usage error.
-    """
+    """Dispatch ``playbook <sub>`` to its handler."""
     sub = getattr(args, "playbook_command", None)
     handler = _DISPATCH.get(sub or "")
     if handler is None:

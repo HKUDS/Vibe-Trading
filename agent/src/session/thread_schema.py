@@ -159,19 +159,7 @@ class ThreadItemError(ValueError):
 
 
 def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
-    """Check one item's payload against its type schema and fill defaults.
-
-    Args:
-        item_type: Item type name.
-        payload: Type-specific fields (common fields excluded).
-
-    Returns:
-        A new payload dict with defaults filled in.
-
-    Raises:
-        ThreadItemError: The type is unknown or a field is missing, unknown
-            or of the wrong shape.
-    """
+    """Check one item's payload against its type schema and fill defaults."""
     if item_type not in _SCHEMA:
         raise ThreadItemError(f"unknown thread item type {item_type!r}")
     for name in _COMMON_FIELDS:
@@ -236,15 +224,7 @@ def _validate_payload(item_type: str, payload: Mapping[str, Any]) -> Dict[str, A
 
 @dataclass(frozen=True)
 class ThreadItem:
-    """One record of ``thread.jsonl``.
-
-    Attributes:
-        seq: Position in the session, strictly increasing in write order.
-        ts: Wall-clock write time, epoch seconds.
-        turn_id: Turn the item belongs to (the attempt id).
-        type: One of :data:`ITEM_TYPES`.
-        data: Type-specific payload.
-    """
+    """One record of ``thread.jsonl``."""
 
     seq: int
     ts: float
@@ -253,23 +233,11 @@ class ThreadItem:
     data: Dict[str, Any] = field(default_factory=dict)
 
     def get(self, name: str, default: Any = None) -> Any:
-        """Return one payload field.
-
-        Args:
-            name: Field name.
-            default: Value when the field is absent.
-
-        Returns:
-            The field value or ``default``.
-        """
+        """Return one payload field."""
         return self.data.get(name, default)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize to the flat on-disk shape.
-
-        Returns:
-            Common fields followed by the payload fields.
-        """
+        """Serialize to the flat on-disk shape."""
         return {
             "seq": self.seq,
             "ts": self.ts,
@@ -280,17 +248,10 @@ class ThreadItem:
 
     @classmethod
     def from_dict(cls, record: Mapping[str, Any]) -> "ThreadItem":
-        """Parse one on-disk record.
-
-        Args:
-            record: Decoded JSON object.
-
-        Returns:
-            The item.
+        """Parse an on-disk thread item.
 
         Raises:
-            ThreadItemError: A common field is missing or the payload does not
-                match its type schema.
+            ThreadItemError: A common field is missing or the payload violates its schema.
         """
         seq = record.get("seq")
         ts = record.get("ts")

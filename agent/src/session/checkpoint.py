@@ -15,12 +15,7 @@ if TYPE_CHECKING:
 
 
 class ResponseCheckpoint:
-    """Persist a bounded-frequency snapshot of streamed assistant text.
-
-    The first text chunk is written immediately. Later chunks are coalesced to
-    avoid an fsync for every provider token, and :meth:`flush` captures the
-    remaining buffer when the run leaves the streaming loop.
-    """
+    """Persist the first text chunk immediately and coalesce later writes until flush."""
 
     def __init__(
         self,
@@ -30,18 +25,10 @@ class ResponseCheckpoint:
         min_interval_seconds: float = 0.25,
         runtime: Optional["SessionRuntime"] = None,
     ) -> None:
-        """Create a response checkpoint.
-
-        Args:
-            store: Session persistence store.
-            attempt: Attempt whose response is being streamed.
-            min_interval_seconds: Minimum time between snapshot writes.
-        """
-        self._store = store
+        """Create a response checkpoint."""
         from src.session.runtime import SessionRuntime
 
         self._runtime = runtime or SessionRuntime(store.thread_log(attempt.session_id), attempt.session_id)
-        self._session_id = attempt.session_id
         self._attempt_id = attempt.attempt_id
         self._min_interval_seconds = max(0.0, min_interval_seconds)
         self._text = ""
@@ -50,12 +37,7 @@ class ResponseCheckpoint:
         self._lock = threading.Lock()
 
     def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Apply an AgentRuntime stream event to the durable snapshot.
-
-        Args:
-            event_type: Agent event name.
-            data: Event payload.
-        """
+        """Apply an AgentRuntime stream event to the durable snapshot."""
         if event_type != vocabulary.ITEM_DELTA or data.get("kind") not in {vocabulary.TEXT_DELTA, vocabulary.TEXT_RESET}:
             return
 
@@ -95,7 +77,6 @@ class ResponseCheckpoint:
     def _flush_locked(self, now: float | None = None) -> None:
         if not self._dirty:
             return
-        if self._runtime is not None:
-            self._runtime.record_checkpoint(self._attempt_id, self._text)
+        self._runtime.record_checkpoint(self._attempt_id, self._text)
         self._dirty = False
         self._last_flush = time.monotonic() if now is None else now

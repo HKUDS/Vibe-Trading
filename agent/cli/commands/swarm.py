@@ -1,9 +1,4 @@
-"""Slash routing for the swarm command family.
-
-The interactive loop owns input and lifecycle handling. This module only parses
-the slash arguments and delegates the actual swarm operations to the existing
-subcommand implementations.
-"""
+"""Slash routing for the swarm command family."""
 
 from __future__ import annotations
 

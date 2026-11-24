@@ -55,28 +55,18 @@ def venue_mismatch_hints(
     requested_symbol: str,
     authorized_symbols: Iterable[str],
 ) -> list[str]:
-    """Turn a same-issuer venue mismatch into an actionable resolver hint.
-
-    ``BLDP.US`` against a locked ``BLDP.TO`` is not a typo of one identity;
-    it is a second listing of the same company that was never resolved.
-    Naming the exact ``search_symbol`` query keeps the model from retrying
-    the identical unauthorized call. A bare ticker that collides with
-    several locked venues gets a "use the full suffix" hint instead.
-    """
+    """Turn a same-issuer venue mismatch into an actionable resolver hint."""
     requested = _normalize_symbol(requested_symbol)
     authorized = {_normalize_symbol(item) for item in authorized_symbols}
-    if "." in requested:
-        base = requested.rsplit(".", 1)[0]
-        same_issuer = sorted(item for item in authorized if "." in item and item.rsplit(".", 1)[0] == base)
-        if same_issuer:
-            return [
-                f"[{requested_symbol} is a second venue of {', '.join(same_issuer)}; "
-                f"call search_symbol('{requested_symbol}') before this data call "
-                f"before querying it.]"
-            ]
-        return []
-    matches = sorted(item for item in authorized if "." in item and item.rsplit(".", 1)[0] == requested)
-    if len(matches) > 1:
+    base, separator, _ = requested.rpartition(".")
+    matches = sorted(_matching_listings(base if separator else requested, authorized))
+    if separator and matches:
+        return [
+            f"[{requested_symbol} is a second venue of {', '.join(matches)}; "
+            f"call search_symbol('{requested_symbol}') before this data call "
+            f"before querying it.]"
+        ]
+    if not separator and len(matches) > 1:
         return [
             f"[{requested_symbol} matches multiple locked identities "
             f"({', '.join(matches)}); use the full venue-suffixed symbol.]"
@@ -88,35 +78,20 @@ def match_authorized_symbol(
     requested_symbol: str,
     authorized_symbols: Iterable[str],
 ) -> str | None:
-    """Map a consumer argument to one unique locked canonical symbol.
-
-    Both sides are canonicalized first, so a provider alias (``600519.SS``),
-    an exchange prefix (``sh600519``), an unpadded Hong Kong code
-    (``700.HK``) or a slashed pair (``BTC/USDT``) addresses the instrument
-    it names rather than being read as a silent venue rewrite.
-
-    A bare code carries no venue, so it is accepted only when exactly one
-    locked identity has it as its base. That uniqueness — not a list of
-    which tools are allowed to use one — is what makes a bare ticker safe.
-    The list this replaced named nine tools while eleven documented
-    argument spellings across the registry were bare or prefixed, so the
-    tools' own schema examples were being rejected.
-
-    Args:
-        requested_symbol: Model-supplied symbol argument.
-        authorized_symbols: Symbols locked before the tool batch.
-
-    Returns:
-        The unique canonical identity consumed by the argument, or ``None``.
-    """
+    """Map a consumer argument to one unique locked canonical symbol."""
     requested = _normalize_symbol(requested_symbol)
     authorized = {_normalize_symbol(item) for item in authorized_symbols}
     if requested in authorized:
         return requested
     if "." in requested:
         return None
-    matches = [symbol for symbol in authorized if "." in symbol and symbol.rsplit(".", 1)[0] == requested]
+    matches = _matching_listings(requested, authorized)
     return matches[0] if len(matches) == 1 else None
+
+
+def _matching_listings(base: str, symbols: Iterable[str]) -> list[str]:
+    return [symbol for symbol in symbols if "." in symbol and symbol.rsplit(".", 1)[0] == base]
+
 
 def extract_symbol_arguments(arguments: Mapping[str, Any]) -> list[str]:
     """Extract model-selected identities from well-known argument keys."""

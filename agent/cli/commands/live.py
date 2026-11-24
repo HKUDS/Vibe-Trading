@@ -5,34 +5,13 @@ from cli.commands import common
 from cli.commands import connectors
 
 def _authorize_timeout_seconds() -> float:
-    """Resolve the OAuth authorize handshake deadline in seconds.
-
-    Reads ``VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS`` and falls back to
-    :data:`_LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS` (300 s) when it is unset,
-    empty, non-numeric, or not strictly positive. This deadline bounds the
-    interactive ``list_tools`` handshake that drives the broker OAuth flow, so
-    a multi-minute human sign-in (e.g. Robinhood's face scan) has room to
-    complete.
-
-    Returns:
-        The authorize deadline in seconds (a positive float).
-    """
+    """Resolve the OAuth authorize handshake deadline in seconds."""
     raw = common.get_env_config().agent_tuning.vibe_live_authorize_timeout_s
     return float(raw) if raw and raw > 0 else float(_LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS)
 
 
 def _live_api_base() -> str:
-    """Return the base URL of the running API server for runner-control calls.
-
-    Mirrors :func:`cli.main._commit_mandate`: the base is read from
-    ``VIBE_TRADING_API_URL`` (falling back to ``http://127.0.0.1:8000``). The
-    persistent runner (SPEC §7.5) is controlled through the R6 surface endpoints
-    (``POST /live/runner/start|stop`` / ``GET /live/status``), never from the
-    agent loop, so the CLI only ever relays intent.
-
-    Returns:
-        The API base URL with any trailing slash removed.
-    """
+    """Return the base URL of the running API server for runner-control calls."""
     return common.get_env_config().api.vibe_trading_api_url.rstrip("/")
 
 
@@ -46,19 +25,7 @@ def _api_auth_headers() -> common.Dict[str, str]:
 def _live_api_call(
     method: str, path: str, *, body: common.Optional[common.Dict[str, common.Any]] = None
 ) -> common.Dict[str, common.Any]:
-    """Call an R6 live-runner endpoint and decode the JSON response.
-
-    Args:
-        method: HTTP verb (``"GET"`` or ``"POST"``).
-        path: Endpoint path beginning with ``/`` (e.g. ``"/live/runner/start"``).
-        body: JSON request body for ``POST`` calls.
-
-    Returns:
-        The decoded response object on success, or an ``{"status": "error",
-        "error": ...}`` envelope when the server is unreachable / returns a
-        non-2xx status — so a caller can surface a clean message instead of a
-        traceback when no server is running.
-    """
+    """Call an R6 live-runner endpoint and decode the JSON response."""
     import httpx
 
     url = f"{_live_api_base()}{path}"
@@ -75,19 +42,7 @@ def _live_api_call(
 
 
 def _live_server_config(broker: str):
-    """Resolve the protected MCP server config for ``broker``.
-
-    The config is read at boot from the user-side protected agent config file
-    (never from caller input / agent tool args / ``variables``), exactly as the
-    #142 swarm-config trust template requires.
-
-    Args:
-        broker: Broker key, e.g. ``"robinhood"``.
-
-    Returns:
-        The :class:`MCPServerConfig` for ``broker``, or ``None`` when the broker
-        has no entry in the protected config.
-    """
+    """Resolve the protected MCP server config for ``broker``."""
     from src.config.loader import load_agent_config
 
     agent_config = load_agent_config()
@@ -156,19 +111,7 @@ def _print_missing_live_channel_config(key: str) -> None:
 
 
 def cmd_live_authorize(broker: str) -> int:
-    """Bootstrap the OAuth handshake for a live broker channel (desktop only).
-
-    Builds the broker's MCP tool wrappers, which forces a connection and — when
-    no valid token is cached — triggers the native FastMCP OAuth flow: a browser
-    opens to the broker's authorize page and the token is persisted to the
-    protected cache. This is the only way to turn the channel on.
-
-    Args:
-        broker: Broker key, e.g. ``"robinhood"``.
-
-    Returns:
-        Process exit code.
-    """
+    """Bootstrap the OAuth handshake for a live broker channel (desktop only)."""
     key = broker.strip().lower()
     server_config = _live_server_config(key)
     if server_config is None:
@@ -189,12 +132,7 @@ def cmd_live_authorize(broker: str) -> int:
     try:
         from src.tools.mcp import build_mcp_tool_wrappers
 
-        # The OAuth flow is driven lazily by the first request to the server —
-        # the `list_tools` discovery handshake — which is bounded by the
-        # per-call `tool_timeout` (default 30 s), NOT `init_timeout`. Raise both
-        # to the authorize deadline so a multi-minute human sign-in (e.g.
-        # Robinhood's face scan) does not trip the handshake. Raise-only: never
-        # shrink an already-larger user-configured timeout.
+        # Raise both timeouts so lazy OAuth discovery can finish a multi-minute sign-in.
         authorize_timeout = _authorize_timeout_seconds()
         if hasattr(server_config, "model_copy"):
             updates: dict[str, float] = {}
@@ -213,9 +151,7 @@ def cmd_live_authorize(broker: str) -> int:
             if updates:
                 server_config = server_config.model_copy(update=updates)
 
-        # Single attempt: a transient-retry would open a fresh client context
-        # that starts a SECOND OAuth callback server on a new port, orphaning
-        # the sign-in the user just completed against the first one (see #259).
+        # A retry would start a new callback server and orphan the user’s OAuth sign-in (#259).
         tools = build_mcp_tool_wrappers(
             key, server_config, max_list_tools_attempts=1
         )
@@ -266,19 +202,7 @@ def _runner_id_for(broker: str) -> str:
 
 
 def _add_runner_liveness_rows(table: common.Table, broker: str) -> None:
-    """Append persistent-runner liveness rows to a ``live status`` table.
-
-    Liveness is reported from the local heartbeat files via the runtime
-    contract (:func:`src.live.runtime.liveness.is_runner_alive` /
-    :func:`~src.live.runtime.liveness.last_tick`), so it works without a running
-    API server. If the liveness module is not yet present (it lands concurrently
-    with this parcel), the rows degrade to ``unknown`` rather than crashing the
-    read-only status command.
-
-    Args:
-        table: The Rich table being built by :func:`cmd_live_status`.
-        broker: Broker key the runner is bound to.
-    """
+    """Append persistent-runner liveness rows to a ``live status`` table."""
     runner_id = _runner_id_for(broker)
     try:
         from src.live.runtime.liveness import is_runner_alive, last_tick
@@ -306,14 +230,7 @@ def _add_runner_liveness_rows(table: common.Table, broker: str) -> None:
 
 
 def _format_last_tick(tick: common.Any) -> str:
-    """Render a runner's last-tick timestamp as an absolute + relative string.
-
-    Args:
-        tick: A ``datetime`` or ISO-8601 string from the liveness heartbeat.
-
-    Returns:
-        Human-readable ``"<iso> (<n>s ago)"`` (or the raw value if unparseable).
-    """
+    """Render a runner's last-tick timestamp as an absolute + relative string."""
     from datetime import datetime, timezone
 
     if isinstance(tick, datetime):
@@ -337,19 +254,7 @@ def _format_last_tick(tick: common.Any) -> str:
 
 
 def cmd_live_status(broker: common.Optional[str] = None) -> int:
-    """Show auth state, active mandate, and halt state for live channels.
-
-    Read-only: it loads the mandate via :func:`src.live.mandate.store.load_mandate`
-    and checks the halt sentinel via :func:`src.live.halt.halt_flag_set`; it never
-    writes anything.
-
-    Args:
-        broker: Limit the report to a single broker. ``None`` reports the
-            default broker (``robinhood``).
-
-    Returns:
-        Process exit code.
-    """
+    """Show auth state, active mandate, and halt state for live channels."""
     from src.live.halt import halt_flag_set, read_halt
     from src.live.mandate.model import MANDATE_SCHEMA_VERSION
     from src.live.mandate.store import load_mandate
@@ -403,14 +308,7 @@ def cmd_live_status(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_mandate(broker: common.Optional[str] = None) -> int:
-    """Print the committed mandate for a broker (read-only).
-
-    Args:
-        broker: Broker key. ``None`` uses the default broker (``robinhood``).
-
-    Returns:
-        Process exit code. ``EXIT_RUN_FAILED`` when no mandate is on file.
-    """
+    """Print the committed mandate for a broker (read-only)."""
     from dataclasses import asdict
 
     from src.live.mandate.store import load_mandate
@@ -434,18 +332,7 @@ def cmd_live_mandate(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_halt(broker: common.Optional[str] = None) -> int:
-    """Trip the kill switch — write the HALT sentinel (privileged).
-
-    With no broker, trips the global switch (halts all brokers); with a broker,
-    trips only that broker's sentinel. The gate rejects all order attempts until
-    the switch is cleared with ``vibe-trading connector resume``.
-
-    Args:
-        broker: Broker key, or ``None`` for the global switch.
-
-    Returns:
-        Process exit code.
-    """
+    """Trip the kill switch — write the HALT sentinel (privileged)."""
     from src.live.halt import trip_halt
 
     target = broker.strip().lower() if broker else None
@@ -458,15 +345,7 @@ def cmd_live_halt(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_resume(broker: common.Optional[str] = None) -> int:
-    """Clear a tripped kill switch (privileged, explicit re-enable).
-
-    Args:
-        broker: Broker key, or ``None`` for the global switch. Each scope is
-            cleared independently.
-
-    Returns:
-        Process exit code.
-    """
+    """Clear a tripped kill switch (privileged, explicit re-enable)."""
     from src.live.halt import clear_halt
 
     target = broker.strip().lower() if broker else None
@@ -480,17 +359,7 @@ def cmd_live_resume(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_revoke(broker: str) -> int:
-    """Revoke the OAuth token and delete the mandate — full channel off.
-
-    Deletes the broker's OAuth token cache directory and its ``mandate.json``
-    so the channel reverts to fully off. This is a privileged user-side action.
-
-    Args:
-        broker: Broker key, e.g. ``"robinhood"``.
-
-    Returns:
-        Process exit code.
-    """
+    """Revoke the OAuth token and delete the mandate — full channel off."""
     from src.live.paths import broker_dir
 
     key = broker.strip().lower()
@@ -547,20 +416,7 @@ def _preview_live_spending(broker: str) -> bool:
 
 
 def cmd_live_start(broker: common.Optional[str] = None) -> int:
-    """Start the persistent live runner in the background (SPEC §7.5).
-
-    Relays a start request to the R6 surface endpoint
-    (``POST /live/runner/start``); the server owns the durable scheduler + job
-    store. This never touches the agent loop. The runner is read-only until a
-    mandate is committed (the consent flow), so starting it is safe even before
-    any mandate exists.
-
-    Args:
-        broker: Broker key, or ``None`` for the default broker (``robinhood``).
-
-    Returns:
-        Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
-    """
+    """Start the persistent live runner in the background (SPEC §7.5)."""
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     if not _preview_live_spending(key):
         return common.EXIT_RUN_FAILED
@@ -581,18 +437,7 @@ def cmd_live_start(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_stop(broker: common.Optional[str] = None) -> int:
-    """Stop the persistent live runner (SPEC §7.5).
-
-    Relays a stop request to ``POST /live/runner/stop``. Stopping the runner
-    halts autonomous activity but does NOT clear a tripped kill switch or revoke
-    the mandate — use ``connector resume`` / ``connector revoke`` for those.
-
-    Args:
-        broker: Broker key, or ``None`` for the default broker (``robinhood``).
-
-    Returns:
-        Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
-    """
+    """Stop the persistent live runner (SPEC §7.5)."""
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     result = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
     if result.get("status") == "error":
@@ -607,20 +452,7 @@ def cmd_live_stop(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_run(broker: common.Optional[str] = None) -> int:
-    """Run the persistent live runner in the foreground (SPEC §7.5).
-
-    The foreground variant of ``live start``: it starts the runner via
-    ``POST /live/runner/start`` and then tails its heartbeat in a Rich ``Live``
-    panel until Ctrl+C, at which point it requests a clean stop. This mirrors
-    how ``serve`` runs a long-lived process attached to the terminal. The runner
-    is read-only until a mandate is committed through the consent flow.
-
-    Args:
-        broker: Broker key, or ``None`` for the default broker (``robinhood``).
-
-    Returns:
-        Process exit code.
-    """
+    """Run the persistent live runner in the foreground (SPEC §7.5)."""
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     runner_id = _runner_id_for(key)
 

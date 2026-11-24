@@ -1,8 +1,4 @@
-"""``/help`` — Show the slash command list and keyboard shortcuts.
-
-Renders ``SLASH_COMMANDS`` as a two-column Rich table (name in primary
-color, description muted) plus a short keyboard-shortcuts panel.
-"""
+"""``/help`` — Show the slash command list and keyboard shortcuts."""
 
 from __future__ import annotations
 

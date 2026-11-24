@@ -49,16 +49,7 @@ class ToolDelivery:
         *,
         blocked: bool = True,
     ) -> None:
-        """Record a blocked call without invoking its implementation.
-
-        Args:
-            tc: Provider tool-call object.
-            result: Structured identity-gate error payload.
-            context: Context builder.
-            messages: Conversation messages.
-            trace: Persistent trace writer.
-            iteration: Current iteration.
-        """
+        """Record a blocked call without invoking its implementation."""
         self.progress.note("blocked", tc.name, _failure_code(result))
         args = normalize_tool_run_dir(tc.arguments, self.env.memory.run_dir)
         self._emit_tool_started(tc, args, iteration, blocked=blocked)
@@ -176,18 +167,7 @@ class ToolDelivery:
         artifact: dict | None = None,
         images: list[dict] | None = None,
     ) -> None:
-        """Append a tool message and record it as the model receives it.
-
-        Args:
-            messages: Conversation messages (appended in place).
-            context: ContextBuilder for formatting.
-            call_id: Provider tool-call id.
-            tool_name: Tool name.
-            content: Delivered result text (already redacted and capped).
-            status: ``ok`` / ``error``; derived from the content when omitted.
-            elapsed_ms: Execution time.
-            artifact: Display-only report link.
-        """
+        """Append a tool message and record it as the model receives it."""
         message = context.format_tool_result(call_id, tool_name, content)
         self.conversation.append(messages, message)
         if self.conversation.records_into(messages):
@@ -212,24 +192,10 @@ class ToolDelivery:
         update_memory: bool = True,
         update_identity: bool = True,
     ) -> None:
-        """Record a tool result: update memory, append message, write trace, emit event.
-
-        Args:
-            tc: Tool call object.
-            result: Raw tool result string.
-            elapsed_ms: Execution time in milliseconds.
-            context: ContextBuilder.
-            messages: Conversation messages.
-            trace: Any.
-            iteration: Current iteration.
-            update_memory: Whether this call reached the tool implementation.
-            update_identity: False for a local replay of an unchanged identity.
-        """
-        # Scrub before caching, truncation and model context, not just the
-        # downstream trace/event preview. Shell stdout may hold credentials.
+        """Record a tool result: update memory, append message, write trace, emit event."""
+        # Redact before every sink, including caches and model input.
         result = redact_tool_result(result)
-        # Image bytes belong in artifacts, never in the canonical result or
-        # its metadata. Keep one reference-only payload for all later sinks.
+        # Keep image bytes out of the canonical result and its metadata.
         payload = parse_tool_payload(result)
         image_refs = []
         if payload is not None and isinstance(payload.get("images"), list):
@@ -245,23 +211,20 @@ class ToolDelivery:
         if update_memory:
             self.env.memory.increment(tc.name)
 
-        # A tool completed - real progress for the stall watchdog.
         self.activity()
 
         success = _is_tool_success(result)
+        key = self.replay._identical_call_key(tc.name, tc.arguments) if update_memory or success else None
         if update_memory:
             self.progress.record(
                 tc.name,
-                self.replay._identical_call_key(tc.name, tc.arguments),
+                key,
                 result,
                 success=success,
                 is_readonly=self.replay._is_tool_readonly(tc.name),
             )
         if success:
-            recorded_key = self.replay._identical_call_key(tc.name, tc.arguments)
-            if recorded_key is not None:
-                self.replay._called_ok.add(recorded_key)
-                self.replay._successful_call_keys[tc.id] = recorded_key
+            self.replay.record_success(tc.id, key)
             if tc.name == "backtest":
                 try:
                     _archive_backtest_result(
@@ -325,16 +288,7 @@ class ToolDelivery:
 
 
 def write_run_manifest(trace_dir: Path, messages: list, registry, iteration: int) -> None:
-    """Record the prompt hash, tool catalog and package versions for reproducibility.
-
-    Args:
-        trace_dir: Directory holding this run's trace.
-        messages: The fully built message list about to be sent.
-
-    Note:
-        Never raises. A provenance record that can break a run is worse than
-        a missing one; a failure is logged and the run continues.
-    """
+    """Record the prompt hash, tool catalog and package versions for reproducibility."""
     try:
         from datetime import datetime, timezone
 

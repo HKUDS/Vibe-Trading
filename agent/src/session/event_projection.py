@@ -35,7 +35,6 @@ class _LiveItem:
     live_id: str
     type: str
     turn_id: str
-    iteration: Any = None
 
 
 @dataclass
@@ -48,13 +47,21 @@ class _Tail:
     assistant: Optional[_LiveItem] = None
     tools: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
     interactions: Dict[Tuple[str, str], List[_LiveItem]] = field(default_factory=dict)
-    # Queued user inputs, oldest first: (input_id, content, live item). Each
-    # stays until its ``user`` item is recorded or it is discarded; it
-    # outlives the turn it was sent during.
+    # Retain queued live items across turns until their user item is recorded or discarded.
     inputs: List[Tuple[str, str, _LiveItem]] = field(default_factory=list)
     completed_tools: set[Tuple[str, str]] = field(default_factory=set)
     counter: int = 0
     live_by_seq: "OrderedDict[int, str]" = field(default_factory=OrderedDict)
+
+
+def _take_live(pending: Dict[Tuple[str, str], List[_LiveItem]], key: Tuple[str, str]) -> Optional[_LiveItem]:
+    queue = pending.get(key)
+    if not queue:
+        return None
+    live = queue.pop(0)
+    if not queue:
+        del pending[key]
+    return live
 
 
 def _parse_line(raw_line: bytes) -> Optional[ThreadItem]:
@@ -67,23 +74,10 @@ def _parse_line(raw_line: bytes) -> Optional[ThreadItem]:
 
 
 class ThreadEvents:
-    """Project durable thread items and correlate transient live events.
-
-    Recorded events carry a thread seq and a durable SSE ID. Live starts,
-    deltas and discards have no durable seq. Every event in this stream
-    carries the highest seq seen when it was published as its cursor.
-
-    Attributes:
-        bus: The event bus used by the session.
-    """
+    """Project durable thread items and correlate transient live events."""
 
     def __init__(self, bus: EventBus, thread_path: Callable[[str], Path]) -> None:
-        """Create the stream.
-
-        Args:
-            bus: The session event bus.
-            thread_path: Maps a session id to its ``thread.jsonl`` path.
-        """
+        """Create the stream."""
         self.bus = bus
         self._thread_path = thread_path
         # Re-entrant: a bus listener may publish through this object from
@@ -91,19 +85,10 @@ class ThreadEvents:
         self._lock = threading.RLock()
         self._tails: Dict[str, _Tail] = {}
 
-    # ---- Publishing ----
+    # Publishing
 
     def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> Optional[SSEEvent]:
-        """Publish durable items and a canonical live event from a callback.
-
-        Args:
-            session_id: Session ID.
-            event_type: Canonical item/run event type.
-            data: Canonical payload.
-
-        Returns:
-            The live item event when the callback produced one.
-        """
+        """Publish durable items and a canonical live event from a callback."""
         payload = data if data is not None else {}
         with self._lock:
             tail = self._tail(session_id)
@@ -127,20 +112,13 @@ class ThreadEvents:
             return event
 
     def sync(self, session_id: str) -> int:
-        """Publish the events of items recorded since the last read.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            The highest seq read from the thread.
-        """
+        """Publish the events of items recorded since the last read."""
         with self._lock:
             tail = self._tail(session_id)
             self._pump(session_id, tail)
             return tail.last_seq
 
-    # ---- Subscribing ----
+    # Subscribing
 
     async def stream(
         self,
@@ -151,36 +129,7 @@ class ThreadEvents:
         replay_all: bool = False,
         active_turn_id: Optional[str] = None,
     ) -> AsyncIterator[SSEEvent]:
-        """Subscribe to a session, resuming durable items from disk.
-
-        * ``cursor`` given (or a durable ``Last-Event-ID``): every recorded
-          item after it is read from ``thread.jsonl`` and sent as
-          ``item.completed`` (plus the run event of a turn boundary), however
-          old the cursor; then the buffered live-only events after the
-          client's position (its ``last_event_id`` if buffered, else the last
-          buffered item at or before the cursor), leaving out the live events
-          of items that have since completed; then live events.
-        * no cursor, ``replay_all`` and an ``active_turn_id``: that turn's
-          recorded items from disk, then the buffer as before minus its
-          item-derived events, then live events.
-        * otherwise: the transient in-progress item buffer, then live events.
-
-        Each recorded item reaches the client once: events are ordered by
-        (seq, started < completed < run) and anything at or below what was
-        already sent is skipped. If the subscriber queue ever dropped events,
-        the missing recorded items are re-read from disk; dropped live-only
-        events are lost.
-
-        Args:
-            session_id: Session ID.
-            cursor: Highest seq the client already has.
-            last_event_id: Last event id the client received.
-            replay_all: Active-run hydration requested with no cursor.
-            active_turn_id: The running turn, for ``replay_all``.
-
-        Yields:
-            SSE events.
-        """
+        """Subscribe to a session, resuming durable items from disk."""
         if cursor is None:
             cursor = cursor_from_event_id(last_event_id)
         with self._lock:
@@ -244,7 +193,7 @@ class ThreadEvents:
                 if _event_key(event) > last_key:
                     yield event
 
-    # ---- Reading the thread ----
+    # Reading the thread
 
     def _read(self, session_id: str) -> List[ThreadItem]:
         from src.session.migration import migrate_session
@@ -293,21 +242,24 @@ class ThreadEvents:
             tail.last_seq = item.seq
             self._publish_item(session_id, tail, item)
 
-    # ---- Event construction ----
+    # Event construction
 
-    def _publish(
-        self,
-        session_id: str,
-        event_type: str,
-        data: Dict[str, Any],
-        *,
-        seq: Optional[int] = None,
-        rank: int = _COMPLETED,
-    ) -> None:
-        event = SSEEvent(event_type=event_type, data=data, session_id=session_id, seq=seq)
-        if seq is not None:
-            event.event_id = durable_event_id(seq, rank)
-        self.bus.publish(event)
+    @staticmethod
+    def _recorded_event(
+        session_id: str, event_type: str, record: ThreadItem, rank: int, data: Dict[str, Any],
+    ) -> SSEEvent:
+        event_id = durable_event_id(record.seq, rank)
+        fields = dict(event_type=event_type, session_id=session_id, seq=record.seq, data=data)
+        if rank == _STARTED:
+            # Preserve the transient allocation when publishing a just-recorded start.
+            event = SSEEvent(**fields)
+            event.event_id = event_id
+            return event
+        return SSEEvent(event_id=event_id, **fields)
+
+    @staticmethod
+    def _item_payload(record: ThreadItem, kind: str, view: Dict[str, Any]) -> Dict[str, Any]:
+        return {"kind": kind, "seq": record.seq, "turn_id": record.turn_id, "item": view, "cursor": record.seq}
 
     def _recorded_events(
         self, session_id: str, item: ThreadItem, live_id: Optional[str],
@@ -319,24 +271,10 @@ class ThreadEvents:
             if view is None:
                 return []
         _, completed_kind = _type_kinds(item.type, item.get("status"))
-        data: Dict[str, Any] = {
-            "kind": completed_kind,
-            "seq": item.seq,
-            "turn_id": item.turn_id,
-            "item": view,
-            "cursor": item.seq,
-        }
+        data = self._item_payload(item, completed_kind, view)
         if live_id:
             data["live_id"] = live_id
-        events = [
-            SSEEvent(
-                event_id=durable_event_id(item.seq, _COMPLETED),
-                event_type=vocabulary.ITEM_COMPLETED,
-                data=data,
-                session_id=session_id,
-                seq=item.seq,
-            )
-        ]
+        events = [self._recorded_event(session_id, vocabulary.ITEM_COMPLETED, item, _COMPLETED, data)]
         run_type = None
         run: Dict[str, Any] = {"turn_id": item.turn_id, "seq": item.seq, "cursor": item.seq}
         if item.type == "turn_start":
@@ -344,8 +282,8 @@ class ThreadEvents:
             run.update(
                 status="running",
                 started_at=item.ts,
-                model=item.get("model"),
-                provider=item.get("provider"),
+                model=view["model"],
+                provider=view["provider"],
             )
         elif item.type == "turn_end":
             status = item.get("status")
@@ -359,21 +297,11 @@ class ThreadEvents:
                 status=status,
                 started_at=started_at,
                 ended_at=item.ts,
-                **{key: view[key] for key in (
-                    "usage", "elapsed_ms", "summary", "error", "run_dir",
-                    "provider", "model", "pending_inputs", "display",
-                )},
+                **{key: value for key, value in view.items()
+                   if key not in {"seq", "ts", "turn_id", "type", "status"}},
             )
         if run_type is not None:
-            events.append(
-                SSEEvent(
-                    event_id=durable_event_id(item.seq, _RUN),
-                    event_type=run_type,
-                    data=run,
-                    session_id=session_id,
-                    seq=item.seq,
-                )
-            )
+            events.append(self._recorded_event(session_id, run_type, item, _RUN, run))
         return events
 
     def _publish_item(self, session_id: str, tail: _Tail, item: ThreadItem) -> None:
@@ -390,17 +318,9 @@ class ThreadEvents:
         elif item.type == "tool_result":
             key = (item.turn_id, item.get("tool_call_id"))
             tail.completed_tools.add(key)
-            pending = tail.tools.get(key)
-            if pending:
-                live = pending.pop(0)
-                if not pending:
-                    tail.tools.pop(key, None)
+            live = _take_live(tail.tools, key)
         elif item.type in {"plan", "question"}:
-            pending = tail.interactions.get((item.turn_id, item.type))
-            if pending:
-                live = pending.pop(0)
-                if not pending:
-                    tail.interactions.pop((item.turn_id, item.type), None)
+            live = _take_live(tail.interactions, (item.turn_id, item.type))
         elif item.type == "user":
             content = item.get("content")
             for index, (input_id, queued_content, queued) in enumerate(tail.inputs):
@@ -413,19 +333,8 @@ class ThreadEvents:
 
         if live is None:
             started_kind, _ = _type_kinds(item.type, item.get("status"))
-            self._publish(
-                session_id,
-                vocabulary.ITEM_STARTED,
-                {
-                    "kind": started_kind,
-                    "seq": item.seq,
-                    "turn_id": item.turn_id,
-                    "item": copy.deepcopy(view),
-                    "cursor": item.seq,
-                },
-                seq=item.seq,
-                rank=_STARTED,
-            )
+            data = self._item_payload(item, started_kind, copy.deepcopy(view))
+            self.bus.publish(self._recorded_event(session_id, vocabulary.ITEM_STARTED, item, _STARTED, data))
         else:
             tail.live_by_seq[item.seq] = live.live_id
             while len(tail.live_by_seq) > _LIVE_ID_MEMORY:
@@ -434,29 +343,27 @@ class ThreadEvents:
             self.bus.publish(event)
 
     def _discard(self, session_id: str, tail: _Tail, live: _LiveItem) -> None:
-        self._publish(
-            session_id,
-            vocabulary.ITEM_COMPLETED,
-            {
+        self.bus.publish(SSEEvent(
+            session_id=session_id,
+            event_type=vocabulary.ITEM_COMPLETED,
+            data={
                 "kind": vocabulary.DISCARDED_KIND,
                 "live_id": live.live_id,
                 "turn_id": live.turn_id,
                 "item": {"type": live.type, "turn_id": live.turn_id, "status": "discarded"},
                 "cursor": tail.last_seq,
             },
-        )
+        ))
 
     def _discard_live(self, session_id: str, tail: _Tail, turn_id: Optional[str]) -> None:
         """Close the live items of a turn (or all) that were never recorded."""
         if tail.assistant is not None and turn_id in (None, tail.assistant.turn_id):
             self._discard(session_id, tail, tail.assistant)
             tail.assistant = None
-        for key in [key for key in tail.tools if turn_id in (None, key[0])]:
-            for live in tail.tools.pop(key):
-                self._discard(session_id, tail, live)
-        for key in [key for key in tail.interactions if turn_id in (None, key[0])]:
-            for live in tail.interactions.pop(key):
-                self._discard(session_id, tail, live)
+        for pending in (tail.tools, tail.interactions):
+            for key in [key for key in pending if turn_id in (None, key[0])]:
+                for live in pending.pop(key):
+                    self._discard(session_id, tail, live)
 
     def _canonical_live_event(
         self, session_id: str, tail: _Tail, event_type: str, data: Dict[str, Any]
@@ -477,7 +384,7 @@ class ThreadEvents:
             payload["live_id"] = live_id
         if isinstance(live_id, str) and event_type == vocabulary.ITEM_STARTED:
             item_type = item.get("type") or ("tool_result" if kind == vocabulary.TOOL_STARTED else "assistant")
-            live = _LiveItem(live_id, str(item_type), turn_id, payload.get("iter"))
+            live = _LiveItem(live_id, str(item_type), turn_id)
             if item_type == "assistant":
                 if tail.assistant is not None:
                     self._discard(session_id, tail, tail.assistant)

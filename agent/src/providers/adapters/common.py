@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, TypeVar
 
@@ -63,3 +63,29 @@ async def retry_async_stream(
             raise
         async for chunk in (retry or stream)():
             yield chunk
+
+
+Result = TypeVar("Result")
+
+
+def retry_request(request: Callable[[], Result], should_retry: Callable[[Exception], bool]) -> Result:
+    """Retry a rejected request once after the adapter adjusts its payload."""
+    try:
+        return request()
+    except Exception as exc:
+        if not should_retry(exc):
+            raise
+        return request()
+
+
+async def retry_async_request(
+    request: Callable[[], Awaitable[Result]],
+    should_retry: Callable[[Exception], bool],
+) -> Result:
+    """Retry a rejected async request once."""
+    try:
+        return await request()
+    except Exception as exc:
+        if not should_retry(exc):
+            raise
+        return await request()

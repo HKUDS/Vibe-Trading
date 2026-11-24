@@ -18,28 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class SessionStore:
-    """Filesystem-backed persistent storage.
-
-    Directory structure::
-
-        sessions/
-        ├── {session_id}/
-        │   ├── session.json
-        │   ├── thread.jsonl
-        │   └── attempts/
-        │       └── {attempt_id}/
-        │           └── attempt.json
-
-    Attributes:
-        base_dir: Root directory for session storage.
-    """
+    """Filesystem-backed persistent storage."""
 
     def __init__(self, base_dir: Path) -> None:
-        """Initialize session storage.
-
-        Args:
-            base_dir: Root directory for session storage.
-        """
+        """Initialize session storage."""
         self.base_dir = base_dir
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -50,25 +32,11 @@ class SessionStore:
         return self._session_dir(session_id) / "session.json"
 
     def thread_path(self, session_id: str) -> Path:
-        """Return the location of a session's conversation thread log.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            Path of ``thread.jsonl`` (it may not exist yet).
-        """
+        """Return the location of a session's conversation thread log."""
         return self._session_dir(session_id) / THREAD_FILENAME
 
     def thread_log(self, session_id: str) -> ThreadLog:
-        """Open a session's conversation thread log.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            The session's ThreadLog; the file is created on first append.
-        """
+        """Open a session's conversation thread log."""
         self.ensure_migrated(session_id)
         return ThreadLog(self.thread_path(session_id))
 
@@ -84,20 +52,10 @@ class SessionStore:
     def _attempt_file(self, session_id: str, attempt_id: str) -> Path:
         return self._attempt_dir(session_id, attempt_id) / "attempt.json"
 
-    # ---- Session CRUD ----
+    # Session CRUD
 
     def create_session(self, session: Session) -> Session:
-        """Create and persist a session.
-
-        Args:
-            session: Session instance to create.
-
-        Returns:
-            The persisted Session.
-
-        Raises:
-            ValueError: Raised when the session already exists.
-        """
+        """Create and persist a session."""
         session_dir = self._session_dir(session.session_id)
         if session_dir.exists():
             raise ValueError(f"Session {session.session_id} already exists")
@@ -108,14 +66,7 @@ class SessionStore:
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
-        """Read a session.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            The Session instance, or None when it does not exist.
-        """
+        """Read a session."""
         path = self._session_file(session_id)
         data = self._read_json(path)
         if data is None:
@@ -124,22 +75,11 @@ class SessionStore:
         return Session.from_dict(data)
 
     def update_session(self, session: Session) -> None:
-        """Update a session.
-
-        Args:
-            session: Modified Session instance.
-        """
+        """Update a session."""
         self._write_json(self._session_file(session.session_id), session.to_dict())
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete a session and all of its data.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            Whether the delete succeeded.
-        """
+        """Delete a session and all of its data."""
         session_dir = self._session_dir(session_id)
         if not session_dir.exists():
             return False
@@ -149,14 +89,7 @@ class SessionStore:
         return True
 
     def list_sessions(self, limit: int = 50) -> List[Session]:
-        """List all sessions in descending update-time order.
-
-        Args:
-            limit: Maximum number of sessions to return.
-
-        Returns:
-            List of Session objects.
-        """
+        """List all sessions in descending update-time order."""
         sessions: List[Session] = []
         if not self.base_dir.exists():
             return sessions
@@ -179,21 +112,15 @@ class SessionStore:
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         return sessions[:limit]
 
-    # ---- Derived message views ----
+    # Derived message views
 
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
     ) -> List[Message]:
         """Return display messages derived from the session thread."""
-        self.ensure_migrated(session_id)
         if limit is not None and limit <= 0:
+            self.ensure_migrated(session_id)
             return []
-        return self._project_messages_from_thread(session_id, limit)
-
-    def _project_messages_from_thread(
-        self, session_id: str, limit: Optional[int]
-    ) -> List[Message]:
-        """Build display rows from canonical thread items."""
         items = self.thread_log(session_id).read()
         starts = [item for item in items if item.type == "turn_start"]
         rows: List[Message] = []
@@ -227,7 +154,7 @@ class SessionStore:
                 if item.type == "inject" and item.get("role") == "system":
                     rows.append(Message(message_id=f"{session_id}:{item.seq}", session_id=session_id,
                                         role="system", content=item.get("content") or ""))
-            projection = project_turn(items, start.turn_id)
+            projection = project_turn(turn_items, start.turn_id)
             if projection.status is None or projection.content is None:
                 continue
             rows.append(Message(
@@ -237,12 +164,10 @@ class SessionStore:
                 content=projection.content or "",
                 linked_attempt_id=start.turn_id,
                 created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
-                metadata={**projection.metadata, **({"status": projection.status} if projection.status else {})},
+                metadata={**projection.metadata, "status": projection.status},
             ))
         if not starts:
-            # A task can be accepted before its worker gets a chance to open
-            # the thread. Expose that durable attempt prompt as the live user
-            # row until the worker writes the terminal projection.
+            # Show the durable prompt while the accepted attempt still lacks a terminal projection.
             for attempt in self.list_attempts():
                 if attempt.session_id != session_id:
                     continue
@@ -254,17 +179,10 @@ class SessionStore:
                     ))
         return rows if limit is None else rows[-limit:]
 
-    # ---- Attempt CRUD ----
+    # Attempt CRUD
 
     def create_attempt(self, attempt: Attempt) -> Attempt:
-        """Create an execution attempt.
-
-        Args:
-            attempt: Attempt to create.
-
-        Returns:
-            The persisted Attempt.
-        """
+        """Create an execution attempt."""
         attempt_dir = self._attempt_dir(attempt.session_id, attempt.attempt_id)
         attempt_dir.mkdir(parents=True, exist_ok=True)
         self._write_json(
@@ -274,15 +192,7 @@ class SessionStore:
         return attempt
 
     def get_attempt(self, session_id: str, attempt_id: str) -> Optional[Attempt]:
-        """Read an execution attempt.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-
-        Returns:
-            The Attempt instance, or None when it does not exist.
-        """
+        """Read an execution attempt."""
         path = self._attempt_file(session_id, attempt_id)
         data = self._read_json(path)
         if data is None:
@@ -290,22 +200,14 @@ class SessionStore:
         return Attempt.from_dict(data)
 
     def update_attempt(self, attempt: Attempt) -> None:
-        """Update an execution attempt.
-
-        Args:
-            attempt: Modified Attempt.
-        """
+        """Update an execution attempt."""
         self._write_json(
             self._attempt_file(attempt.session_id, attempt.attempt_id),
             attempt.to_dict(),
         )
 
     def list_attempts(self) -> List[Attempt]:
-        """Read every valid persisted attempt.
-
-        Returns:
-            Attempts found below the session storage root.
-        """
+        """Read every valid persisted attempt."""
         attempts: List[Attempt] = []
         for path in self.base_dir.glob("*/attempts/*/attempt.json"):
             data = self._read_json(path)
@@ -320,15 +222,7 @@ class SessionStore:
     def get_message_for_attempt(
         self, session_id: str, attempt_id: str
     ) -> Optional[Message]:
-        """Return the persisted assistant message linked to an attempt.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-
-        Returns:
-            The linked message, or None when the reply is not in the log.
-        """
+        """Return the persisted assistant message linked to an attempt."""
         items = self.thread_log(session_id).read()
         projection = project_turn(items, attempt_id)
         if projection.status is None:
@@ -338,15 +232,15 @@ class SessionStore:
             role="assistant",
             content=projection.content or "",
             linked_attempt_id=attempt_id,
-            metadata={**projection.metadata, **({"status": projection.status} if projection.status else {})},
+            metadata={**projection.metadata, "status": projection.status},
         )
 
-    # ---- IO Helpers ----
+    # IO Helpers
 
     @staticmethod
-    def _write_json(path: Path, data: Dict[str, Any]) -> None:
+    def _write_json(path: Path, data: Dict[str, Any], *, indent: Optional[int] = 2) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        encoded = json.dumps(data, ensure_ascii=False, indent=indent).encode("utf-8")
         fd, temporary_name = tempfile.mkstemp(
             dir=path.parent,
             prefix=f".{path.name}.",

@@ -57,12 +57,7 @@ class ToolExecution:
     def _prepare_identity_dependencies(
         self, tool_calls, context, trace, iteration,
     ) -> dict[str, str]:
-        """Resolve new dependencies through the ordinary bounded tool lifecycle.
-
-        Internal prerequisite results go to the audit/identity ledger, not to
-        provider tool messages with invented call IDs. Failures are attached to
-        the requesting consumer's normal refusal so the model can see the cause.
-        """
+        """Resolve new dependencies through the ordinary bounded tool lifecycle."""
         outcomes = {}
         for tc in tool_calls:
             query = self._identity_dependency_query(tc)
@@ -77,9 +72,7 @@ class ToolExecution:
                 "tool": dependency.name, "query": query,
             })
             internal_messages = []
-            # The lookup is not model input, but its result is part of the
-            # turn the user saw run; the thread records it for the display
-            # trail (replay drops a result whose call the model never made).
+            # Record lookup results for display without adding an invented provider call ID.
             conversation = self.delivery.conversation
             previous_lists = conversation.dependency_lists
             conversation.dependency_lists = (*previous_lists, internal_messages)
@@ -101,20 +94,8 @@ class ToolExecution:
         trace: Any,
         iteration: int,
     ) -> tuple[bool, str]:
-        """Pre-process tool calls: handle compact, filter duplicates, batch execute.
-
-        Args:
-            tool_calls: Raw tool calls from LLM response.
-            context: ContextBuilder for formatting messages.
-            messages: Conversation messages (appended in place).
-            trace: Any.
-            iteration: Current iteration number.
-
-        Returns:
-            Tuple of (compact_requested, focus_topic).
-        """
-        # Move a matching explicit resolver ahead of its dependent read. Keep
-        # its real provider call ID and produce exactly one result for it.
+        """Pre-process tool calls: handle compact, filter duplicates, batch execute."""
+        # Keep the explicit resolver’s provider call ID when moving it ahead of the read.
         tool_calls = list(tool_calls)
         window = self.env.data_window
         if window is not None:
@@ -185,7 +166,6 @@ class ToolExecution:
             else "not_required"
         )
 
-        # Cancelled before this turn's tools ran — skip execution entirely.
         if self._cancel_event.is_set():
             self.delivery.deliver_cancelled_calls(
                 tool_calls, context, messages, trace, iteration
@@ -193,15 +173,13 @@ class ToolExecution:
             return compact_requested, focus_topic
 
         for tc in tool_calls:
-            # Layer 4: compact tool — mark then defer execution
             if tc.name == "compact" and (self.invocation.successful_reads is None or self.env.registry.get(tc.name) is not None):
                 self.delivery.progress.note("compact", "compact")
                 self.delivery._emit_tool_started(tc, {}, iteration)
                 budget = None if _override("TOKEN_THRESHOLD") is not None else self._context_budget(messages)
                 tokens = self._prompt_tokens(messages) if budget is not None else 0
                 if budget is not None and tokens <= budget.micro_at:
-                    # Summarising a prompt this small only destroys evidence the
-                    # model will then fetch again: decline, and say why.
+                    # A small prompt still carries evidence the model would otherwise have to fetch again.
                     declined = json.dumps({
                         "status": "ok",
                         "skipped": True,
@@ -226,11 +204,7 @@ class ToolExecution:
 
             tool_def = self.env.registry.get(tc.name)
             repeatable = tool_def.repeatable if tool_def else False
-            # A None key means the arguments could not be canonicalised. The
-            # deterministic cache treats that as 'never cache'; the blocking
-            # gate must likewise treat it as 'never block', otherwise every
-            # un-serialisable call would collapse into a single identity and
-            # the second one would be skipped without ever running.
+            # Unserializable arguments share neither a cache key nor a failure block.
             dedup_key = self.replay._identical_call_key(tc.name, tc.arguments)
             if dedup_key is not None and self.delivery.progress.is_blocked(dedup_key):
                 failed_result = json.dumps(
@@ -295,9 +269,7 @@ class ToolExecution:
         if not execution_plan:
             return compact_requested, focus_topic
 
-        # Preserve provider tool-result ordering. A synthetic blocked result
-        # acts as a batch boundary, while adjacent authorized calls retain the
-        # existing readonly-parallel/write-serial scheduler.
+        # Refusals bound execution segments so provider result ordering stays stable.
         authorized_segment: list[Any] = []
 
         def flush_authorized_segment() -> None:

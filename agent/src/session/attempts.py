@@ -55,9 +55,7 @@ class AttemptRunner:
 
         except asyncio.CancelledError:
             if session.session_id in self.user_cancel_requests:
-                # cancel_current() cancels this task when the run has not
-                # reached its AgentRuntime yet. Keep that explicit user action
-                # distinct from event-loop cancellation during server shutdown.
+                # Distinguish explicit cancellation before runtime creation from service shutdown.
                 attempt.mark_cancelled(reason="cancelled by user")
                 self._finish_thread_turn_quietly(session.session_id, attempt)
                 self.store.update_attempt(attempt)
@@ -75,12 +73,7 @@ class AttemptRunner:
             self.thread_events.sync(session.session_id)
 
     def _finish_thread_turn_quietly(self, session_id: str, attempt: Attempt) -> None:
-        """Close the turn in the thread on an error path, never raising.
-
-        Args:
-            session_id: Session ID.
-            attempt: The attempt, already marked terminal.
-        """
+        """Close the turn in the thread on an error path, never raising."""
         try:
             self.runtime(session_id).finish_turn(
                 attempt.attempt_id,
@@ -174,16 +167,7 @@ class AttemptRunner:
 
 
 def format_result_message(attempt: Attempt, streamed_text: str = "") -> str:
-    """Format the final execution result message.
-
-    Args:
-        attempt: The terminal attempt.
-        streamed_text: Text the turn streamed to the user; a stopped turn
-            keeps it instead of replacing it with a bare notice.
-
-    Returns:
-        The reply text shown in the transcript.
-    """
+    """Format the final execution result message."""
     if attempt.status == AttemptStatus.COMPLETED:
         if attempt.summary:
             return attempt.summary

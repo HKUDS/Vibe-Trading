@@ -15,16 +15,7 @@ ModelMessage: TypeAlias = dict[str, Any]
 
 @dataclass
 class ToolCallRequest:
-    """Tool call request returned by the LLM.
-
-    Attributes:
-        id: Tool call ID (used to match tool_result messages).
-        name: Tool name.
-        arguments: Tool argument dict.
-        thought_signature: Gemini thinking-model signature to echo on the next turn.
-        extra_content: Provider-specific tool-call metadata that must be
-            replayed with the assistant turn, such as Gemini thought signatures.
-    """
+    """Carry a tool call and opaque provider metadata for replay."""
 
     id: str
     name: str
@@ -35,15 +26,7 @@ class ToolCallRequest:
 
 @dataclass(frozen=True)
 class LLMRuntimeSnapshot:
-    """Immutable identity of the model configuration used by one ChatLLM.
-
-    Attributes:
-        provider: Provider the client sends to.
-        configured_model: Model the client asks for.
-        reasoning_effort: Effort level the client sends, or "" when unset.
-        selection: Who chose the model: ``"configured"`` for the server's
-            settings, ``"session"`` for a selection stored on the session.
-    """
+    """Freeze the provider, model and reasoning settings selected by the server or session."""
 
     provider: str
     configured_model: str
@@ -53,28 +36,7 @@ class LLMRuntimeSnapshot:
 
 @dataclass
 class LLMResponse:
-    """LLM response.
-
-    Attributes:
-        content: Text content (final answer or thinking text).
-        tool_calls: List of tool call requests.
-        reasoning_content: Optional thinking trace surfaced by reasoning models.
-        finish_reason: Finish reason string.
-        usage_metadata: Real token counts reported by the provider, when
-            available. Mirrors LangChain's ``AIMessage.usage_metadata`` —
-            ``{"input_tokens": int, "output_tokens": int, "total_tokens": int}``.
-            ``None`` if the provider did not return usage information; callers
-            should fall back to a heuristic in that case.
-        content_filter_triggered: ``True`` when the provider blocked the
-            response via content moderation (e.g. DashScope/Qwen content
-            moderation filter, ``finish_reason == "content_filter"``).
-        response_model: Model identifier reported by the provider response,
-            when available. This is authoritative runtime metadata and must
-            not be inferred from the model's natural-language self-report.
-        provider_items: Opaque output items the provider needs back verbatim
-            on the next request of the same turn chain (the Codex backend's
-            encrypted reasoning items). Never shown, never summarised.
-    """
+    """Carry provider-reported usage and identity, with opaque items reserved for verbatim replay."""
 
     content: Optional[str] = None
     tool_calls: List[ToolCallRequest] = field(default_factory=list)
@@ -139,11 +101,7 @@ class LoopResult:
 
 @dataclass(frozen=True)
 class LoopPorts:
-    """Bound host operations. The scheduler owns the loop counters.
-
-    A host may bind a boundary check that runs before cancellation and
-    receives the number of iterations already started.
-    """
+    """Bind host operations, including an optional pre-cancellation check that receives the started iteration count."""
 
     before_iteration: Callable[[LoopContext], Stop | None]
     prepare_request: Callable[[LoopContext, Iteration], Stop | None]
@@ -160,10 +118,7 @@ class LoopPorts:
 
 @dataclass(frozen=True)
 class BoundCall:
-    """Publish a call's start, invoke the bound tool, then publish its result.
-
-    The start callback receives whether this call will run in parallel.
-    """
+    """Bracket an invocation with callbacks that report its start mode and result."""
 
     start: Callable[[bool], Callable[[], tuple[str, int]]]
     finish: Callable[[str, int], None]

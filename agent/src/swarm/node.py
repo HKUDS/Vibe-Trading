@@ -58,15 +58,7 @@ def _emit(
     task_id: str,
     data: dict | None = None,
 ) -> None:
-    """Emit a swarm event via callback if provided.
-
-    Args:
-        callback: Optional event callback function.
-        event_type: Event type string.
-        agent_id: Agent identifier.
-        task_id: Task identifier.
-        data: Additional event data.
-    """
+    """Emit a swarm event via callback if provided."""
     if callback is None:
         return
     event = SwarmEvent(
@@ -83,15 +75,7 @@ def _emit(
 
 
 def _filter_skill_descriptions(loader: SkillsLoader, skill_names: list[str]) -> str:
-    """Return skill descriptions filtered to the given whitelist.
-
-    Args:
-        loader: SkillsLoader instance with all skills loaded.
-        skill_names: Skill names to include. Empty list means include all.
-
-    Returns:
-        Formatted skill descriptions string.
-    """
+    """Return skill descriptions filtered to the given whitelist."""
     if not skill_names:
         return loader.get_descriptions()
     lines: list[str] = []
@@ -115,15 +99,7 @@ def _measure_usage(
     messages: list[dict],
     response: object,
 ) -> UsageMeasure:
-    """Normalize provider usage or estimate from character counts.
-
-    Args:
-        messages: Request messages used for the input estimate.
-        response: Provider response, when available.
-
-    Returns:
-        Counts, cache breakdown and the provenance label.
-    """
+    """Normalize provider usage or estimate from character counts."""
     if isinstance(response, LLMResponse) and response.usage_metadata:
         normalized = _normalize_llm_usage(response.usage_metadata)
         if normalized is not None:
@@ -135,10 +111,7 @@ def _measure_usage(
                 token_source="provider",
             )
 
-    # Fallback: provider didn't return usage_metadata. Estimate from
-    # serialized message length and response content length. ~4 chars per
-    # English token; under-counts for CJK / Thai / emoji-heavy prompts but
-    # at least preserves the prior behaviour.
+    # Estimate usage from text length when the provider omits token counts.
     try:
         input_tokens = len(json.dumps(messages, ensure_ascii=False)) // 4
     except Exception:
@@ -165,31 +138,8 @@ def build_worker_prompt(
     grounding_block: str = "",
     available_tools: set[str] | None = None,
 ) -> str:
-    """Build the worker's system prompt with role, upstream context, and skills.
-
-    Args:
-        agent_spec: The agent's role specification.
-        upstream_summaries: Mapping of context_key -> upstream task summary.
-        skill_descriptions: Pre-filtered skill description text.
-        grounding_block: Optional "Ground Truth" markdown produced by
-            :func:`src.swarm.grounding.format_grounding_block`. Spliced in
-            ahead of the Execution Rules section so the worker sees real
-            recent prices before any tool decision. Empty string skips the
-            section entirely.
-        available_tools: Actual registered tool names after runtime policy filtering.
-            Defaults to the spec whitelist for standalone prompt inspection.
-
-    Returns:
-        Complete system prompt string for the worker LLM.
-    """
-    # Static, agent-invariant blocks first: for a given agent_spec these are
-    # byte-identical on every call (skill_descriptions/tools come from the
-    # agent's own YAML spec, not the current task), so they form one stable
-    # prompt-cache-eligible prefix across a swarm's repeated calls to the
-    # same agent. Anything that varies per call (upstream context, grounding
-    # data, the current date) is appended after, in the same relative order
-    # as before -- a cache hit only needs a stable *prefix*, so moving the
-    # variable tail doesn't need to preserve position, only what precedes it.
+    """Build the worker's system prompt with role, upstream context, and skills."""
+    # Keep agent-invariant guidance first so repeated requests share a prompt cache prefix.
     prompt_parts = [f"## Role\n\n{agent_spec.role}"]
 
     if skill_descriptions and skill_descriptions != "(no matching skills)":
@@ -213,9 +163,6 @@ def build_worker_prompt(
         "or declaration format is required."
     )
 
-    # From here on, content varies per call (upstream context substitution,
-    # grounding data, the date), so none of it extends the cacheable prefix
-    # above -- relative order matches the original layout exactly.
     upstream_block = ""
     if upstream_summaries:
         sections = []
@@ -227,17 +174,13 @@ def build_worker_prompt(
         )
     prompt_parts.append(agent_spec.system_prompt.replace("{upstream_context}", upstream_block))
 
-    # Swarm workers have a purpose-built prompt instead of ContextBuilder, but
-    # they are still agent runs and must receive the runtime-root standing
-    # instructions. A CLI launch directory is intentionally unavailable here.
+    # Read standing instructions from the runtime root because workers have no CLI launch directory.
     instruction_block = build_instruction_block()
     if instruction_block:
         prompt_parts.append(instruction_block)
 
     if grounding_block:
-        # Placed before Execution Rules so it's in scope when the worker
-        # plans its first tool call. The block already contains an explicit
-        # instruction to prefer these prices over training data.
+        # Place grounding before execution rules so it informs the worker’s first tool call.
         prompt_parts.append(grounding_block)
 
     enabled_tools = set(agent_spec.tools or []) if available_tools is None else available_tools

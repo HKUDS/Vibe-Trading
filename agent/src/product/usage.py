@@ -1,7 +1,4 @@
-"""Account provider and child calls against one usage summary and goal budget.
-
-Auxiliary calls retain their purpose. Reported reasoning tokens are a subset
-of output tokens. The run-scoped summary is written atomically to llm_usage.json."""
+"""Account provider and child calls against one usage summary and goal budget."""
 
 from __future__ import annotations
 
@@ -104,13 +101,10 @@ def _record_llm_usage(
         return None
 
     totals = summary.setdefault("totals", {})
-    totals["input_tokens"] = int(totals.get("input_tokens") or 0) + normalized["input_tokens"]
-    totals["output_tokens"] = int(totals.get("output_tokens") or 0) + normalized["output_tokens"]
-    totals["total_tokens"] = int(totals.get("total_tokens") or 0) + normalized["total_tokens"]
-    totals["calls"] = int(totals.get("calls") or 0) + normalized.get("calls", 1)
-    for key in ("cache_read_tokens", "cache_creation_tokens", "reasoning_tokens"):
-        if key in normalized:
-            totals[key] = int(totals.get(key) or 0) + normalized[key]
+    charges = {**normalized, "calls": normalized.get("calls", 1)}
+    charges.pop("context_input_tokens", None)
+    for key, amount in charges.items():
+        totals[key] = int(totals.get(key) or 0) + amount
     entry = {"iter": iteration, **normalized}
     if purpose is not None:
         entry["purpose"] = purpose
@@ -120,12 +114,7 @@ def _record_llm_usage(
 
 
 def _record_unreported_llm_call(run_dir: Path, summary: dict[str, Any]) -> None:
-    """Count a call whose provider reported no usage, without inventing tokens.
-
-    Args:
-        run_dir: Active run's artifact directory.
-        summary: The run's usage summary, updated in place.
-    """
+    """Count a call whose provider reported no usage, without inventing tokens."""
     totals = summary.setdefault("totals", {})
     totals["unreported_calls"] = int(totals.get("unreported_calls") or 0) + 1
     _write_llm_usage(run_dir, summary)

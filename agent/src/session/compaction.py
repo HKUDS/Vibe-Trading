@@ -69,10 +69,9 @@ class ContextCompactor:
     def _context_budget(self, messages: list) -> CompactionBudget:
         """Compaction thresholds for the active model's real context window."""
         cfg = get_env_config()
-        provider = (self.provider or "").strip().lower().replace("_", "-")
         model = getattr(self.llm, "model_name", "") or cfg.llm.langchain_model_name
         window, source = resolve_window(
-            provider,
+            self.provider,
             str(model or ""),
             env_window=cfg.agent_tuning.vibe_trading_context_window,
             learned_window=self.learned_context_window,
@@ -126,16 +125,7 @@ class ContextCompactor:
         *,
         force: bool = False,
     ) -> None:
-        """Run the compaction layers the prompt has actually grown into.
-
-        Args:
-            messages: Message list, mutated in place.
-            run_dir: Active run directory.
-            trace: Run trace.
-            iteration: Loop-local iteration (the microcompact event's key).
-            current_iter: Session-wide iteration number.
-            force: Summarise even under budget (the provider said it overflowed).
-        """
+        """Run the compaction layers the prompt has actually grown into."""
         budget = self._context_budget(messages)
         tokens = self._prompt_tokens(messages)
         if tokens > budget.micro_at or force:
@@ -147,9 +137,7 @@ class ContextCompactor:
                 logger.info("PreCompact hook refused compaction: %s", decision.reason)
                 return
         if tokens > budget.micro_at:
-            # Oldest results first and only until the prompt fits again:
-            # clearing all but the last few is what sent a 12-company
-            # comparison back to re-fetch its own evidence.
+            # Stop clearing old results once the prompt fits.
             self._microcompact_and_unblock(
                 messages,
                 trace,
@@ -162,9 +150,7 @@ class ContextCompactor:
         if tokens > budget.collapse_at:
             self._collapse(messages)
             tokens = self._prompt_tokens(messages)
-        # A summary keeps the static prompt plus a ~20K-token tail, so on a
-        # window that small the prompt stays over the line after compacting;
-        # without this every later iteration paid for another summary call.
+        # Require regrowth before paying for another summary of a tiny window.
         regrown = (
             self.compacted_to_tokens is None
             or tokens > self.compacted_to_tokens + MIN_CONVERSATION_TOKENS
@@ -186,24 +172,14 @@ class ContextCompactor:
         iteration: int,
         current_iter: int,
     ) -> None:
-        """Learn the real window from a context-length error and compact to it.
-
-        A model missing from ``context_windows.json`` runs on the default
-        window; if that is larger than the real one the provider says so, and
-        the run shrinks to the limit instead of failing.
+        """Learn the model limit and compact messages in place.
 
         Args:
-            exc: The provider error that reported the overflow.
-            messages: Message list, mutated in place.
-            run_dir: Active run directory.
-            trace: Run trace.
             iteration: Loop-local iteration.
-            current_iter: Session-wide iteration number.
+            current_iter: Session-wide iteration.
         """
         sent = self._prompt_tokens(messages)
         stated = parse_context_limit(str(exc))
-        # The provider's own number when it gives one; otherwise the prompt
-        # that did not fit, with a margin for our estimate of it.
         self.learned_context_window = stated or int(sent * 0.9)
         trace.write({
             "type": "context_overflow",
@@ -224,26 +200,7 @@ class ContextCompactor:
         measure: Optional[Callable[[list], int]] = None,
         preserve_tool_call_ids: Optional[set[str]] = None,
     ) -> list[str]:
-        """Run layer-1 microcompact and re-open lost readonly call identities.
-
-        A readable result for another argument variant, or a synthetic skip,
-        cannot satisfy "use the previous result". Keep an exact call gated if
-        any successful copy survives; never re-open mutating tools just because
-        their results were compacted away.
-
-        Args:
-            messages: Message list, mutated in place by the compaction.
-            trace: Run trace; a ``microcompact_cleared`` event is written
-                whenever the ledger is re-opened, because this layer used to
-                act silently and left no evidence for diagnosis.
-            iteration: Current ReAct iteration, recorded on the trace event.
-            target_tokens: Clear oldest-first only until the prompt fits.
-            measure: Prompt-size function for ``target_tokens``.
-            preserve_tool_call_ids: Replayed results still owed one model request.
-
-        Returns:
-            The tool names re-opened, for callers and tests to assert on.
-        """
+        """Run layer-1 microcompact and re-open lost readonly call identities."""
         readable_before = self.replay._readable_success_keys(messages)
         before = json.loads(json.dumps(messages, default=str, ensure_ascii=False))
         _microcompact(
@@ -268,22 +225,15 @@ class ContextCompactor:
         """Persist the exact post-layer message view for thread replay."""
         if self.conversation.thread is None:
             return
-        changed = []
-        for previous, current in zip(before, messages):
-            # The list order is stable for both in-place compaction layers.
-            if previous != current:
-                changed.append(current)
+        # Both in-place layers preserve message order.
+        changed = [current for previous, current in zip(before, messages) if previous != current]
         self.conversation.thread.compaction_layer(layer, changed)
 
     def _summarize_chunks(
         self, head: list[dict[str, Any]], focus_section: str, run_dir: Path, iteration: int
     ) -> tuple[str, list[str]] | None:
         """Summarize every folded chunk while charging each provider call."""
-        # Fold every head chunk so no message falls between the summary prompt
-        # and the preserved tail. The first fresh chunk gets the full
-        # structured handoff; subsequent chunks incrementally update it.
-        # Encrypted provider items are opaque to the summariser and only
-        # cost tokens there; the messages they belong to are being folded.
+        # Opaque provider items add tokens without helping the summarizer.
         chunks = _summary_chunks(
             [{k: v for k, v in m.items() if k != "provider_items"} for m in head]
         )
@@ -294,9 +244,6 @@ class ContextCompactor:
         for conv_text in chunks:
             if self.should_stop():
                 return
-            # Structured template while there is still nothing to update — that
-            # covers a fresh session's first chunk and the corner case where
-            # every fold so far returned empty content.
             if not summary:
                 prompt = _STRUCTURED_SUMMARY_PROMPT.format(focus_section=focus_section) + conv_text
             else:
@@ -339,30 +286,13 @@ class ContextCompactor:
         focus_topic: str = "",
         iteration: int = 0,
     ) -> None:
-        """Layer 3/4/5: structured LLM summary with token-budget tail protection.
-
-        Upgrades over the original:
-          - Token-budget tail: keeps ~20K tokens of recent messages (not a fixed count).
-          - Structured summary template: preserves goal, progress, decisions, files, etc.
-          - Iterative update: Nth compression updates previous summary, zero info decay.
-          - Tool pair fix: repairs orphaned tool_call/tool_result after compression.
-          - Focus-topic: optionally prioritize specific topic in summary.
-
-        Args:
-            messages: Message list (replaced in place).
-            run_dir: Run directory.
-            trace: Any.
-            focus_topic: Optional topic to prioritize in the summary.
-            iteration: Current trace iteration.
-        """
+        """Layer 3/4/5: structured LLM summary with token-budget tail protection."""
         if self.should_stop():
             return
         readable_before = self.replay._readable_success_keys(messages)
         system_msg = messages[0]
         body = messages[1:]
 
-        # Token-budget tail: size messages with their tool-call arguments so
-        # oversized tool calls are folded instead of hiding in the tail.
         cut_idx = _tail_cut_index(body)
 
         head = body[:cut_idx]
@@ -378,8 +308,7 @@ class ContextCompactor:
                 logger.warning("Auto compact: nothing to compress (body too small)")
                 return
 
-        # Replayed results are owed one successful writing request. Keep the
-        # entire assistant-call/result pair out of summaries until then.
+        # Keep each replayed pair until a successful writing request sees it.
         pending = self.replay._readonly_replay_visibility_pending
         leased = [msg for msg in head if (
             msg.get("role") == "tool" and msg.get("tool_call_id") in pending
@@ -388,7 +317,6 @@ class ContextCompactor:
             head = [msg for msg in head if all(msg is not kept for kept in leased)]
             tail = leased + tail
 
-        # Build focus section
         focus_section = _FOCUS_SECTION.format(topic=focus_topic) if focus_topic else ""
 
         summarized = self._summarize_chunks(
@@ -399,12 +327,7 @@ class ContextCompactor:
         summary, chunks = summarized
         self.previous_summary = summary
 
-        # Preserve deterministic verification records across the compaction.
-        # The LLM summary does not reliably retain exact calc results, so the
-        # model used to re-run the same financial_rigor expressions after a
-        # compact to "re-verify" numbers it could no longer see (2026-08-20
-        # INTC run: identical calcs re-ran 5-9x each). Re-attach a terse
-        # ledger of already-verified values so the model does not re-run them.
+        # Carry verified values forward so compaction does not force recalculation.
         verification_ledger = self.verification_ledger(head)
 
         tokens_before = estimate_tokens(messages)
@@ -420,7 +343,6 @@ class ContextCompactor:
         )
         self.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.CONTEXT_COMPACTED, "tokens_before": tokens_before, "summary": summary[:200]})
 
-        # Reconstruct: system + summary + acknowledge + preserved tail
         state_summary = self.state_summary()
         compressed = f"[Conversation compressed — handoff summary]\n\n{summary}"
         if verification_ledger:
@@ -433,15 +355,9 @@ class ContextCompactor:
             compressed += f"\n\nCurrent agent state:\n{state_summary}"
 
         summary_message = {"role": "user", "content": f"{compressed}\n\n<system>Continue from the summary above.</system>"}
-        messages.clear()
-        messages.append(system_msg)
-        messages.append(summary_message)
-        messages.extend(tail)
+        messages[:] = [system_msg, summary_message, *tail]
 
-        # Fix orphaned tool pairs in the reconstructed message list
         _fix_tool_pairs(messages)
         self.replay._unblock_lost_readonly_results(messages, readable_before)
-        # The next turn replays from this summary instead of from the items it
-        # folded; those items stay in the thread file.
         if self.conversation.records_into(messages):
             self.conversation.thread.compaction(summary_message, tail)

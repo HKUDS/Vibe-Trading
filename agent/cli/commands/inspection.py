@@ -37,12 +37,7 @@ def _read_metrics(path: common.Path) -> dict:
 
 
 def _read_metric_values(path: common.Path) -> dict[str, float]:
-    """Read metrics.csv as raw floats, for callers that must do arithmetic.
-
-    ``_read_metrics`` above pre-formats every value into a display string, so a
-    caller that renders a ratio as a percentage cannot use it. An empty result
-    also serves as the "this turn produced no backtest" signal.
-    """
+    """Read metrics.csv as raw floats, for callers that must do arithmetic."""
     if not path.exists():
         return {}
     try:

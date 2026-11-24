@@ -21,13 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatLLM:
-    """LLM chat client with function calling support.
-
-    Uses build_llm() to obtain a provider model and bind_tools() to attach tool definitions.
-
-    Attributes:
-        model_name: Model name.
-    """
+    """LLM chat client with function calling support."""
 
     def __init__(
         self,
@@ -37,13 +31,7 @@ class ChatLLM:
         snapshot: ProviderConfig | None = None,
         selection: str = "configured",
     ) -> None:
-        """Initialize ChatLLM.
-
-        Args:
-            model_name: Model name; defaults to the environment variable value.
-            snapshot: Resolved connection settings; defaults to the current ones.
-            selection: Who chose this model, recorded on ``runtime_snapshot``.
-        """
+        """Initialize ChatLLM."""
         self.policy = policy
         self.config = snapshot or resolve_config(model_name=model_name)
         self._llm = build_llm(model_name=model_name, snapshot=self.config, policy=policy)
@@ -56,14 +44,7 @@ class ChatLLM:
         )
 
     def close(self) -> None:
-        """Best-effort release of HTTP clients owned by this adapter.
-
-        LangChain may lend multiple adapters the same cached HTTPX clients.
-        Those process-scoped clients must remain open when one ``ChatLLM`` is
-        discarded. Only explicitly marked, instance-owned clients are closed;
-        adapters without the ownership marker keep the legacy best-effort
-        behavior for compatibility.
-        """
+        """Best-effort release of HTTP clients owned by this adapter."""
         for label, client in self._close_candidates():
             close_fn = getattr(client, "aclose", None)
             if not callable(close_fn):
@@ -95,14 +76,7 @@ class ChatLLM:
     def _prompt_cache_request(
         self, messages: list[contracts.ModelMessage]
     ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Return the messages and call kwargs to send, with cache markers when they apply.
-
-        Markers are added only for the direct Anthropic adapter, only when the
-        flag is on, and only when the request carries a leading system prompt:
-        one explicit breakpoint on that block plus the top-level automatic one.
-        One-shot calls without a system prompt (context compaction, image
-        vision, title generation) are sent unchanged.
-        """
+        """Return the messages and call kwargs to send, with cache markers when they apply."""
         if getattr(self._llm, "_llm_type", None) != _DIRECT_ANTHROPIC_LLM_TYPE:
             return messages, {}
         if self.config.options.vibe_trading_anthropic_prompt_cache is not True:
@@ -167,16 +141,7 @@ class ChatLLM:
         return llm, prepared, call_kwargs
 
     def chat(self, messages: list[contracts.ModelMessage], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> contracts.LLMResponse:
-        """Call the LLM synchronously.
-
-        Args:
-            messages: Message list (OpenAI format).
-            tools: Tool definition list (OpenAI function calling format).
-            timeout: Optional per-call timeout in seconds.
-
-        Returns:
-            contracts.LLMResponse.
-        """
+        """Call the LLM synchronously."""
         llm, messages, call_kwargs = self._prepare_call(messages, tools)
         config = {"timeout": timeout} if timeout else {}
         try:
@@ -198,30 +163,7 @@ class ChatLLM:
         should_cancel: Optional[Callable[[], bool]] = None,
         on_waiting_chunk: Optional[Callable[[], None]] = None,
     ) -> contracts.LLMResponse:
-        """Stream the LLM and optionally forward text deltas (e.g. thinking).
-
-        Iterates AIMessageChunk; text deltas invoke ``on_text_chunk`` and
-        reasoning-only deltas invoke ``on_reasoning_chunk``. Aggregates chunks
-        into one response. Stream failures are explicit provider errors.
-
-        Args:
-            messages: Messages in OpenAI format.
-            tools: Tool definitions for function calling.
-            on_text_chunk: Optional callback ``(delta: str) -> None``.
-            on_reasoning_chunk: Optional callback ``(delta: str) -> None``.
-            timeout: Optional per-call timeout in seconds.
-            idle_timeout_s: Optional per-chunk idle timeout; when no stream
-                delta arrives for this long the call fails as a retryable
-                timeout instead of hanging the loop silently.
-            on_waiting_chunk: Provider-confirmed waiting activity, carrying no text.
-                Plain empty chunks and transport keepalives do not invoke it.
-            should_cancel: Optional predicate polled per chunk; when it returns
-                True the stream stops early and the partial response is returned.
-                Lets a caller abort a live stream promptly (cooperative cancel).
-
-        Returns:
-            Parsed ``contracts.LLMResponse``.
-        """
+        """Stream a response and forward deltas to the supplied callbacks."""
         return collect_stream(
             self._llm, self._prepare_call, messages, tools,
             provider=self.runtime_snapshot.provider, model=self.model_name or "(unset)",

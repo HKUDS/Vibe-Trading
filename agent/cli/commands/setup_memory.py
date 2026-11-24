@@ -234,27 +234,14 @@ def _is_windows() -> bool:
 
 
 def _resolve_node_and_npm() -> tuple[common.Optional[str], common.Optional[str]]:
-    """Return ``(node_path, npm_path)`` if both are on PATH, else ``(None, None)``.
-
-    Used by ``cmd_setup`` to fail fast with a clear message instead of
-    surfacing a cryptic ENOENT from npm itself.
-    """
+    """Return ``(node_path, npm_path)`` if both are on PATH, else ``(None, None)``."""
     node = common.shutil.which("node")
     npm = common.shutil.which("npm")
     return node, npm
 
 
 def _build_frontend_cmd(frontend_dir: common.Path) -> list[list[str]]:
-    """Return the ordered list of subprocess invocations needed to build the frontend.
-
-    On Windows we explicitly pin ``--package=typescript`` / ``--package=vite``
-    so npm cannot accidentally fetch the abandoned ``tsc`` package from the
-    registry. On POSIX systems, ``npm run build`` is sufficient because npm
-    prepends ``./node_modules/.bin`` to ``PATH`` for local scripts.
-
-    Each inner list is a single ``subprocess.run`` invocation. Returned as a
-    list of steps so the caller can stream progress.
-    """
+    """Return the ordered list of subprocess invocations needed to build the frontend."""
     is_win = _is_windows()
     if is_win:
         # `npm exec --package=typescript tsc -b` is the safe form on Windows;
@@ -275,14 +262,7 @@ def _run_step(
     cmd: list[str],
     cwd: common.Path,
 ) -> bool:
-    """Run one subprocess step, returning True on success.
-
-    Decodes subprocess output as UTF-8 with ``errors="replace"`` so that
-    non-ASCII bytes emitted by tools like Vite do not raise
-    ``UnicodeDecodeError`` on platforms whose default codec is GBK/CP936
-    (notably Windows). The captured text is only used to surface a
-    friendly error message; lossy decoding is acceptable here.
-    """
+    """Run one subprocess step, returning True on success."""
     common.console.print(f"[dim]  {description} …[/dim]")
     try:
         result = common.subprocess.run(
@@ -308,14 +288,7 @@ def _run_step(
 
 
 def cmd_setup(frontend_dir: common.Path) -> int:
-    """Install frontend dependencies and build the production bundle.
-
-    Cross-platform wrapper that hides the ``npx tsc`` / ``npm exec tsc``
-    Windows footgun. Equivalent to running ``cd frontend && npm install
-    && npm run build`` from a POSIX shell, but works on Windows without
-    the user having to know about the abandoned ``tsc`` package on the
-    npm registry.
-    """
+    """Install frontend dependencies and build the production bundle."""
     common.console.print(
         common.Panel(
             f"[bold cyan]Vibe-Trading frontend setup[/bold cyan]\n"
@@ -341,10 +314,7 @@ def cmd_setup(frontend_dir: common.Path) -> int:
         )
         return common.EXIT_USAGE_ERROR
 
-    # On Windows, ``npm`` is shipped as ``npm.cmd``; ``subprocess.run`` does
-    # not consult ``PATHEXT`` for bare command names, so it would raise
-    # ``FileNotFoundError`` even though ``shutil.which("npm")`` returned a
-    # valid path. Resolve to the full path before invoking.
+    # Resolve npm explicitly because Windows subprocess lookup skips PATHEXT.
     npm_path = npm
     if _is_windows():
         steps = [
@@ -375,22 +345,7 @@ def cmd_dev(
     frontend_port: int = 5899,
     frontend_dir: common.Optional[common.Path] = None,
 ) -> int:
-    """Start backend + Vite dev server in one foreground process.
-
-    Spawns two child processes:
-
-    * The FastAPI backend, launched from ``AGENT_DIR`` so that
-      ``python -m cli serve`` resolves the in-repo ``cli`` package
-      (launching it from the repo root would fail with
-      ``ModuleNotFoundError: No module named 'cli'``).
-    * The Vite dev server, launched from ``frontend_dir`` with the port
-      from ``vite.config.ts`` (currently 5899). We do NOT hardcode
-      ``5173`` — that would be wrong for this project.
-
-    Both children inherit stdout/stderr so their logs are interleaved
-    with the dev banner. ``Ctrl+C`` (SIGINT) and ``SIGTERM`` cleanly
-    terminate both children.
-    """
+    """Start backend + Vite dev server in one foreground process."""
     frontend_dir = frontend_dir or (common.AGENT_DIR.parent / "frontend")
     if not frontend_dir.exists():
         common.console.print(
@@ -399,12 +354,7 @@ def cmd_dev(
         )
         return common.EXIT_USAGE_ERROR
 
-    # `npm run dev` invokes the local Vite binary at
-    # ``frontend/node_modules/.bin/vite``. If ``node_modules`` does not
-    # exist (or is missing the Vite package), npm's bare-script
-    # resolution will print a confusing "vite is not a command" error
-    # and exit. Detect this case up front and point the user at
-    # ``vibe-trading setup`` instead.
+    # Check for local Vite so missing dependencies lead to setup instructions.
     vite_bin = frontend_dir / "node_modules" / ".bin" / ("vite.cmd" if _is_windows() else "vite")
     if not vite_bin.exists():
         common.console.print(
@@ -432,10 +382,7 @@ def cmd_dev(
         return common.EXIT_USAGE_ERROR
 
     backend_cmd = [common.sys.executable, "-m", "cli", "serve", "--port", str(backend_port)]
-    # On Windows, ``npm`` is typically ``npm.cmd``. ``subprocess.Popen`` does
-    # not consult ``PATHEXT`` for bare command names, so the call would fail
-    # with ``FileNotFoundError`` even though ``shutil.which("npm")`` returned
-    # a path. Use the resolved executable path directly.
+    # Resolve npm explicitly so Windows can launch npm.cmd.
     npm_executable = npm if _is_windows() else "npm"
     frontend_cmd = [npm_executable, "run", "dev", "--", "--port", str(frontend_port)]
 
@@ -469,9 +416,7 @@ def cmd_dev(
         frontend = common.subprocess.Popen(frontend_cmd, cwd=str(frontend_dir))
         children.append(frontend)
 
-        # Wire signal handlers only after both children are tracked. On
-        # Windows, SIGTERM may not exist and handlers must be installed from
-        # the main thread; KeyboardInterrupt remains the portable Ctrl+C path.
+        # Install signal handlers after tracking both children so shutdown can reach them.
         if common.threading.current_thread() is common.threading.main_thread():
             try:
                 common.signal.signal(common.signal.SIGINT, lambda *_: _terminate_all())

@@ -15,22 +15,7 @@ except ImportError:
 
 
 def _build_http_clients(proxy: str | None = None, *, sdk: Any = None) -> tuple[Any, Any]:
-    """Build owned HTTPX clients with explicit proxy routing (None means direct).
-
-    Explicit transports prevent ambient proxy mounts while retaining
-    SSL_CERT_FILE / SSL_CERT_DIR. Match the SDK's httpx or httpx2 types;
-    SDK default-client wrappers may install ambient mounts even with trust_env=False.
-
-    Args:
-        proxy: Explicit proxy URL, or None to connect directly.
-        sdk: Optional SDK exposing its sync and async HTTP client factories.
-
-    Returns:
-        A ``(sync_client, async_client)`` pair.
-
-    Raises:
-        RuntimeError: If HTTPX is unavailable.
-    """
+    """Build owned HTTPX clients with explicit proxy routing (None means direct)."""
     if httpx is None:
         raise RuntimeError("Explicit provider transport requires the httpx package")
     http = httpx
@@ -97,12 +82,7 @@ _OPENCODE_SESSION_HEADER = "x-opencode-session"
 
 
 def _targets_opencode(provider: str | None, base_url: str | None) -> bool:
-    """Report whether requests go to the OpenCode relay.
-
-    True for the ``opencode*`` provider names and for any provider whose base
-    URL points at ``opencode.ai`` (e.g. ``deepseek`` re-pointed at the Go
-    endpoint), so the session header follows the endpoint, not the label.
-    """
+    """Report whether requests go to the OpenCode relay."""
     normalized = (provider or "").strip().lower().replace("_", "-")
     if normalized in _OPENCODE_PROVIDER_NAMES:
         return True

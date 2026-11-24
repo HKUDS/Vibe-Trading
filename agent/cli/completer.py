@@ -1,12 +1,4 @@
-"""FuzzyCompleter for slash commands.
-
-Returns completions only when the line starts with ``/`` so normal prose
-typing is not polluted by suggestions. Each completion advertises the
-command description in muted style with the command name in the brand
-primary color (sourced from :mod:`agent.cli.theme` when available; falls
-back to ``ansibrightyellow`` so the file is importable before Parcel α
-ships ``theme.py``).
-"""
+"""FuzzyCompleter for slash commands."""
 
 from __future__ import annotations
 
@@ -20,13 +12,7 @@ from .commands.slash_router import SLASH_COMMANDS, Command, match_commands
 
 
 def _primary_style() -> str:
-    """Resolve the brand-orange ``style`` string for prompt_toolkit.
-
-    Rich and prompt_toolkit do not share a style grammar, so we read the
-    brand hex from :mod:`cli.theme` (the single source of truth) and
-    rewrite it for prompt_toolkit's ``fg:#xxxxxx`` syntax. NO_COLOR users
-    pick the no-op style so completions remain visible without color.
-    """
+    """Resolve the brand-orange ``style`` string for prompt_toolkit."""
     try:
         from cli.theme import Theme
 
@@ -45,21 +31,14 @@ def _muted_style() -> str:
 
 
 class SlashCompleter(Completer):
-    """prompt_toolkit completer that fuzzy-matches the slash registry.
-
-    Behaviour mirrors dexter's slash typeahead: bare ``/`` lists everything,
-    ``/m`` filters by prefix/substring/subsequence. Completions are emitted
-    only when the cursor sits on the first token of the line — once the user
-    types ``/help `` (with a trailing space) we get out of the way so they
-    can fill in arguments without the menu re-popping.
-    """
+    """prompt_toolkit completer that fuzzy-matches the slash registry."""
 
     def __init__(self, commands: Iterable[Command] = SLASH_COMMANDS) -> None:
         # Snapshot the registry; commands is a tuple of frozen dataclasses
         # so the snapshot itself is effectively immutable.
         self._commands = tuple(commands)
 
-    # ----------------------------------------------------------------- API
+    # API
     def get_completions(
         self,
         document: Document,
@@ -68,9 +47,6 @@ class SlashCompleter(Completer):
         text = document.text_before_cursor
         stripped = text.lstrip()
 
-        # Bail unless the line starts with ``/`` AND we are still typing the
-        # command token (no space yet). This means ``/help <enter args>``
-        # stops triggering completions once the user moves past the keyword.
         if not stripped.startswith("/"):
             return
         # Find the slash position (the leading whitespace is irrelevant once

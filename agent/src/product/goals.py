@@ -12,13 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def goal_state_ws_blob(meta: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build a WebSocket payload for the current active goal state.
-
-    The WebSocket gateway stores goal snapshots in session metadata when they
-    are available. This helper normalizes either a direct ``goal_state`` payload
-    or compact goal metadata into the client event shape. It returns an inactive
-    payload when no goal metadata is present.
-    """
+    """Build a WebSocket payload for the current active goal state."""
     if not isinstance(meta, dict):
         return {"active": False, "active_goals": [], "completed_goals": []}
     goal_state = meta.get("goal_state")

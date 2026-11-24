@@ -17,42 +17,21 @@ logger = logging.getLogger(__name__)
 
 
 class BaseTool(ABC):
-    """Tool base class.
-
-    Attributes:
-        name: Unique tool identifier.
-        description: Tool description shown to the LLM.
-        parameters: Parameter definition in JSON Schema format.
-        repeatable: Whether the tool may be called more than once.
-        replay_after_compaction: Whether an exact successful readonly call may
-            restore its run-scoped result after compaction removed the visible
-            payload, even when the tool is otherwise repeatable. Tools opting
-            in must provide an explicit freshness argument when a caller needs
-            to bypass replay (for example ``no_cache=True``).
-    """
+    """Tool base class."""
 
     name: str = ""
     description: str = ""
     parameters: Dict[str, Any] = {}
     repeatable: bool = False
     is_readonly: bool = True
-    # Pure, side-effect-free computation: identical args always produce the
-    # same result, so the loop may serve repeated identical calls from cache
-    # instead of re-executing them (financial_rigor calc/verify, etc.).
+    # Cache identical calls only for pure, side-effect-free tools.
     deterministic: bool = False
-    # Mutable/read-through tools can stay repeatable during normal operation
-    # while opting into replay only when compaction has removed an exact prior
-    # successful result. The loop still bypasses replay for explicit freshness
-    # requests such as ``no_cache=True``.
+    # Mutable tools may replay compacted results when opted in, subject to explicit freshness requests.
     replay_after_compaction: bool = False
 
     @classmethod
     def check_available(cls) -> bool:
-        """Check if this tool's dependencies are met.
-
-        Override in subclasses to check for API keys, packages, etc.
-        Tools that return False are excluded from the registry.
-        """
+        """Check if this tool's dependencies are met."""
         return True
 
     @abstractmethod
@@ -116,12 +95,7 @@ class ToolRegistry:
         self._tools[tool.name] = tool
 
     def register_host_tool(self, tool: BaseTool) -> None:
-        """Register one explicitly supplied, non-trading host tool.
-
-        Host tools are never part of discovery.  The strict collision check is
-        intentionally separate from :meth:`register`, which keeps the
-        registry's existing local/MCP assembly semantics.
-        """
+        """Register one explicitly supplied, non-trading host tool."""
         name = host_tool_name(tool, self._tools)
         self._tools[name] = tool
 
@@ -192,9 +166,7 @@ class ToolRegistry:
                 )
             return json.dumps(payload, ensure_ascii=False)
         try:
-            # The registry is shared by agent, Swarm and MCP execution. Keep
-            # explicit policy enforcement here so a direct/unoffered call
-            # cannot bypass it. Claude CLI retains its adapter defaults.
+            # Enforce policy at the shared registry so direct or unoffered calls cannot bypass it.
             allowed, reason, params = self.check_policy(name, params)
             if not allowed:
                 return json.dumps({"status": "error", "skipped": True, "error": reason})

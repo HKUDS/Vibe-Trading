@@ -1,8 +1,4 @@
-"""Shared, credential-free provider catalog for runtime, CLI and Web settings.
-
-Protocol exceptions live in adapters; declarative provider facts live in
-``llm_providers.json``. Reading this module never loads credentials or SDKs.
-"""
+"""Shared, credential-free provider catalog for runtime, CLI and Web settings."""
 
 from __future__ import annotations
 
@@ -97,40 +93,7 @@ def onboarding_choices() -> list[dict[str, Any]]:
 
 @dataclass(frozen=True)
 class ProviderCapabilities:
-    """Provider-specific payload and diagnostic behavior.
-
-    Args:
-        name: Canonical provider name.
-        api_key_env: Provider-specific API key environment variable.
-        base_url_env: Provider-specific base URL environment variable.
-        capture_reasoning: Whether inbound reasoning fields should be preserved.
-        send_reasoning_content: Whether outbound assistant history must include
-            ``reasoning_content``.
-        gemini_thought_signatures: Whether Gemini OpenAI-compatible tool-call
-            thought signatures should be round-tripped.
-        normalize_assistant_content: Whether assistant ``content=None`` should
-            be normalized to ``""`` for strict providers.
-        openrouter_reasoning_body: Whether ``extra_body.reasoning`` is a valid
-            OpenRouter request option.
-        top_level_reasoning_effort: Whether the provider accepts a top-level
-            ``reasoning_effort`` field on ``/v1/chat/completions``. **A positive
-            allowlist, and it stays one.** Speaking the OpenAI wire format does
-            not imply accepting every OpenAI field: an endpoint that validates
-            its request body strictly rejects the unknown key and the call
-            fails, so a provider gets this only once someone has watched a real
-            request to it succeed. Leave it False until then — the cost of False
-            is that ``LANGCHAIN_REASONING_EFFORT`` has no effect there, and the
-            cost of a wrong True is that every request fails.
-        reasoning_effort_models: Optional per-model scoping for
-            ``top_level_reasoning_effort``. ``None`` (the default) means every
-            model of the provider accepts the field; a tuple means only models
-            whose name starts with one of the entries do — prefixes, so
-            ``"kimi-k3.1-pro"`` also covers ``kimi-k3.1-pro-highspeed``. An
-            unmatched model is a no-op, not an error, mirroring the asymmetry
-            of the provider-level flag. Ignored when the flag is False.
-        default_headers: Provider-scoped headers passed to ChatOpenAI.
-        native_adapter_package: Optional native adapter package to report.
-    """
+    """Declare verified endpoint capabilities for all models or selected model prefixes."""
 
     name: str
     api_key_env: Optional[str]
@@ -148,17 +111,11 @@ class ProviderCapabilities:
     backend: str = "openai_compatible"
 
 
-# Distribution name from pyproject.toml [project].name.
 _DISTRIBUTION_NAME = "vibe-trading-ai"
 
 
 def _package_version() -> str:
-    """Return the installed distribution version for User-Agent headers.
-
-    Returns:
-        Installed ``vibe-trading-ai`` version string, or ``"dev"`` when the
-        package metadata is unavailable (e.g. an uninstalled source checkout).
-    """
+    """Return the installed distribution version for User-Agent headers."""
     try:
         return version(_DISTRIBUTION_NAME)
     except PackageNotFoundError:

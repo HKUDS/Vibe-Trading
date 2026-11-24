@@ -5,35 +5,7 @@ from pathlib import Path
 
 
 def agent_artifact_dir(run_dir: Path, agent_id: str, task_id: str) -> Path:
-    """Return the canonical artifacts directory for one task within a run.
-
-    The single source of truth for this path — shared with the retry loop
-    in ``runtime.py`` so the two can never compute it differently and drift
-    apart.  The guard belongs here rather than only in
-    ``clear_agent_artifacts`` because this path is also used by ``run_node``
-    for ``mkdir``; validating the shared constructor protects both directory
-    creation and recursive cleanup from the same path escape.
-
-    Keyed by ``(agent_id, task_id)`` rather than ``agent_id`` alone: a preset
-    where one agent handles multiple tasks (sequentially or, across workers,
-    concurrently) must not have those tasks share a directory. Sharing meant
-    a later task's read of the directory could pick up an earlier task's
-    still-there files, and clearing the shared directory before a later task
-    could delete an earlier, concurrently-running task's in-flight output.
-    A directory scoped to one task never has either problem, and earlier
-    tasks' artifacts simply stay in place under their own task_id once the
-    agent moves on, instead of being deleted.
-
-    Args:
-        run_dir: Root directory for the swarm run.
-        agent_id: Single safe path segment identifying the agent.
-        task_id: Single safe path segment identifying the task.
-
-    Raises:
-        ValueError: If ``agent_id`` or ``task_id`` is not a single safe path
-            segment, or the resolved artifact directory is not exactly two
-            levels below the resolved ``run_dir/artifacts`` directory.
-    """
+    """Return the canonical artifacts directory for one task within a run."""
     artifact_root = run_dir / "artifacts"
 
     def _check(label: str, value: str) -> None:
@@ -76,35 +48,13 @@ def node_thread(run_dir: Path, agent_id: str, task_id: str) -> Path:
 
 
 def clear_agent_artifacts(artifact_dir: Path) -> None:
-    """Remove *artifact_dir* and everything in it, before a retry attempt.
-
-    A retry re-invokes :func:`run_node` against the same ``artifact_dir``.
-    Without this, a failed attempt's ``report.md`` (or any other file a tool
-    wrote) would still be sitting there when the retried attempt reads the
-    directory back via ``_resolve_summary``/``_report_written``/
-    ``collect_artifacts``, silently substituting stale content for the new
-    attempt's real result.
-
-    Raises on failure rather than swallowing it: proceeding with a retry
-    while known-stale artifacts remain would recreate the exact bug this
-    exists to prevent. ``run_node`` recreates the directory itself
-    (``mkdir(parents=True, exist_ok=True)``) on its next invocation.
-    """
+    """Remove *artifact_dir* and everything in it, before a retry attempt."""
     if artifact_dir.exists():
         shutil.rmtree(artifact_dir)
 
 
 def collect_artifacts(run_dir: Path, artifact_dir: Path) -> list[str]:
-    """Collect regular artifacts as deterministic run-relative paths.
-
-    Args:
-        run_dir: Root directory for the swarm run.
-        artifact_dir: Path to artifacts/{agent_id}/{task_id}/ directory.
-
-    Returns:
-        Sorted POSIX-style paths relative to the swarm run directory. Symlinks
-        and files that resolve outside the agent artifact directory are omitted.
-    """
+    """Collect regular artifacts as deterministic run-relative paths."""
     if not artifact_dir.exists():
         return []
 

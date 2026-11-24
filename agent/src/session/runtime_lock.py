@@ -1,17 +1,4 @@
-"""One live session service per sessions directory, across processes.
-
-``SessionService`` marks every pending or running attempt it finds on disk as
-interrupted when it is constructed (restart recovery). That is right only when
-no other live service writes the same directory, so each owner — the HTTP
-server's service and every ``vibe_trading.Client`` — claims the directory
-first. The claim is an exclusive advisory lock on ``<sessions>/.service.lock``
-held for as long as the owner serves; the operating system drops it when the
-process exits, so a crashed owner never leaves a stale claim behind.
-
-Within one process the claim is keyed by owner name: the same owner may claim
-again (the HTTP server rebuilds its service lazily), any other owner is
-refused, and an owner holds one directory at a time.
-"""
+"""Lease each sessions directory exclusively so restart recovery cannot interrupt a live writer."""
 
 from __future__ import annotations
 
@@ -61,19 +48,7 @@ def _try_lock(fd: int) -> bool:
 
 
 def claim_sessions_dir(sessions_dir: Path | str, owner: str) -> Path:
-    """Claim a sessions directory for one live session service.
-
-    Args:
-        sessions_dir: Sessions directory the service will read and write.
-        owner: Name of the claiming owner in this process.
-
-    Returns:
-        The resolved directory, now held by ``owner``.
-
-    Raises:
-        SessionsDirInUseError: Another owner in this process, or any other
-            process, already serves the directory.
-    """
+    """Claim a sessions directory for one live session service."""
     key = Path(sessions_dir).expanduser().resolve()
     with _GUARD:
         held = _HELD.get(key)
@@ -89,8 +64,7 @@ def claim_sessions_dir(sessions_dir: Path | str, owner: str) -> Path:
                 f"another process (a running `vibe-trading serve` or Client) serves {key}; "
                 "stop it or use another VIBE_TRADING_HOME"
             )
-        # An owner serves one directory at a time: the HTTP server rebuilding
-        # its service over another directory gives up the previous one.
+        # Release the previous directory because each owner may serve only one.
         for other, (other_fd, other_owner) in list(_HELD.items()):
             if other_owner == owner:
                 del _HELD[other]
@@ -100,12 +74,7 @@ def claim_sessions_dir(sessions_dir: Path | str, owner: str) -> Path:
 
 
 def release_sessions_dir(sessions_dir: Path | str, owner: str) -> None:
-    """Release a claim made by ``owner``; a no-op for any other owner.
-
-    Args:
-        sessions_dir: Sessions directory passed to :func:`claim_sessions_dir`.
-        owner: Owner that claimed it.
-    """
+    """Release a claim made by ``owner``; a no-op for any other owner."""
     key = Path(sessions_dir).expanduser().resolve()
     with _GUARD:
         held = _HELD.get(key)

@@ -13,11 +13,43 @@ from src.providers.messages import _merge_tool_call_extra_content, _tool_call_th
 from src.providers.request_guards import unwrap_provider_error
 
 
+def usage_metadata(
+    tokens_in: int,
+    tokens_out: int,
+    *,
+    total: int | None = None,
+    input_details: dict[str, int] | None = None,
+    output_details: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Build the usage fields shared by provider responses."""
+    metadata: dict[str, Any] = {
+        "input_tokens": tokens_in,
+        "output_tokens": tokens_out,
+        "total_tokens": tokens_in + tokens_out if total is None else total,
+    }
+    if input_details:
+        metadata["input_token_details"] = input_details
+    if output_details:
+        metadata["output_token_details"] = output_details
+    return metadata
+
+
+def tool_call_chunks(calls: list[dict], *, ensure_ascii: bool = True) -> list[dict]:
+    """Serialize complete tool calls as indexed LangChain chunks."""
+    return [
+        {
+            "id": call["id"],
+            "name": call["name"],
+            "args": json.dumps(call["args"], ensure_ascii=ensure_ascii),
+            "index": index,
+            "type": "tool_call_chunk",
+        }
+        for index, call in enumerate(calls)
+    ]
+
+
 def _dedupe_finish_reason(raw: str) -> str:
-    """Relays (OpenRouter) emit finish_reason per chunk; AIMessageChunk.__add__
-    concatenates into 'stopstop', 'tool_callstool_calls', etc. Return the
-    canonical suffix so ReAct equality checks survive.
-    """
+    """Recover the final reason from relays that repeat it on each chunk."""
     return next(
         (m for m in ("tool_calls", "function_call", "content_filter", "length", "stop")
          if raw.endswith(m)),
@@ -44,17 +76,7 @@ def _text_content(content: Any) -> str:
 
 
 def reported_model_source(runtime: contracts.LLMRuntimeSnapshot, response_model: Optional[str]) -> str:
-    """Name where a reported model id came from.
-
-    Args:
-        runtime: Snapshot of the client that made the request.
-        response_model: Model the provider response named, if any.
-
-    Returns:
-        ``provider_response`` / ``configured`` for the server's settings, and
-        ``session_provider_response`` / ``session`` when the session chose the
-        model, so a reader can always tell a session selection apart.
-    """
+    """Name where a reported model id came from."""
     if runtime.selection == "session":
         return "session_provider_response" if response_model else "session"
     return "provider_response" if response_model else "configured"
@@ -80,19 +102,7 @@ class ProviderStreamError(RuntimeError):
     """Raised when provider streaming fails before a complete response."""
 
     def __init__(self, *, provider: str, model: str, original: Exception, usage_metadata: dict | None = None, secrets: tuple[str, ...] = ()) -> None:
-        """Initialize a provider-contextual stream error.
-
-        Args:
-            provider: Effective provider name.
-            model: Effective model name.
-            original: Original exception from the stream path.
-            usage_metadata: Usage already reported before stream failure.
-
-        Attributes:
-            retry_after_s: Provider-suggested Retry-After delay in seconds,
-                extracted from the original exception's response headers when
-                present and parseable as a non-negative number; otherwise None.
-        """
+        """Initialize a provider-contextual stream error."""
         self.provider = provider
         self.model = model
         self.original = original
@@ -107,9 +117,7 @@ class ProviderStreamError(RuntimeError):
         hint = ""
         lowered = safe_message.lower()
         if any(m in lowered for m in ("<!doctype html", "<html", "__next_error__")):
-            # An HTML body from a JSON API almost always means the base URL
-            # points at a website root, not the API root (a frequent .env
-            # misconfiguration for OpenAI-compatible coding-plan gateways).
+            # An HTML body usually indicates a website URL in place of the API URL.
             hint = (
                 " — the endpoint returned an HTML page instead of a JSON API "
                 f"response; verify the {provider} base URL points at the API "
@@ -122,13 +130,7 @@ class ProviderStreamError(RuntimeError):
 
     @property
     def retryable(self) -> bool:
-        """Whether a single retry could plausibly succeed.
-
-        Returns:
-            False for deterministic client errors (4xx other than 408/429),
-            True for everything else — timeouts, rate limits, 5xx, and
-            transport errors that carry no HTTP status.
-        """
+        """Return whether the original failure permits another attempt."""
         if self.status_code is None:
             return True
         if self.status_code in (408, 429):
@@ -137,23 +139,9 @@ class ProviderStreamError(RuntimeError):
 
 
 def parse_response(ai_message: Any, *, cancelled: bool = False) -> contracts.LLMResponse:
-    """Convert a LangChain AIMessage (or AIMessageChunk) to ``contracts.LLMResponse``.
-
-    Single source for reasoning: ``additional_kwargs["reasoning_content"]``,
-    populated by ``ChatOpenAIWithReasoning`` on both stream and non-stream paths.
-
-    ``usage_metadata`` is forwarded as-is from the underlying message so
-    downstream cost / billing audit code (e.g. swarm worker token totals)
-    can use real provider tokens instead of a character-count heuristic.
-    For ``AIMessageChunk`` the metadata accumulates via the ``__add__``
-    merge LangChain performs while the response is being streamed; the
-    final aggregate carries the same shape as the non-stream path.
-    """
+    """Convert a LangChain AIMessage (or AIMessageChunk) to ``contracts.LLMResponse``."""
     usage = getattr(ai_message, "usage_metadata", None)
-    # Some providers / older LangChain versions surface a ``UsageMetadata``
-    # TypedDict that doesn't json-serialise without a cast. Normalise to a
-    # plain ``dict[str, int]`` so the value can be persisted alongside the
-    # rest of the run state without surprises.
+    # Cast SDK usage objects before persisting them.
     if usage is not None and not isinstance(usage, dict):
         try:
             usage = dict(usage)

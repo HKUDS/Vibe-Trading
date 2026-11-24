@@ -17,14 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _is_no_stream_chunk_error(exc: Exception) -> bool:
-    """True when a provider accepted the request but streamed zero chunks.
-
-    LangChain raises ``ValueError("No generation chunks were returned")`` when
-    an OpenAI-compatible endpoint returns a non-streaming (or empty-SSE) body.
-    That's a streaming-capability gap, not a provider failure — a plain
-    non-streaming ``invoke`` still succeeds, so ``stream_chat`` falls back
-    instead of surfacing it as a hard ``ProviderStreamError``.
-    """
+    """True when a provider accepted the request but streamed zero chunks."""
     return isinstance(exc, ValueError) and "no generation chunks" in str(exc).lower()
 
 
@@ -76,8 +69,7 @@ def collect_stream(
                 for chunk in stream_chunks:
                     if should_cancel and should_cancel():
                         cancelled = True
-                        # This chunk already arrived. Preserve any reported usage
-                        # while still dropping its text and tool-call deltas.
+                        # Keep billed usage from this chunk while discarding text and tool deltas.
                         if getattr(chunk, "usage_metadata", None):
                             usage_chunk = chunk if accumulated is None else accumulated + chunk
                             cancelled_usage = usage_chunk.usage_metadata
@@ -122,9 +114,7 @@ def collect_stream(
             )) as fallback:
                 accumulated = next(fallback)
             return parse_response(accumulated, cancelled=bool(should_cancel and should_cancel()))
-        # Chat Completions must explicitly finish a choice; a clean socket
-        # EOF is not a final answer. LangChain otherwise defaults missing
-        # metadata to "stop" and releases a truncated report/tool call.
+        # Require an explicit finish reason before releasing Chat Completions output.
         metadata = getattr(accumulated, "response_metadata", {}) or {}
         if (not cancelled and getattr(adapter, "_llm_type", None) in {"openai-chat", "chat-deepseek"}
                 and not (metadata.get("finish_reason") or metadata.get("stop_reason")
@@ -132,9 +122,7 @@ def collect_stream(
             raise ConnectionError("Provider stream ended without a terminal finish reason")
         response = parse_response(accumulated, cancelled=cancelled)
         if streamed_model:
-            # Merging chunks concatenates their string metadata, so a
-            # provider that names the model in several chunks (OpenRouter)
-            # reported "deepseek/deepseek-v4-prodeepseek/deepseek-v4-pro".
+            # Keep the per-chunk model name because merging concatenates strings.
             response.response_model = streamed_model
         if cancelled_usage is not None:
             response.usage_metadata = cancelled_usage
@@ -143,8 +131,7 @@ def collect_stream(
         return response
     except StreamInterrupted as stop:
         if stop.reason == "cancelled":
-            # A user stop is not an outage. Hand back whatever arrived
-            # rather than raising, and never fall back to a second request.
+            # Return partial output after a user stop without issuing another request.
             if cancelled_usage is None and getattr(stop.pending, "usage_metadata", None):
                 cancelled_usage = stop.pending.usage_metadata
             response = (

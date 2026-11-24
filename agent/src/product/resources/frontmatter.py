@@ -14,17 +14,7 @@ _FRONTMATTER_RE = re.compile(
 
 
 def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
-    """Parse YAML-like frontmatter and body from a markdown file.
-
-    Supports string, quoted string, list (``[a, b]``), and boolean values;
-    a leading UTF-8 byte-order mark is ignored.
-
-    Args:
-        text: Markdown text with optional ``---`` delimited frontmatter.
-
-    Returns:
-        Tuple of (metadata dict, body text).
-    """
+    """Parse YAML-like frontmatter and body from a markdown file."""
     match = _FRONTMATTER_RE.match(text.removeprefix("\ufeff"))
     if not match:
         return {}, text.strip()

@@ -37,11 +37,7 @@ class SessionRequest:
         self, messages: list[ModelMessage], tools: list | None, stream, *,
         run_dir: Path, trace, iteration: int, current_iter: int,
     ) -> tuple[LLMResponse, list[ModelMessage]] | None:
-        """Return the response and exact input of the successful attempt.
-
-        A failed stream is charged before recovery. A stopped retry returns
-        None. A second provider failure propagates to the run's error handler.
-        """
+        """Return the response and exact input of the successful attempt."""
         seconds = self.timeout_seconds()
         timeout = seconds if seconds > 0 else None
 
@@ -92,10 +88,7 @@ class SummaryUnavailable(Exception):
 
 
 def request_summary(llm, prompt: str, timeout: float) -> LLMResponse:
-    """Send one summary request with the session binding and wall-clock deadline.
-
-    With the deadline disabled, provider exceptions propagate to the caller.
-    """
+    """Send one summary request with the session binding and wall-clock deadline."""
     messages = repair_provider_messages([{"role": "user", "content": prompt}])
     if timeout <= 0:
         return llm.chat(messages)

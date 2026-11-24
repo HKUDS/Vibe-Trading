@@ -17,6 +17,7 @@ import threading
 
 from src.tools.redaction import redact_payload, redact_tool_result
 
+from src.session.store import SessionStore
 from src.session.thread import ThreadLog
 
 MIGRATION_MARKER = "thread_migration.json"
@@ -227,12 +228,7 @@ def migrate_session(session_dir: Path, *, session_id: str | None = None) -> Migr
 
 
 def _migrate_session(session_dir: Path, *, session_id: str | None = None) -> MigrationResult:
-    """Convert one pre-thread session exactly once.
-
-    Existing turns are retained and missing archived turns are prepended.
-    Stable turn ids make a retry after atomic replacement idempotent even if
-    the process stopped before writing the migration marker.
-    """
+    """Convert one pre-thread session exactly once."""
     session_dir = Path(session_dir)
     sid = session_id or session_dir.name
     marker = marker_path(session_dir)
@@ -287,8 +283,7 @@ def _migrate_session(session_dir: Path, *, session_id: str | None = None) -> Mig
         attempt_id = (record.get("assistant") or {}).get("linked_attempt_id") or record.get("attempt_id")
         record["attempt_id"] = _turn_id(prompt, index, attempt_id)
     records = [record for record in records if record["attempt_id"] not in existing_turns]
-    # Never expose a half-written thread: interruption before replace
-    # leaves the legacy source available for an exact retry.
+    # Publish the thread atomically so interruption leaves an exact retry source.
     with tempfile.TemporaryDirectory(dir=session_dir, prefix=".migration-") as scratch:
         staged = Path(scratch) / "thread.jsonl"
         log = ThreadLog(staged)
@@ -313,17 +308,11 @@ def _migrate_session(session_dir: Path, *, session_id: str | None = None) -> Mig
             os.replace(staged, thread_path)
     result = MigrationResult(sid, bool(records), len({item.turn_id for item in items}), len(items))
 
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    encoded = json.dumps({"version": MIGRATION_VERSION, "migrated_at": time.time(), "turns": result.turns, "items": result.items}, ensure_ascii=False).encode("utf-8")
-    fd, name = tempfile.mkstemp(dir=marker.parent, prefix=f".{marker.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(encoded)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(name, marker)
-    finally:
-        Path(name).unlink(missing_ok=True)
+    SessionStore._write_json(
+        marker,
+        {"version": MIGRATION_VERSION, "migrated_at": time.time(), "turns": result.turns, "items": result.items},
+        indent=None,
+    )
     return result
 
 

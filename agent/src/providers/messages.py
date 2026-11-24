@@ -1,8 +1,4 @@
-"""Pure provider message projection and positional tool-call pairing.
-
-Request repair and canonical session replay share this implementation. Repair
-never changes persisted history or grants tool or instrument authorization.
-"""
+"""Pure provider message projection and positional tool-call pairing."""
 from __future__ import annotations
 
 import copy
@@ -26,17 +22,18 @@ INTERRUPTED_RESULT_CONTENT = json.dumps(
 )
 
 
+def message_value(message: Any, key: str, default: Any = None) -> Any:
+    """Read a field from a message mapping or SDK object."""
+    return message.get(key, default) if isinstance(message, dict) else getattr(message, key, default)
+
+
 def assistant_message(
     item: Mapping[str, Any],
     *,
     target_provider: Optional[str] = None,
     target_model: Optional[str] = None,
 ) -> ModelMessage:
-    """Rebuild the assistant message the loop sent, in the loop's key order.
-
-    Mirrors ``ContextBuilder.format_assistant_tool_calls`` for a tool-call
-    response and the loop's plain ``{"role", "content"}`` for a final answer.
-    """
+    """Rebuild the assistant message the loop sent, in the loop's key order."""
     source_provider = item.get("provider")
     source_model = item.get("model")
     same_runtime = (
@@ -75,11 +72,7 @@ def assistant_message(
 
 
 class MessagePairing:
-    """Keep results next to their assistant call block and fill missing results.
-
-    Other messages wait until the block closes. Pairing is positional because
-    providers may reuse call IDs across responses.
-    """
+    """Keep results next to their assistant call block and fill missing results."""
 
     def __init__(
         self, missing_result: str = INTERRUPTED_RESULT_CONTENT, *, missing_first: bool = False,
@@ -128,18 +121,7 @@ class MessagePairing:
 
 
 def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
-    """Repair tool blocks for one provider request without changing history.
-
-    A new positional pairing supplies one interrupted result
-    for an unanswered call and drops orphan results. The caller's message list
-    is never mutated, so the repair remains request-local.
-
-    Args:
-        messages: Messages about to be sent to a provider.
-
-    Returns:
-        A repaired, independent message list.
-    """
+    """Repair tool blocks for one provider request without changing history."""
     replayer = MessagePairing()
     for message in messages:
         if message.get("role") == "assistant" and message.get("tool_calls"):
@@ -151,14 +133,7 @@ def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]
 
 
 def attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:
-    """Attach Gemini thought signatures to assistant replay tool calls.
-
-    The replay message is later converted back into LangChain messages from a
-    plain dict history. Keep signatures in both the provider-neutral
-    ``extra_content.thought_signature`` slot and Gemini's OpenAI-compatible
-    ``extra_content.google.thought_signature`` slot so both local replay tests
-    and the Gemini request injector can recover the value.
-    """
+    """Attach Gemini thought signatures to assistant replay tool calls."""
     outbound_tool_calls = message.get("tool_calls")
     if not isinstance(outbound_tool_calls, list):
         return message

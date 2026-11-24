@@ -1,18 +1,4 @@
-"""Size context compaction from the model's real window and real token usage.
-
-Compaction used to trigger at a fixed 40K *estimated* tokens (``chars / 4`` of
-the messages, tool schemas excluded), with layer 1 clearing every tool result
-but the last three once the estimate passed 20K. The system prompt alone
-estimates at ~12.5K, so a cross-sectional question (a dozen companies' filings)
-lost its evidence from the third iteration on, re-fetched it, got byte-identical
-results and ended in ``no_progress``. gpt-6-sol has a 272K window and
-deepseek-v4-pro 1M; the old budget used a few percent of either.
-
-The budget here is the model's window (env override > limit learned from a
-context-length error > ``context_windows.json`` > default), capped for cost,
-minus the prompt's static part (system prompt + tool schemas). Layers 1-3 fire
-at fixed fractions of what remains for the conversation.
-"""
+"""Size compaction from the model window, measured input, and static prompt."""
 
 from __future__ import annotations
 
@@ -68,17 +54,7 @@ def resolve_window(
     env_window: Optional[int] = None,
     learned_window: Optional[int] = None,
 ) -> tuple[int, str]:
-    """Return the model's context window and where the number came from.
-
-    Args:
-        provider: Canonical provider name (``openai-codex``, ``deepseek`` ...).
-        model: Model name as configured.
-        env_window: ``VIBE_TRADING_CONTEXT_WINDOW``, when set.
-        learned_window: Limit read from a context-length error in this run.
-
-    Returns:
-        ``(window_tokens, source)``.
-    """
+    """Return the model's context window and where the number came from."""
     _warn_deprecated_token_threshold()
     if env_window:
         return int(env_window), "env:VIBE_TRADING_CONTEXT_WINDOW"
@@ -126,15 +102,7 @@ def parse_context_limit(error_text: str) -> Optional[int]:
 
 @dataclass(frozen=True)
 class CompactionBudget:
-    """Real-token thresholds for the three compaction layers.
-
-    Attributes:
-        window: Model context window in tokens.
-        source: Where ``window`` came from.
-        max_tokens: Cost ceiling on the prompt size, whatever the window.
-        static_tokens: Tokens of the part compaction cannot shrink (system
-            prompt + tool schemas).
-    """
+    """Real-token thresholds for the three compaction layers."""
 
     window: int
     source: str
@@ -165,12 +133,7 @@ class CompactionBudget:
 
 
 class ContextMeter:
-    """Current prompt size in real tokens.
-
-    The provider reports what the last request cost; messages appended or
-    compacted since then are counted by estimate. Before any usage arrives the
-    whole prompt is estimated, tool schemas included.
-    """
+    """Current prompt size in real tokens."""
 
     def __init__(self, estimator: Callable[[Any], int] = estimate_tokens) -> None:
         self._estimate = estimator
@@ -180,13 +143,7 @@ class ContextMeter:
         self._static_schema_tokens: Optional[int] = None
 
     def observe(self, input_tokens: Optional[int], messages: list, *, tool_schema_tokens: Optional[int] = None) -> None:
-        """Anchor on the real input size of the request just answered.
-
-        Args:
-            input_tokens: Provider-reported prompt tokens of that request.
-            messages: Exactly the messages that request sent.
-            tool_schema_tokens: Estimate of the schemas sent with that request.
-        """
+        """Anchor on the real input size of the request just answered."""
         if not isinstance(input_tokens, int) or isinstance(input_tokens, bool) or input_tokens <= 0:
             return
         self._anchor = (input_tokens, self._estimate(messages))

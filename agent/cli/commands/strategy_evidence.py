@@ -1,16 +1,4 @@
-"""CLI surface for the strategy-discovery evidence cache.
-
-``vibe-trading strategy-evidence refresh --manifest <path>`` rebuilds the
-disposable facade-owned evidence cache from real backtest run artifacts —
-the same core the ``refresh_strategy_evidence`` agent tool runs
-(:func:`src.tools.strategy_discovery_tool.refresh_strategy_evidence_core`),
-so there is ONE spec-parsing/validation code path for both surfaces. The CLI
-never shells out to the agent tool.
-
-Querying the evidence stays with the agent tools (``list_strategies`` /
-``query_strategies`` / ``get_strategy_evidence``); this command only
-populates/refreshes the cache they read.
-"""
+"""CLI surface for the strategy-discovery evidence cache."""
 
 from __future__ import annotations
 
@@ -79,9 +67,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
             _print(f"[bold red]{message}[/bold red]")
         return 2
     except Exception:  # noqa: BLE001 — one line for the operator, never a traceback
-        # Full detail goes to the logs only; the operator-facing message must
-        # not echo raw exception text (it can leak internal paths), mirroring
-        # the MCP envelope redaction.
+        # Keep raw exception details out of operator output because they may contain internal paths.
         logger.exception("strategy-evidence refresh failed")
         message = "evidence refresh failed internally; see logs for detail"
         if getattr(args, "strategy_evidence_json", False):
@@ -121,14 +107,7 @@ _DISPATCH = {
 
 
 def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
-    """Register ``strategy-evidence`` and its subcommands on the parent.
-
-    Args:
-        subparsers: The object returned by ``ArgumentParser.add_subparsers``.
-
-    Returns:
-        The ``strategy-evidence`` parser, for test introspection.
-    """
+    """Register ``strategy-evidence`` and its subcommands on the parent."""
     global _STRATEGY_EVIDENCE_PARSER
 
     parser = subparsers.add_parser(
@@ -181,12 +160,7 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """Dispatch ``strategy-evidence <sub>`` to its handler.
-
-    Returns:
-        A process exit code: ``0`` on success, ``1`` on a failed operation,
-        ``2`` on a usage error.
-    """
+    """Dispatch ``strategy-evidence <sub>`` to its handler."""
     sub = getattr(args, "strategy_evidence_command", None)
     handler = _DISPATCH.get(sub or "")
     if handler is None:
