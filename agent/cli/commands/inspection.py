@@ -114,7 +114,11 @@ def _metric_value_style(key: str, value: str) -> str:
 
 
 def cmd_list(limit: int = 20) -> None:
-    """List run history."""
+    """List recent runs with their status and available metrics.
+
+    Args:
+        limit: Maximum number of recent run directories to show.
+    """
     if not common.RUNS_DIR.exists():
         common.console.print("[dim]No runs yet[/dim]")
         return
@@ -150,7 +154,11 @@ def cmd_list(limit: int = 20) -> None:
 
 
 def cmd_show(run_id: str) -> None:
-    """Show run details."""
+    """Show a run's status, prompt, metrics, and available answer preview.
+
+    Args:
+        run_id: ID of the run directory under the runs root.
+    """
     run_dir = common.RUNS_DIR / run_id
     if not run_dir.exists():
         common.console.print(f"[red]{run_id} not found[/red]")
@@ -183,7 +191,11 @@ def cmd_show(run_id: str) -> None:
 
 
 def cmd_code(run_id: str) -> None:
-    """Show generated code."""
+    """Show the run's generated signal engine code when present.
+
+    Args:
+        run_id: ID of the run directory containing the generated code.
+    """
     code_dir = common.RUNS_DIR / run_id / "code"
     if not code_dir.exists():
         common.console.print(f"[red]{run_id}/code not found[/red]")
@@ -197,7 +209,11 @@ def cmd_code(run_id: str) -> None:
 
 
 def cmd_pine(run_id: str) -> None:
-    """Show Pine Script for a run."""
+    """Show Pine Script for a run.
+
+    Args:
+        run_id: ID of the run whose strategy.pine artifact should be printed.
+    """
     pine_path = common.RUNS_DIR / run_id / "artifacts" / "strategy.pine"
     if not pine_path.exists():
         common.console.print(f"[red]{run_id}/artifacts/strategy.pine not found[/red]")
@@ -225,7 +241,11 @@ def cmd_skills() -> None:
 
 
 def cmd_trace(run_id: str) -> None:
-    """Replay the conversation thread to show full execution."""
+    """Replay a run's recorded execution events in the terminal.
+
+    Args:
+        run_id: ID of the run whose thread should be displayed.
+    """
     entries = _thread_entries_for_run(run_id)
     if not entries:
         common.console.print(f"[red]{run_id}/thread.jsonl is empty or missing[/red]")

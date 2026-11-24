@@ -41,6 +41,18 @@ _PATH_TOKEN = re.compile(
 
 @dataclass
 class RailStep:
+    """Track the display state of one task or tool step in the terminal.
+
+    Args:
+        title: Display label for the step.
+        tool: Tool name associated with the step, if any.
+        args: Tool arguments available to the step renderer.
+        call_id: Identifier used to match progress and completion to the step.
+        status: Current display state.
+        lines: Detail lines shown beneath the step label.
+        started_at: Monotonic start time, defaulting to construction time.
+        duration_s: Recorded elapsed seconds, initially zero.
+    """
     title: str
     tool: str = ""
     args: Any = None
@@ -280,7 +292,12 @@ def _append_arg_text(line: Text, args: str, *, limit: int) -> None:
 
 
 class RailRunDashboard:
-    """Compatibility dashboard that renders agent events like Codex transcripts."""
+    """Render live agent events into a terminal run dashboard.
+
+    Args:
+        prompt: Prompt associated with the run.
+        max_iter: Configured maximum agent iterations.
+    """
 
     def __init__(self, prompt: str, max_iter: int) -> None:
         self.prompt = prompt
@@ -311,13 +328,21 @@ class RailRunDashboard:
                 self.refresh()
 
     def close(self) -> None:
+        """Signal the background refresh ticker to stop."""
         self._ticker_stop.set()
 
     def refresh(self) -> None:
+        """Update the attached live display if one is present."""
         if self.live is not None:
             self.live.update(self.render())
 
     def handle_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Apply an agent event to the dashboard and refresh as needed.
+
+        Args:
+            event_type: Fallback event kind when the payload has no kind field.
+            data: Event payload carrying a delta, tool item, progress, usage, or compaction details.
+        """
         kind = data.get("kind", event_type)
         item = data.get("item") or {}
         if kind in {"tool.started", "tool.completed", "tool.failed"}:
@@ -418,6 +443,12 @@ class RailRunDashboard:
             self.refresh()
 
     def finish(self, result: dict[str, Any], elapsed: float | None = None) -> None:
+        """Finalize dashboard state and stop periodic refreshes.
+
+        Args:
+            result: Run result with status and optional content or reason.
+            elapsed: Optional elapsed seconds used to fill missing durations on active steps.
+        """
         self.status = str(result.get("status") or "done")
         for step in self.steps:
             if step.status == "active":
@@ -437,6 +468,12 @@ class RailRunDashboard:
         self.close()
 
     def render(self) -> Group:
+        """Build the dashboard rows for the current terminal width.
+
+        Returns:
+            Rich Group containing recent step details and either ongoing activity or the completion
+            line.
+        """
         width = max(44, shutil.get_terminal_size((88, 24)).columns)
         detail_width = max(18, width - 7)
         rows: list[Text] = []

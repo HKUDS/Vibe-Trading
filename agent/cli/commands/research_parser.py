@@ -3,6 +3,11 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    """Register research, strategy evidence, and paper account commands.
+
+    Args:
+        subparsers: Parent subparser collection to extend with the research command families.
+    """
     from src.factors.cli_handlers import add_subparser as add_alpha
     from src.hypotheses.cli_handlers import add_subparser as add_hypothesis
     from src.research_artifacts.cli_handlers import add_subparser as add_artifact

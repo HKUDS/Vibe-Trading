@@ -111,7 +111,15 @@ def _print_missing_live_channel_config(key: str) -> None:
 
 
 def cmd_live_authorize(broker: str) -> int:
-    """Bootstrap the OAuth handshake for a live broker channel (desktop only)."""
+    """Initiate OAuth authorization for a configured live broker channel.
+
+    Args:
+        broker: Broker key such as robinhood.
+
+    Returns:
+        Success if tool discovery completes, a usage error for missing channel or OAuth config, or
+        failure if authorization fails.
+    """
     key = broker.strip().lower()
     server_config = _live_server_config(key)
     if server_config is None:
@@ -254,7 +262,14 @@ def _format_last_tick(tick: common.Any) -> str:
 
 
 def cmd_live_status(broker: common.Optional[str] = None) -> int:
-    """Show auth state, active mandate, and halt state for live channels."""
+    """Show live broker configuration, runner status, halt state, and mandate.
+
+    Args:
+        broker: Broker key. None uses the default broker.
+
+    Returns:
+        Success exit code after printing the status report.
+    """
     from src.live.halt import halt_flag_set, read_halt
     from src.live.mandate.model import MANDATE_SCHEMA_VERSION
     from src.live.mandate.store import load_mandate
@@ -308,7 +323,14 @@ def cmd_live_status(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_mandate(broker: common.Optional[str] = None) -> int:
-    """Print the committed mandate for a broker (read-only)."""
+    """Print the committed mandate for a broker as JSON.
+
+    Args:
+        broker: Broker key. None uses the default broker.
+
+    Returns:
+        Success after printing the mandate, or EXIT_RUN_FAILED when none is on file.
+    """
     from dataclasses import asdict
 
     from src.live.mandate.store import load_mandate
@@ -332,7 +354,14 @@ def cmd_live_mandate(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_halt(broker: common.Optional[str] = None) -> int:
-    """Trip the kill switch — write the HALT sentinel (privileged)."""
+    """Trip the live trading kill switch.
+
+    Args:
+        broker: Broker key, or None for the global switch.
+
+    Returns:
+        Success exit code after writing the halt sentinel.
+    """
     from src.live.halt import trip_halt
 
     target = broker.strip().lower() if broker else None
@@ -345,7 +374,14 @@ def cmd_live_halt(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_resume(broker: common.Optional[str] = None) -> int:
-    """Clear a tripped kill switch (privileged, explicit re-enable)."""
+    """Clear a tripped live trading kill switch.
+
+    Args:
+        broker: Broker key, or None for the global switch. Each scope is cleared independently.
+
+    Returns:
+        Success exit code after clearing the halt or reporting that the scope has no active halt.
+    """
     from src.live.halt import clear_halt
 
     target = broker.strip().lower() if broker else None
@@ -359,7 +395,15 @@ def cmd_live_resume(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_revoke(broker: str) -> int:
-    """Revoke the OAuth token and delete the mandate — full channel off."""
+    """Remove locally cached OAuth credentials and the committed mandate.
+
+    Args:
+        broker: Broker key such as robinhood.
+
+    Returns:
+        Success after cleanup or if there is nothing to remove, a usage error for an invalid broker
+        key, or failure if mandate deletion fails.
+    """
     from src.live.paths import broker_dir
 
     key = broker.strip().lower()
@@ -416,7 +460,15 @@ def _preview_live_spending(broker: str) -> bool:
 
 
 def cmd_live_start(broker: common.Optional[str] = None) -> int:
-    """Start the persistent live runner in the background (SPEC §7.5)."""
+    """Request a background live runner through the API.
+
+    Args:
+        broker: Broker key, or None for the default broker.
+
+    Returns:
+        Success if the server accepts the start request, or failure if the spending preview does not
+        pass or the API returns an error.
+    """
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     if not _preview_live_spending(key):
         return common.EXIT_RUN_FAILED
@@ -437,7 +489,14 @@ def cmd_live_start(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_stop(broker: common.Optional[str] = None) -> int:
-    """Stop the persistent live runner (SPEC §7.5)."""
+    """Request that the API stop the persistent live runner.
+
+    Args:
+        broker: Broker key, or None for the default broker.
+
+    Returns:
+        Success if the API accepts the stop, or failure on API error.
+    """
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     result = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
     if result.get("status") == "error":
@@ -452,7 +511,15 @@ def cmd_live_stop(broker: common.Optional[str] = None) -> int:
 
 
 def cmd_live_run(broker: common.Optional[str] = None) -> int:
-    """Run the persistent live runner in the foreground (SPEC §7.5)."""
+    """Start and monitor a live runner in the foreground.
+
+    Args:
+        broker: Broker key, or None for the default broker.
+
+    Returns:
+        Failure if the spending preview does not pass or startup fails. Success after monitoring
+        ends and a stop is requested.
+    """
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     runner_id = _runner_id_for(key)
 

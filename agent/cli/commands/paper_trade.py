@@ -7,6 +7,11 @@ from src.tools.paper_trade.accounts import PaperAccounts
 
 
 def add_parser(subparsers):
+    """Register forward paper account and simulation step commands.
+
+    Args:
+        subparsers: Parent subparser collection for the paper command.
+    """
     parser = subparsers.add_parser(
         "paper", help="Forward paper accounts; never places real orders"
     )
@@ -37,6 +42,15 @@ def add_parser(subparsers):
 
 
 def dispatch(args):
+    """Execute a paper trading subcommand and print its JSON result.
+
+    Args:
+        args: Parsed paper command arguments, including account IDs or JSON input paths as required.
+
+    Returns:
+        Zero on success, or one for a reported error, an uncommitted result, or invalid or
+        unreadable input.
+    """
     try:
         if args.paper_command == "step":
             from src.tools.paper_trade.tool import run_paper_trade_step

@@ -7,7 +7,11 @@ from cli.commands import portfolio_parser, provider_parser, research_parser, ses
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the public parser through one registration function per family."""
+    """Build the public command-line parser.
+
+    Returns:
+        Argument parser with top-level flags and all command families registered.
+    """
     parser = argparse.ArgumentParser(description="Vibe-Trading CLI")
     core.register_global_arguments(parser)
     parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")

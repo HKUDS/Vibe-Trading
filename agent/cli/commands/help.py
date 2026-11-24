@@ -30,7 +30,15 @@ _SHORTCUTS: tuple[tuple[str, str], ...] = (
 
 
 def run(ctx: Any = None, *args: str) -> int:  # noqa: ARG001 — ctx unused here
-    """Print the help screen. Always returns 0."""
+    """Print available slash commands and keyboard shortcuts.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after printing the help screen.
+    """
     console = _resolve_console()
 
     commands_table = Table.grid(padding=(0, 2))

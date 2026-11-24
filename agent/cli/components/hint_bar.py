@@ -17,7 +17,16 @@ def _terminal_width(default: int = 80) -> int:
 
 
 def render_hint_bar(left: str, right: str = "", *, width: int | None = None) -> Text:
-    """Return a Rich :class:`Text` row with ``left`` and right-aligned ``right``."""
+    """Render a dim hint row with an optional right-aligned segment.
+
+    Args:
+        left: Left hint text.
+        right: Optional right hint text, which takes priority when space is limited.
+        width: Width override in columns. Defaults to the detected terminal width.
+
+    Returns:
+        Rich Text row with padding or truncation applied for the available space.
+    """
     cols = width if width is not None else _terminal_width()
     if right == "":
         # Only a left hint — clip and pad to width, dim style throughout.

@@ -32,7 +32,11 @@ class Playbook:
 
     @property
     def handler_module(self) -> str:
-        """Dotted path of the module exposing ``run(ctx, *args)``."""
+        """Locate the slash-command handler for this playbook.
+
+        Returns:
+            Dotted module path exposing run(ctx, *args).
+        """
         return f"cli.commands.institutional.{self.slug}"
 
 

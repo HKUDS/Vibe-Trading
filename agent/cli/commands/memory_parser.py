@@ -3,6 +3,12 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction, positive_int) -> None:
+    """Register commands for inspecting and removing persistent memories.
+
+    Args:
+        subparsers: Parent subparser collection for the memory command.
+        positive_int: Argument converter that validates a positive search result limit.
+    """
     from src.memory.persistent import MEMORY_TYPES
     memory_parser = subparsers.add_parser("memory", help="Inspect persistent memory")
     memory_subparsers = memory_parser.add_subparsers(dest="memory_command")

@@ -16,7 +16,16 @@ def _resolve_console() -> Console:
 
 
 def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Dispatch sub-actions:."""
+    """List, show, search, or forget persistent memories.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Memory name, search query tokens, or forget command with a name. Empty arguments list
+            entries.
+
+    Returns:
+        Exit status of the selected memory command, or one if dispatch raises an exception.
+    """
     console = _resolve_console()
 
     if not args:
@@ -48,7 +57,15 @@ def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def run(ctx: Any = None, *args: str) -> int:
-    """Single-entrypoint wrapper for the slash router."""
+    """Dispatch the memory slash command.
+
+    Args:
+        ctx: Interactive context passed through to the memory handler.
+        *args: Memory subcommand arguments or entry name.
+
+    Returns:
+        Exit status of the memory handler.
+    """
     return cmd_memory(ctx, *args)
 
 

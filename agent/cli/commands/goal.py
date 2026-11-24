@@ -155,7 +155,15 @@ def _render_snapshot(snapshot: dict, *, title: str = "/goal") -> None:
 
 
 def cmd_status(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Show the current goal snapshot."""
+    """Show the current goal snapshot.
+
+    Args:
+        ctx: Interactive context supplying the current session.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after printing the goal snapshot or a notice that no goal exists.
+    """
     session_id = _session_id(ctx, create=False)
     if session_id is None:
         _resolve_console().print(Text("No current goal. Use /goal <objective> to start one.", style="dim"))
@@ -169,7 +177,16 @@ def cmd_status(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_start(ctx: Any = None, *args: str) -> int:
-    """Start or replace the current research goal."""
+    """Start or replace the current research goal.
+
+    Args:
+        ctx: Interactive context used to resolve or create the session.
+        *args: Words of the research objective, joined with spaces.
+
+    Returns:
+        Zero after creating and displaying the goal, or one if its objective or session is invalid
+        or the goal cannot be loaded.
+    """
     objective = " ".join(args).strip()
     if not objective:
         _resolve_console().print(Text("Usage: /goal <research objective>", style="bold red"))
@@ -220,7 +237,15 @@ def _resolve_criterion_id(snapshot: dict, token: str) -> str:
 
 
 def cmd_evidence(ctx: Any = None, *args: str) -> int:
-    """Append a manual evidence note to the current goal."""
+    """Append a manual evidence note to the current goal.
+
+    Args:
+        ctx: Interactive context supplying the current session.
+        *args: Criterion index or ID followed by words of the evidence note.
+
+    Returns:
+        Zero after recording the note, or one if the input, session, goal, or evidence update fails.
+    """
     if len(args) < 2:
         _resolve_console().print(Text("Usage: /goal evidence <criterion-index-or-id> <note>", style="bold red"))
         return 1
@@ -267,7 +292,15 @@ def cmd_evidence(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_cancel(ctx: Any = None, *args: str) -> int:
-    """Cancel the current research goal."""
+    """Cancel the current research goal.
+
+    Args:
+        ctx: Interactive context supplying the current session.
+        *args: Optional recap words joined with spaces.
+
+    Returns:
+        Zero after cancellation or if no goal exists, or one if the status update fails.
+    """
     session_id = _session_id(ctx, create=False)
     if session_id is None:
         _resolve_console().print(Text("No current goal. Use /goal <objective> first.", style="dim"))
@@ -299,7 +332,16 @@ def cmd_cancel(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_complete(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Complete the current research goal after auditing verified evidence."""
+    """Complete the current research goal after auditing verified evidence.
+
+    Args:
+        ctx: Interactive context supplying the current session.
+        *args: Optional recap words joined with spaces.
+
+    Returns:
+        Zero after completion or if no goal exists, or one if a criterion lacks verified evidence or
+        the status update fails.
+    """
     session_id = _session_id(ctx, create=False)
     if session_id is None:
         _resolve_console().print(Text("No current goal. Use /goal <objective> first.", style="dim"))
@@ -359,7 +401,11 @@ def cmd_complete(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_help() -> int:
-    """Render /goal usage."""
+    """Print usage for the goal slash command.
+
+    Returns:
+        Zero after printing the available subcommands.
+    """
     body = Text()
     body.append("/goal <objective>", style="bold")
     body.append("  start or replace the current research goal\n", style="dim")
@@ -376,7 +422,15 @@ def cmd_help() -> int:
 
 
 def run(ctx: Any = None, *args: str) -> int:
-    """Dispatch /goal subcommands."""
+    """Dispatch the goal slash command.
+
+    Args:
+        ctx: Interactive context passed to the handler.
+        *args: Subcommand tokens or a research objective. No arguments request the current status.
+
+    Returns:
+        Exit status of the selected handler.
+    """
     if not args:
         return cmd_status(ctx)
 

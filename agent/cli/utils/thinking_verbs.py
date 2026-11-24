@@ -16,7 +16,14 @@ THINKING_VERBS: Final[Tuple[str, ...]] = (
 
 
 def pick_thinking_verb(*, seed: int | None = None) -> str:
-    """Pick a random verb suffixed with an ellipsis."""
+    """Pick a random verb suffixed with an ellipsis.
+
+    Args:
+        seed: Optional deterministic seed. None uses the module-level random generator.
+
+    Returns:
+        Thinking verb with a trailing ellipsis, such as Pondering….
+    """
 
     if seed is not None:
         rng = random.Random(seed)

@@ -8,7 +8,15 @@ from cli.theme import get_console
 
 
 def dispatch(argument_text: str) -> int:
-    """Dispatch ``/swarm`` arguments and return a slash-handler status."""
+    """Dispatch a swarm slash command.
+
+    Args:
+        argument_text: Text after the slash command, including an optional subcommand and its
+            arguments. Empty input lists presets.
+
+    Returns:
+        Zero after invoking the selected handler or printing a usage diagnostic.
+    """
 
     console = get_console()
     argument_text = argument_text.strip()

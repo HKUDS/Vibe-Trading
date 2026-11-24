@@ -76,7 +76,17 @@ def _render_card(playbook: Playbook) -> None:
 
 
 def build_prompt(playbook: Playbook, subject: str) -> str:
-    """Render ``playbook`` plus the user's arguments into an agent prompt."""
+    """Render a playbook and the user's request into an agent prompt.
+
+    Args:
+        playbook: The workflow to run.
+        subject: The user's request text. The slash-command runner trims and caps it before calling
+            this function.
+
+    Returns:
+        Agent prompt with the workflow steps, worked example, preferred tools, and missing-data
+        policy.
+    """
     lines = [
         f"Run the {playbook.slug.upper()} research playbook.",
         "",
@@ -117,7 +127,17 @@ def build_prompt(playbook: Playbook, subject: str) -> str:
 
 
 def run_playbook(slug: str, ctx: Any = None, *args: str) -> int:
-    """Render or dispatch the playbook registered under ``slug``."""
+    """Render or dispatch the playbook registered under ``slug``.
+
+    Args:
+        slug: Playbook key matching the slash-command keyword.
+        ctx: Optional interactive context with a writable pending_prompt for queuing a turn.
+        *args: Raw slash-command arguments. Help or empty arguments display the playbook card.
+
+    Returns:
+        Zero after showing the card, queuing a turn, or printing the prompt. One for an unknown
+        playbook key.
+    """
     playbook = PLAYBOOKS_BY_SLUG.get(slug)
     if playbook is None:
         _console().print(Text(f"Unknown research playbook: {slug}", style="bold red"))

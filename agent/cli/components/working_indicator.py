@@ -42,7 +42,13 @@ def _resolve_console() -> Console:
 
 
 class ThinkingSpinner:
-    """Context manager that shows a Rich spinner + thinking verb."""
+    """Show a transient Rich spinner with a thinking verb.
+
+    Args:
+        verb: Initial status verb. Omit it to pick one automatically.
+        console: Console override. Defaults to the shared CLI console.
+        spinner_name: Name of the Rich spinner animation.
+    """
 
     def __init__(
         self,
@@ -84,13 +90,21 @@ class ThinkingSpinner:
         return Spinner(self._spinner_name, text=Text(self._verb, style="dim"))
 
     def update_verb(self, verb: str) -> None:
-        """Swap the verb mid-run (e.g. ``"Backtesting…"`` once tools fire)."""
+        """Update the spinner's status verb.
+
+        Args:
+            verb: New text for the spinner label.
+        """
         self._verb = verb
         if self._live is not None:
             self._live.update(self._renderable())
 
     def pause(self) -> "_SpinnerPause":
-        """Yield a context manager that hides the spinner inside its block."""
+        """Temporarily hide the spinner while other output is printed.
+
+        Returns:
+            Context manager that hides the spinner inside its block.
+        """
         return _SpinnerPause(self)
 
 

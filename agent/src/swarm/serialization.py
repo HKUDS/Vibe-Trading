@@ -8,7 +8,15 @@ from src.tools.redaction import redact_internal_paths
 
 
 def serialize_task(task: Any) -> dict:
-    """Project a SwarmTask into its public per-task dict."""
+    """Project a SwarmTask into its public per-task dict.
+
+    Args:
+        task: Swarm task to expose to a reader.
+
+    Returns:
+        Public task fields including status, summary, iteration count, redacted error, timestamps,
+        and dependency lists.
+    """
     status = task.status.value if hasattr(task.status, "value") else str(task.status)
     return {
         "id": task.id,
@@ -25,7 +33,14 @@ def serialize_task(task: Any) -> dict:
 
 
 def run_level_error(run: Any) -> str | None:
-    """First failed task's error, for a top-level ``error`` field."""
+    """Format the first recorded task error for the run-level error field.
+
+    Args:
+        run: Run whose tasks are inspected in order.
+
+    Returns:
+        Task and agent IDs followed by the redacted error, or None if no task carries an error.
+    """
     for task in getattr(run, "tasks", None) or []:
         err = getattr(task, "error", None)
         if err:

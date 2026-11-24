@@ -138,7 +138,19 @@ def build_worker_prompt(
     grounding_block: str = "",
     available_tools: set[str] | None = None,
 ) -> str:
-    """Build the worker's system prompt with role, upstream context, and skills."""
+    """Build the worker's system prompt with role, upstream context, and skills.
+
+    Args:
+        agent_spec: The agent's role specification.
+        upstream_summaries: Mapping from context key to upstream task summary.
+        skill_descriptions: Pre-filtered skill description text.
+        grounding_block: Optional market snapshot Markdown inserted before the execution rules.
+        available_tools: Actual registered tool names after policy filtering. Defaults to the worker
+            spec's tool list.
+
+    Returns:
+        Complete system prompt for the worker model.
+    """
     # Keep agent-invariant guidance first so repeated requests share a prompt cache prefix.
     prompt_parts = [f"## Role\n\n{agent_spec.role}"]
 
@@ -257,7 +269,15 @@ UNKNOWN_TOOL_OUTCOME = "A node tool's outcome is unknown. Check task artifacts a
 
 
 def unknown_outcome(items) -> bool:
-    """Fail closed if a dispatched call has no durable result."""
+    """Detect dispatched tool calls with unknown outcomes.
+
+    Args:
+        items: Durable thread items in journal order.
+
+    Returns:
+        True if a dispatched call has no matching result or any result explicitly reports an unknown
+        outcome.
+    """
     pending = set()
     for item in items:
         if item.type == "assistant":
@@ -274,7 +294,12 @@ def unknown_outcome(items) -> bool:
 
 
 class NodeStop(threading.Event):
-    """Combine the scheduler's stop signal with a private node deadline."""
+    """Combine the scheduler's stop signal with a private node deadline.
+
+    Args:
+        parent: Optional scheduler cancellation signal.
+        seconds: Node time budget in seconds from construction.
+    """
 
     def __init__(self, parent: _CancellationSignal | None, seconds: float):
         super().__init__()
@@ -283,13 +308,32 @@ class NodeStop(threading.Event):
         self.deadline = self.started + seconds
 
     def is_set(self) -> bool:
+        """Check whether the node should stop.
+
+        Returns:
+            True if the local event or parent signal is set or the node deadline has expired.
+        """
         return super().is_set() or (self.parent is not None and self.parent.is_set()) or self.expired
 
     @property
     def expired(self) -> bool:
+        """Check whether the node deadline has elapsed.
+
+        Returns:
+            True once the monotonic clock reaches the node deadline.
+        """
         return time.monotonic() >= self.deadline
 
     def wait(self, timeout: float | None = None) -> bool:
+        """Wait for a node stop signal or the caller's timeout.
+
+        Args:
+            timeout: Maximum additional seconds to wait. None waits up to the node deadline.
+
+        Returns:
+            True if the local event or parent signal was set or the node deadline expired by the
+            time the wait ended.
+        """
         end = self.deadline if timeout is None else min(self.deadline, time.monotonic() + timeout)
         while not self.is_set():
             remaining = end - time.monotonic()
@@ -300,7 +344,15 @@ class NodeStop(threading.Event):
 
 
 class NodeModel:
-    """Charge every provider attempt, including detached or failed streams."""
+    """Track provider usage, including reported usage on failed or stopped streams.
+
+    Args:
+        llm: Provider client used for chat requests.
+        stop: Node cancellation signal and deadline.
+        emit: Callback accepting an event kind and payload.
+        record_usage: Optional callback accepting a usage measurement and raw or estimated token
+            counts.
+    """
 
     def __init__(self, llm, stop: NodeStop, emit, record_usage):
         self.llm = llm
@@ -316,12 +368,23 @@ class NodeModel:
 
     @property
     def iteration(self):
+        """Expose the worker's iteration index for events.
+
+        Returns:
+            Current zero-based iteration, clamped to zero before the first iteration.
+        """
         return max(0, self.current_iteration() - 1)
 
     def __getattr__(self, name):
         return getattr(self.llm, name)
 
     def account(self, messages, response):
+        """Measure and record usage for a provider attempt.
+
+        Args:
+            messages: Messages sent to the provider.
+            response: Response supplying content and any usage metadata.
+        """
         measure = _measure_usage(messages, response)
         self.measures.append(measure)
         if self.record_usage is not None:
@@ -331,6 +394,22 @@ class NodeModel:
             self.record_usage(measure, raw)
 
     def stream_chat(self, messages, *, timeout, idle_timeout_s, on_text_chunk, **kwargs):
+        """Stream a provider request and record its text, usage, and filter state.
+
+        Args:
+            messages: Conversation sent to the provider.
+            timeout: Optional request timeout in seconds, capped by the remaining node budget.
+            idle_timeout_s: Idle timeout accepted for interface compatibility. The worker uses the
+                capped request timeout for both transport timeouts.
+            on_text_chunk: Callback receiving each text delta.
+            **kwargs: Additional keyword arguments forwarded to the provider.
+
+        Returns:
+            Provider response after usage and content-filter tracking.
+
+        Raises:
+            ProviderStreamError: If the stream fails. Its usage is recorded before it propagates.
+        """
         remaining = max(0.001, self.stop.deadline - time.monotonic())
         seconds = min(timeout, remaining) if timeout else remaining
         self.partial = ""
@@ -374,11 +453,26 @@ class NodeModel:
         return result
 
     def chat(self, messages, **kwargs):
+        """Send a non-streaming request and record its usage.
+
+        Args:
+            messages: Conversation sent to the provider.
+            **kwargs: Additional keyword arguments forwarded to the provider.
+
+        Returns:
+            Provider response.
+        """
         response = self.llm.chat(messages, **kwargs)
         self.account(messages, response)
         return response
 
     def usage_fields(self) -> dict:
+        """Aggregate token usage across provider attempts.
+
+        Returns:
+            Summed token counts and their source. Estimated takes precedence over provider counts,
+            and the source is None if there are no measurements.
+        """
         fields = {name: sum(getattr(value, name) for value in self.measures)
                   for name in UsageMeasure._fields[:-1]}
         sources = {value.token_source for value in self.measures}
@@ -405,7 +499,13 @@ def _truncate_preview(value: Any, *, limit: int = 200) -> str:
 
 
 class NodeEvents:
-    """Project product tool lifecycle items onto the swarm dashboard contract."""
+    """Project product tool lifecycle items onto the swarm dashboard contract.
+
+    Args:
+        emit: Callback accepting dashboard event kinds and payloads.
+        registry: Worker tool registry used to look up remote tool metadata.
+        stop: Node stop signal used to suppress new tool starts during cancellation.
+    """
 
     def __init__(self, emit, registry, stop):
         self.stop = stop
@@ -448,6 +548,15 @@ class NodePacing(TurnPacing):
     manages_context = True
 
     def prepare_context(self, state):
+        """Compact old tool results and check the next request against the context ceiling.
+
+        Args:
+            state: Current turn state with mutable messages, tool schemas, and workspace.
+
+        Returns:
+            A node_context_limit stop if the compacted request still exceeds the budget, or None to
+            continue.
+        """
         if not hasattr(self, "budget"):
             self.budget = NodeContext(
                 model=getattr(self.llm, "model_name", None),
@@ -466,19 +575,48 @@ class NodePacing(TurnPacing):
         return None
 
     def observe_context(self, state, request, usage):
+        """Record the successful request for future context estimation.
+
+        Args:
+            state: Current turn state supplying the tool schemas.
+            request: Messages sent to the provider.
+            usage: Provider usage metadata, if available.
+        """
         self.budget.observe(request, state.view.tools, usage)
 
     def after_tools(self, state, response, progress, cancel):
+        """Keep new tool results visible through the next successful model request.
+
+        Args:
+            state: Unused turn state supplied by the shared engine.
+            response: Provider response whose tool call IDs are marked pending.
+            progress: Unused progress tracker supplied by the shared engine.
+            cancel: Unused cancellation signal supplied by the shared engine.
+
+        Returns:
+            False so the shared turn engine continues its normal after-tools flow.
+        """
         self.budget.pending.update(call.id for call in response.tool_calls)
         return False
 
     def capture_interrupted_response(self, state):
+        """Save any streamed partial text as assistant commentary.
+
+        Args:
+            state: Current turn state holding the conversation messages to update.
+        """
         if self.llm.partial:
             self.conversation.append_assistant(
                 state.view.messages, {"role": "assistant", "content": self.llm.partial}, phase="commentary",
             )
 
     def write_directives(self, state, writes):
+        """Inject a delivery reminder at the worker's wrap-up iteration.
+
+        Args:
+            state: Current turn state supplying the iteration and conversation.
+            writes: Unused write tracker supplied by the shared engine.
+        """
         wrap_at = max(1, int(self.max_iterations * 0.8))
         if state.iteration == wrap_at + 1:
             remaining = self.max_iterations - wrap_at
@@ -491,6 +629,15 @@ class NodePacing(TurnPacing):
             )
 
     def handle(self, state, response):
+        """Record the final answer and release the turn.
+
+        Args:
+            state: Current turn state whose final content is set.
+            response: Provider response carrying the final answer.
+
+        Returns:
+            A final_answer stop for the shared turn engine.
+        """
         state.final_content = response.content or ""
         self._release(state, stream_finish=False)
         return Stop("final_answer")
@@ -521,6 +668,7 @@ def _node_history(items, run_dir: Path):
 
 
 class TemplateVars(dict):
+    """Supply task prompt variables with a contextual fallback for missing keys."""
     def __missing__(self, key: str) -> str:
         return f"(determine the appropriate {key} based on the objective)"
 
@@ -590,14 +738,32 @@ class NodeRuntime(AgentRuntime):
     """Use the swarm transport tuning on the common turn engine."""
 
     def request_backoff(self, streak: int) -> float:
+        """Compute the worker's retry delay.
+
+        Args:
+            streak: One-based count of consecutive retryable request failures.
+
+        Returns:
+            Exponential delay in seconds capped by the configured swarm maximum.
+        """
         config = get_env_config().swarm
         return min(config.swarm_stream_retry_delay_s * 2 ** min(streak - 1, 62),
                    config.swarm_stream_retry_max_delay_s)
 
     def request_max_delay(self) -> float:
+        """Read the configured swarm retry cap.
+
+        Returns:
+            Maximum retry delay in seconds.
+        """
         return get_env_config().swarm.swarm_stream_retry_max_delay_s
 
     def run_limits(self) -> RunLimits:
+        """Build the shared engine limits for a worker.
+
+        Returns:
+            Iteration cap and provider finish reasons that indicate truncated output.
+        """
         return RunLimits(self.max_iterations, frozenset({"length", "max_tokens", "max_output_tokens"}))
 
 
@@ -609,7 +775,28 @@ def run_node(
     record_usage=None, resume: bool = False, *, policy: ToolPolicy,
     successful_reads: dict[tuple[str, str], str] | None = None,
 ) -> WorkerResult:
-    """Run one child turn and publish its task result."""
+    """Run one child turn and publish its task result.
+
+    Args:
+        agent_spec: Worker specification for role, model, tools, skills, and limits.
+        task: Assigned task and prompt template.
+        upstream_summaries: Mapping from input key to upstream task summary.
+        user_vars: Values substituted into the task's prompt template.
+        run_dir: Root directory of the swarm run.
+        event_callback: Optional callback receiving worker and task events.
+        include_shell_tools: Whether shell tools are eligible for the worker registry.
+        grounding_block: Optional Markdown market snapshot included in the system prompt.
+        agent_config: Optional configuration for worker tool assembly.
+        cancel_event: Optional parent cancellation signal.
+        record_usage: Optional callback accepting a usage measurement and its raw token counts.
+        resume: Whether to replay the task's saved thread before running.
+        policy: Tool policy applied when assembling the registry and model.
+        successful_reads: Optional cache of successful read results that can be reused on retry.
+
+    Returns:
+        Worker result with status, available summary and artifacts, and any collected usage or error
+        details.
+    """
     def emit(kind, data=None):
         _emit(event_callback, kind, agent_spec.id, task.id, data)
 

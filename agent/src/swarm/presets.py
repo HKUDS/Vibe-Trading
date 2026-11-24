@@ -41,7 +41,17 @@ def _preset_search_dirs() -> tuple[Path, ...]:
 
 
 def resolve_preset_path(name: str) -> Path | None:
-    """Return the YAML path for *name* (user dir first), or ``None``."""
+    """Locate a preset YAML file, giving the user directory precedence.
+
+    Args:
+        name: Preset name without the .yaml extension.
+
+    Returns:
+        Path to the first matching file, or None if neither directory has one.
+
+    Raises:
+        ValueError: If the name is blank, dot-only as . or .., or contains a path separator.
+    """
     cleaned = _validate_preset_name(name)
     for directory in _preset_search_dirs():
         path = directory / f"{cleaned}.yaml"
@@ -51,7 +61,19 @@ def resolve_preset_path(name: str) -> Path | None:
 
 
 def load_preset(name: str) -> dict:
-    """Load a YAML preset by name (user directory first, then bundled)."""
+    """Load a YAML preset by name (user directory first, then bundled).
+
+    Args:
+        name: Preset name without the .yaml extension.
+
+    Returns:
+        Parsed YAML content.
+
+    Raises:
+        ValueError: If the name is blank, is . or .., or contains a path separator.
+        FileNotFoundError: If the preset file exists in neither the user nor bundled directory.
+        yaml.YAMLError: If the file cannot be parsed as YAML.
+    """
     path = resolve_preset_path(name)
     if path is None:
         available = sorted({
@@ -68,7 +90,12 @@ def load_preset(name: str) -> dict:
 
 
 def list_presets() -> list[dict]:
-    """Return summary info for all available presets, sorted by name."""
+    """Return summary info for all available presets, sorted by name.
+
+    Returns:
+        Summary dictionaries with name, title, description, agent_count, variables, and source. A
+        user preset overrides a bundled preset with the same file stem.
+    """
     by_stem: dict[str, dict] = {}
     for directory, source in ((PRESETS_DIR, "bundled"), (USER_PRESETS_DIR, "user")):
         if not directory.exists():
@@ -119,7 +146,15 @@ def _template_variables(template: str) -> set[str]:
 
 
 def inspect_preset(name: str) -> dict:
-    """Validate a swarm preset and return a dry-run execution plan."""
+    """Validate a swarm preset and return a dry-run execution plan.
+
+    Args:
+        name: Preset name without the .yaml extension.
+
+    Returns:
+        Plan with agent and task details, topological layers, variable use, and validation errors or
+        warnings.
+    """
     data = load_preset(name)
     run = build_run_from_preset(name, {})
 
@@ -230,7 +265,16 @@ def inspect_preset(name: str) -> dict:
 
 
 def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmRun:
-    """Create a SwarmRun from a preset with user variables applied."""
+    """Create a pending swarm run from a preset and user variables.
+
+    Args:
+        preset_name: Name of the preset to load.
+        user_vars: User-provided variables saved for prompt template rendering.
+
+    Returns:
+        New run with a generated ID, agent specifications, and tasks initialized as pending or
+        blocked by dependencies.
+    """
     data = load_preset(preset_name)
 
     agents: list[SwarmAgentSpec] = []

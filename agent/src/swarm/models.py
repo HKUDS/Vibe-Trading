@@ -36,7 +36,16 @@ def public_metadata_value(
     *,
     allowed_values: frozenset[str] | None = None,
 ) -> str | None:
-    """Return a bounded, credential-free value for public run metadata."""
+    """Filter and normalize a value for public run metadata.
+
+    Args:
+        value: Candidate metadata value. Surrounding whitespace is stripped.
+        allowed_values: Optional exact-value allowlist.
+
+    Returns:
+        The accepted value, None for absent or blank input, or a redaction marker for disallowed
+        input.
+    """
     if value is None:
         return None
     metadata = value.strip()
@@ -56,7 +65,15 @@ def public_metadata_value(
 
 
 def public_provider_metadata(value: str | None) -> str | None:
-    """Return an approved public provider label for run metadata."""
+    """Return an approved public provider label for run metadata.
+
+    Args:
+        value: Candidate provider label, matched case-insensitively.
+
+    Returns:
+        Normalized approved provider label, redaction marker for rejected input, or None for absent
+        or blank input.
+    """
     return public_metadata_value(
         value.lower() if value is not None else None,
         allowed_values=_PUBLIC_PROVIDERS,
@@ -64,7 +81,15 @@ def public_provider_metadata(value: str | None) -> str | None:
 
 
 def public_model_metadata(value: str | None) -> str | None:
-    """Return a model identifier only when it cannot be mistaken for an endpoint."""
+    """Filter a public model identifier for endpoint and credential patterns.
+
+    Args:
+        value: Candidate model identifier.
+
+    Returns:
+        The trimmed identifier if accepted, a redaction marker if rejected, or None for absent or
+        blank input.
+    """
     metadata = public_metadata_value(value)
     if metadata is None or metadata == _REDACTED_METADATA:
         return metadata
@@ -76,6 +101,15 @@ def public_model_metadata(value: str | None) -> str | None:
 
 
 def public_reasoning_effort(value: str | None) -> str | None:
+    """Return an approved reasoning-effort label for run metadata.
+
+    Args:
+        value: Candidate reasoning-effort label, matched case-insensitively.
+
+    Returns:
+        Normalized approved label, redaction marker for rejected input, or None for absent or blank
+        input.
+    """
     return public_metadata_value(
         value.lower() if value is not None else None,
         allowed_values=_REASONING_EFFORTS,

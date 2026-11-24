@@ -31,7 +31,11 @@ def _muted_style() -> str:
 
 
 class SlashCompleter(Completer):
-    """prompt_toolkit completer that fuzzy-matches the slash registry."""
+    """Offer fuzzy slash-command completions for the first token.
+
+    Args:
+        commands: Command iterable used to initialize the registry snapshot.
+    """
 
     def __init__(self, commands: Iterable[Command] = SLASH_COMMANDS) -> None:
         # Snapshot the registry; commands is a tuple of frozen dataclasses
@@ -44,6 +48,17 @@ class SlashCompleter(Completer):
         document: Document,
         complete_event: CompleteEvent,
     ) -> Iterable[Completion]:
+        """Suggest matching commands while the cursor is on a slash-prefixed token.
+
+        Args:
+            document: Prompt document supplying the text before the cursor.
+            complete_event: Completion event supplied by prompt_toolkit. Matching uses the current
+                text for both automatic and explicit requests.
+
+        Yields:
+            Completion entries that replace the command token, with the command name and description
+            for the menu.
+        """
         text = document.text_before_cursor
         stripped = text.lstrip()
 

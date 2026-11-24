@@ -113,7 +113,18 @@ def render_tool_event(
     *,
     result_summary: str | None = None,
 ) -> Text:
-    """Return a Rich :class:`Text` row describing a single tool call."""
+    """Render a terminal row describing a single tool call.
+
+    Args:
+        name: Raw tool name, formatted for display.
+        args: Optional argument mapping to summarize inline.
+        status: Call status, such as running, ok, or error. Unknown statuses use running styling.
+        duration_ms: Optional wall time in milliseconds.
+        result_summary: Optional one-line summary appended to the suffix.
+
+    Returns:
+        Rich Text row containing the status marker, tool name, and available details.
+    """
     if status not in _STATUS_STYLE:
         # Be lenient — unknown statuses degrade to "running" instead of
         # raising; CLI rendering should never crash the agent loop.
@@ -140,7 +151,15 @@ def render_tool_event(
 
 
 def render_tool_events(events: Iterable[Mapping[str, Any]]) -> list[Text]:
-    """Convenience: render a list of event dicts."""
+    """Render tool call rows in input order.
+
+    Args:
+        events: Iterable of event mappings with optional name, args, status, duration_ms, and
+            result_summary fields.
+
+    Returns:
+        List of Rich Text rows, one per event.
+    """
     rendered: list[Text] = []
     for ev in events:
         rendered.append(

@@ -288,7 +288,15 @@ def _intro_header(console: Console) -> None:
 
 
 def run_onboarding(*, console: Console | None = None) -> Path | None:
-    """Run the 5-step wizard."""
+    """Configure a provider, model, credentials, and timeout through a five-step wizard.
+
+    Args:
+        console: Console override. Defaults to the shared CLI console.
+
+    Returns:
+        Path to the finalized environment file, or None if the wizard is cancelled before
+        finalization.
+    """
     cons = console or get_console()
     _intro_header(cons)
 

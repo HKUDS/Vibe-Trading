@@ -53,7 +53,11 @@ def _last_event_timestamp(events_file: Path) -> datetime | None:
 
 
 def swarm_runs_root() -> Path:
-    """Single source of truth for where swarm runs are persisted."""
+    """Resolve the configured swarm storage root.
+
+    Returns:
+        Directory under which swarm runs are persisted.
+    """
     from src.config.paths import get_swarm_runs_dir
 
     return get_swarm_runs_dir()
@@ -84,7 +88,11 @@ def _replace_with_retry(tmp: Path, target: Path) -> None:
 
 
 class SwarmStore:
-    """File-based persistence store for SwarmRun."""
+    """Store run snapshots and append-only event journals on disk.
+
+    Args:
+        base_dir: Storage root under which each run gets its own directory.
+    """
 
     def __init__(self, base_dir: Path) -> None:
         """Initialize SwarmStore."""
@@ -92,7 +100,17 @@ class SwarmStore:
         self._write_lock = threading.Lock()
 
     def run_dir(self, run_id: str) -> Path:
-        """Return the directory path for a given run."""
+        """Return the directory path for a given run.
+
+        Args:
+            run_id: Run ID expressed as a single directory name.
+
+        Returns:
+            Path to the run directory under the storage root.
+
+        Raises:
+            ValueError: If the ID is blank, absolute, or path-shaped.
+        """
         candidate = Path(run_id)
         if (
             not run_id.strip()
@@ -106,7 +124,17 @@ class SwarmStore:
         return self.base_dir / candidate.name
 
     def create_run(self, run: SwarmRun) -> Path:
-        """Create the directory structure for a new run and write initial state."""
+        """Create the directory structure for a new run and write initial state.
+
+        Args:
+            run: Initial run state to persist.
+
+        Returns:
+            Path to the created run directory.
+
+        Raises:
+            FileExistsError: If the run directory already exists.
+        """
         rd = self.run_dir(run.id)
         rd.mkdir(parents=True, exist_ok=False)
         (rd / "tasks").mkdir()
@@ -116,7 +144,18 @@ class SwarmStore:
         return rd
 
     def load_run(self, run_id: str) -> SwarmRun | None:
-        """Load the state for a given run."""
+        """Load the state for a given run.
+
+        Args:
+            run_id: Run ID expressed as a single directory name.
+
+        Returns:
+            Persisted swarm run or None if run.json is absent.
+
+        Raises:
+            ValueError: If the run ID is invalid or its record does not validate after retries.
+            OSError: If reading the record still fails after retries.
+        """
         run_file = self.run_dir(run_id) / "run.json"
         if not run_file.exists():
             return None
@@ -135,7 +174,16 @@ class SwarmStore:
         raise type(last)(redact_internal_paths(str(last))) from None
 
     def request_cancel(self, run_id: str) -> bool:
-        """Queue cancellation beside the run record for its owning process."""
+        """Queue cancellation beside the run record for its owning process.
+
+        Args:
+            run_id: ID of the pending or running swarm to signal.
+
+        Returns:
+            True if a regular cancellation request file was created or already exists. False if the
+            run is absent, terminal, symlinked, or the request cannot be recorded because its
+            directory disappeared.
+        """
         run_dir = self.run_dir(run_id)
         if run_dir.is_symlink():
             return False
@@ -153,14 +201,28 @@ class SwarmStore:
         return True
 
     def update_run(self, run: SwarmRun) -> None:
-        """Atomically update run state."""
+        """Atomically update run state.
+
+        Args:
+            run: Updated run state to write.
+
+        Raises:
+            FileNotFoundError: If the run directory does not exist.
+        """
         rd = self.run_dir(run.id)
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         self._atomic_write(rd / "run.json", run.model_dump_json(indent=2))
 
     def list_runs(self, limit: int = 50) -> list[SwarmRun]:
-        """List all runs sorted by created_at descending."""
+        """List runs by descending creation time.
+
+        Args:
+            limit: Maximum number of runs to return. Pass a nonnegative count.
+
+        Returns:
+            Run snapshots newest first, omitting records that fail JSON parsing or validation.
+        """
         if not self.base_dir.exists():
             return []
 
@@ -180,7 +242,15 @@ class SwarmStore:
         return runs[:limit]
 
     def append_event(self, run_id: str, event: SwarmEvent) -> None:
-        """Append an event to events.jsonl."""
+        """Append an event to events.jsonl.
+
+        Args:
+            run_id: ID of the run whose journal is updated.
+            event: Event to append.
+
+        Raises:
+            FileNotFoundError: If the run directory does not exist.
+        """
         self.append_event_if(run_id, event)
 
     def append_event_if(
@@ -189,7 +259,19 @@ class SwarmStore:
         event: SwarmEvent,
         accept: Callable[[], bool] | None = None,
     ) -> bool:
-        """Check admission under the journal lock so an expired writer cannot trail the terminal event."""
+        """Append an event if admitted under the journal lock.
+
+        Args:
+            run_id: ID of the run whose journal is updated.
+            event: Event to append.
+            accept: Optional zero-argument predicate evaluated under the lock.
+
+        Returns:
+            True if the event was written, or False if the predicate declined it.
+
+        Raises:
+            FileNotFoundError: If the run directory does not exist.
+        """
         rd = self.run_dir(run_id)
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
@@ -202,7 +284,19 @@ class SwarmStore:
         return True
 
     def read_events(self, run_id: str, after_index: int = 0) -> list[SwarmEvent]:
-        """Read the event log with optional offset for SSE incremental streaming."""
+        """Read the event log with an optional offset for incremental streaming.
+
+        Args:
+            run_id: ID of the run whose journal is read.
+            after_index: Zero-based line index at which reading starts.
+
+        Returns:
+            Parsed events in journal order. Returns an empty list if the journal is absent and skips
+            a malformed JSON tail if it is unterminated.
+
+        Raises:
+            ValidationError: If an event record is invalid outside the tolerated partial-tail case.
+        """
         events_file = self.run_dir(run_id) / "events.jsonl"
         if not events_file.exists():
             return []
@@ -229,7 +323,15 @@ class SwarmStore:
         return events
 
     def hydrate_run(self, run: SwarmRun) -> SwarmRun:
-        """Return a copy of ``run`` with live ``tasks/*.json`` merged in."""
+        """Merge current task files into a run snapshot.
+
+        Args:
+            run: Run snapshot loaded from storage.
+
+        Returns:
+            Copy with live task state and refreshed report information when task files exist, or the
+            input run if none are available.
+        """
         from src.swarm.task_store import TaskStore
 
         tasks_dir = self.run_dir(run.id) / "tasks"
@@ -256,7 +358,15 @@ class SwarmStore:
         return hydrated
 
     def compute_stale_threshold(self, run: SwarmRun) -> float:
-        """Per-run silence budget before a ``running`` run looks abandoned."""
+        """Compute how long a running swarm can go without an event.
+
+        Args:
+            run: Run whose agent timeouts and retries bound the silence budget.
+
+        Returns:
+            Threshold in seconds, based on the heartbeat interval and retry budget with a 60-second
+            floor.
+        """
         interval = get_env_config().swarm.swarm_heartbeat_interval_s
         heartbeat_floor = max(60.0, interval * 10.0)
 
@@ -269,7 +379,16 @@ class SwarmStore:
         return float(max(60.0, min(heartbeat_floor, retry_ceiling)))
 
     def is_run_stale(self, run: SwarmRun, *, now: datetime | None = None) -> bool:
-        """Read-only check: is this ``running`` run silent past its threshold?."""
+        """Check whether a running swarm has exceeded its silence threshold.
+
+        Args:
+            run: Run to inspect.
+            now: Reference time. Defaults to the current UTC time.
+
+        Returns:
+            True if the run is running and its last event time, or creation time if no event
+            timestamp is available, is older than the threshold.
+        """
         from src.swarm.models import RunStatus
 
         if run.status != RunStatus.running:
@@ -282,7 +401,16 @@ class SwarmStore:
         return (now - last_activity).total_seconds() > self.compute_stale_threshold(run)
 
     def reconcile_run(self, run: SwarmRun, *, write: bool = True) -> SwarmRun:
-        """Single source of truth for "what does this run actually look like"."""
+        """Hydrate a run and recover its terminal status when possible.
+
+        Args:
+            run: The SwarmRun loaded from run.json.
+            write: Whether to persist recovered terminal state and append a recovery event.
+
+        Returns:
+            Run view with live task state, a recovered status if every task is terminal, or failure
+            state if the run is stale and still running.
+        """
         from src.swarm.models import RunStatus, TaskStatus
 
         hydrated = self.hydrate_run(run)
@@ -411,7 +539,11 @@ class SwarmStore:
             pass
 
     def reap_stale_running_runs(self) -> list[str]:
-        """Sweep all run directories and reconcile each one."""
+        """Sweep stored running swarms and reconcile their status.
+
+        Returns:
+            IDs of runs recovered or reaped from running into a terminal state.
+        """
         from src.swarm.models import RunStatus
 
         if not self.base_dir.exists():

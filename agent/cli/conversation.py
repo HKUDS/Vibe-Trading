@@ -23,7 +23,13 @@ _EMPTY_REPLY = (
 
 
 def index_message(session_id: str, role: str, content: str) -> None:
-    """Refresh the optional FTS index from a thread-derived message."""
+    """Refresh the optional FTS index from a thread-derived message.
+
+    Args:
+        session_id: Session ID associated with the message.
+        role: Role of the message author.
+        content: Message text to index.
+    """
     try:
         from src.session.search import get_shared_index
         get_shared_index().index_message(session_id, role, content)
@@ -44,7 +50,15 @@ def _reply_text(status: str, result: Dict[str, Any], streamed_text: str) -> str:
 
 
 class CliTurn:
-    """One CLI turn in progress."""
+    """Track and close a recorded CLI turn.
+
+    Args:
+        store: Session store associated with the turn.
+        runtime: Session runtime used to finalize the turn.
+        recorder: Recorder that supplies the turn ID, replayed history, and usage.
+        session_id: Session ID used for message indexing.
+        prompt: User prompt for the turn.
+    """
 
     def __init__(
         self,
@@ -66,11 +80,24 @@ class CliTurn:
 
     @property
     def history(self) -> List[Dict[str, Any]]:
-        """The replayed model history for this turn (no system prompt)."""
+        """Expose the replayed model history for this turn.
+
+        Returns:
+            Messages supplied by the turn recorder, excluding the system prompt.
+        """
         return self.recorder.history
 
     def finish(self, result: Dict[str, Any], streamed_text: str = "") -> Dict[str, Any]:
-        """Close the turn and write its display row."""
+        """Close the turn, record its display row, and index the conversation.
+
+        Args:
+            result: Agent loop result dictionary, updated with a redacted reason and usage when
+                available.
+            streamed_text: Text streamed to the user, retained for a stopped reply.
+
+        Returns:
+            The input result dictionary with available usage added on first close.
+        """
         if self._finished:
             return result
         self._finished = True
@@ -104,7 +131,12 @@ class CliTurn:
         return result
 
     def abort(self, status: str = "cancelled", reason: str = "Interrupted") -> None:
-        """Close a turn whose run ended by an exception (a forced quit)."""
+        """Close an interrupted or failed turn.
+
+        Args:
+            status: Loop status to close with, typically cancelled or failed.
+            reason: Reason recorded for the stopped turn.
+        """
         self.finish({"status": status, "reason": reason})
 
 
@@ -116,7 +148,18 @@ def open_turn(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> Optional[CliTurn]:
-    """Start a recorded turn in a session."""
+    """Start a recorded turn in a session.
+
+    Args:
+        store: Session store supplying the durable thread log.
+        session_id: ID of the session in which to start a turn.
+        prompt: The user's message.
+        provider: Optional provider label recorded for the turn.
+        model: Optional model label recorded for the turn.
+
+    Returns:
+        Recorded CLI turn, or None if its session thread or recorder could not be opened.
+    """
     try:
         runtime = SessionRuntime(store.thread_log(session_id), session_id)
         recorder = runtime.begin_turn(

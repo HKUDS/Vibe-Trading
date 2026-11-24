@@ -3,6 +3,11 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    """Register research-data status, history, and scan commands.
+
+    Args:
+        subparsers: Parent subparser collection for the data command.
+    """
     data_parser = subparsers.add_parser("data", help="Show research data partner settings")
     data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
     data_subparsers.add_parser("status", help="Show selected Gildata features")

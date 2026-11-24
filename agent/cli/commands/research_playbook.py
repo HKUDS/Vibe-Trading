@@ -36,7 +36,16 @@ def _print(message: str) -> None:
 
 
 def parse_variable_tokens(tokens: Sequence[str]) -> Tuple[Dict[str, str], Optional[str]]:
-    """Parse ``key=value`` tokens, allowing unquoted multi-word values."""
+    """Parse ``key=value`` tokens, allowing unquoted multi-word values.
+
+    Args:
+        tokens: Whitespace-split arguments starting with a key=value token when nonempty. Subsequent
+            tokens without a key continue the preceding value.
+
+    Returns:
+        A (variables, error) pair. Error is None on success or a user-facing message with an empty
+        variable mapping on failure.
+    """
     variables: Dict[str, str] = {}
     order: List[str] = []
     current: Optional[str] = None
@@ -103,7 +112,28 @@ def build_job_from_playbook(
     delivery_format: Optional[str] = None,
     protect_pdf: bool = False,
 ) -> Tuple[Optional[Any], Optional[str]]:
-    """Build (but do not persist) a scheduled job from a template."""
+    """Build a scheduled job from a template for the caller to persist.
+
+    Args:
+        slug: Template slug.
+        schedule: Schedule override, or None to keep the suggestion.
+        timezone: IANA timezone override. Omit to keep the template's suggestion or pass None to
+            force UTC.
+        variables: Placeholder overrides.
+        job_id: Explicit authorable job ID, or None for a generated ID.
+        delivery_target_ref: Configured delivery destination reference.
+        delivery_format: Email format, html or pdf. None keeps plain text.
+        protect_pdf: Whether to encrypt a PDF email report. Requires a configured email PDF
+            password.
+
+    Returns:
+        A (job, error) pair with exactly one value populated. Validation and I/O failures are
+        returned as messages.
+
+    Raises:
+        ImportError: If the scheduled research builder or an option-specific dependency cannot be
+            imported.
+    """
     from src.scheduled_research.playbooks import build_job
 
     if job_id:
@@ -295,7 +325,18 @@ def _slash_usage() -> None:
 
 
 def run(ctx: Any = None, *args: str) -> int:
-    """Handle a ``/playbook`` slash command line."""
+    """Handle the playbook slash command.
+
+    Args:
+        ctx: Optional interactive context with a writable pending_prompt. Run requests print the
+            prompt if it cannot be queued.
+        *args: Raw slash-command arguments, including the action, template slug, and variable tokens
+            where required.
+
+    Returns:
+        Zero after listing, previewing, queuing, scheduling, or printing an error in the interactive
+        CLI.
+    """
     console = _console()
     tokens = [token for token in args if token]
 
@@ -376,7 +417,14 @@ _PLAYBOOK_PARSER: Optional[argparse.ArgumentParser] = None
 
 
 def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
-    """Register ``playbook`` and its sub-subcommands on the parent subparsers."""
+    """Register the playbook command and its list, show, and create subcommands.
+
+    Args:
+        subparsers: The object returned by ArgumentParser.add_subparsers.
+
+    Returns:
+        The registered playbook parser.
+    """
     global _PLAYBOOK_PARSER
 
     parser = subparsers.add_parser(
@@ -549,7 +597,14 @@ _DISPATCH = {
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """Dispatch ``playbook <sub>`` to its handler."""
+    """Dispatch a parsed playbook subcommand to its handler.
+
+    Args:
+        args: Parsed arguments including the selected playbook subcommand.
+
+    Returns:
+        Handler exit code, or two if no supported subcommand is selected.
+    """
     sub = getattr(args, "playbook_command", None)
     handler = _DISPATCH.get(sub or "")
     if handler is None:

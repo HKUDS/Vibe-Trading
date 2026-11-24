@@ -68,7 +68,15 @@ _BARE_TICKER_STOPWORDS = frozenset({
 
 
 def extract_symbols_from_user_vars(user_vars: dict[str, str]) -> list[str]:
-    """Return the deduplicated list of symbols mentioned anywhere in *user_vars*."""
+    """Return a deduplicated list of symbols mentioned in the user variable values.
+
+    Args:
+        user_vars: Mapping whose string values are scanned for symbols.
+
+    Returns:
+        Suffixed symbols in first-occurrence order, followed by eligible bare tickers promoted to
+        .US.
+    """
     explicit: dict[str, None] = {}  # ordered set
     promoted: dict[str, None] = {}
     for value in user_vars.values():
@@ -88,7 +96,11 @@ def extract_symbols_from_user_vars(user_vars: dict[str, str]) -> list[str]:
 
 
 def max_grounding_symbols() -> int:
-    """Return the configured cap for symbols fetched into worker prompts."""
+    """Return the configured cap for symbols fetched into worker prompts.
+
+    Returns:
+        Configured symbol cap, clamped to at least one.
+    """
     value = get_env_config().swarm.swarm_grounding_max_symbols
     return max(1, value)
 
@@ -99,7 +111,17 @@ def fetch_grounding_data(
     window_days: int = DEFAULT_WINDOW_DAYS,
     today: date | None = None,
 ) -> dict[str, list[dict]]:
-    """Fetch OHLCV for *symbols* and return a code -> list-of-bars mapping."""
+    """Fetch daily OHLCV bars for the supplied symbols.
+
+    Args:
+        symbols: Iterable of suffixed symbols such as NVDA.US.
+        window_days: Calendar-day lookback from the end date.
+        today: End date for the fetch. Defaults to the current local date.
+
+    Returns:
+        Mapping from original symbols to lists of bars with trade_date, open, high, low, close, and
+        volume. Symbols with missing or failed fetches are omitted.
+    """
     symbols_list = list(symbols)
     if not symbols_list:
         return {}
@@ -144,7 +166,15 @@ def fetch_grounding_data(
 
 
 def format_grounding_block(grounding: dict[str, list[dict]]) -> str:
-    """Render *grounding* as a markdown block ready to splice into a prompt."""
+    """Render a dated market snapshot for a worker prompt.
+
+    Args:
+        grounding: Mapping from symbol to dated OHLCV rows in chronological order.
+
+    Returns:
+        Markdown with recent rows and finite-close statistics, or an empty string if no symbol has a
+        finite close.
+    """
     if not grounding:
         return ""
 

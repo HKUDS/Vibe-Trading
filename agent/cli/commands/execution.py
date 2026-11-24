@@ -684,7 +684,17 @@ def _execute_prompt(
 
 
 def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: bool = False) -> int:
-    """Single run."""
+    """Run a single prompt and print the result.
+
+    Args:
+        prompt: Prompt supplied to the agent.
+        max_iter: Maximum agent iterations.
+        json_mode: Whether to emit machine-readable JSON.
+        no_rich: Whether to use plain text for human-readable output.
+
+    Returns:
+        Run result exit code, or a failure code if preflight or execution fails.
+    """
     if not json_mode:
         from src.preflight import run_preflight
         results = run_preflight(common.console)
@@ -737,7 +747,19 @@ def cmd_continue(
     json_mode: bool = False,
     no_rich: bool = False,
 ) -> int:
-    """Continue an existing run."""
+    """Continue an existing run or session trace with a new prompt.
+
+    Args:
+        run_id: Existing run or session trace identifier.
+        prompt: Follow-up prompt supplied to the agent.
+        max_iter: Maximum agent iterations for the follow-up.
+        json_mode: Whether to emit machine-readable JSON.
+        no_rich: Whether to use plain text for human-readable output.
+
+    Returns:
+        Run result exit code, a usage error for an unknown run, or failure if execution produces no
+        result.
+    """
     run_dir = common.RUNS_DIR / run_id
     session_trace_dir = common.SESSIONS_DIR / run_id
     if not run_dir.exists() and not session_trace_dir.exists():

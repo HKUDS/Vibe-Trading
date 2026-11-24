@@ -5,7 +5,20 @@ from pathlib import Path
 
 
 def agent_artifact_dir(run_dir: Path, agent_id: str, task_id: str) -> Path:
-    """Return the canonical artifacts directory for one task within a run."""
+    """Return the canonical artifacts directory for one task within a run.
+
+    Args:
+        run_dir: Root directory for the swarm run.
+        agent_id: Single safe path segment identifying the agent.
+        task_id: Single safe path segment identifying the task.
+
+    Returns:
+        Path under the run's artifacts directory, scoped to the agent and task.
+
+    Raises:
+        ValueError: If an ID is not a single safe path segment or the resolved path does not
+            preserve the agent and task directly under the resolved artifacts root.
+    """
     artifact_root = run_dir / "artifacts"
 
     def _check(label: str, value: str) -> None:
@@ -42,19 +55,47 @@ def agent_artifact_dir(run_dir: Path, agent_id: str, task_id: str) -> Path:
 
 
 def node_thread(run_dir: Path, agent_id: str, task_id: str) -> Path:
-    """Locate the canonical thread outside the model's task workspace."""
+    """Locate the canonical thread outside the model's task workspace.
+
+    Args:
+        run_dir: Root directory for the swarm run.
+        agent_id: Single safe path segment identifying the agent.
+        task_id: Single safe path segment identifying the task.
+
+    Returns:
+        Path to the task's thread.jsonl under the run's nodes directory.
+
+    Raises:
+        ValueError: If the agent or task cannot be resolved to a valid artifact path.
+    """
     workspace = agent_artifact_dir(run_dir, agent_id, task_id)
     return run_dir / "nodes" / workspace.parent.name / workspace.name / "thread.jsonl"
 
 
 def clear_agent_artifacts(artifact_dir: Path) -> None:
-    """Remove *artifact_dir* and everything in it, before a retry attempt."""
+    """Remove *artifact_dir* and everything in it, before a retry attempt.
+
+    Args:
+        artifact_dir: Task artifacts directory to remove if present.
+
+    Raises:
+        OSError: If the directory cannot be removed.
+    """
     if artifact_dir.exists():
         shutil.rmtree(artifact_dir)
 
 
 def collect_artifacts(run_dir: Path, artifact_dir: Path) -> list[str]:
-    """Collect regular artifacts as deterministic run-relative paths."""
+    """Collect regular artifacts as deterministic run-relative paths.
+
+    Args:
+        run_dir: Root directory for the swarm run.
+        artifact_dir: Path to the task's artifacts directory.
+
+    Returns:
+        Sorted POSIX-style paths relative to the swarm run directory. Symlinks and files that
+        resolve outside the artifact directory are omitted.
+    """
     if not artifact_dir.exists():
         return []
 
@@ -80,7 +121,15 @@ def collect_artifacts(run_dir: Path, artifact_dir: Path) -> list[str]:
 
 
 def collect_node_artifacts(run_dir: Path, workspace: Path) -> list[str]:
-    """Publish the task's deliverables while keeping runtime records private."""
+    """Publish the task's deliverables while keeping runtime records private.
+
+    Args:
+        run_dir: Root directory for the swarm run.
+        workspace: Task workspace path under run_dir.
+
+    Returns:
+        Sorted run-relative deliverable paths with reserved runtime records omitted.
+    """
     private = {"req.json", "state.json", "llm_usage.json", "run_manifest.json",
                "artifacts/identity_evidence.json"}
     relative = workspace.relative_to(run_dir)

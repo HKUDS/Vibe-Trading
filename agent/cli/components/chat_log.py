@@ -40,7 +40,12 @@ def render_history(
     *,
     console: Optional[Console] = None,
 ) -> None:
-    """Print past turns to ``console``."""
+    """Print past turns to the CLI console.
+
+    Args:
+        turns: Iterable of turn mappings with display metadata and optional message content.
+        console: Console override. Defaults to the shared CLI console.
+    """
     cons = _resolve_console(console)
     for turn in turns:
         cons.print(_render_turn(turn))

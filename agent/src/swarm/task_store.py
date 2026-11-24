@@ -11,7 +11,11 @@ from src.swarm.models import SwarmTask, TaskStatus
 
 
 class TaskStore:
-    """File-based persistence layer for tasks."""
+    """Store task records under the current run's tasks directory.
+
+    Args:
+        run_dir: Root directory of the current run.
+    """
 
     def __init__(self, run_dir: Path) -> None:
         """Initialize TaskStore."""
@@ -25,7 +29,11 @@ class TaskStore:
         return self._tasks_dir / f"task-{task_id}.json"
 
     def save_task(self, task: SwarmTask) -> None:
-        """Save or overwrite task state."""
+        """Save or overwrite task state.
+
+        Args:
+            task: Current task record to persist under its ID.
+        """
         path = self._task_path(task.id)
         # Use a unique temp file so concurrent writers cannot consume each other’s writes (#1536).
         tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
@@ -34,14 +42,28 @@ class TaskStore:
             tmp_path.replace(path)
 
     def load_task(self, task_id: str) -> SwarmTask:
-        """Load a task by ID."""
+        """Load a task by ID.
+
+        Args:
+            task_id: ID of the task to load.
+
+        Returns:
+            Task state from its persisted JSON record.
+
+        Raises:
+            FileNotFoundError: If the task file does not exist.
+        """
         path = self._task_path(task_id)
         if not path.exists():
             raise FileNotFoundError(f"Task not found: {path.name}")
         return SwarmTask.model_validate_json(path.read_text(encoding="utf-8"))
 
     def load_all(self) -> list[SwarmTask]:
-        """Load all tasks for the current run."""
+        """Load all tasks for the current run.
+
+        Returns:
+            Task records in filename order.
+        """
         tasks: list[SwarmTask] = []
         for path in sorted(self._tasks_dir.glob("task-*.json")):
             tasks.append(
@@ -52,7 +74,17 @@ class TaskStore:
     def update_status(
         self, task_id: str, status: TaskStatus, **kwargs: str | int | list[str] | None
     ) -> SwarmTask:
-        """Update task status and additional fields."""
+        """Update task status and additional fields.
+
+        Args:
+            task_id: ID of the task to update.
+            status: New task status.
+            **kwargs: Optional updates to known task fields such as summary, error, completed_at, or
+                artifacts. Unknown fields are ignored.
+
+        Returns:
+            Validated task record saved to disk.
+        """
         task = self.load_task(task_id)
         updated_data = task.model_dump()
         updated_data["status"] = status
@@ -65,7 +97,15 @@ class TaskStore:
 
 
 def resolve_dependencies(tasks_dir: Path, completed_task_id: str) -> list[str]:
-    """Remove a completed task ID from blocked_by in all downstream tasks."""
+    """Remove a completed task ID from blocked_by in all downstream tasks.
+
+    Args:
+        tasks_dir: Path to the tasks directory.
+        completed_task_id: ID of the just-completed task.
+
+    Returns:
+        IDs of blocked tasks moved to pending after their last dependency was removed.
+    """
     newly_unblocked: list[str] = []
 
     for path in tasks_dir.glob("task-*.json"):
@@ -90,7 +130,15 @@ def resolve_dependencies(tasks_dir: Path, completed_task_id: str) -> list[str]:
 
 
 def validate_dag(tasks: list[SwarmTask]) -> None:
-    """DFS cycle detection to ensure the task DAG is acyclic."""
+    """Validate references and check the task graph for cycles.
+
+    Args:
+        tasks: Tasks and their declared dependencies.
+
+    Raises:
+        ValueError: If a dependency is unknown or a cycle is detected. Cycle errors include the
+            cycle path.
+    """
     graph: dict[str, list[str]] = {t.id: list(t.depends_on) for t in tasks}
     all_ids = {t.id for t in tasks}
 
@@ -129,7 +177,17 @@ def validate_dag(tasks: list[SwarmTask]) -> None:
 
 
 def topological_layers(tasks: list[SwarmTask]) -> list[list[str]]:
-    """Kahn's algorithm topological layering; tasks in the same layer can run in parallel."""
+    """Group the task DAG into layers that can run in parallel.
+
+    Args:
+        tasks: Tasks with valid dependency references.
+
+    Returns:
+        List of layers in execution order, each containing task IDs that can run in parallel.
+
+    Raises:
+        ValueError: If topological sorting cannot process every task.
+    """
     in_degree: dict[str, int] = {t.id: 0 for t in tasks}
     dependents: dict[str, list[str]] = defaultdict(list)
 

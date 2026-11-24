@@ -1059,7 +1059,14 @@ def _interactive_loop(
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """CLI entrypoint returning a process exit code."""
+    """Start the interactive CLI, resume a session, or dispatch a command.
+
+    Args:
+        argv: Argument list excluding the executable. Defaults to sys.argv[1:].
+
+    Returns:
+        Exit code from the interactive loop or command handler, or zero if onboarding was cancelled.
+    """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
 
     # Migrate pre-#904 state without blocking CLI startup on failure.

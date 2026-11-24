@@ -11,7 +11,15 @@ def _validate_api_key(api_key: str, expected_prefix: str | None) -> bool:
 
 
 def cmd_memory_list(memory_type: common.Optional[str] = None, *, memory_dir: common.Optional[common.Path] = None) -> int:
-    """List persisted memory entries."""
+    """List persisted memory entries.
+
+    Args:
+        memory_type: Optional memory type filter.
+        memory_dir: Optional override for the persistent memory directory.
+
+    Returns:
+        Success after listing matching entries or reporting an empty result.
+    """
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory(memory_dir=memory_dir)
@@ -47,7 +55,15 @@ def cmd_memory_list(memory_type: common.Optional[str] = None, *, memory_dir: com
 
 
 def cmd_memory_show(name: str, *, memory_dir: common.Optional[common.Path] = None) -> int:
-    """Show full content of a single memory entry."""
+    """Show full content of a single memory entry.
+
+    Args:
+        name: Entry title or filename stem.
+        memory_dir: Optional override for the persistent memory directory.
+
+    Returns:
+        Success after printing the entry, or a usage error if it is missing.
+    """
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory(memory_dir=memory_dir)
@@ -69,7 +85,16 @@ def cmd_memory_show(name: str, *, memory_dir: common.Optional[common.Path] = Non
 
 
 def cmd_memory_search(query: str, max_results: int = 5, *, memory_dir: common.Optional[common.Path] = None) -> int:
-    """Run keyword recall and display the top matches."""
+    """Run keyword recall and display the top matches.
+
+    Args:
+        query: Search text used for keyword recall.
+        max_results: Maximum number of matches to display.
+        memory_dir: Optional override for the persistent memory directory.
+
+    Returns:
+        Success after printing matches or reporting an empty result.
+    """
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory(memory_dir=memory_dir)
@@ -98,7 +123,17 @@ def cmd_memory_search(query: str, max_results: int = 5, *, memory_dir: common.Op
 
 
 def cmd_memory_forget(name: str, *, yes: bool = False, memory_dir: common.Optional[common.Path] = None) -> int:
-    """Remove a memory entry by name."""
+    """Remove a memory entry by name.
+
+    Args:
+        name: Title or filename stem of the entry to remove.
+        yes: Whether to remove the entry without prompting.
+        memory_dir: Optional override for the persistent memory directory.
+
+    Returns:
+        Success after removal or a declined confirmation, a usage error for an unknown entry or
+        unavailable confirmation input, or failure if removal fails.
+    """
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory(memory_dir=memory_dir)
@@ -130,7 +165,11 @@ def cmd_memory_forget(name: str, *, yes: bool = False, memory_dir: common.Option
 
 
 def cmd_init() -> int:
-    """Interactive setup: create ~/.vibe-trading/.env."""
+    """Configure the default provider and optional data credentials interactively.
+
+    Returns:
+        Zero after saving the settings or declining to overwrite an existing configuration.
+    """
     common.console.print(common.Panel("[bold cyan]Vibe-Trading setup[/bold cyan]\n[dim]Configure the default LLM provider and data tokens.[/dim]", border_style="cyan"))
 
     if common._INIT_ENV_PATH.exists():
@@ -288,7 +327,15 @@ def _run_step(
 
 
 def cmd_setup(frontend_dir: common.Path) -> int:
-    """Install frontend dependencies and build the production bundle."""
+    """Install frontend dependencies and build the production bundle.
+
+    Args:
+        frontend_dir: Frontend project directory in which to install dependencies and run the build.
+
+    Returns:
+        Success after building, a usage error for a missing directory or tools, or failure if a
+        setup step fails.
+    """
     common.console.print(
         common.Panel(
             f"[bold cyan]Vibe-Trading frontend setup[/bold cyan]\n"
@@ -345,7 +392,17 @@ def cmd_dev(
     frontend_port: int = 5899,
     frontend_dir: common.Optional[common.Path] = None,
 ) -> int:
-    """Start backend + Vite dev server in one foreground process."""
+    """Run the API and Vite development servers under one foreground command.
+
+    Args:
+        backend_port: Port on which to start the API server.
+        frontend_port: Port on which to start Vite.
+        frontend_dir: Optional frontend directory, defaulting to the checkout's frontend directory.
+
+    Returns:
+        Child exit code if a child exits with an error, a usage error for missing prerequisites,
+        failure on a launch error, or success on normal exit.
+    """
     frontend_dir = frontend_dir or (common.AGENT_DIR.parent / "frontend")
     if not frontend_dir.exists():
         common.console.print(

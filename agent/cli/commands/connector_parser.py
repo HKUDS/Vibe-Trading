@@ -3,6 +3,11 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    """Register trading connector profile subcommands.
+
+    Args:
+        subparsers: Parent subparser collection for the connector command.
+    """
     connector_parser = subparsers.add_parser("connector", help="Manage trading connector profiles")
     connector_subparsers = connector_parser.add_subparsers(dest="connector_command")
 

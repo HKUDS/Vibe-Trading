@@ -107,7 +107,14 @@ _DISPATCH = {
 
 
 def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
-    """Register ``strategy-evidence`` and its subcommands on the parent."""
+    """Register the strategy-evidence command and its refresh and adapt subcommands.
+
+    Args:
+        subparsers: The object returned by ArgumentParser.add_subparsers.
+
+    Returns:
+        The registered strategy-evidence parser.
+    """
     global _STRATEGY_EVIDENCE_PARSER
 
     parser = subparsers.add_parser(
@@ -160,7 +167,14 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """Dispatch ``strategy-evidence <sub>`` to its handler."""
+    """Dispatch a parsed strategy-evidence subcommand.
+
+    Args:
+        args: Parsed arguments including the selected strategy-evidence subcommand.
+
+    Returns:
+        Handler exit code, or two if no supported subcommand is selected.
+    """
     sub = getattr(args, "strategy_evidence_command", None)
     handler = _DISPATCH.get(sub or "")
     if handler is None:

@@ -73,7 +73,16 @@ def _print_portfolio_snapshot(snapshot: dict[str, common.Any]) -> None:
 
 
 def cmd_portfolio_show(service: common.Any | None = None, snapshot_id: str | None = None) -> int:
-    """Print the latest snapshot or one exact stored observation."""
+    """Print the latest snapshot or one exact stored observation.
+
+    Args:
+        service: Optional portfolio service. Omit to use the default service.
+        snapshot_id: Exact stored snapshot ID, or None to read the latest snapshot.
+
+    Returns:
+        Success after printing a snapshot or reporting that no latest snapshot exists. Failure if an
+        explicitly requested snapshot is unavailable.
+    """
     instance = _portfolio_service(service)
     snapshot = instance.latest() if snapshot_id is None else instance.snapshot_by_id(snapshot_id)
     if snapshot is None:
@@ -90,7 +99,15 @@ def cmd_portfolio_show(service: common.Any | None = None, snapshot_id: str | Non
 
 
 def cmd_portfolio_refresh(service: common.Any | None = None) -> int:
-    """Read every enabled source now, store a new snapshot, and print it."""
+    """Read every enabled source now, store a new snapshot, and print it.
+
+    Args:
+        service: Optional portfolio service. Omit to use the default service.
+
+    Returns:
+        EXIT_SUCCESS for a complete snapshot, or EXIT_RUN_FAILED if refresh fails or the snapshot is
+        incomplete.
+    """
     try:
         snapshot = _portfolio_service(service).refresh()
     except RuntimeError as exc:
@@ -101,7 +118,14 @@ def cmd_portfolio_refresh(service: common.Any | None = None) -> int:
 
 
 def cmd_portfolio_sources(service: common.Any | None = None) -> int:
-    """List the local read-only connections and whether the portfolio uses them."""
+    """List the local read-only connections and whether the portfolio uses them.
+
+    Args:
+        service: Optional portfolio service. Omit to use the default service.
+
+    Returns:
+        Success exit code after displaying the source list, including when it is empty.
+    """
     rows = _portfolio_service(service).sources()
     table = common.Table(title="Portfolio sources", box=common.box.SIMPLE_HEAVY, show_lines=False)
     table.add_column("Selected", justify="center", width=8)

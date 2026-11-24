@@ -3,6 +3,11 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    """Register portfolio snapshot, source, import, and rebalance commands.
+
+    Args:
+        subparsers: Parent subparser collection for the portfolio command.
+    """
     portfolio_parser = subparsers.add_parser("portfolio", help="Read-only multi-broker portfolio (the Web UI /portfolio page, in the terminal)")
     portfolio_subparsers = portfolio_parser.add_subparsers(dest="portfolio_command")
     portfolio_show_parser = portfolio_subparsers.add_parser("show", help="Print a stored snapshot")

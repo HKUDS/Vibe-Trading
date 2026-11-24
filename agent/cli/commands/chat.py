@@ -88,7 +88,15 @@ def _change_session_model(ctx: Any, args: tuple[str, ...]) -> int:
 
 
 def cmd_model(ctx: Any = None, *args: str) -> int:
-    """Show the configuration, or set/clear the current session's model."""
+    """Show model configuration or change the current session's selection.
+
+    Args:
+        ctx: Optional interactive context from which to resolve the session.
+        *args: Empty to show configuration, or tokens for set <provider> <model> [effort] or clear.
+
+    Returns:
+        Zero after displaying configuration, or the exit status of the requested session change.
+    """
     if args:
         return _change_session_model(ctx, args)
     console = _resolve_console()
@@ -133,7 +141,15 @@ def cmd_model(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_compact(ctx: Any = None, *args: str) -> int:
-    """Compact the active session, optionally prioritising a focus topic."""
+    """Compact the active session, optionally prioritising a focus topic.
+
+    Args:
+        ctx: Interactive context supplying the active session ID.
+        *args: Optional focus words joined into a topic for compaction.
+
+    Returns:
+        Zero on success, or one if no session is active or compaction fails.
+    """
     console = _resolve_console()
     session_id = getattr(ctx, "session_id", None)
     if not session_id:
@@ -167,7 +183,15 @@ def cmd_compact(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_clear(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Clear the screen and reprint the welcome banner."""
+    """Clear the screen and start a fresh conversation.
+
+    Args:
+        ctx: Optional interactive context whose transcript and session ID are cleared if available.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after the screen and session reset attempts.
+    """
     console = _resolve_console()
     try:
         console.clear()
@@ -205,7 +229,15 @@ def _queue_prompt(ctx: Any, prompt: str) -> bool:
 
 
 def cmd_journal(ctx: Any = None, *args: str) -> int:
-    """Queue an "analyze my trade journal at <path>" agent turn."""
+    """Queue an agent turn to analyze a trade journal.
+
+    Args:
+        ctx: Optional interactive context accepting a pending prompt.
+        *args: Journal CSV path tokens, joined with spaces. Empty input prints usage.
+
+    Returns:
+        Zero after queuing a prompt or printing instructions.
+    """
     console = _resolve_console()
     path = " ".join(args).strip()
     if not path:
@@ -229,7 +261,16 @@ def cmd_journal(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_shadow(ctx: Any = None, *args: str) -> int:
-    """Queue a Shadow Account agent turn."""
+    """Queue a Shadow Account agent turn.
+
+    Args:
+        ctx: Optional interactive context accepting a pending prompt.
+        *args: Optional trade-journal path tokens. With no path, the prompt requests the latest
+            dashboard report.
+
+    Returns:
+        Zero after queuing or printing the prompt.
+    """
     console = _resolve_console()
     path = " ".join(args).strip()
     if path:
@@ -245,7 +286,15 @@ def cmd_shadow(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_swarm(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Dispatch to the canonical swarm slash command module."""
+    """Dispatch to the canonical swarm slash command module.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Swarm subcommand and arguments joined into a command line.
+
+    Returns:
+        Swarm handler's exit status, or one if dispatch raises an exception.
+    """
     try:
         from cli.commands.swarm import dispatch
 
@@ -257,7 +306,15 @@ def cmd_swarm(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_debug(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Toggle the debug summary that prints after each agent turn."""
+    """Toggle the debug summary that prints after each agent turn.
+
+    Args:
+        ctx: Interactive context holding the debug flag, if supported.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after toggling or printing a configuration hint, or one if the toggle fails.
+    """
     console = _resolve_console()
     if ctx is not None and hasattr(ctx, "debug"):
         try:
@@ -283,7 +340,15 @@ def cmd_debug(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_quit(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Signal exit by returning a distinct exit code."""
+    """Signal exit by returning a distinct exit code.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Two, which tells the interactive caller to exit.
+    """
     return 2
 
 
@@ -302,7 +367,16 @@ _DISPATCH = {
 
 
 def run(ctx: Any = None, command: str = "model", *args: str) -> int:
-    """Dispatch ``run("model")`` / ``run("clear")`` / ... to the right handler."""
+    """Dispatch a chat slash command.
+
+    Args:
+        ctx: Interactive context passed to the handler.
+        command: Command name without the leading slash.
+        *args: Arguments passed to the handler.
+
+    Returns:
+        Handler exit status, or one for an unknown command.
+    """
     handler = _DISPATCH.get(command)
     if handler is None:
         console = _resolve_console()

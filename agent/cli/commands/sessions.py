@@ -36,7 +36,12 @@ def cmd_sessions() -> None:
 
 
 def cmd_session_chat(session_id: str, max_iter: int) -> None:
-    """Continue a session through the canonical interactive loop."""
+    """Continue a session through the canonical interactive loop.
+
+    Args:
+        session_id: ID of the session to resume.
+        max_iter: Maximum agent iterations per turn in the interactive loop.
+    """
     from src.session.store import SessionStore
 
     store = SessionStore(base_dir=common.SESSIONS_DIR)
@@ -61,7 +66,11 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
 
 
 def cmd_upload(file_path: str) -> None:
-    """Upload a file to the server."""
+    """Copy a local file into the server's uploads directory.
+
+    Args:
+        file_path: Path to the source file. Its extension is preserved in the generated upload name.
+    """
     src = common.Path(file_path)
     if not src.exists():
         common.console.print(f"[red]File not found: {file_path}[/red]")
@@ -80,7 +89,11 @@ def cmd_upload(file_path: str) -> None:
 
 
 def cmd_migrate_sessions() -> int:
-    """Convert every pre-thread session into the canonical thread log."""
+    """Convert every pre-thread session into the canonical thread log.
+
+    Returns:
+        Zero after running migration and printing the number of migrated sessions.
+    """
     from src.session.migration import migrate_all
 
     results = migrate_all(common.SESSIONS_DIR)

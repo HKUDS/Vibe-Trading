@@ -24,7 +24,12 @@ EXIT_FAILED = 1
 
 
 def cmd_update() -> int:
-    """Check PyPI and upgrade when a newer release exists. Returns exit code."""
+    """Check PyPI for a newer release and upgrade eligible installations.
+
+    Returns:
+        Success if current, if a source installation receives update instructions, or after a
+        successful upgrade. Failure if the check, comparison, or upgrade fails.
+    """
     try:
         latest = fetch_latest_version()
     except (requests.RequestException, KeyError, ValueError) as exc:

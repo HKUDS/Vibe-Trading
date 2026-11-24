@@ -15,14 +15,29 @@ from cli.commands import setup_memory
 from cli.commands import swarm_runtime
 
 def serve_main(argv: list[str] | None = None) -> int:
-    """Delegate server startup to api_server."""
+    """Delegate server startup to api_server.
+
+    Args:
+        argv: Optional server arguments excluding the executable and serve command.
+
+    Returns:
+        Exit status returned by the API server entry point.
+    """
     from api_server import serve_main as api_serve_main
 
     return api_serve_main(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entrypoint returning a process exit code."""
+    """Parse and dispatch a CLI invocation.
+
+    Args:
+        argv: Optional arguments excluding the executable. Defaults to the current process
+            arguments.
+
+    Returns:
+        Selected command's process exit code, including help and parser exit codes.
+    """
     raw_argv = list(common.sys.argv[1:] if argv is None else argv)
     parser = command_parser.build_parser()
     try:

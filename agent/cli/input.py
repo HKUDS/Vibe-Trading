@@ -29,6 +29,11 @@ class SafeFileHistory(FileHistory):
     """:class:`FileHistory` that strips invalid surrogate code points."""
 
     def store_string(self, string: str) -> None:  # type: ignore[override]
+        """Store a history entry after stripping surrogate characters.
+
+        Args:
+            string: Input line to save in the history file.
+        """
         super().store_string(_strip_surrogates(string))
 
 
@@ -178,7 +183,15 @@ def _default_history_path() -> Path:
 
 
 def make_session(history_path: Optional[Path] = None) -> PromptSession:
-    """Construct a configured :class:`PromptSession`."""
+    """Construct a configured prompt_toolkit session.
+
+    Args:
+        history_path: Override for the persistent history file. None uses the default history path.
+
+    Returns:
+        Prompt session with slash completion, multiline editing, surrogate-safe history, and a
+        vibe_ctrl_c_state for two-press exit.
+    """
     _force_utf8_stdout()
 
     path = history_path or _default_history_path()
@@ -222,7 +235,19 @@ def get_user_input(
     *,
     session: Optional[PromptSession] = None,
 ) -> str:
-    """Prompt the user with the configured session and return the input."""
+    """Prompt for input with a styled terminal border.
+
+    Args:
+        prompt_message: Text displayed beside the input cursor.
+        session: Existing prompt session to reuse. Omit to create one.
+
+    Returns:
+        Submitted input text.
+
+    Raises:
+        EOFError: If the user sends EOF or the configured Ctrl+C binding exits from an empty input
+            buffer.
+    """
     sess = session or make_session()
     formatted = FormattedText(
         [
@@ -239,7 +264,17 @@ def _prompt_rule() -> str:
 
 
 def ctrl_c_within_window(session: PromptSession, window_sec: float = _EXIT_HINT_GAP_SEC) -> bool:
-    """Return True if the most recent Ctrl+C press was a "second press"."""
+    """Read the most recent two-press Ctrl+C exit decision.
+
+    Args:
+        session: Active prompt session supplying the Ctrl+C state.
+        window_sec: Window length in seconds for the timestamp fallback. The key binding normally
+            supplies a cached decision.
+
+    Returns:
+        True if the cached decision, or the fallback check against the prior press timestamp,
+        signals exit.
+    """
     state = getattr(session, "vibe_ctrl_c_state", None)
     if state is None:
         return False

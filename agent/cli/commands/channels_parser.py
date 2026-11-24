@@ -3,6 +3,11 @@ from __future__ import annotations
 import argparse
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    """Register the IM channel management subcommands.
+
+    Args:
+        subparsers: Parent subparser collection for the channels command.
+    """
     channels_parser = subparsers.add_parser("channels", help="Manage IM channel adapters")
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
     channels_status = channels_subparsers.add_parser("status", help="Show IM channel status")

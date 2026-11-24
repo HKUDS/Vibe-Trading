@@ -119,7 +119,14 @@ def _show_settings() -> None:
 
 
 def cmd_provider_login(provider: str) -> int:
-    """Authenticate OAuth-backed LLM providers."""
+    """Authenticate OAuth-backed LLM providers.
+
+    Args:
+        provider: OAuth provider name such as openai-codex, copilot, or claude-cli.
+
+    Returns:
+        Selected provider's login exit status, or a usage error if the provider is unsupported.
+    """
     normalized = provider.strip().lower().replace("_", "-")
     if normalized in {"copilot", "github-copilot"}:
         return _login_copilot()
@@ -195,7 +202,11 @@ def _login_claude_cli() -> int:
 
 
 def cmd_provider_doctor() -> int:
-    """Print redacted provider diagnostics."""
+    """Print redacted provider diagnostics.
+
+    Returns:
+        Success exit code after printing diagnostics as JSON.
+    """
     from src.providers.diagnostics import provider_diagnostics
 
     common.console.print_json(data=provider_diagnostics(policy=ToolPolicy.from_config(get_env_config())))

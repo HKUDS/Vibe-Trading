@@ -116,7 +116,17 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
 
 
 def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
-    """Copy upstream observations into this task's readable workspace."""
+    """Copy upstream observations into this task's readable workspace.
+
+    Args:
+        run_dir: Current swarm run directory, including copied artifacts when resumed.
+        task: Consumer task whose input_from identifies the upstream producers.
+        destination: Consumer artifact directory.
+
+    Returns:
+        Prompt note pointing to the paged provenance index. The index records unavailable evidence.
+        Returns an empty string if there are no observations or errors to report.
+    """
     from src.swarm.task_store import TaskStore
 
     if not task.input_from:

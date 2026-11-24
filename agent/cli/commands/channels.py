@@ -67,7 +67,16 @@ def _print_channels_status(payload: common.Dict[str, common.Any]) -> None:
 
 
 def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
-    """Show IM channel status."""
+    """Show IM channel status.
+
+    Args:
+        json_mode: Whether to print JSON instead of the status table.
+        local: Whether to inspect local configuration without contacting the API.
+
+    Returns:
+        Success exit code after printing status. On API error, the output includes local status and
+        the error.
+    """
     payload = _channels_local_status() if local else _channels_api_call("GET", "/channels/status")
     if payload.get("status") == "error":
         local_payload = _channels_local_status()
@@ -82,12 +91,26 @@ def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
 
 
 def cmd_channels_start(*, json_mode: bool = False) -> int:
-    """Start configured IM channels through the API runtime."""
+    """Start configured IM channels through the API runtime.
+
+    Args:
+        json_mode: Whether to print the API response as JSON.
+
+    Returns:
+        Success exit code if the API accepts the request, or failure on API error.
+    """
     return _change_channels("start", json_mode=json_mode)
 
 
 def cmd_channels_stop(*, json_mode: bool = False) -> int:
-    """Stop configured IM channels through the API runtime."""
+    """Stop configured IM channels through the API runtime.
+
+    Args:
+        json_mode: Whether to print the API response as JSON.
+
+    Returns:
+        Success exit code if the API accepts the request, or failure on API error.
+    """
     return _change_channels("stop", json_mode=json_mode)
 
 
@@ -109,7 +132,15 @@ def _change_channels(action: str, *, json_mode: bool) -> int:
 
 
 def cmd_channels_pairing(channel: str, command: str) -> int:
-    """Run a pairing command against the shared local pairing store."""
+    """Run a pairing command against the shared local pairing store.
+
+    Args:
+        channel: Channel context for the pairing store.
+        command: Pairing command text including any arguments.
+
+    Returns:
+        Success exit code after printing the pairing response.
+    """
     from src.channels.pairing import handle_pairing_command
 
     common.console.print(handle_pairing_command(channel, command))
@@ -117,7 +148,16 @@ def cmd_channels_pairing(channel: str, command: str) -> int:
 
 
 def cmd_channels_login(channel_name: str, *, force: bool = False) -> int:
-    """Run a channel adapter's interactive login hook when available."""
+    """Run a channel adapter's interactive login hook when available.
+
+    Args:
+        channel_name: Configured channel adapter name.
+        force: Whether to request a fresh login where supported.
+
+    Returns:
+        Success for a completed or unnecessary login, a usage error for missing configuration, or
+        failure if the adapter is unavailable or login fails.
+    """
     import asyncio
 
     from src.channels.config import load_channels_config

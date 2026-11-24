@@ -307,7 +307,16 @@ def _watch_swarm_run(store, runtime, run, dashboard: _SwarmDashboard) -> common.
 
 
 def cmd_swarm_run_live(preset: str, vars_json: common.Optional[str] = None) -> common.Optional[int]:
-    """Run a swarm preset with Rich Live dashboard."""
+    """Run a swarm preset with a live terminal dashboard.
+
+    Args:
+        preset: Name of the swarm preset.
+        vars_json: Optional JSON object mapping template variable names to values.
+
+    Returns:
+        Usage error exit code for malformed JSON. Returns None after monitoring the run or reporting
+        a missing or invalid preset.
+    """
     from src.config import load_swarm_agent_config
     from src.swarm.runtime import SwarmRuntime
     from src.swarm.store import SwarmStore
@@ -349,7 +358,17 @@ def cmd_swarm_run_live(preset: str, vars_json: common.Optional[str] = None) -> c
 
 
 def cmd_swarm_retry_live(run_id: str, resume: bool = False) -> common.Optional[int]:
-    """Retry a prior swarm run, optionally keeping completed tasks."""
+    """Retry a prior swarm run, optionally keeping completed tasks.
+
+    Args:
+        run_id: ID of the source run.
+        resume: Whether to resume a failed or cancelled run using its completed work and compatible
+            saved context.
+
+    Returns:
+        Usage error exit code for an invalid source or launch request. Returns None after monitoring
+        the new run.
+    """
     from src.config import load_swarm_agent_config
     from src.swarm.models import RunStatus
     from src.swarm.runtime import SwarmRuntime
@@ -435,7 +454,15 @@ def cmd_swarm_presets() -> None:
 
 
 def cmd_swarm_inspect(preset: str) -> int:
-    """Inspect a swarm preset without starting workers."""
+    """Inspect a swarm preset and print its dry-run execution plan.
+
+    Args:
+        preset: Name of the swarm preset.
+
+    Returns:
+        Success for a valid preset, a usage error if missing, or failure if inspection or validation
+        fails.
+    """
     from src.swarm.presets import inspect_preset
 
     try:
@@ -543,7 +570,11 @@ def cmd_swarm_list() -> None:
 
 
 def cmd_swarm_show(run_id: str) -> None:
-    """Show swarm run details."""
+    """Show the persisted swarm snapshot and its task and report previews.
+
+    Args:
+        run_id: ID of the swarm run to display.
+    """
     from src.swarm.store import SwarmStore
     from src.swarm.models import TaskStatus
 
@@ -594,7 +625,14 @@ def cmd_swarm_show(run_id: str) -> None:
 
 
 def cmd_swarm_cancel(run_id: str) -> int:
-    """Request cooperative cancellation from the run owner."""
+    """Request cooperative cancellation from the run owner.
+
+    Args:
+        run_id: ID of the pending or running swarm to signal.
+
+    Returns:
+        Zero if the request is recorded or already queued, or one if it cannot be requested.
+    """
     from src.swarm.store import SwarmStore
 
     store = SwarmStore(base_dir=common.SWARM_DIR)

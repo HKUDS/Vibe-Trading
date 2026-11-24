@@ -139,7 +139,16 @@ def _fuzzy_score(needle: str, name: str) -> int:
 
 
 def match_commands(input_text: str) -> list[Command]:
-    """Return commands that fuzzy-match ``input_text``."""
+    """Find slash commands that fuzzy-match the input's command token.
+
+    Args:
+        input_text: Raw input line, possibly empty. Leading whitespace and trailing arguments are
+            ignored.
+
+    Returns:
+        New list ordered by best match first with ties broken by registry order. Input without a
+        leading slash after trimming has no matches.
+    """
     token = _parse_token(input_text)
     if not input_text.lstrip().startswith("/"):
         return []
@@ -160,7 +169,14 @@ def match_commands(input_text: str) -> list[Command]:
 
 
 def find_exact(name: str) -> Command | None:
-    """Resolve an exact command name or alias."""
+    """Resolve an exact command name or alias.
+
+    Args:
+        name: Command name or alias, optionally with a leading slash.
+
+    Returns:
+        Matching registered command, or None if there is no exact match.
+    """
     key = name.lstrip("/").strip()
     key = _ALIASES.get(key, key)
     for cmd in SLASH_COMMANDS:

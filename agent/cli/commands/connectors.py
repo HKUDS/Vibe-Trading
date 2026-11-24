@@ -21,7 +21,11 @@ def _selected_profile_or(value: common.Optional[str]):
 
 
 def cmd_connector_list() -> int:
-    """List selectable trading connector profiles."""
+    """List selectable trading connector profiles.
+
+    Returns:
+        Success exit code after printing the profile table and current selection.
+    """
     from src.trading.profiles import list_profiles, load_selected_profile_id
 
     selected = load_selected_profile_id()
@@ -47,7 +51,15 @@ def cmd_connector_list() -> int:
 
 
 def cmd_connector_init(connector_id: str, destination: str = ".") -> int:
-    """Create a local-only read connector template."""
+    """Create a local-only read connector template.
+
+    Args:
+        connector_id: Lowercase connector ID used for the template directory.
+        destination: Parent directory the template is created in.
+
+    Returns:
+        Success exit code after creation, or a usage error if the scaffold request is invalid.
+    """
     from src.trading.plugin_scaffold import scaffold_connector
 
     try:
@@ -64,7 +76,14 @@ def cmd_connector_init(connector_id: str, destination: str = ".") -> int:
 
 
 def cmd_connector_validate(directory: str) -> int:
-    """Validate a local read-only connector manifest."""
+    """Validate a local read-only connector manifest.
+
+    Args:
+        directory: Directory holding the connector manifest.
+
+    Returns:
+        Success exit code for a valid manifest, or a usage error on validation failure.
+    """
     from src.trading.plugin_scaffold import validate_connector
 
     try:
@@ -77,7 +96,15 @@ def cmd_connector_validate(directory: str) -> int:
 
 
 def cmd_connector_install(directory: str) -> int:
-    """Install a validated connector into the user's private connector directory."""
+    """Install a validated connector into the user's private connector directory.
+
+    Args:
+        directory: Directory holding the connector to validate and install.
+
+    Returns:
+        Success exit code after installation, or a usage error if validation or installation rejects
+        the connector.
+    """
     from src.trading.plugin_scaffold import install_connector
 
     try:
@@ -90,7 +117,14 @@ def cmd_connector_install(directory: str) -> int:
 
 
 def cmd_connector_use(profile_id: str) -> int:
-    """Select the default trading connector profile."""
+    """Select the default trading connector profile.
+
+    Args:
+        profile_id: ID of the profile to save as the default.
+
+    Returns:
+        Success exit code after saving the selection, or a usage error for an invalid profile.
+    """
     from src.trading.profiles import profile_by_id, save_selected_profile_id
 
     try:
@@ -114,7 +148,20 @@ def cmd_connector_configure(
     account: str | None = None,
     yes: bool = False,
 ) -> int:
-    """Configure a local connector profile."""
+    """Configure a read-only local IBKR TWS or Gateway profile.
+
+    Args:
+        profile_id: ID of the local connector profile.
+        host: Gateway host.
+        port: Gateway port, using the profile port when omitted.
+        client_id: IBKR client ID.
+        account: Optional account code.
+        yes: Whether to overwrite existing settings without prompting.
+
+    Returns:
+        Success after saving or declining an overwrite, or a usage error for an invalid profile or
+        unavailable confirmation input.
+    """
     from src.trading.connectors.ibkr.local import IBKRLocalConfig, config_path, save_config
 
     try:
@@ -162,7 +209,19 @@ def cmd_connector_check(
     client_id: int | None = None,
     account: str | None = None,
 ) -> int:
-    """Check selected or explicit trading connector profile."""
+    """Check selected or explicit trading connector profile.
+
+    Args:
+        profile_id: Profile to check, or None to use the selected profile.
+        connection_id: Optional saved connection ID.
+        host: Optional host override for a local gateway.
+        port: Optional gateway port override.
+        client_id: Optional broker client ID override.
+        account: Optional account override.
+
+    Returns:
+        Success exit code when the profile is ready, or failure on an exception or non-ready report.
+    """
     from src.trading.service import check_connection
 
     try:
@@ -250,7 +309,25 @@ def cmd_connector_setup(
     host: str | None = None,
     port: int | None = None,
 ) -> int:
-    """Create a local read-only connection and collect secrets outside AI prompts."""
+    """Create a local read-only connection and collect its credentials interactively.
+
+    Args:
+        profile_id: Read-only portfolio profile to connect through.
+        connection_id: Local ID, defaulting to <connector>-<environment>.
+        label: Display name, defaulting to the profile label.
+        skip_check: Skip the connectivity check and any account selection that requires it.
+        account: Account reference for an account-scoped connection. Otherwise prompt if a selection
+            is needed.
+        host: Optional connection-specific gateway host. Requires port.
+        port: Optional connection-specific gateway port. Requires host.
+
+    Returns:
+        Success after setup, a usage error for rejected configuration, failure if verification
+        fails, or the status of account selection when invoked.
+
+    Raises:
+        EOFError: If input ends during an interactive credential or account prompt.
+    """
     from dataclasses import replace
 
     from src.trading.connections import (
@@ -336,7 +413,20 @@ def cmd_connector_select_account(
     account: str | None = None,
     clear: bool = False,
 ) -> int:
-    """Scope an account-scoped connection to one account from the broker's list."""
+    """Scope an account-scoped connection to one account from the broker's list.
+
+    Args:
+        connection_id: Connection to update.
+        account: Account reference to select. Prompts from active broker accounts when omitted.
+        clear: Remove the existing selection instead.
+
+    Returns:
+        Success after saving or clearing the selection, failure if the account list is unavailable,
+        or a usage error if the selection is rejected.
+
+    Raises:
+        EOFError: If input ends before the interactive account selection.
+    """
     from src.trading.accounts import AccountListUnavailable, choose_account, connection_accounts
     from src.trading.connections import ConnectionStore
 
@@ -634,7 +724,19 @@ def cmd_connector_account(
     account: str | None = None,
     connection_id: str | None = None,
 ) -> int:
-    """Print account summary from a connector profile."""
+    """Print account summary from a connector profile.
+
+    Args:
+        profile_id: Profile ID, or None to use the default.
+        host: Optional local gateway host.
+        port: Optional local gateway port.
+        client_id: Optional broker client ID.
+        account: Optional account override.
+        connection_id: Optional saved connection ID.
+
+    Returns:
+        Result of rendering the account summary, or a failure exit code if the broker read fails.
+    """
     from src.trading.service import get_account
 
     try:
@@ -660,7 +762,20 @@ def cmd_connector_positions(
     account: str | None = None,
     connection_id: str | None = None,
 ) -> int:
-    """Print positions from a connector profile."""
+    """Print positions from a connector profile.
+
+    Args:
+        profile_id: Profile ID, or None to use the default.
+        host: Optional local gateway host.
+        port: Optional local gateway port.
+        client_id: Optional broker client ID.
+        account: Optional account override.
+        connection_id: Optional saved connection ID.
+
+    Returns:
+        Success exit code after reporting positions, including an empty result, or failure if the
+        broker read fails.
+    """
     from src.trading.service import get_positions
 
     try:
@@ -741,7 +856,20 @@ def cmd_connector_orders(
     account: str | None = None,
     include_executions: bool = False,
 ) -> int:
-    """Print open orders from a connector profile."""
+    """Print open orders from a connector profile.
+
+    Args:
+        profile_id: Profile ID, or None to use the default.
+        host: Optional local gateway host.
+        port: Optional local gateway port.
+        client_id: Optional broker client ID.
+        account: Optional account override.
+        include_executions: Whether to request executions alongside open orders from the connector.
+
+    Returns:
+        Success exit code after printing open orders or an empty result, or failure if the broker
+        read fails.
+    """
     from src.trading.service import get_open_orders
 
     try:
@@ -803,7 +931,22 @@ def cmd_connector_quote(
     currency: str = "USD",
     sec_type: str = "STK",
 ) -> int:
-    """Print a quote from a connector profile."""
+    """Print a quote from a connector profile.
+
+    Args:
+        symbol: Broker symbol to look up.
+        profile_id: Profile ID, or None to use the default.
+        host: Optional local gateway host.
+        port: Optional local gateway port.
+        client_id: Optional broker client ID.
+        account: Optional account override.
+        exchange: Contract exchange or routing code.
+        currency: Contract currency code.
+        sec_type: Broker security type code.
+
+    Returns:
+        Success exit code after printing the quote, or failure if the broker read fails.
+    """
     from src.trading.service import get_quote
 
     try:
@@ -860,7 +1003,29 @@ def cmd_connector_history(
     period: str = "1d",
     limit: int = 90,
 ) -> int:
-    """Print historical bars from a connector profile."""
+    """Print historical bars from a connector profile.
+
+    Args:
+        symbol: Broker symbol to look up.
+        profile_id: Profile ID, or None to use the default.
+        host: Optional local gateway host.
+        port: Optional local gateway port.
+        client_id: Optional broker client ID.
+        account: Optional account override.
+        exchange: Contract exchange or routing code.
+        currency: Contract currency code.
+        sec_type: Broker security type code.
+        duration: Gateway lookback duration, such as 30 D.
+        bar_size: Gateway bar size, such as 1 day.
+        what_to_show: Gateway data type, such as TRADES.
+        use_rth: Whether to restrict gateway bars to regular trading hours.
+        period: Bar interval for connectors using period-based history.
+        limit: Maximum number of bars requested and shown.
+
+    Returns:
+        Success exit code after reporting bars or an empty result, or failure if the broker read
+        fails.
+    """
     from src.trading.service import get_history
 
     try:
@@ -915,7 +1080,14 @@ def cmd_connector_history(
 
 
 def cmd_connector_authorize(profile_id: common.Optional[str]) -> int:
-    """Authorize a remote MCP connector profile."""
+    """Authorize a remote MCP connector profile.
+
+    Args:
+        profile_id: Live connector profile ID, or None to use the selected profile.
+
+    Returns:
+        Profile resolution error or the exit status of live authorization.
+    """
     code, broker = live._live_profile_connector(profile_id)
     if code != common.EXIT_SUCCESS or broker is None:
         return code
@@ -923,7 +1095,15 @@ def cmd_connector_authorize(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_status(profile_id: common.Optional[str]) -> int:
-    """Show connector status."""
+    """Show connector status.
+
+    Args:
+        profile_id: Profile ID, or None to use the selected profile.
+
+    Returns:
+        Exit status of the readiness check or, for a ready live MCP connector, the live status
+        command. Returns a usage error for invalid profile selection.
+    """
     try:
         profile = _selected_profile_or(profile_id)
     except ValueError as exc:
@@ -938,7 +1118,14 @@ def cmd_connector_status(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_start(profile_id: common.Optional[str]) -> int:
-    """Start a live remote MCP connector runner."""
+    """Start a live remote MCP connector runner.
+
+    Args:
+        profile_id: Runner-enabled live connector profile ID, or None to use the selected profile.
+
+    Returns:
+        Profile resolution error or the exit status of the runner start request.
+    """
     code, broker = live._live_profile_connector(profile_id, require_runner=True)
     if code != common.EXIT_SUCCESS or broker is None:
         return code
@@ -946,7 +1133,17 @@ def cmd_connector_start(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_runner_settings(profile_id: common.Optional[str], settings_file: common.Optional[str] = None) -> int:
-    """Show model budgets or save a JSON settings file for a stopped runner."""
+    """Show model budgets or save a JSON settings file for a stopped runner.
+
+    Args:
+        profile_id: Runner-enabled live connector profile ID, or None to use the selected profile.
+        settings_file: Optional JSON file containing DecisionSettings fields. Omit to read current
+            settings.
+
+    Returns:
+        Success exit code on API success, a usage error for invalid settings, failure on API error,
+        or an error from profile resolution.
+    """
     from urllib.parse import urlencode
 
     code, broker = live._live_profile_connector(profile_id, require_runner=True)
@@ -968,7 +1165,14 @@ def cmd_connector_runner_settings(profile_id: common.Optional[str], settings_fil
 
 
 def cmd_connector_stop(profile_id: common.Optional[str]) -> int:
-    """Stop a live remote MCP connector runner."""
+    """Stop a live remote MCP connector runner.
+
+    Args:
+        profile_id: Runner-enabled live connector profile ID, or None to use the selected profile.
+
+    Returns:
+        Profile resolution error or the exit status of the runner stop request.
+    """
     code, broker = live._live_profile_connector(profile_id, require_runner=True)
     if code != common.EXIT_SUCCESS or broker is None:
         return code
@@ -976,7 +1180,14 @@ def cmd_connector_stop(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_halt(profile_id: common.Optional[str]) -> int:
-    """Trip the halt switch for a live remote MCP connector profile."""
+    """Trip the halt switch for a live remote MCP connector profile.
+
+    Args:
+        profile_id: Runner-enabled live connector profile ID, or None to use the selected profile.
+
+    Returns:
+        Profile resolution error or the exit status of the halt request.
+    """
     code, broker = live._live_profile_connector(profile_id, require_runner=True)
     if code != common.EXIT_SUCCESS or broker is None:
         return code
@@ -984,7 +1195,14 @@ def cmd_connector_halt(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_resume(profile_id: common.Optional[str]) -> int:
-    """Clear the halt switch for a live remote MCP connector profile."""
+    """Clear the halt switch for a live remote MCP connector profile.
+
+    Args:
+        profile_id: Runner-enabled live connector profile ID, or None to use the selected profile.
+
+    Returns:
+        Profile resolution error or the exit status of clearing the halt switch.
+    """
     code, broker = live._live_profile_connector(profile_id, require_runner=True)
     if code != common.EXIT_SUCCESS or broker is None:
         return code
@@ -992,7 +1210,14 @@ def cmd_connector_resume(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_revoke(profile_id: common.Optional[str]) -> int:
-    """Revoke a live remote MCP connector profile."""
+    """Revoke a live remote MCP connector profile.
+
+    Args:
+        profile_id: Live connector profile ID, or None to use the selected profile.
+
+    Returns:
+        Profile resolution error or the exit status of revocation.
+    """
     code, broker = live._live_profile_connector(profile_id)
     if code != common.EXIT_SUCCESS or broker is None:
         return code

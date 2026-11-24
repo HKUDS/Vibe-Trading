@@ -21,7 +21,15 @@ def _resolve_console() -> Console:
 
 
 def cmd_history(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """List recent sessions via legacy ``cmd_sessions``."""
+    """List recent sessions using the session history handler.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after listing sessions, or one if the history handler raises an exception.
+    """
     console = _resolve_console()
     try:
         from cli.commands.sessions import cmd_sessions
@@ -34,7 +42,16 @@ def cmd_history(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_search(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Full-text search across recorded sessions."""
+    """Full-text search across recorded sessions.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Search query words joined with spaces.
+
+    Returns:
+        Zero after displaying matches or reporting an empty result, or one for a missing query or a
+        search error.
+    """
     console = _resolve_console()
     if not args:
         console.print(Text("Usage: /search <query>", style="bold red"))
@@ -66,7 +83,15 @@ def cmd_search(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_export(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Placeholder until the rich export lands."""
+    """Show where session export is available.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after printing the web export instructions.
+    """
     console = _resolve_console()
     body = Text()
     body.append("/export is not yet wired up to the interactive CLI.\n\n", style="dim")
@@ -77,7 +102,15 @@ def cmd_export(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_fork(ctx: Any = None, *args: str) -> int:
-    """Fork the active session at ``/fork <turn-id> [title]``."""
+    """Fork the active session at a specified turn and switch to the fork.
+
+    Args:
+        ctx: Interactive context holding the active session ID and optional transcript.
+        *args: Source turn ID followed by optional title words.
+
+    Returns:
+        Zero on successful fork, or one for missing inputs or a failed fork.
+    """
     console = _resolve_console()
     session_id = getattr(ctx, "session_id", None)
     if not session_id or not args:
@@ -113,7 +146,16 @@ _DISPATCH = {
 
 
 def run(ctx: Any = None, command: str = "history", *args: str) -> int:
-    """Dispatch ``run("history")`` / ``run("search", ...)`` / ``run("export")``."""
+    """Dispatch a session slash command.
+
+    Args:
+        ctx: Interactive context passed to the handler.
+        command: Command name without the leading slash.
+        *args: Arguments passed to the handler.
+
+    Returns:
+        Handler exit status, or one for an unknown command.
+    """
     handler = _DISPATCH.get(command)
     if handler is None:
         console = _resolve_console()

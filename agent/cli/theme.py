@@ -141,13 +141,21 @@ _styles: _ThemeStyles = _build_styles(_dark, _NO_COLOR or _console.color_system 
 
 
 def get_console() -> Console:
-    """Return the shared console instance."""
+    """Return the shared console instance.
+
+    Returns:
+        The shared Rich Console used by the CLI.
+    """
 
     return _console
 
 
 def is_dark() -> bool:
-    """Return ``True`` if dark-mode styles are active."""
+    """Report whether the active CLI palette is dark.
+
+    Returns:
+        True when dark-mode styles are active.
+    """
 
     return _dark
 

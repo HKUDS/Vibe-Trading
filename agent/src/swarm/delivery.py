@@ -4,7 +4,13 @@ from src.swarm.models import RunStatus, SwarmRun, TaskStatus
 
 
 def refresh_report(run: SwarmRun, final_task_ids: list[str]) -> None:
-    """Select a final synthesis or assemble available results without another LLM."""
+    """Select a final synthesis or assemble available results without another LLM.
+
+    Args:
+        run: Run whose final_report and report_is_partial fields are updated.
+        final_task_ids: IDs of tasks in the final layer. A single completed final task with a
+            summary supplies the report directly.
+    """
     run.report_is_partial = run.status != RunStatus.completed
     final = next(
         (t for t in run.tasks if t.id in final_task_ids and t.status == TaskStatus.completed and t.summary), None

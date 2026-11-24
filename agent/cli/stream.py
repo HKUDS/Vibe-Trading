@@ -29,7 +29,15 @@ _ACRONYMS: frozenset[str] = frozenset({
 
 
 def beautify_tool_name(raw: str) -> str:
-    """``get_market_data`` → ``Market Data``. Acronyms in whitelist UPPER."""
+    """Format a raw tool name for display.
+
+    Args:
+        raw: Tool identifier with optional verb prefix and underscore separators.
+
+    Returns:
+        Display name with recognized acronyms capitalized, or the original input if no display words
+        remain.
+    """
     if not raw:
         return raw
     parts = _PREFIX_RE.sub("", raw).split("_")
@@ -42,7 +50,16 @@ def beautify_tool_name(raw: str) -> str:
 
 
 def summarize_args(args: dict | str | None, *, max_len: int = 60) -> str:
-    """Compact single-line preview. Prefers query/symbol/url; truncates long."""
+    """Summarize tool arguments for a compact display row.
+
+    Args:
+        args: Argument mapping or text to preview. Falsey inputs produce an empty preview.
+        max_len: Character budget used when truncating the preview.
+
+    Returns:
+        Quoted preview of a preferred argument when present, compact key-value text for other
+        mappings, or truncated input text.
+    """
     if not args:
         return ""
     if isinstance(args, str):
@@ -83,7 +100,11 @@ class _SpinnerState:
 
 
 class ThinkingSpinner:
-    """Transient spinner that can be paused/resumed safely."""
+    """Show a transient spinner that can be paused around other output.
+
+    Args:
+        console: Console override. Defaults to the shared CLI console.
+    """
 
     def __init__(self, console: Console | None = None) -> None:
         self._console = console or get_console()
@@ -95,7 +116,11 @@ class ThinkingSpinner:
         self._tick_thread: Optional[threading.Thread] = None
 
     def start(self, verb: str | None = None) -> None:
-        """Begin rendering. ``verb`` rerolls per turn if not supplied."""
+        """Start rendering the spinner if it is idle.
+
+        Args:
+            verb: Optional status verb. Omit it to pick a verb for the new turn.
+        """
         with self._lock:
             if self._live is not None:
                 return
@@ -121,12 +146,21 @@ class ThinkingSpinner:
                 self._live = None
 
     def set_extra(self, extra: str) -> None:
-        """Update the right-hand suffix (e.g. token / cost preview)."""
+        """Update the spinner's right-hand suffix.
+
+        Args:
+            extra: Additional status text, such as a token or cost preview.
+        """
         self._state.extra = extra
 
     @contextmanager
     def pause(self) -> Iterator[None]:
-        """Suspend the spinner so the caller can safely ``console.print``."""
+        """Suspend rendering while the caller prints to the console.
+
+        Yields:
+            Control to the caller while the spinner is hidden. A previously running spinner resumes
+            on exit unless stopped.
+        """
         was_running = False
         with self._lock:
             if self._live is not None and not self._state.stopped:
@@ -188,13 +222,27 @@ class ToolCall:
 
     @property
     def duration_ms(self) -> int | None:
+        """Compute the elapsed time for a finished tool call.
+
+        Returns:
+            Integer milliseconds from start to finish, or None while unfinished.
+        """
         if self.finished_at is None:
             return None
         return int((self.finished_at - self.started_at) * 1000)
 
 
 class StreamRenderer:
-    """Drives the streaming display for a single agent turn."""
+    """Drive the streaming display for one agent turn.
+
+    Args:
+        mode: Display mode. Single mode manages a spinner, while swarm mode leaves turn display to
+            its caller.
+        console: Console override. Defaults to the shared CLI console.
+
+    Raises:
+        ValueError: If mode is neither single nor swarm.
+    """
 
     def __init__(self, *, mode: str = "single",
                   console: Console | None = None) -> None:
@@ -207,11 +255,23 @@ class StreamRenderer:
 
     @property
     def mode(self) -> str:
+        """Expose the configured display mode.
+
+        Returns:
+            The configured single or swarm mode.
+        """
         return self._mode
 
     @contextmanager
     def turn(self, *, verb: str | None = None) -> Iterator["StreamRenderer"]:
-        """Context manager wrapping one agent turn. Manages spinner lifecycle."""
+        """Wrap an agent turn and manage its single-mode spinner.
+
+        Args:
+            verb: Optional initial spinner verb for single mode.
+
+        Yields:
+            This renderer for use within the active turn.
+        """
         if self._mode == "swarm":
             yield self
             return
@@ -226,11 +286,21 @@ class StreamRenderer:
             self._active_calls.clear()
 
     def on_tool_start(self, name: str, args: dict | str | None) -> None:
-        """Record a tool call start. Line emitted only when call finishes."""
+        """Track the start of a tool call for later rendering.
+
+        Args:
+            name: Raw tool name used to match the finish event.
+            args: Tool arguments to summarize in the completed row.
+        """
         self._active_calls[name] = ToolCall(name=name, args=args)
 
     def on_tool_end(self, name: str, *, summary: str = "") -> None:
-        """Mark a tool call finished and emit its static line."""
+        """Mark a tool call finished and emit its static line.
+
+        Args:
+            name: Raw tool name used to locate the active call.
+            summary: Optional result summary to display with the call.
+        """
         call = self._active_calls.pop(name, None)
         if call is None:
             call = ToolCall(name=name, args=None,
@@ -271,7 +341,11 @@ class StreamRenderer:
             self._console.print(renderable)
 
     def print_answer(self, body: str) -> None:
-        """Print the assistant's final answer, prefixed with the brand marker."""
+        """Print the final answer with the assistant marker.
+
+        Args:
+            body: Answer text to display. Additional lines are indented.
+        """
         if self._spinner is not None:
             self._spinner.stop()
             self._spinner = None
@@ -287,7 +361,15 @@ class StreamRenderer:
     def print_footer(self, *, run_id: str, tool_count: int,
                       duration_ms: int | float | None,
                       token_count: int | None, cost: float | None) -> None:
-        """``/show <id> · N tool calls · 4.1s · 1.2k tokens · $0.003``."""
+        """Print the run reference and available turn metrics.
+
+        Args:
+            run_id: Run ID used in the show command hint.
+            tool_count: Number of tool calls to display.
+            duration_ms: Elapsed wall time in milliseconds, or None if unavailable.
+            token_count: Optional token count.
+            cost: Optional dollar cost.
+        """
         from cli.utils.format import abbreviate_num, format_tokens
 
         line = Text("  ")

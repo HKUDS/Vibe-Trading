@@ -6,7 +6,17 @@ from pathlib import Path
 
 
 def positive_int(value: str) -> int:
-    """argparse type for counts that must be at least one."""
+    """Parse a command-line count of at least one.
+
+    Args:
+        value: Command-line value to convert.
+
+    Returns:
+        Parsed positive integer.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is not an integer greater than zero.
+    """
     try:
         number = int(value)
     except ValueError:
@@ -17,6 +27,11 @@ def positive_int(value: str) -> int:
 
 
 def register_global_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register top-level prompt, inspection, and execution flags.
+
+    Args:
+        parser: Top-level CLI argument parser to extend.
+    """
     from cli._version import __version__
 
     parser.add_argument("--version", action="version", version="vibe-trading " + __version__)
@@ -44,6 +59,11 @@ def _register_max_iterations(parser: argparse.ArgumentParser, dest: str) -> None
 
 
 def register_subcommands(subparsers: argparse._SubParsersAction) -> None:
+    """Register the run, serve, and office commands.
+
+    Args:
+        subparsers: Parent subparser collection for the three commands.
+    """
     run_parser = subparsers.add_parser("run", help="Run a prompt")
     _register_prompt_arguments(run_parser, "run_")
     _register_max_iterations(run_parser, "run_max_iter")
@@ -56,6 +76,11 @@ def register_subcommands(subparsers: argparse._SubParsersAction) -> None:
 
 
 def register_inspection_subcommands(subparsers: argparse._SubParsersAction) -> None:
+    """Register run inspection, interactive chat, setup, and development commands.
+
+    Args:
+        subparsers: Parent subparser collection to extend.
+    """
     list_parser = subparsers.add_parser("list", help="List runs")
     list_parser.add_argument("--limit", dest="list_limit", type=positive_int, default=20, help="Maximum number of runs")
     show_parser = subparsers.add_parser("show", help="Show run details")

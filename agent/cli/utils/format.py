@@ -11,7 +11,21 @@ Number = Union[int, float]
 
 
 def format_duration(value: Number | None, *, unit: str = "ms") -> str:
-    """Render a duration as a short, human-readable string."""
+    """Render a duration as a short, human-readable string.
+
+    Args:
+        value: Numeric duration in the specified unit.
+        unit: Input unit, either ms for milliseconds or s for seconds.
+
+    Returns:
+        Compact label such as 230ms, 1.4s, or 2m 05s. Missing, invalid, and negative values use an
+        em dash.
+
+    Raises:
+        ValueError: If the unit is unsupported for a nonnegative numeric duration or conversion to
+            an integer encounters NaN.
+        OverflowError: If an infinite positive duration reaches the rounding step.
+    """
 
     if value is None:
         return "—"
@@ -47,7 +61,15 @@ def format_duration(value: Number | None, *, unit: str = "ms") -> str:
 
 
 def format_tokens(count: Number | None) -> str:
-    """Render a token count with a thousands-suffix."""
+    """Format a token count using a compact magnitude suffix.
+
+    Args:
+        count: Count to convert to an integer. None, invalid, and nonpositive counts render as 0
+            tokens.
+
+    Returns:
+        Token count label such as 452 tokens, 1.2k tokens, or 3.4M tokens.
+    """
 
     if count is None:
         return "0 tokens"
@@ -71,7 +93,16 @@ def format_tokens(count: Number | None) -> str:
 
 
 def abbreviate_num(value: Number | None, *, currency: str | None = None) -> str:
-    """Abbreviate a number with magnitude suffix."""
+    """Abbreviate a number with a magnitude suffix.
+
+    Args:
+        value: Number to abbreviate. None or an invalid conversion renders as an em dash.
+        currency: Optional currency prefix. With a prefix, magnitudes below one keep three decimal
+            places.
+
+    Returns:
+        Compact number string such as 12.4k or $0.003.
+    """
 
     if value is None:
         return "—"

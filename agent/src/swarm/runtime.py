@@ -64,19 +64,37 @@ _ACTIVE_RUNS_LOCK = threading.Lock()
 
 
 def register_active_run(run_id: str, session_id: str, cancel: Callable[[], bool]) -> None:
-    """Index a freshly started run under the session that owns it."""
+    """Index a freshly started run under the session that owns it.
+
+    Args:
+        run_id: Run ID to index.
+        session_id: ID of the owning session.
+        cancel: Callback that signals cancellation and reports whether it succeeded.
+    """
     with _ACTIVE_RUNS_LOCK:
         _ACTIVE_RUNS[run_id] = (session_id, cancel)
 
 
 def unregister_active_run(run_id: str) -> None:
-    """Drop a run from the index once it is terminal or no longer ours."""
+    """Drop a run from the index once it is terminal or no longer ours.
+
+    Args:
+        run_id: Run ID to remove if present.
+    """
     with _ACTIVE_RUNS_LOCK:
         _ACTIVE_RUNS.pop(run_id, None)
 
 
 def cancel_indexed_run(run_id: str) -> bool:
-    """Signal one indexed run regardless of which runtime started it."""
+    """Signal one indexed run regardless of which runtime started it.
+
+    Args:
+        run_id: Run ID to remove from the index and signal.
+
+    Returns:
+        True if the callback reports success. False if there was no entry or the callback failed or
+        returned false.
+    """
     with _ACTIVE_RUNS_LOCK:
         entry = _ACTIVE_RUNS.pop(run_id, None)
     if entry is None:
@@ -89,7 +107,14 @@ def cancel_indexed_run(run_id: str) -> bool:
 
 
 def active_run_ids(session_id: str) -> list[str]:
-    """Return the run ids currently indexed for ``session_id``."""
+    """Return the run ids currently indexed for ``session_id``.
+
+    Args:
+        session_id: ID of the owning session.
+
+    Returns:
+        IDs of active runs indexed under the session.
+    """
     with _ACTIVE_RUNS_LOCK:
         return [rid for rid, (sid, _) in _ACTIVE_RUNS.items() if sid == session_id]
 
@@ -317,7 +342,14 @@ def _task_definition_changed(
 
 
 class SwarmRuntime:
-    """Swarm DAG orchestration engine."""
+    """Orchestrate swarm task DAGs in a background thread per run.
+
+    Args:
+        store: Swarm run persistence store.
+        max_workers: Maximum number of tasks executed concurrently per run.
+        agent_config: Optional agent configuration passed to workers.
+        policy: Tool policy applied to the swarm.
+    """
 
     def __init__(
         self,
@@ -347,7 +379,27 @@ class SwarmRuntime:
         session_id: str | None = None,
         record_usage: Callable[[dict], None] | None = None,
     ) -> SwarmRun:
-        """Start a swarm run."""
+        """Start a swarm run in a background thread.
+
+        Args:
+            preset_name: YAML preset name to execute.
+            user_vars: User-provided variables for prompt templates.
+            live_callback: Optional callback invoked for live events.
+            include_shell_tools: Whether workers may register shell tools.
+            resume_from: Optional prior run whose completed work and compatible task threads can be
+                reused.
+            session_id: Owning session, if the run should be indexed for cancellation.
+            record_usage: Optional usage sink bound to the turn that launched the run.
+
+        Returns:
+            Newly created run, initially pending.
+
+        Raises:
+            FileNotFoundError: If the preset does not exist.
+            ValueError: If DAG validation fails or the prior run lacks supported node threads or
+                contains an unknown tool outcome.
+            RuntimeError: If the background thread cannot be started.
+        """
         if resume_from is not None:
             prior_dir = self._store.run_dir(resume_from.id)
             for task in resume_from.tasks:
@@ -447,7 +499,15 @@ class SwarmRuntime:
             self._forget_run(run.id)
 
     def cancel_run(self, run_id: str) -> bool:
-        """Signal cancellation for a running swarm."""
+        """Signal cancellation for a running swarm.
+
+        Args:
+            run_id: ID of the run to cancel.
+
+        Returns:
+            True if cancellation was signalled, or False if this runtime has no cancellation event
+            for the run.
+        """
         with self._lock:
             cancel_event = self._cancel_events.get(run_id)
         if cancel_event is None:
