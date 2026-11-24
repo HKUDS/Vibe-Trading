@@ -46,7 +46,14 @@ logger = logging.getLogger(__name__)
 
 
 class SessionService:
-    """Own the active attempts and durable input queue for a session store."""
+    """Own the active attempts and durable input queue for a session store.
+
+    Args:
+        store: Store for session metadata, attempts, and durable threads.
+        event_bus: Event bus for session and live stream events.
+        runs_dir: Root runs directory used to locate background-task storage and compaction runs.
+        policy: Tool policy shared by conversation turns and compaction.
+    """
 
     def __init__(
         self,
@@ -96,11 +103,25 @@ class SessionService:
         recover_pending_inputs(store, self.pending_inputs)
 
     def register_tool(self, tool: Any) -> str:
-        """Register one explicit host tool for subsequent attempts."""
+        """Register one explicit host tool for subsequent attempts.
+
+        Args:
+            tool: Host tool instance to expose in subsequent attempts.
+
+        Returns:
+            The registered tool name.
+        """
         return self._factory.register_tool(tool)
 
     def runtime(self, session_id: str) -> SessionRuntime:
-        """Return the session's runtime, rebuilding it from its thread if needed."""
+        """Return the session's runtime, rebuilding it from its thread if needed.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The session runtime.
+        """
         return self._runtimes.get(session_id)
 
     def _reserve_session(self, session_id: str) -> None:
@@ -115,7 +136,14 @@ class SessionService:
             self._inflight.add(session_id)
 
     def shutdown(self, *, timeout: float = 5.0) -> list[str]:
-        """Stop accepting work, cancel owned background work, and wait for reaping."""
+        """Stop accepting work, cancel owned background work, and wait for reaping.
+
+        Args:
+            timeout: Seconds to wait for active attempts and background tasks to stop.
+
+        Returns:
+            Identifiers of attempts and background tasks still pending after cancellation.
+        """
         with self._inflight_lock:
             self._shutting_down = True
             tasks = [task for task in self._active_tasks.values() if not task.done()]
@@ -145,7 +173,16 @@ class SessionService:
         config: Optional[Dict[str, Any]] = None,
         owner: Optional["Principal"] = None,
     ) -> Session:
-        """Create a new session."""
+        """Create a new session.
+
+        Args:
+            title: Session title.
+            config: Session configuration, including any per-session overrides.
+            owner: Owning principal from the authenticated request, if known.
+
+        Returns:
+            The newly created Session.
+        """
         session = Session(title=title, config=config or {}, owner=owner)
         self.store.create_session(session)
         self._search_index.index_session(session.session_id, title)
@@ -153,11 +190,22 @@ class SessionService:
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
-        """Return a session by ID."""
+        """Return a session by ID.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The stored session, or None when no session record is available.
+        """
         return self.store.get_session(session_id)
 
     def update_session(self, session: Session) -> None:
-        """Persist session metadata and refresh its search label."""
+        """Persist session metadata and refresh its search label.
+
+        Args:
+            session: Session carrying the metadata and title to persist.
+        """
         self.store.update_session(session)
         self._search_index.index_session(session.session_id, session.title)
 
@@ -168,7 +216,21 @@ class SessionService:
         *,
         title: str = "",
     ) -> Session:
-        """Copy through one completed turn so later identity and tool authorisations cannot enter the fork."""
+        """Create an independent session copied through one completed turn.
+
+        Args:
+            source_session_id: ID of the session to copy.
+            turn_id: ID of the completed turn through which to copy history and state.
+            title: Fork title. Defaults to the source title or ID with a fork suffix.
+
+        Returns:
+            The newly created session with its source session and turn IDs.
+
+        Raises:
+            ValueError: If the source session or turn is missing or the turn ended without
+                completing.
+            SessionBusyError: If the source turn is still running.
+        """
         source = self.store.get_session(source_session_id)
         if source is None:
             raise ValueError(f"Session {source_session_id} not found")
@@ -227,7 +289,19 @@ class SessionService:
         )
 
     async def compact_session(self, session_id: str, focus: str = "") -> Dict[str, Any]:
-        """Compact a session's replayed history through the existing L3 path."""
+        """Compact a session's replayed history through the existing L3 path.
+
+        Args:
+            session_id: Session whose replayed history should be compacted.
+            focus: Optional topic to prioritize in the summary.
+
+        Returns:
+            Session ID, summary, durable item sequence, and stripped focus text.
+
+        Raises:
+            ValueError: If the session is missing or has insufficient history to compact.
+            SessionBusyError: If a turn is running or queued input is waiting.
+        """
         session = self.store.get_session(session_id)
         if session is None:
             raise ValueError(f"Session {session_id} not found")
@@ -253,11 +327,28 @@ class SessionService:
         }
 
     def list_sessions(self, limit: int = 50) -> list[Session]:
-        """List all sessions."""
+        """List sessions by most recent update.
+
+        Args:
+            limit: Maximum number of sessions to return.
+
+        Returns:
+            Stored sessions in descending update-time order.
+        """
         return self.store.list_sessions(limit)
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete an idle session after purging its searchable text."""
+        """Delete an idle session after purging its searchable text.
+
+        Args:
+            session_id: Session to delete.
+
+        Returns:
+            True if a session directory existed and deletion was attempted, otherwise False.
+
+        Raises:
+            SessionBusyError: If the session has an in-flight run.
+        """
         with self._inflight_lock:
             if session_id in self._inflight:
                 raise SessionBusyError("Stop the active run before deleting its session")
@@ -283,16 +374,22 @@ class SessionService:
         """Start a user turn or enqueue its message durably when busy.
 
         Args:
+            session_id: Session ID.
+            content: Message content validated by the caller, including queued inputs.
+            role: Message role. User messages can start or join a turn, and other roles are recorded
+                directly.
             include_shell_tools: Shell entitlement of the sending request.
-            queue_if_busy: Allow durable enqueue when a session is busy.
+            queue_if_busy: Allow durable enqueue when the session is busy.
 
         Returns:
-            A message and attempt receipt, or a queued receipt with a 1-based position.
+            A message and attempt receipt, a queued receipt with a 1-based position, or just the
+            message ID for other roles.
 
         Raises:
-            ValueError: The session is missing.
-            SessionBusyError: The session is busy or the service is closing.
-            PendingInputLimitError: The durable queue is full.
+            ValueError: If the session does not exist.
+            SessionBusyError: If queueing is disabled for a busy session or the service is shutting
+                down.
+            PendingInputLimitError: If the durable queue is full.
         """
         session = self.store.get_session(session_id)
         if not session:
@@ -464,11 +561,26 @@ class SessionService:
         }
 
     def list_pending_inputs(self, session_id: str) -> list[Dict[str, Any]]:
-        """Return the messages waiting to join a session, oldest first."""
+        """Return the messages waiting to join a session, oldest first.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            Client views of the pending inputs, including those being delivered.
+        """
         return self.pending_inputs.public_items(session_id)
 
     def discard_pending_input(self, session_id: str, input_id: str) -> Optional[Dict[str, Any]]:
-        """Remove a waiting message at the user's request."""
+        """Remove a waiting message at the user's request.
+
+        Args:
+            session_id: Session ID.
+            input_id: The input to remove.
+
+        Returns:
+            The removed input's view, or None if it is unknown or being delivered.
+        """
         removed = self.pending_inputs.discard(session_id, input_id)
         if removed is None:
             return None
@@ -486,11 +598,27 @@ class SessionService:
         return removed.public()
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
-        """Return the message history."""
+        """Return the message history.
+
+        Args:
+            session_id: Session ID.
+            limit: Maximum number of recent messages to return.
+
+        Returns:
+            Projected transcript messages in display order.
+        """
         return self.store.get_messages(session_id, limit)
 
     def cancel_current(self, session_id: str) -> bool:
-        """Return whether a loop, in-flight task or owned background task received cancellation."""
+        """Request cancellation of work owned by a session.
+
+        Args:
+            session_id: Session ID whose active turn or background work should be cancelled.
+
+        Returns:
+            True if cancellation was requested for an active runtime, an in-flight attempt, or a
+            background task.
+        """
         background_handle = self._background_handles.get(session_id)
         background_cancelled = False
         if background_handle is not None:

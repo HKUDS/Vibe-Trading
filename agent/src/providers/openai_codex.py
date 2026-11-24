@@ -55,7 +55,12 @@ _TOKEN_REFRESH_THREAD_LOCK = threading.Lock()
 
 
 class CodexStreamError(RuntimeError):
-    """Raised when the OpenAI Codex stream responds with an HTTP error."""
+    """Raised when the OpenAI Codex stream responds with an HTTP error.
+
+    Args:
+        status_code: HTTP status code exposed to the caller's retry policy.
+        detail: Error detail included in the message up to 500 characters.
+    """
 
     def __init__(self, status_code: int, detail: Any) -> None:
         self.status_code = int(status_code)
@@ -64,7 +69,11 @@ class CodexStreamError(RuntimeError):
 
 
 class CodexAuthenticationError(CodexStreamError):
-    """Raised when a rejected Codex session requires explicit login."""
+    """Raised when a rejected Codex session requires explicit login.
+
+    Args:
+        detail: Authentication failure detail. The login command is appended if absent.
+    """
 
     def __init__(self, detail: str) -> None:
         message = detail.rstrip(". ")
@@ -93,6 +102,11 @@ def _build_codex_token_storage(path: Path | None = None) -> Any:
 
     class VibeCodexTokenStorage(FileTokenStorage):
         def get_token_path(self) -> Path:
+            """Locate the token file owned by this storage instance.
+
+            Returns:
+                The token path selected when the storage was created.
+            """
             return token_path
 
     # Importing the Codex CLI cache would give two clients the same rotating refresh token (#975).
@@ -230,7 +244,18 @@ def login_openai_codex(
     print_fn: Callable[[str], None] | None = None,
     prompt_fn: Callable[[str], str] | None = None,
 ) -> Any:
-    """Force interactive ChatGPT/Codex OAuth login into Vibe-owned storage."""
+    """Force interactive ChatGPT/Codex OAuth login into Vibe-owned storage.
+
+    Args:
+        print_fn: Optional writer for login instructions and progress. Defaults to print.
+        prompt_fn: Optional input callback for interactive prompts. Defaults to input.
+
+    Returns:
+        The OAuth token returned by the login flow and saved to the Vibe token store.
+
+    Raises:
+        RuntimeError: If oauth-cli-kit is unavailable.
+    """
     try:
         from oauth_cli_kit import login_oauth_interactive
     except ImportError as exc:
@@ -246,7 +271,11 @@ def login_openai_codex(
 
 
 def get_openai_codex_login_status() -> Any | None:
-    """Return a usable Vibe-owned OAuth token, if available."""
+    """Return a usable Vibe-owned OAuth token, if available.
+
+    Returns:
+        The Vibe OAuth token with an access credential, or None if loading or refresh failed.
+    """
     try:
         token = _get_codex_token()
     except Exception:
@@ -335,7 +364,17 @@ def _get_codex_token(
 
 
 def validate_codex_base_url(url: str) -> str:
-    """Validate the only supported ChatGPT Codex OAuth endpoint."""
+    """Validate the only supported ChatGPT Codex OAuth endpoint.
+
+    Args:
+        url: Candidate URL. An empty string selects the default endpoint.
+
+    Returns:
+        The validated URL with surrounding whitespace and trailing slashes removed.
+
+    Raises:
+        ValueError: If the URL does not use HTTPS and the supported Codex host and path.
+    """
     value = (url or DEFAULT_CODEX_URL).strip().rstrip("/")
     parsed = urlparse(value)
     if parsed.scheme != "https" or parsed.netloc != "chatgpt.com" or parsed.path != "/backend-api/codex/responses":
@@ -644,7 +683,21 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
 
 
 class OpenAICodexLLM:
-    """Minimal LangChain-compatible adapter for Vibe-Trading's ChatLLM."""
+    """Adapt the ChatGPT Codex OAuth backend to the chat client.
+
+    Args:
+        model: Codex model name, optionally provider-prefixed.
+        roots: File roots used to resolve local tool image references.
+        temperature: Temperature retained in adapter configuration for compatibility.
+        timeout: Default HTTP client timeout in seconds.
+        tools: Optional function tool definitions to send to Codex.
+        reasoning_effort: Optional reasoning effort included in requests.
+        codex_url: Optional Codex endpoint override, validated at construction.
+
+    Raises:
+        RuntimeError: If httpx is unavailable.
+        ValueError: If the Codex endpoint is unsupported.
+    """
 
     def __init__(
         self,
@@ -668,6 +721,14 @@ class OpenAICodexLLM:
         self.codex_url = validate_codex_base_url(codex_url or get_env_config().llm.openai_codex_base_url)
 
     def bind_tools(self, tools: list[dict[str, Any]]) -> "OpenAICodexLLM":
+        """Bind function tools to a copy of the Codex adapter.
+
+        Args:
+            tools: Tool definitions to include in subsequent requests.
+
+        Returns:
+            A new adapter with those tools and the same connection and model settings.
+        """
         return OpenAICodexLLM(
             model=self.model,
             roots=self.roots,
@@ -722,6 +783,21 @@ class OpenAICodexLLM:
     def stream(
         self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None
     ) -> Iterable[CodexAIMessage]:
+        """Stream a Codex response, refreshing authentication when required.
+
+        Args:
+            messages: Conversation messages to convert to Codex Responses input items.
+            config: Optional run config containing an HTTP client timeout override in seconds.
+
+        Yields:
+            Codex message chunks carrying response text, tool calls, or response metadata.
+
+        Raises:
+            CodexAuthenticationError: If the local login is missing or must be renewed.
+            CodexStreamError: If the backend returns an HTTP error after any applicable retry or
+                token recovery fails.
+            RuntimeError: If the backend reports a failed response in the stream.
+        """
         timeout = (config or {}).get("timeout") or self.timeout
         replay = _strip_model_prefix(self.model) not in _REASONING_REPLAY_REJECTED
         body = self._body(messages, stream=True, replay_reasoning=replay)
@@ -767,10 +843,28 @@ class OpenAICodexLLM:
                 raise CodexStreamError(status_code, raw)
 
     def invoke(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> CodexAIMessage:
+        """Collect a Codex response into one message.
+
+        Args:
+            messages: Conversation messages to send to Codex.
+            config: Optional run config passed through to stream.
+
+        Returns:
+            The aggregated response, or an empty message if the stream yields no chunks.
+        """
         accumulated: CodexAIMessage | None = None
         for chunk in self.stream(messages, config=config):
             accumulated = chunk if accumulated is None else accumulated + chunk
         return accumulated or CodexAIMessage()
 
     async def ainvoke(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> CodexAIMessage:
+        """Collect a Codex response in a worker thread.
+
+        Args:
+            messages: Conversation messages to send to Codex.
+            config: Optional run config passed through to invoke.
+
+        Returns:
+            The response message returned by invoke.
+        """
         return await asyncio.to_thread(self.invoke, messages, config)

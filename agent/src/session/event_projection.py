@@ -74,7 +74,12 @@ def _parse_line(raw_line: bytes) -> Optional[ThreadItem]:
 
 
 class ThreadEvents:
-    """Project durable thread items and correlate transient live events."""
+    """Project durable thread items and correlate transient live events.
+
+    Args:
+        bus: Event bus used by the session.
+        thread_path: Callable resolving a session ID to its durable thread path.
+    """
 
     def __init__(self, bus: EventBus, thread_path: Callable[[str], Path]) -> None:
         """Create the stream."""
@@ -88,7 +93,17 @@ class ThreadEvents:
     # Publishing
 
     def emit(self, session_id: str, event_type: str, data: Optional[Dict[str, Any]] = None) -> Optional[SSEEvent]:
-        """Publish durable items and a canonical live event from a callback."""
+        """Publish durable items and a canonical live event from a callback.
+
+        Args:
+            session_id: Session ID.
+            event_type: Canonical callback event type, including goal and swarm events.
+            data: Event payload, defaulting to an empty mapping.
+
+        Returns:
+            The event when the callback produces one, or None when it is filtered or already
+            recorded.
+        """
         payload = data if data is not None else {}
         with self._lock:
             tail = self._tail(session_id)
@@ -112,7 +127,14 @@ class ThreadEvents:
             return event
 
     def sync(self, session_id: str) -> int:
-        """Publish the events of items recorded since the last read."""
+        """Publish the events of items recorded since the last read.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The highest sequence read from the thread.
+        """
         with self._lock:
             tail = self._tail(session_id)
             self._pump(session_id, tail)
@@ -129,7 +151,22 @@ class ThreadEvents:
         replay_all: bool = False,
         active_turn_id: Optional[str] = None,
     ) -> AsyncIterator[SSEEvent]:
-        """Subscribe to a session, resuming durable items from disk."""
+        """Subscribe to a session, resuming durable items from disk.
+
+        Args:
+            session_id: Session ID.
+            cursor: Highest sequence the client already has. A durable last event ID supplies it
+                when omitted.
+            last_event_id: Last event ID the client received, also used to locate its place in the
+                live buffer.
+            replay_all: Request active-run hydration when no cursor is present.
+            active_turn_id: Running turn to hydrate from disk when replay_all is set without a
+                cursor.
+
+        Yields:
+            Replayed durable and buffered events as applicable, then live events. Durable items
+            dropped by an overflowing queue are recovered from disk.
+        """
         if cursor is None:
             cursor = cursor_from_event_id(last_event_id)
         with self._lock:

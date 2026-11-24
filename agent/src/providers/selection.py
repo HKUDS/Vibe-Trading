@@ -31,7 +31,11 @@ class ModelSelection:
     reasoning_effort: str = ""
 
     def to_dict(self) -> dict[str, str]:
-        """Return the persisted form."""
+        """Return the persisted form.
+
+        Returns:
+            Provider, model, and reasoning effort fields for persistence.
+        """
         return {
             "provider": self.provider,
             "model": self.model,
@@ -40,7 +44,15 @@ class ModelSelection:
 
 
 def is_configured_secret(value: str, placeholders: set[str] | frozenset[str]) -> bool:
-    """Return True when a secret is set and not a documented placeholder."""
+    """Check whether a secret value is configured.
+
+    Args:
+        value: Raw secret value. Whitespace and surrounding quote characters are stripped.
+        placeholders: Example values that do not count as configured, compared case-insensitively.
+
+    Returns:
+        True if the normalized value is nonempty and absent from the placeholder set.
+    """
     normalized = value.strip().strip('"').strip("'")
     if not normalized:
         return False
@@ -48,7 +60,14 @@ def is_configured_secret(value: str, placeholders: set[str] | frozenset[str]) ->
 
 
 def custom_provider_option(active: Mapping[str, str]) -> LLMProviderOption:
-    """Describe the active custom profile as a provider option."""
+    """Describe the active custom profile as a provider option.
+
+    Args:
+        active: Active profile mapping supplying model and base_url.
+
+    Returns:
+        The provider option used by the settings form and selection rules for custom.
+    """
     return LLMProviderOption(
         name="custom",
         label="Custom (credential vault)",
@@ -64,7 +83,21 @@ def custom_provider_option(active: Mapping[str, str]) -> LLMProviderOption:
 def check_provider_choice(
     provider: str, model: str, reasoning_effort: str | None
 ) -> tuple[LLMProviderOption, str, str]:
-    """Apply the catalog's rules to a provider, model and effort."""
+    """Apply the catalog's rules to a provider, model and effort.
+
+    Args:
+        provider: Provider name as written by the caller.
+        model: Model ID as written by the caller.
+        reasoning_effort: Effort level, or None or an empty string to leave it unset.
+
+    Returns:
+        The provider option, the stripped model ID, and the normalized effort.
+
+    Raises:
+        ModelSelectionError: If the provider is unknown, no custom profile is active, the model is
+            invalid for the selection, or the effort is unsupported.
+        ValueError: If the active custom profile is missing or lacks an API key.
+    """
     name = provider.strip().lower()
     model_name = model.strip()
     if name == "custom":
@@ -95,7 +128,16 @@ def check_provider_choice(
 
 
 def credential_status(option: LLMProviderOption, api_key: str) -> tuple[bool, Optional[str]]:
-    """Report whether a provider has usable credentials on this server."""
+    """Report whether a provider has usable credentials on this server.
+
+    Args:
+        option: Provider option whose authentication method determines the credential check.
+        api_key: API key the server holds for this provider. Login-based providers check their own
+            credentials.
+
+    Returns:
+        A configured flag and an optional login description.
+    """
     if option.auth_type == "oauth":
         try:
             from src.providers.openai_codex import get_openai_codex_login_status
@@ -118,7 +160,19 @@ def credential_status(option: LLMProviderOption, api_key: str) -> tuple[bool, Op
 
 
 def parse_model_selection(raw: Any) -> ModelSelection:
-    """Check a selection's shape without consulting the server's settings."""
+    """Check a selection's shape without consulting the server's settings.
+
+    Args:
+        raw: Caller-supplied or stored mapping containing provider, model, and optional
+            reasoning_effort.
+
+    Returns:
+        The parsed selection, ready for catalog validation.
+
+    Raises:
+        ModelSelectionError: If the value is not a mapping, includes unknown fields, or has fields
+            of the wrong type.
+    """
     if not isinstance(raw, Mapping):
         raise ModelSelectionError("A model selection must be an object")
     extra = sorted(str(key) for key in raw if key not in SELECTION_FIELDS)
@@ -138,7 +192,16 @@ def parse_model_selection(raw: Any) -> ModelSelection:
 
 
 def selection_settings(selection: ModelSelection, base: Mapping[str, str]) -> dict[str, str]:
-    """Return the server's settings with a selection applied, as a private copy."""
+    """Return the server's settings with a selection applied, as a private copy.
+
+    Args:
+        selection: Validated selection to apply.
+        base: The server's current settings.
+
+    Returns:
+        A copy with the selected provider, model, and effort. A different non-custom provider
+        inherits generic OpenAI settings only when it owns the corresponding fields.
+    """
     values = dict(base)
     configured = ModelOptions(**values).langchain_provider.strip().lower()
     values["LANGCHAIN_PROVIDER"] = selection.provider
@@ -158,7 +221,19 @@ def selection_settings(selection: ModelSelection, base: Mapping[str, str]) -> di
 def validate_model_selection(
     raw: Any, *, settings: Mapping[str, str] | None = None
 ) -> tuple[ModelSelection, ProviderConfig]:
-    """Validate a selection and resolve the connection it would use."""
+    """Validate a selection and resolve the connection it would use.
+
+    Args:
+        raw: Caller-written or stored selection.
+        settings: Server settings, defaulting to the current ones.
+
+    Returns:
+        The normalized selection and its resolved, immutable provider configuration.
+
+    Raises:
+        ModelSelectionError: If shape, catalog, endpoint setup, configuration, or required
+            credential checks fail.
+    """
     written = parse_model_selection(raw)
     option, model, effort = check_provider_choice(
         written.provider, written.model, written.reasoning_effort
@@ -189,7 +264,14 @@ def validate_model_selection(
 
 
 def configured_selection(settings: Mapping[str, str] | None = None) -> ModelSelection:
-    """Return the server's own provider/model/effort, without reading secrets."""
+    """Read the configured server selection.
+
+    Args:
+        settings: Server settings, defaulting to the current ones.
+
+    Returns:
+        The provider, model, and effort inherited by sessions without an override.
+    """
     options = ModelOptions(**(current_settings() if settings is None else settings))
     return ModelSelection(
         options.langchain_provider.strip().lower(),

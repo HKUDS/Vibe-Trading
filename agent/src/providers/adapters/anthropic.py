@@ -201,7 +201,16 @@ _DIRECT_ANTHROPIC_LLM_TYPE = "anthropic-chat"
 
 
 def prompt_cache_messages(messages: list[contracts.ModelMessage]) -> List[Dict[str, Any]]:
-    """Return a message list whose leading system string carries a cache breakpoint."""
+    """Return a message list whose leading system string carries a cache breakpoint.
+
+    Args:
+        messages: Model messages. Only a leading system message with nonempty string content gets a
+            breakpoint.
+
+    Returns:
+        A new list with a copied system message containing the cache breakpoint when applicable,
+        otherwise the original list.
+    """
     if not messages:
         return messages
     first = messages[0]

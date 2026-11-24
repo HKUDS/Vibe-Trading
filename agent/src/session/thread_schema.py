@@ -233,11 +233,23 @@ class ThreadItem:
     data: Dict[str, Any] = field(default_factory=dict)
 
     def get(self, name: str, default: Any = None) -> Any:
-        """Return one payload field."""
+        """Return one payload field.
+
+        Args:
+            name: Payload field name.
+            default: Value when the field is absent.
+
+        Returns:
+            The field value or the default.
+        """
         return self.data.get(name, default)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize to the flat on-disk shape."""
+        """Serialize to the flat on-disk shape.
+
+        Returns:
+            Common record fields followed by a deep copy of the payload fields.
+        """
         return {
             "seq": self.seq,
             "ts": self.ts,
@@ -250,8 +262,14 @@ class ThreadItem:
     def from_dict(cls, record: Mapping[str, Any]) -> "ThreadItem":
         """Parse an on-disk thread item.
 
+        Args:
+            record: Decoded mapping with common record fields and type-specific payload fields.
+
+        Returns:
+            The validated thread item.
+
         Raises:
-            ThreadItemError: A common field is missing or the payload violates its schema.
+            ThreadItemError: If a common field is invalid or the payload violates its type schema.
         """
         seq = record.get("seq")
         ts = record.get("ts")
@@ -276,7 +294,19 @@ class ThreadItem:
 
     @classmethod
     def from_line(cls, raw_line: bytes) -> "ThreadItem":
-        """Decode and validate a UTF-8 JSON record read from the thread."""
+        """Decode and validate a UTF-8 JSON record read from the thread.
+
+        Args:
+            raw_line: One UTF-8 encoded JSON line from the conversation log.
+
+        Returns:
+            The validated thread item.
+
+        Raises:
+            UnicodeDecodeError: If the line is not UTF-8.
+            json.JSONDecodeError: If the decoded line is not valid JSON.
+            ThreadItemError: If the record is not an object or violates the thread schema.
+        """
         record = json.loads(raw_line.decode("utf-8"))
         if not isinstance(record, dict):
             raise ThreadItemError(f"thread line must be a JSON object, got {type(record).__name__}")

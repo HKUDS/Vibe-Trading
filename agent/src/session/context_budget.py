@@ -43,7 +43,14 @@ def _catalog() -> dict[str, Any]:
 
 
 def estimate_tokens(value: Any) -> int:
-    """Rough token count (~4 chars/token) of any JSON-serialisable value."""
+    """Estimate tokens from the JSON representation of a value.
+
+    Args:
+        value: Value to serialize, with unsupported objects converted to strings.
+
+    Returns:
+        One token per four serialized characters, rounded down.
+    """
     return len(json.dumps(value, default=str, ensure_ascii=False)) // 4
 
 
@@ -54,7 +61,18 @@ def resolve_window(
     env_window: Optional[int] = None,
     learned_window: Optional[int] = None,
 ) -> tuple[int, str]:
-    """Return the model's context window and where the number came from."""
+    """Return the model's context window and where the number came from.
+
+    Args:
+        provider: Provider name, normalized to the catalog spelling.
+        model: Model name as configured.
+        env_window: Explicit window override, when set.
+        learned_window: Limit read from a context-length error in this run.
+
+    Returns:
+        A pair of the window in tokens and its source label, using the override, learned limit,
+        catalog match, or default in that order.
+    """
     _warn_deprecated_token_threshold()
     if env_window:
         return int(env_window), "env:VIBE_TRADING_CONTEXT_WINDOW"
@@ -86,13 +104,27 @@ def _warn_deprecated_token_threshold() -> None:
 
 
 def is_context_overflow(error_text: str) -> bool:
-    """Whether a provider error says the prompt exceeded the context window."""
+    """Recognize provider errors that report context-window overflow.
+
+    Args:
+        error_text: Provider error text to match case-insensitively.
+
+    Returns:
+        True if the text contains a catalogued overflow pattern.
+    """
     lowered = (error_text or "").lower()
     return any(pattern in lowered for pattern in _catalog()["overflow_error_patterns"])
 
 
 def parse_context_limit(error_text: str) -> Optional[int]:
-    """Read the context limit a provider states in its overflow error, if any."""
+    """Read the context limit a provider states in its overflow error, if any.
+
+    Args:
+        error_text: Provider error text that may report a context limit.
+
+    Returns:
+        The parsed limit in tokens if it is at least 1,000, or None.
+    """
     match = _LIMIT_RE.search(error_text or "")
     if not match:
         return None
@@ -111,29 +143,56 @@ class CompactionBudget:
 
     @property
     def total(self) -> int:
-        """Largest prompt, in real tokens, the loop lets a run grow to."""
+        """Largest prompt, in real tokens, the loop lets a run grow to.
+
+        Returns:
+            The smaller of the usable portion of the model window and the configured token cap.
+        """
         return min(int(self.window * USABLE_FRACTION), self.max_tokens)
 
     @property
     def conversation(self) -> int:
-        """Tokens left for the conversation after the static prompt."""
+        """Tokens left for the conversation after the static prompt.
+
+        Returns:
+            The prompt budget minus static tokens, floored at the minimum conversation allowance.
+        """
         return max(self.total - self.static_tokens, MIN_CONVERSATION_TOKENS)
 
     @property
     def micro_at(self) -> int:
+        """Return the prompt size that triggers microcompaction.
+
+        Returns:
+            The static tokens plus the microcompaction fraction of the conversation budget.
+        """
         return self.static_tokens + int(self.conversation * MICRO_FRACTION)
 
     @property
     def collapse_at(self) -> int:
+        """Return the prompt size that triggers conversation collapse.
+
+        Returns:
+            The static tokens plus the collapse fraction of the conversation budget.
+        """
         return self.static_tokens + int(self.conversation * COLLAPSE_FRACTION)
 
     @property
     def compact_at(self) -> int:
+        """Return the prompt size that triggers summarization.
+
+        Returns:
+            The static tokens plus the full conversation budget.
+        """
         return self.static_tokens + self.conversation
 
 
 class ContextMeter:
-    """Current prompt size in real tokens."""
+    """Current prompt size in real tokens.
+
+    Args:
+        estimator: Function that estimates tokens in messages or other prompt data.
+    """
 
     def __init__(self, estimator: Callable[[Any], int] = estimate_tokens) -> None:
         self._estimate = estimator
@@ -143,7 +202,14 @@ class ContextMeter:
         self._static_schema_tokens: Optional[int] = None
 
     def observe(self, input_tokens: Optional[int], messages: list, *, tool_schema_tokens: Optional[int] = None) -> None:
-        """Anchor on the real input size of the request just answered."""
+        """Anchor on the real input size of the request just answered.
+
+        Args:
+            input_tokens: Provider-reported prompt tokens of that request. Only positive integers
+                establish an anchor.
+            messages: Exactly the messages that request sent.
+            tool_schema_tokens: Estimate of the schemas sent with that request, if known.
+        """
         if not isinstance(input_tokens, int) or isinstance(input_tokens, bool) or input_tokens <= 0:
             return
         self._anchor = (input_tokens, self._estimate(messages))
@@ -154,7 +220,16 @@ class ContextMeter:
             self._static_schema_tokens = tool_schema_tokens
 
     def tokens(self, messages: list, tool_schema_tokens: int) -> int:
-        """Real-token size the next request would have."""
+        """Estimate the next request's input tokens.
+
+        Args:
+            messages: Messages to include in the next request.
+            tool_schema_tokens: Estimated tokens in the current tool schemas.
+
+        Returns:
+            The last measured input plus estimated changes, or an estimate of the full request
+            before the first measurement.
+        """
         if self._anchor is None:
             return self._estimate(messages) + tool_schema_tokens
         anchor_input, anchor_estimate = self._anchor
@@ -162,7 +237,16 @@ class ContextMeter:
         return max(0, anchor_input + self._estimate(messages) - anchor_estimate + schema_delta)
 
     def static(self, messages: list, tool_schema_tokens: int) -> int:
-        """Static prompt size: measured once usage arrives, else estimated."""
+        """Estimate the static prompt size for the current schemas.
+
+        Args:
+            messages: Current messages, whose first entry is the system prompt.
+            tool_schema_tokens: Estimated tokens in the current tool schemas.
+
+        Returns:
+            The measured static size adjusted for schema changes, or the estimated system prompt
+            plus schemas.
+        """
         if self.static_tokens is not None:
             schema_delta = 0 if self._static_schema_tokens is None else tool_schema_tokens - self._static_schema_tokens
             return max(0, self.static_tokens + schema_delta)

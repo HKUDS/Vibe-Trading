@@ -42,11 +42,19 @@ class PendingInput:
     claimed_after_seq: Optional[int] = None
 
     def unclaimed(self) -> "PendingInput":
-        """Clear both fields of this input's durable claim."""
+        """Clear both fields of this input's durable claim.
+
+        Returns:
+            A copy with claimed_by and claimed_after_seq cleared.
+        """
         return replace(self, claimed_by=None, claimed_after_seq=None)
 
     def public(self) -> Dict[str, Any]:
-        """Return the client view of the input."""
+        """Return the client view of the input.
+
+        Returns:
+            Input ID, content, queue timestamp, originating turn, and queued or delivering status.
+        """
         return {
             "input_id": self.input_id,
             "content": self.content,
@@ -57,7 +65,14 @@ class PendingInput:
 
     @classmethod
     def from_dict(cls, record: Dict[str, Any]) -> Optional["PendingInput"]:
-        """Parse a stored input, returning None when the record is invalid."""
+        """Parse one stored record.
+
+        Args:
+            record: Decoded JSON object containing an input ID, content, and timestamp.
+
+        Returns:
+            The parsed input, or None for an invalid required field.
+        """
         input_id = record.get("input_id")
         content = record.get("content")
         queued_at = record.get("queued_at")
@@ -84,7 +99,12 @@ class PendingInput:
 
 
 class PendingInputQueue:
-    """Durable FIFO of pending inputs, one file per session."""
+    """Durable FIFO of pending inputs, one file per session.
+
+    Args:
+        path_for: Callable mapping a session ID to its durable queue file.
+        clock: Clock returning the Unix timestamp when an input is queued.
+    """
 
     def __init__(self, path_for: Callable[[str], Path], *, clock: Callable[[], float] = time.time) -> None:
         """Create the queue."""
@@ -96,22 +116,57 @@ class PendingInputQueue:
     # Reading
 
     def list(self, session_id: str) -> List[PendingInput]:
-        """Return a session's pending inputs, oldest first."""
+        """Return a session's pending inputs, oldest first.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The pending inputs, including claimed ones.
+        """
         with self._lock(session_id):
             return self._read(session_id)
 
     def public_items(self, session_id: str) -> list[dict[str, Any]]:
-        """Return the client view of the durable queue in delivery order."""
+        """Return the client view of the durable queue in delivery order.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            Client-facing entries for queued and delivering inputs.
+        """
         return [item.public() for item in self.list(session_id)]
 
     def waiting(self, session_id: str) -> List[PendingInput]:
-        """Return the inputs no turn has claimed, oldest first."""
+        """Return the inputs no turn has claimed, oldest first.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            Unclaimed inputs in queue order.
+        """
         return [item for item in self.list(session_id) if item.claimed_by is None]
 
     # Writing
 
     def add(self, session_id: str, content: str, *, queued_during: Optional[str], include_shell_tools: bool) -> PendingInput:
-        """Accept one input at the end of the queue."""
+        """Accept one input at the end of the queue.
+
+        Args:
+            session_id: Session ID.
+            content: Message text to queue.
+            queued_during: The turn running at submission, if any.
+            include_shell_tools: The sending request's shell-tool entitlement.
+
+        Returns:
+            The stored input.
+
+        Raises:
+            PendingInputLimitError: If the session already holds the maximum.
+            OSError: If the queue could not be written.
+        """
         with self._lock(session_id):
             items = self._read(session_id)
             if len(items) >= MAX_PENDING_INPUTS:
@@ -139,8 +194,15 @@ class PendingInputQueue:
         """Claim the head of the queue for a turn.
 
         Args:
+            session_id: Session ID.
+            turn_id: The turn the input is about to be written into.
             after_seq: Highest thread sequence before delivery.
-            shell_tools: True requires queued shell entitlement. None uses the input entitlement for a new turn.
+            shell_tools: True requires queued shell entitlement. None claims for a new turn that
+                uses the input's own entitlement.
+
+        Returns:
+            The claimed input, or None when the queue is empty, a claim is outstanding, or the head
+            is ineligible.
         """
         with self._lock(session_id):
             items = self._read(session_id)
@@ -154,11 +216,21 @@ class PendingInputQueue:
             return claimed
 
     def complete(self, session_id: str, input_id: str) -> None:
-        """Remove an input whose write into the conversation finished."""
+        """Remove an input whose write into the conversation finished.
+
+        Args:
+            session_id: Session ID.
+            input_id: The delivered input's ID.
+        """
         self._remove(session_id, input_id, waiting_only=False)
 
     def release(self, session_id: str, input_id: str) -> None:
-        """Return a claimed input to the queue, at its old position."""
+        """Return a claimed input to the queue, at its old position.
+
+        Args:
+            session_id: Session ID.
+            input_id: The input whose write did not happen.
+        """
         with self._lock(session_id):
             items = self._read(session_id)
             released = [
@@ -170,7 +242,15 @@ class PendingInputQueue:
                 self._write(session_id, released)
 
     def discard(self, session_id: str, input_id: str) -> Optional[PendingInput]:
-        """Remove a waiting input at the user's request."""
+        """Remove a waiting input at the user's request.
+
+        Args:
+            session_id: Session ID.
+            input_id: Input to remove.
+
+        Returns:
+            The removed input, or None if it is unknown or already claimed.
+        """
         return self._remove(session_id, input_id, waiting_only=True)
 
     def _remove(self, session_id: str, input_id: str, *, waiting_only: bool) -> Optional[PendingInput]:
@@ -189,7 +269,17 @@ class PendingInputQueue:
         *,
         turn_prompt: Callable[[str], Optional[str]],
     ) -> List[PendingInput]:
-        """Settle claims a previous process left behind."""
+        """Settle claims a previous process left behind.
+
+        Args:
+            session_id: Session ID.
+            thread_items: The session's thread items used as evidence of delivery.
+            turn_prompt: Callable mapping a turn ID to its attempt's prompt, or None if no attempt
+                exists.
+
+        Returns:
+            The inputs found delivered and removed. Undelivered claims are released.
+        """
         with self._lock(session_id):
             items = self._read(session_id)
             if not any(item.claimed_by for item in items):
@@ -260,7 +350,16 @@ def _was_delivered(
 
 
 class QueuedInputDelivery:
-    """Deliver inputs between tool batches and model calls, keeping the claim recoverable until the thread write commits."""
+    """Deliver inputs between tool batches and model calls, keeping the claim recoverable until the thread write commits.
+
+    Args:
+        queue: Durable queue supplying inputs to the turn.
+        session_id: Session that owns the queue.
+        turn_id: Turn claiming and recording the inputs.
+        recorder: Recorder that writes the delivered user message to the thread.
+        shell_tools: Whether the running turn has shell tools and needs matching input entitlement.
+        on_delivered: Callback receiving the pending input and its committed thread item.
+    """
 
     def __init__(
         self,
@@ -281,7 +380,11 @@ class QueuedInputDelivery:
         self._on_delivered = on_delivered
 
     def deliver(self) -> List[Dict[str, Any]]:
-        """Write every input that may join the turn now into the thread."""
+        """Write every input that may join the turn now into the thread.
+
+        Returns:
+            The user messages to append to the model input, in delivery order.
+        """
         delivered: List[Dict[str, Any]] = []
         while True:
             try:

@@ -29,7 +29,17 @@ def uses_responses_api(
     configured_responses_api: bool | None,
     deepseek_adapter: str | None = None,
 ) -> bool:
-    """Return whether the configured provider uses openai_adapter.ChatOpenAI's Responses route."""
+    """Determine whether the configuration selects the OpenAI adapter's Responses route.
+
+    Args:
+        provider: Configured provider name, normalized before comparison.
+        configured_responses_api: Responses API switch. Only True enables this route.
+        deepseek_adapter: Optional DeepSeek adapter mode. None reads the current setting.
+
+    Returns:
+        True when the switch is enabled and this provider is eligible for the OpenAI adapter's
+        route.
+    """
     if configured_responses_api is not True:
         return False
     normalized_provider = provider.strip().lower().replace("_", "-")
@@ -54,7 +64,22 @@ def build_llm(
     callbacks: Any = None,
     snapshot: ProviderConfig | None = None,
 ) -> Any:
-    """Construct the configured LangChain chat model."""
+    """Construct the configured LangChain chat model.
+
+    Args:
+        policy: Tool policy used by adapters that need host file roots or shell settings.
+        model_name: Model name override, defaulting to the resolved configuration's model.
+        callbacks: Optional LangChain callbacks for adapters that accept them.
+        snapshot: Resolved immutable config, defaulting to current settings.
+
+    Returns:
+        Provider-specific LangChain-compatible chat model.
+
+    Raises:
+        RuntimeError: If the model name is unset or a required adapter dependency is unavailable.
+        ValueError: If applicable model reasoning settings, credentials, headers, or the Codex URL
+            fail validation.
+    """
     snapshot = snapshot or resolve_config(model_name=model_name)
     name = model_name or snapshot.model
     if not name:

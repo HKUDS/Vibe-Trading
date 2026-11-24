@@ -31,7 +31,15 @@ GEMINI_SAFETY_FINISH_REASONS = frozenset({
 
 
 def is_content_filter_triggered(finish_reason: object) -> bool:
-    """Return True when ``finish_reason`` indicates content moderation blocked the response."""
+    """Recognize a finish reason that indicates content moderation.
+
+    Args:
+        finish_reason: Raw provider finish reason. Non-string values are treated as unmatched.
+
+    Returns:
+        True for OpenAI's content_filter or a recognized Gemini safety reason, matched case-
+        insensitively for Gemini.
+    """
     if not isinstance(finish_reason, str):
         return False
     if finish_reason == "content_filter":
@@ -40,7 +48,11 @@ def is_content_filter_triggered(finish_reason: object) -> bool:
 
 
 def get_content_filter_threshold() -> float:
-    """Return the configured content-filter warning threshold."""
+    """Return the configured content-filter warning threshold.
+
+    Returns:
+        The configured fraction of blocked responses above which a warning is issued.
+    """
     return get_env_config().agent_tuning.content_filter_warning_threshold
 
 
@@ -48,7 +60,17 @@ def compute_content_filter_warnings(
     content_filter_count: int,
     total_iterations: int,
 ) -> list[str]:
-    """Compute content-filter warnings based on the hit ratio."""
+    """Compute content-filter warnings based on the hit ratio.
+
+    Args:
+        content_filter_count: Number of LLM responses blocked by content moderation during the run.
+        total_iterations: Total number of LLM iterations executed. Values below one use a
+            denominator of one.
+
+    Returns:
+        A list with one warning when the ratio exceeds the configured threshold, otherwise an empty
+        list.
+    """
     if content_filter_count == 0:
         return []
     denominator = max(1, total_iterations)

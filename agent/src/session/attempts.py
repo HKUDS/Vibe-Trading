@@ -37,7 +37,17 @@ class AttemptRunner:
     user_cancel_requests: set[str]
 
     async def run(self, session: Session, attempt: Attempt, run_agent: Callable, *, include_shell_tools: bool) -> None:
-        """Record a terminal result, or leave the attempt recoverable on host shutdown."""
+        """Record a terminal result, or leave the attempt recoverable on host shutdown.
+
+        Args:
+            session: Session that owns the attempt and its history.
+            attempt: Attempt whose status and terminal result are persisted.
+            run_agent: Async agent runner for the attempt.
+            include_shell_tools: Whether to include shell tools in the attempt.
+
+        Raises:
+            asyncio.CancelledError: If the attempt task is cancelled.
+        """
         started_at = time.perf_counter()
         try:
             attempt.mark_running()
@@ -167,7 +177,15 @@ class AttemptRunner:
 
 
 def format_result_message(attempt: Attempt, streamed_text: str = "") -> str:
-    """Format the final execution result message."""
+    """Format the final execution result message.
+
+    Args:
+        attempt: The terminal attempt.
+        streamed_text: Text the turn streamed to the user, retained when the turn stops.
+
+    Returns:
+        The reply text shown in the transcript.
+    """
     if attempt.status == AttemptStatus.COMPLETED:
         if attempt.summary:
             return attempt.summary

@@ -52,6 +52,14 @@ _STRIPPED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_UR
 
 
 def child_env(environment: dict[str, str] | None = None) -> dict[str, str]:
+    """Build the environment for a Claude Code subprocess.
+
+    Args:
+        environment: Source environment, defaulting to the current process environment.
+
+    Returns:
+        A copy with the Anthropic API key, auth token, and base URL removed.
+    """
     return {k: v for k, v in (os.environ if environment is None else environment).items() if k not in _STRIPPED_ENV}
 
 
@@ -76,7 +84,18 @@ _FALLBACK_CLI_PATH = Path.home() / ".local" / "bin" / "claude"
 
 
 def resolve_claude_cli(environment: dict[str, str] | None = None) -> str:
-    """Return the ``claude`` executable: ``CLAUDE_CLI_PATH``, PATH, then ``~/.local/bin``."""
+    """Resolve the Claude executable from the configured path, PATH, or local install.
+
+    Args:
+        environment: Optional environment supplying the configured path and PATH. None uses process
+            settings.
+
+    Returns:
+        Path or command name of the executable to run.
+
+    Raises:
+        RuntimeError: If no executable was found.
+    """
     explicit = (get_env_config().llm.claude_cli_path if environment is None else environment.get("CLAUDE_CLI_PATH", "")).strip()
     if explicit:
         return explicit
@@ -92,7 +111,12 @@ def resolve_claude_cli(environment: dict[str, str] | None = None) -> str:
 
 
 def get_claude_cli_auth_status() -> tuple[bool, str]:
-    """Report the local Claude Code login, as a turn would see it; never raises."""
+    """Report the local Claude Code login under the same environment as a turn.
+
+    Returns:
+        A pair of the login flag and authentication method or status message. CLI and JSON decoding
+        failures report an unavailable status.
+    """
     try:
         result = subprocess.run(
             [resolve_claude_cli(), "auth", "status"],
@@ -258,6 +282,7 @@ def _run_cli(
         result: dict[str, Any] = {}
 
         def communicate() -> None:
+            """Send input to the child and capture its output and errors."""
             result["out"], result["err"] = proc.communicate(user_input)
 
         worker = threading.Thread(target=communicate, daemon=True)
@@ -432,7 +457,16 @@ def _decide(
 
 
 class ClaudeCliLLM:
-    """LangChain-compatible wrapper around the local ``claude -p`` CLI."""
+    """LangChain-compatible wrapper around the local ``claude -p`` CLI.
+
+    Args:
+        policy: Host tool policy used to validate the shell policy at initialization.
+        model: Claude model name or alias.
+        timeout: Default decision timeout in seconds, subject to the CLI timeout floor.
+        reasoning_effort: Optional effort argument for CLI decisions.
+        tools: Tool definitions offered to the model in the host tool protocol.
+        environment: Provider environment snapshot. None uses the process environment.
+    """
 
     _llm_type = "claude-cli"
 
@@ -456,7 +490,14 @@ class ClaudeCliLLM:
         self.tools = tools or []
 
     def bind_tools(self, tools: list[dict[str, Any]]) -> "ClaudeCliLLM":
-        """Return a copy that offers *tools* to the model."""
+        """Return a copy that offers *tools* to the model.
+
+        Args:
+            tools: Tool definitions in OpenAI function format.
+
+        Returns:
+            A new instance with the supplied tools and the same model and runtime configuration.
+        """
         return ClaudeCliLLM(
             policy=self.policy,
             model=self.model,
@@ -486,7 +527,17 @@ class ClaudeCliLLM:
     def invoke(
         self, messages: list[Any], config: Optional[dict[str, Any]] = None, **_: Any
     ) -> AIMessage:
-        """Run one decision and return it as a single message."""
+        """Run one decision and return it as a single message.
+
+        Args:
+            messages: Conversation so far, as LangChain messages or dictionaries.
+            config: Optional run config whose timeout overrides the default, subject to the CLI
+                timeout floor.
+            **_: Additional adapter keywords accepted and ignored.
+
+        Returns:
+            The final answer or the tool calls to execute next.
+        """
         return self._message(self._decision(messages, self._budget(config), threading.Event()) or _Decision())
 
     def _decision(
@@ -506,7 +557,18 @@ class ClaudeCliLLM:
     def stream(
         self, messages: list[Any], config: Optional[dict[str, Any]] = None, **_: Any
     ) -> Iterable[AIMessageChunk]:
-        """Run one decision, yielding an empty chunk every second until it lands."""
+        """Run one decision, yielding an empty chunk every second until it lands.
+
+        Args:
+            messages: Conversation so far, as LangChain messages or dictionaries.
+            config: Optional run config whose timeout overrides the default, subject to the CLI
+                timeout floor.
+            **_: Additional adapter keywords accepted and ignored.
+
+        Yields:
+            Empty waiting chunks while the CLI runs, then the decision chunk when available. Closing
+            the stream signals cancellation.
+        """
         budget = self._budget(config)
 
         def run(emit: Callable[[AIMessageChunk], None], cancel_event: threading.Event) -> None:
@@ -532,7 +594,16 @@ class ClaudeCliLLM:
         config: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ) -> AIMessage:
-        """Run :meth:`invoke` in a worker thread."""
+        """Run :meth:`invoke` in a worker thread.
+
+        Args:
+            messages: Conversation so far, as LangChain messages or dictionaries.
+            config: Optional run config passed through to invoke.
+            **kwargs: Additional keywords passed through to invoke.
+
+        Returns:
+            The message returned by invoke.
+        """
         return await asyncio.to_thread(self.invoke, messages, config, **kwargs)
 
 
@@ -554,7 +625,17 @@ _model_cache_lock = threading.Lock()
 
 
 def list_claude_cli_models(*, refresh: bool = False) -> tuple[ClaudeCliModel, ...]:
-    """Return the models the local Claude Code login can run."""
+    """Return the models the local Claude Code login can run.
+
+    Args:
+        refresh: Skip the cached list and ask the CLI again.
+
+    Returns:
+        One entry per distinct full model name, in the CLI's order.
+
+    Raises:
+        RuntimeError: If the CLI is unavailable or the query produces no models.
+    """
     executable = resolve_claude_cli()
     with _model_cache_lock:
         cached = _model_cache.get(executable)

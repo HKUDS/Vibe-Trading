@@ -25,7 +25,15 @@ DISPLAY_ITEM_TYPES = frozenset(_DISPLAY_FIELDS)
 
 
 def display_item(item: ThreadItem) -> Optional[Dict[str, Any]]:
-    """Return the client view of one thread item."""
+    """Return the client view of one thread item.
+
+    Args:
+        item: Thread item to project into client-visible fields.
+
+    Returns:
+        The display dictionary with summarized tool calls where applicable, or None for a hidden
+        item type.
+    """
     if item.type not in DISPLAY_ITEM_TYPES:
         return None
     view: Dict[str, Any] = {
@@ -54,7 +62,18 @@ def display_page(
     before: Optional[int] = None,
     limit: int = 200,
 ) -> Dict[str, Any]:
-    """Page a thread's display items by seq."""
+    """Page a thread's display items by seq.
+
+    Args:
+        items: The thread's items in write order.
+        after: Exclusive lower sequence bound.
+        before: Exclusive upper bound. When set, select the newest matching items in write order.
+        limit: Maximum number of items.
+
+    Returns:
+        Display items, a has_more flag, and the highest sequence in the input log for resuming the
+        event stream.
+    """
     shown = [
         view for view in (display_item(item) for item in items if item.seq > after)
         if view is not None and (before is None or view["seq"] < before)

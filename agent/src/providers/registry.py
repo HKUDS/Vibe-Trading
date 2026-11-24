@@ -36,7 +36,12 @@ def _catalog() -> tuple[dict[str, Any], ...]:
 
 
 def provider_catalog() -> list[dict[str, Any]]:
-    """Return independent public metadata records without runtime-only fields."""
+    """Return independent public metadata records without runtime-only fields.
+
+    Returns:
+        Independent copies of the public provider records with defaults for backend and automatic
+        model listing.
+    """
     private = {"capabilities", "aliases", "runtime_variants", "setup", "onboarding"}
     return [
         {"backend": "openai_compatible", "automatic_model_list": False,
@@ -46,7 +51,11 @@ def provider_catalog() -> list[dict[str, Any]]:
 
 
 def provider_names() -> frozenset[str]:
-    """Public identifiers, including legacy aliases, safe for runtime metadata."""
+    """Public identifiers, including legacy aliases, safe for runtime metadata.
+
+    Returns:
+        The set of catalog provider names, aliases, and runtime variants.
+    """
     return frozenset(
         name
         for row in _catalog()
@@ -55,7 +64,12 @@ def provider_names() -> frozenset[str]:
 
 
 def setup_choices() -> list[dict[str, Any]]:
-    """Project legacy setup options without duplicating models or endpoints."""
+    """Build the catalog entries shown in legacy setup.
+
+    Returns:
+        Setup entries in configured order with labels, model and endpoint defaults, and credential
+        field hints.
+    """
     rows = sorted((r for r in _catalog() if r.get("setup")), key=lambda r: r["setup"]["order"])
     return [
         {
@@ -73,7 +87,12 @@ def setup_choices() -> list[dict[str, Any]]:
 
 
 def onboarding_choices() -> list[dict[str, Any]]:
-    """Project first-launch wizard options while preserving its ordering."""
+    """Project first-launch wizard options while preserving its ordering.
+
+    Returns:
+        Wizard options in configured order, including default endpoints and deduplicated suggested
+        models.
+    """
     rows = sorted((r for r in _catalog() if r.get("onboarding")), key=lambda r: r["onboarding"]["order"])
     return [
         {
@@ -144,7 +163,16 @@ def _infer_from_model(model: str) -> str | None:
 
 @lru_cache(maxsize=256)
 def get_provider_capabilities(provider: str | None = None, model: str | None = None) -> ProviderCapabilities:
-    """Read one provider's connection and protocol facts, preserving legacy inference."""
+    """Read one provider's connection and protocol facts, preserving legacy inference.
+
+    Args:
+        provider: Provider label or alias. An empty or OpenAI label allows inference from the model.
+        model: Model name used for inference and model-specific overrides.
+
+    Returns:
+        Connection defaults and protocol capabilities for the resolved provider, falling back to
+        OpenAI for unknown names.
+    """
     name = (provider or "").strip().lower().replace("_", "-")
     if name == "custom":
         return ProviderCapabilities("custom", None, "OPENAI_BASE_URL", capture_reasoning=True)
@@ -173,6 +201,15 @@ def get_provider_capabilities(provider: str | None = None, model: str | None = N
 
 
 def provider_env_names(provider: str | None, model: str | None = None) -> tuple[str | None, str]:
-    """Return the API-key and base-URL env names for a provider/model pair."""
+    """Return the API-key and base-URL env names for a provider/model pair.
+
+    Args:
+        provider: Provider label or alias.
+        model: Optional model used for provider inference.
+
+    Returns:
+        The API key environment variable, or None for an adapter without one, and the base URL
+        environment variable.
+    """
     caps = get_provider_capabilities(provider, model)
     return caps.api_key_env, caps.base_url_env

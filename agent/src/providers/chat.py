@@ -21,7 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 class ChatLLM:
-    """LLM chat client with function calling support."""
+    """LLM chat client with function calling support.
+
+    Args:
+        model_name: Optional model name override.
+        policy: Tool policy used when constructing and configuring the provider client.
+        snapshot: Resolved provider configuration. Defaults to a snapshot of current settings.
+        selection: Label identifying the source of the model selection in runtime metadata.
+    """
 
     def __init__(
         self,
@@ -141,7 +148,20 @@ class ChatLLM:
         return llm, prepared, call_kwargs
 
     def chat(self, messages: list[contracts.ModelMessage], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> contracts.LLMResponse:
-        """Call the LLM synchronously."""
+        """Call the LLM synchronously.
+
+        Args:
+            messages: Message list in OpenAI format.
+            tools: Tool definitions in OpenAI function-calling format, if any.
+            timeout: Optional per-call timeout in seconds.
+
+        Returns:
+            The parsed model response.
+
+        Raises:
+            ProviderRedirectError: If a redirect refusal is unwrapped from the SDK error.
+            Exception: If the request otherwise fails or the response cannot be parsed.
+        """
         llm, messages, call_kwargs = self._prepare_call(messages, tools)
         config = {"timeout": timeout} if timeout else {}
         try:
@@ -163,7 +183,26 @@ class ChatLLM:
         should_cancel: Optional[Callable[[], bool]] = None,
         on_waiting_chunk: Optional[Callable[[], None]] = None,
     ) -> contracts.LLMResponse:
-        """Stream a response and forward deltas to the supplied callbacks."""
+        """Stream a response and forward deltas to the supplied callbacks.
+
+        Args:
+            messages: Messages in OpenAI format.
+            tools: Tool definitions for function calling.
+            on_text_chunk: Optional callback receiving each released text delta.
+            on_reasoning_chunk: Optional callback receiving reasoning-only deltas.
+            timeout: Optional total timeout in seconds.
+            idle_timeout_s: Optional timeout in seconds between SDK chunks.
+            should_cancel: Optional predicate that stops the stream and returns partial output when
+                true.
+            on_waiting_chunk: Optional callback for provider-confirmed waiting activity.
+
+        Returns:
+            Parsed response including accumulated text, tool calls, and available usage. Cancelled
+            responses omit tool calls.
+
+        Raises:
+            ProviderStreamError: If streaming or the fallback request fails.
+        """
         return collect_stream(
             self._llm, self._prepare_call, messages, tools,
             provider=self.runtime_snapshot.provider, model=self.model_name or "(unset)",

@@ -66,14 +66,27 @@ class ProviderConfig:
 
 
 def current_settings() -> dict[str, str]:
-    """Copy the process's current connection settings, `.env` included."""
+    """Copy the process's current connection settings, `.env` included.
+
+    Returns:
+        A private copy of the process environment after dotenv loading, usable as a provider
+        configuration snapshot.
+    """
     with CONFIG_LOCK:
         _ensure_dotenv()
         return dict(os.environ)
 
 
 def resolve_config(*, model_name: str | None = None, environment: Mapping[str, str] | None = None) -> ProviderConfig:
-    """Resolve once from supplied settings and, for custom providers, the vault."""
+    """Resolve once from supplied settings and, for custom providers, the vault.
+
+    Args:
+        model_name: Optional model override.
+        environment: Complete connection settings, or None for current settings.
+
+    Returns:
+        An immutable provider configuration with resolved connection fields for one client.
+    """
     with CONFIG_LOCK:
         values = current_settings() if environment is None else dict(environment)
         options = ModelOptions(**values)
@@ -160,7 +173,17 @@ def get_llm_credentials(
     model: str | None,
     *, environment: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """Resolve legacy-compatible credentials without changing process settings."""
+    """Resolve legacy-compatible credentials without changing process settings.
+
+    Args:
+        provider: Configured provider name.
+        model: Configured model name, also used for legacy model-based inference.
+        environment: Captured settings, or None for the current environment and login.
+
+    Returns:
+        Provider, API key, endpoint, and model. Custom profiles use the active vault record. Other
+        providers use their applicable environment settings and defaults.
+    """
     env = os.environ if environment is None else environment
     normalized_provider = (provider or "").strip().lower().replace("_", "-")
     if normalized_provider == "custom":
@@ -203,7 +226,11 @@ def get_llm_credentials(
 
 
 def secret_names() -> set[str]:
-    """Names whose values belong to the desktop credential store."""
+    """List settings assigned to desktop credential storage.
+
+    Returns:
+        The API key environment names from the provider catalog and the market data token names.
+    """
     return {"TUSHARE_TOKEN", "GILDATA_TOKEN"} | {p["api_key_env"] for p in provider_catalog() if p.get("api_key_env")}
 
 
@@ -216,7 +243,12 @@ class SettingsStore:
     example: Path = AGENT_DIR / ".env.example"
 
     def read(self) -> dict[str, str]:
-        """Read existing settings without creating files or exposing vault keys."""
+        """Read settings from the first available configuration file.
+
+        Returns:
+            A settings mapping from the canonical, legacy, or example file. In desktop secure mode,
+            secret entries reflect the process environment.
+        """
         values = next((_read_env_values(p) for p in (self.path, self.legacy, self.example) if p.exists()), {})
         if get_env_value("VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS") == "1":
             for key in secret_names():
@@ -227,7 +259,16 @@ class SettingsStore:
         return values
 
     def persist(self, updates: Mapping[str, str], *, apply: bool = False, replace: bool = False) -> dict[str, str]:
-        """Upsert settings, or replace them for an explicitly confirmed CLI reset."""
+        """Upsert settings, or replace them for an explicitly confirmed CLI reset.
+
+        Args:
+            updates: Settings to write. This mapping is also used for the optional process update.
+            apply: Whether to apply the requested updates to the process after writing.
+            replace: Whether to replace the canonical file instead of updating its settings.
+
+        Returns:
+            The effective settings read back after persistence.
+        """
         with CONFIG_LOCK:
             merged = dict(updates)
             if not replace and not self.path.exists() and self.legacy != self.path and self.legacy.exists():
@@ -244,7 +285,11 @@ class SettingsStore:
             return self.read()
 
     def apply(self, updates: Mapping[str, str]) -> None:
-        """Change defaults for future clients; existing snapshots remain unchanged."""
+        """Apply settings to the process for future client construction.
+
+        Args:
+            updates: Settings to set. An empty value clears the corresponding environment variable.
+        """
         with CONFIG_LOCK:
             for key, value in updates.items():
                 if value:

@@ -55,7 +55,12 @@ def _encode_record(record: Mapping[str, Any]) -> bytes:
 
 
 class ThreadLog:
-    """Append and fsync thread items with sequence numbers coordinated across processes."""
+    """Append and fsync thread items with sequence numbers coordinated across processes.
+
+    Args:
+        path: Path to the append-only thread JSONL file.
+        clock: Clock used to timestamp newly appended items.
+    """
 
     def __init__(self, path: Path, *, clock: Callable[[], float] = time.time) -> None:
         """Open a thread log."""
@@ -66,7 +71,20 @@ class ThreadLog:
     # Writing
 
     def append(self, item_type: str, turn_id: str, **payload: Any) -> ThreadItem:
-        """Validate, number and durably append one item."""
+        """Validate, number and durably append one item.
+
+        Args:
+            item_type: Thread item type supported by the schema.
+            turn_id: Nonempty turn ID the item belongs to.
+            **payload: Type-specific fields.
+
+        Returns:
+            The item as written, with its assigned sequence and timestamp.
+
+        Raises:
+            ThreadItemError: If the turn ID is invalid or the item does not match the schema.
+            OSError: If the log cannot be opened, written, or synced.
+        """
         if not isinstance(turn_id, str) or not turn_id:
             raise ThreadItemError("turn_id must be a non-empty string")
         data = _validate_payload(item_type, payload)
@@ -140,6 +158,12 @@ class ThreadLog:
     def read(self, *, strict: bool = False) -> List[ThreadItem]:
         """Read valid items in file order.
 
+        Args:
+            strict: Whether to raise on corrupt records. By default, corrupt records are skipped.
+
+        Returns:
+            Items in write order, or an empty list if the log is absent.
+
         Raises:
             ThreadItemError: With strict enabled, the first corrupt record.
         """
@@ -164,19 +188,41 @@ class ThreadLog:
         return items
 
     def items_after(self, seq: int) -> List[ThreadItem]:
-        """Return items whose ``seq`` is greater than ``seq``."""
+        """Read the suffix of the thread after a sequence number.
+
+        Args:
+            seq: Exclusive lower sequence bound.
+
+        Returns:
+            Matching items in write order.
+        """
         return [item for item in self.read() if item.seq > seq]
 
     def last_compaction(self) -> Optional[ThreadItem]:
-        """Return the most recent ``compaction`` item, if any."""
+        """Find the most recent summarizing compaction.
+
+        Returns:
+            The latest layer-3 compaction item, or None.
+        """
         return last_compaction(self.read())
 
     def open_turns(self) -> List[str]:
-        """Return turns that started but have no ``turn_end``."""
+        """Return turns that started but have no ``turn_end``.
+
+        Returns:
+            Turn IDs in the order they started.
+        """
         return open_turns(self.read())
 
     def turn_items(self, turn_id: str) -> List[ThreadItem]:
-        """Return the items of one turn."""
+        """Return the items of one turn.
+
+        Args:
+            turn_id: Turn ID to match.
+
+        Returns:
+            That turn's items in write order.
+        """
         return [item for item in self.read() if item.turn_id == turn_id]
 
 
@@ -192,7 +238,14 @@ def _peek_seq(raw_line: bytes) -> Optional[int]:
 
 
 def last_compaction(items: Iterable[ThreadItem]) -> Optional[ThreadItem]:
-    """Return the most recent ``compaction`` item."""
+    """Find the most recent summarizing compaction.
+
+    Args:
+        items: Thread items in write order.
+
+    Returns:
+        The latest layer-3 compaction item, or None.
+    """
     found = None
     for item in items:
         if item.type == "compaction" and item.get("layer", 3) == 3:
@@ -201,7 +254,14 @@ def last_compaction(items: Iterable[ThreadItem]) -> Optional[ThreadItem]:
 
 
 def open_turns(items: Iterable[ThreadItem]) -> List[str]:
-    """Return turns that have a ``turn_start`` but no ``turn_end``."""
+    """Return turns that have a ``turn_start`` but no ``turn_end``.
+
+    Args:
+        items: Thread items in write order.
+
+    Returns:
+        Turn IDs in start order.
+    """
     started: List[str] = []
     ended = set()
     for item in items:

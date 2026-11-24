@@ -32,7 +32,14 @@ STOPPED_TURN_NOTES = {
 
 
 def durable_tool_calls(message: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Copy tool calls and redact their serialized argument objects."""
+    """Copy tool calls and redact their serialized argument objects.
+
+    Args:
+        message: Assistant message whose tool_calls field is copied.
+
+    Returns:
+        Independent copies of the tool calls with argument values redacted, or an empty list.
+    """
     from src.tools.redaction import redact_payload
 
     calls = copy.deepcopy(list(message.get("tool_calls") or []))
@@ -89,7 +96,16 @@ def replay(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> list[ModelMessage]:
-    """Project compacted history into fresh model messages with repaired tool pairs and interruption notices."""
+    """Project compacted history into fresh model messages with repaired tool pairs and interruption notices.
+
+    Args:
+        items: Thread items in write order.
+        provider: Target provider used to determine whether native metadata can be replayed.
+        model: Target model used with the provider to determine metadata compatibility.
+
+    Returns:
+        Model messages after applying compaction and repairing tool calls and results.
+    """
     return replay_with_seqs(items, provider=provider, model=model)[0]
 
 
@@ -99,7 +115,17 @@ def replay_with_seqs(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> tuple[list[dict[str, Any]], list[Optional[int]]]:
-    """Pair messages while retaining source seqs for compaction and recovery."""
+    """Pair messages while retaining source seqs for compaction and recovery.
+
+    Args:
+        items: Thread items in write order.
+        provider: Target provider used to determine whether native metadata can be replayed.
+        model: Target model used with the provider to determine metadata compatibility.
+
+    Returns:
+        The replayed messages and a parallel list of source sequences. Synthetic messages without a
+        source item have None.
+    """
     items = list(items)
     compaction = last_compaction(items)
     replayer = MessagePairing()
@@ -191,6 +217,16 @@ class TurnProjection:
 
 
 def trail_arguments(raw: Any, run_dir: Optional[str]) -> Dict[str, Any]:
+    """Prepare tool arguments for display in a turn's tool trail.
+
+    Args:
+        raw: Argument object or JSON string containing one.
+        run_dir: Run directory used to normalize run_dir arguments, when available.
+
+    Returns:
+        Redacted argument values stringified and capped for display, or an empty dictionary if there
+        is no argument object.
+    """
     from src.tools._arguments import normalize_tool_run_dir
     from src.tools.redaction import redact_payload
 
@@ -210,7 +246,17 @@ def project_turn(
     *,
     run_dir: Optional[str] = None,
 ) -> TurnProjection:
-    """Project one turn's items onto the legacy display row."""
+    """Project one turn's items onto the legacy display row.
+
+    Args:
+        items: Thread items in write order, possibly spanning multiple turns.
+        turn_id: Turn ID to project.
+        run_dir: Run directory used to normalize displayed tool arguments. Defaults to the latest
+            recorded turn-end directory.
+
+    Returns:
+        The turn's reply content, tool trail, status, usage, timing, and metadata.
+    """
     turn = [item for item in items if item.turn_id == turn_id]
     if run_dir is None:
         run_dir = next((item.get("run_dir") for item in reversed(turn) if item.type == "turn_end"), None)
@@ -291,7 +337,14 @@ def project_turn(
 
 
 def diagnostic_records(items: Sequence[ThreadItem]) -> list[dict[str, Any]]:
-    """Derive the run diagnostic view used by evaluation and CLI readers."""
+    """Derive the run diagnostic view used by evaluation and CLI readers.
+
+    Args:
+        items: Recorded thread items in write order.
+
+    Returns:
+        Diagnostic rows with source sequence numbers in the _line field.
+    """
     records: list[dict[str, Any]] = []
     executions = {item.get("data", {}).get("call_id"): item.get("data", {})
                   for item in items if item.type == "event" and item.get("name") == "tool_execution"}

@@ -37,7 +37,26 @@ class SessionRequest:
         self, messages: list[ModelMessage], tools: list | None, stream, *,
         run_dir: Path, trace, iteration: int, current_iter: int,
     ) -> tuple[LLMResponse, list[ModelMessage]] | None:
-        """Return the response and exact input of the successful attempt."""
+        """Return the response and exact input of the successful attempt.
+
+        Args:
+            messages: Model messages to repair before sending. Overflow recovery may compact them in
+                place.
+            tools: Tool schemas to send, or None.
+            stream: Callbacks for text, reasoning, waiting, and reset events.
+            run_dir: Run directory for failed-stream usage and overflow recovery.
+            trace: Trace sink passed to overflow recovery.
+            iteration: Iteration passed to overflow recovery.
+            current_iter: Current iteration used for usage and retry events.
+
+        Returns:
+            The model response and the exact repaired messages sent, or None if the run stops before
+            retrying.
+
+        Raises:
+            ProviderStreamError: If the first stream fails without a retry path or the retry also
+                fails.
+        """
         seconds = self.timeout_seconds()
         timeout = seconds if seconds > 0 else None
 
@@ -88,7 +107,19 @@ class SummaryUnavailable(Exception):
 
 
 def request_summary(llm, prompt: str, timeout: float) -> LLMResponse:
-    """Send one summary request with the session binding and wall-clock deadline."""
+    """Send one summary request with the session binding and wall-clock deadline.
+
+    Args:
+        llm: Chat client used for summarization.
+        prompt: Summary prompt sent as a user message.
+        timeout: Wall-clock deadline in seconds. A nonpositive value calls the client directly.
+
+    Returns:
+        The model response to the summary prompt.
+
+    Raises:
+        SummaryUnavailable: If a deadline-bound call fails or times out.
+    """
     messages = repair_provider_messages([{"role": "user", "content": prompt}])
     if timeout <= 0:
         return llm.chat(messages)

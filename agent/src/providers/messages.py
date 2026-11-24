@@ -23,7 +23,16 @@ INTERRUPTED_RESULT_CONTENT = json.dumps(
 
 
 def message_value(message: Any, key: str, default: Any = None) -> Any:
-    """Read a field from a message mapping or SDK object."""
+    """Read a field from a message dictionary or SDK object.
+
+    Args:
+        message: Message dictionary or object with SDK attributes.
+        key: Dictionary key or attribute name.
+        default: Fallback for an absent field.
+
+    Returns:
+        The field value, or the supplied default when absent.
+    """
     return message.get(key, default) if isinstance(message, dict) else getattr(message, key, default)
 
 
@@ -33,7 +42,17 @@ def assistant_message(
     target_provider: Optional[str] = None,
     target_model: Optional[str] = None,
 ) -> ModelMessage:
-    """Rebuild the assistant message the loop sent, in the loop's key order."""
+    """Rebuild the assistant message the loop sent, in the loop's key order.
+
+    Args:
+        item: Recorded assistant item with content and any tool calls or provider metadata.
+        target_provider: Provider that will consume the replayed message.
+        target_model: Model that will consume the replayed message.
+
+    Returns:
+        An independent message dictionary retaining provider-specific metadata when both target
+        fields are omitted or the source matches both.
+    """
     source_provider = item.get("provider")
     source_model = item.get("model")
     same_runtime = (
@@ -72,7 +91,12 @@ def assistant_message(
 
 
 class MessagePairing:
-    """Keep results next to their assistant call block and fill missing results."""
+    """Keep results next to their assistant call block and fill missing results.
+
+    Args:
+        missing_result: Stub content for tool calls with no matching result.
+        missing_first: Whether to insert missing results before the observed results in each block.
+    """
 
     def __init__(
         self, missing_result: str = INTERRUPTED_RESULT_CONTENT, *, missing_first: bool = False,
@@ -86,7 +110,12 @@ class MessagePairing:
         self._held: list[ModelMessage] = []
 
     def add(self, message: ModelMessage) -> None:
-        """Consume an independently owned message, preserving its identity."""
+        """Consume an independently owned message, preserving its identity.
+
+        Args:
+            message: Message owned by the caller for this projection. Tool results are matched to
+                open calls in the current block.
+        """
         role = message.get("role")
         if role == "assistant":
             self.close_block()
@@ -108,6 +137,7 @@ class MessagePairing:
             self.messages.append(message)
 
     def close_block(self) -> None:
+        """Fill missing tool results and release messages held behind the block."""
         stubs = [
             {"role": "tool", "tool_call_id": call_id, "name": name, "content": self._missing_result}
             for call_id, name in self._pending.items() if call_id not in self._answered
@@ -121,7 +151,15 @@ class MessagePairing:
 
 
 def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]:
-    """Repair tool blocks for one provider request without changing history."""
+    """Repair tool blocks for one provider request without changing history.
+
+    Args:
+        messages: Messages about to be sent to a provider.
+
+    Returns:
+        An independent message list with stubs for missing tool results and orphan or duplicate
+        results dropped.
+    """
     replayer = MessagePairing()
     for message in messages:
         if message.get("role") == "assistant" and message.get("tool_calls"):
@@ -133,7 +171,16 @@ def repair_provider_messages(messages: list[ModelMessage]) -> list[ModelMessage]
 
 
 def attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:
-    """Attach Gemini thought signatures to assistant replay tool calls."""
+    """Attach Gemini thought signatures to assistant replay tool calls.
+
+    Args:
+        message: Assistant message with outbound tool calls to annotate in place.
+        tool_calls: SDK tool calls supplying signatures, matched by call ID and then position.
+
+    Returns:
+        The same message, with signatures added to the outgoing tool calls and their additional
+        metadata when available.
+    """
     outbound_tool_calls = message.get("tool_calls")
     if not isinstance(outbound_tool_calls, list):
         return message

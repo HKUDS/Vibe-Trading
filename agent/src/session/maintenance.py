@@ -18,7 +18,23 @@ async def compact_history(
     session: Session, focus: str, *, runtime_for: Callable[[str], SessionRuntime], runs_dir: Path,
     compact: Callable, policy: ToolPolicy,
 ):
-    """Run manual compaction through a recorder with the session's selected model."""
+    """Run manual compaction through a recorder with the session's selected model.
+
+    Args:
+        session: Stored session whose conversation and model configuration are used.
+        focus: Optional focus, stripped and truncated to 2,000 characters.
+        runtime_for: Callable resolving the runtime for a session ID.
+        runs_dir: Parent run directory for compaction artifacts.
+        compact: Synchronous compaction callable run in a worker thread.
+        policy: Tool policy for the model client and the compaction callable.
+
+    Returns:
+        The durable compaction item written for this operation.
+
+    Raises:
+        ValueError: If the session has no replayable history or the operation produces no compaction
+            item.
+    """
     from src.session.model_selection import chat_llm_for_session
     from src.session.runtime import TurnRecorder
 

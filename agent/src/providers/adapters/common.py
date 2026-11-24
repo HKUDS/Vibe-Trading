@@ -35,7 +35,21 @@ def retry_stream(
     should_retry: Callable[[Exception], bool],
     retry: Callable[[], Iterator[Chunk]] | None = None,
 ) -> Iterator[Chunk]:
-    """Restart a rejected stream only before it emits a chunk."""
+    """Restart a rejected stream only before it emits a chunk.
+
+    Args:
+        stream: Factory for the initial stream, reused if retry is omitted.
+        should_retry: Predicate that decides whether to retry the initial error. It is called only
+            before the first chunk.
+        retry: Optional factory for the one retry stream.
+
+    Yields:
+        Chunks from the first stream or its retry.
+
+    Raises:
+        Exception: If the initial error is ineligible for retry, occurs after a chunk, or the retry
+            fails.
+    """
     emitted = False
     try:
         for chunk in stream():
@@ -52,7 +66,21 @@ async def retry_async_stream(
     should_retry: Callable[[Exception], bool],
     retry: Callable[[], AsyncIterator[Chunk]] | None = None,
 ) -> AsyncIterator[Chunk]:
-    """Apply the same pre-emission retry rule to an async stream."""
+    """Apply the same pre-emission retry rule to an async stream.
+
+    Args:
+        stream: Factory for the initial async stream, reused if retry is omitted.
+        should_retry: Predicate that decides whether to retry the initial error. It is called only
+            before the first chunk.
+        retry: Optional factory for the one retry stream.
+
+    Yields:
+        Chunks from the first stream or its retry.
+
+    Raises:
+        Exception: If the initial error is ineligible for retry, occurs after a chunk, or the retry
+            fails.
+    """
     emitted = False
     try:
         async for chunk in stream():
@@ -69,7 +97,19 @@ Result = TypeVar("Result")
 
 
 def retry_request(request: Callable[[], Result], should_retry: Callable[[Exception], bool]) -> Result:
-    """Retry a rejected request once after the adapter adjusts its payload."""
+    """Retry a rejected request once after the adapter adjusts its payload.
+
+    Args:
+        request: Callable that issues a request and is called again if the first error is retryable.
+        should_retry: Predicate that decides whether to retry and may update adapter state for the
+            next call.
+
+    Returns:
+        The result of the successful request.
+
+    Raises:
+        Exception: If the initial error is ineligible for retry or the retry fails.
+    """
     try:
         return request()
     except Exception as exc:
@@ -82,7 +122,18 @@ async def retry_async_request(
     request: Callable[[], Awaitable[Result]],
     should_retry: Callable[[Exception], bool],
 ) -> Result:
-    """Retry a rejected async request once."""
+    """Retry a rejected async request once.
+
+    Args:
+        request: Callable that produces the awaitable for each attempt.
+        should_retry: Predicate that decides whether to retry the initial error.
+
+    Returns:
+        The result of the successful request.
+
+    Raises:
+        Exception: If the initial error is ineligible for retry or the retry fails.
+    """
     try:
         return await request()
     except Exception as exc:

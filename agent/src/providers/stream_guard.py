@@ -16,7 +16,13 @@ _CLOSE_JOIN_SECONDS = 2.0
 
 
 class StreamInterrupted(Exception):
-    """A stream was stopped before it delivered a usable answer."""
+    """A stream was stopped before it delivered a usable answer.
+
+    Args:
+        reason: Reason for interruption, such as cancellation or an idle or total timeout.
+        emitted: Whether an item already reached the consumer.
+        pending: Undelivered chunk, when present, whose billed usage the caller may recover.
+    """
 
     def __init__(self, reason: str, *, emitted: bool = False, pending: Any = None) -> None:
         super().__init__(reason)
@@ -112,7 +118,24 @@ def supervised_pulls(
     should_cancel: Optional[Callable[[], bool]] = None,
     poll_interval_s: float = 0.05,
 ) -> Iterator[Any]:
-    """Yield items while the stream can still make progress."""
+    """Yield items while the stream can still make progress.
+
+    Args:
+        iterator: Source iterator, which may block in next.
+        idle_timeout_s: Maximum seconds waiting for the next item, excluding consumer time. None or
+            zero disables the idle deadline.
+        total_timeout_s: Maximum seconds for the supervised stream. None or zero disables the total
+            deadline.
+        should_cancel: Optional cancellation predicate checked before pulling and while waiting.
+        poll_interval_s: Seconds between cancellation polls while waiting for an item.
+
+    Yields:
+        Source items until exhaustion, cancellation, or timeout.
+
+    Raises:
+        StreamInterrupted: If a deadline expires or cancellation is requested.
+        BaseException: If a supervised pull raises an exception from the source iterator.
+    """
     idle_timeout_s = idle_timeout_s or None
     total_timeout_s = total_timeout_s or None
     if idle_timeout_s is None and total_timeout_s is None and should_cancel is None:
@@ -179,7 +202,20 @@ def threaded_stream(
     heartbeat: Callable[[], Chunk] | None = None,
     interval: float | None = None,
 ) -> Iterator[Chunk]:
-    """Yield worker output and signal cancellation when the consumer closes."""
+    """Yield worker output and signal cancellation when the consumer closes.
+
+    Args:
+        run: Worker function receiving an item emitter and an event set when consumption ends.
+        heartbeat: Optional factory for a heartbeat item when the output queue is idle.
+        interval: Seconds to wait for worker output between heartbeats. None waits without a
+            deadline.
+
+    Yields:
+        Worker output and any configured heartbeat items.
+
+    Raises:
+        Exception: If the worker or heartbeat factory raises.
+    """
     chunks: queue.Queue[Any] = queue.Queue()
     sentinel = object()
     cancelled = threading.Event()

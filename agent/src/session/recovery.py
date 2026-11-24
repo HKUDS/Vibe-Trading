@@ -19,7 +19,14 @@ logger = logging.getLogger(__name__)
 def recover_interrupted_attempts(
     store: SessionStore, runtime_for: Callable[[str], SessionRuntime], search_index: SessionSearchIndex,
 ) -> None:
-    """Finalize interrupted attempts only under exclusive ownership of the session store."""
+    """Finalize interrupted attempts only under exclusive ownership of the session store.
+
+    Args:
+        store: Exclusively owned store containing pending and running attempts.
+        runtime_for: Callable resolving the session runtime used to close each turn.
+        search_index: Search index that receives recovered replies when the thread had no terminal
+            reply.
+    """
     recoverable = {AttemptStatus.PENDING, AttemptStatus.RUNNING}
     for attempt in store.list_attempts():
         if attempt.status not in recoverable:
@@ -60,11 +67,25 @@ def recover_interrupted_attempts(
 
 
 def recover_pending_inputs(store: SessionStore, pending_inputs: PendingInputQueue) -> None:
-    """Settle durable claims after attempt recovery without scheduling new turns."""
+    """Settle durable claims after attempt recovery without scheduling new turns.
+
+    Args:
+        store: Store containing session directories and committed thread items.
+        pending_inputs: Queue whose outstanding claims are reconciled.
+    """
     for path in sorted(store.base_dir.glob(f"*/{PENDING_INPUTS_FILENAME}")):
         session_id = path.parent.name
 
         def turn_prompt(turn_id: str, session_id: str = session_id) -> Optional[str]:
+            """Look up the prompt of a persisted attempt.
+
+            Args:
+                turn_id: Turn ID used as the attempt ID.
+                session_id: Session owning the attempt, bound to the current queue by default.
+
+            Returns:
+                The stored prompt, or None if the attempt is unavailable.
+            """
             attempt = store.get_attempt(session_id, turn_id)
             return attempt.prompt if attempt is not None else None
 

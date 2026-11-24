@@ -28,7 +28,11 @@ class SSEEvent:
     seq: Optional[int] = None
 
     def to_sse(self) -> str:
-        """Format the event as an SSE text frame."""
+        """Format the event as an SSE text frame.
+
+        Returns:
+            An SSE frame with JSON data and an ID line when available.
+        """
         payload = json.dumps(self.data, ensure_ascii=False)
         lines = []
         if self.event_id:
@@ -43,7 +47,11 @@ class SSEEvent:
 
 
 class SubscriberQueue(asyncio.Queue):
-    """Subscriber queue that remembers whether it ever dropped an event."""
+    """Subscriber queue that remembers whether it ever dropped an event.
+
+    Args:
+        maxsize: Maximum queue size. A nonpositive value gives an unbounded queue.
+    """
 
     def __init__(self, maxsize: int = 0) -> None:
         super().__init__(maxsize=maxsize)
@@ -61,7 +69,16 @@ def select_replay(
     *,
     replay_all: bool = False,
 ) -> List[SSEEvent]:
-    """Choose the buffered events a reconnecting subscriber gets."""
+    """Choose the buffered events a reconnecting subscriber gets.
+
+    Args:
+        buffer: The session's buffered events, oldest first.
+        last_event_id: Last event ID the client received.
+        replay_all: Return the whole buffer when the last event ID is absent or no longer buffered.
+
+    Returns:
+        Events after the last event ID, or the full or empty buffer according to replay_all.
+    """
     if not last_event_id:
         return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
     anchor = _buffer_anchor(buffer, last_event_id)
@@ -76,7 +93,17 @@ def select_buffered_live(
     buffer: List[SSEEvent], cursor: Optional[int], last_event_id: Optional[str],
     *, finished_live_ids: Optional[set[str]] = None,
 ) -> List[SSEEvent]:
-    """Buffered live-only events a resuming client still needs."""
+    """Buffered live-only events a resuming client still needs.
+
+    Args:
+        buffer: The session's buffered events, oldest first.
+        cursor: Highest durable sequence already held by the client.
+        last_event_id: Last event ID received, preferred as an anchor when found in the buffer.
+        finished_live_ids: Additional live IDs already completed outside the buffer.
+
+    Returns:
+        Live-only events after the anchor, excluding starts and deltas for completed live IDs.
+    """
     anchor = _buffer_anchor(buffer, last_event_id) if last_event_id else None
     if anchor is None and cursor is not None:
         anchor = max(
@@ -99,7 +126,12 @@ def select_buffered_live(
     ]
 
 class EventBus:
-    """Session-scoped live bus with subscribers and transient item events."""
+    """Session-scoped live bus with subscribers and transient item events.
+
+    Args:
+        max_buffer_size: Per-session retention limit for transient item events.
+        heartbeat_interval_s: Seconds without an event before a listener emits a heartbeat.
+    """
 
     def __init__(self, max_buffer_size: int = 500, heartbeat_interval_s: float = 30.0) -> None:
         """Initialize the event bus."""
@@ -112,11 +144,19 @@ class EventBus:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Set the asyncio event loop, usually during api_server startup."""
+        """Set the asyncio event loop, usually during api_server startup.
+
+        Args:
+            loop: Asyncio loop used to dispatch events to subscriber queues from other threads.
+        """
         self._loop = loop
 
     def publish(self, event: SSEEvent) -> None:
-        """Publish an event to a session channel in a thread-safe way."""
+        """Publish an event to a session channel in a thread-safe way.
+
+        Args:
+            event: Event carrying the destination session ID.
+        """
         session_id = event.session_id
         with self._lock:
             buffer = self._buffers.setdefault(session_id, [])
@@ -146,13 +186,21 @@ class EventBus:
                     _mark_overflow(queue)
 
     def add_listener(self, listener: Callable[[SSEEvent], None]) -> None:
-        """Register a callback that runs synchronously on the publisher thread."""
+        """Register a callback that runs synchronously on the publisher thread.
+
+        Args:
+            listener: Callback that receives each published event.
+        """
         with self._lock:
             if listener not in self._listeners:
                 self._listeners.append(listener)
 
     def remove_listener(self, listener: Callable[[SSEEvent], None]) -> None:
-        """Unregister a callback, ignoring callbacks already absent."""
+        """Unregister a callback, ignoring callbacks already absent.
+
+        Args:
+            listener: Previously registered callback to remove.
+        """
         with self._lock:
             if listener in self._listeners:
                 self._listeners.remove(listener)
@@ -172,7 +220,16 @@ class EventBus:
         event_type: str,
         data: Optional[Dict[str, Any]] = None,
     ) -> SSEEvent:
-        """Build and publish an event in one step."""
+        """Build and publish an event in one step.
+
+        Args:
+            session_id: Destination session ID.
+            event_type: Event name.
+            data: Payload, defaulting to an empty mapping.
+
+        Returns:
+            The published SSE event.
+        """
         event = SSEEvent(
             event_type=event_type,
             data=data or {},
@@ -188,14 +245,30 @@ class EventBus:
         *,
         replay_all: bool = False,
     ) -> List[SSEEvent]:
-        """Replay buffered events after the last event ID, or the whole buffer for hydration."""
+        """Replay buffered events after the last event ID, or the whole buffer for hydration.
+
+        Args:
+            session_id: Session whose transient buffer to read.
+            last_event_id: Last event ID acknowledged by the client.
+            replay_all: Whether to return the whole buffer when the anchor is absent.
+
+        Returns:
+            Buffered events after the anchor, or the full or empty buffer according to replay_all.
+        """
         with self._lock:
             return select_replay(
                 self._buffers.get(session_id, []), last_event_id, replay_all=replay_all
             )
 
     def attach(self, session_id: str) -> Tuple["SubscriberQueue", List[SSEEvent]]:
-        """Return a subscriber queue and its buffer snapshot taken under one lock."""
+        """Return a subscriber queue and its buffer snapshot taken under one lock.
+
+        Args:
+            session_id: Session to subscribe to.
+
+        Returns:
+            A bounded subscriber queue and a copy of the current transient buffer.
+        """
         queue = SubscriberQueue(maxsize=200)
         with self._lock:
             buffer = list(self._buffers.get(session_id, []))
@@ -203,14 +276,27 @@ class EventBus:
         return queue, buffer
 
     def detach(self, session_id: str, queue: asyncio.Queue) -> None:
-        """Unregister a queue added by :meth:`attach`. Unknown queues are ignored."""
+        """Unregister a queue added by :meth:`attach`. Unknown queues are ignored.
+
+        Args:
+            session_id: Session the queue was attached to.
+            queue: Queue to unregister.
+        """
         with self._lock:
             subs = self._subscribers.get(session_id, [])
             if queue in subs:
                 subs.remove(queue)
 
     async def listen(self, session_id: str, queue: asyncio.Queue) -> AsyncIterator[SSEEvent]:
-        """Yield live events from an attached queue, with idle heartbeats."""
+        """Yield live events from an attached queue, with idle heartbeats.
+
+        Args:
+            session_id: Session ID for emitted heartbeats and queue cleanup.
+            queue: Queue registered with attach.
+
+        Yields:
+            Queued events and idle heartbeats until the session is cleared or the listener closes.
+        """
         try:
             while True:
                 try:
@@ -236,7 +322,16 @@ class EventBus:
         *,
         replay_all: bool = False,
     ) -> AsyncIterator[SSEEvent]:
-        """Subscribe to a session event stream asynchronously."""
+        """Subscribe to a session event stream asynchronously.
+
+        Args:
+            session_id: Session to subscribe to.
+            last_event_id: Last event ID acknowledged by the client.
+            replay_all: Whether to replay the whole buffer when the anchor is absent.
+
+        Yields:
+            Selected buffered events followed by live events and idle heartbeats.
+        """
         queue, buffer = self.attach(session_id)
         try:
             for event in select_replay(buffer, last_event_id, replay_all=replay_all):
@@ -247,7 +342,11 @@ class EventBus:
             self.detach(session_id, queue)
 
     def clear(self, session_id: str) -> None:
-        """Clear the buffered events and notify subscribers for a session."""
+        """Clear the buffered events and notify subscribers for a session.
+
+        Args:
+            session_id: Session whose buffer and subscriber registrations are removed.
+        """
         with self._lock:
             self._buffers.pop(session_id, None)
             subs = self._subscribers.pop(session_id, [])
@@ -276,12 +375,27 @@ _DURABLE_ID_RE = re.compile(r"item-([1-9][0-9]*)(-started|-run)?")
 
 
 def durable_event_id(seq: int, rank: int = _COMPLETED) -> str:
-    """Return the SSE id of an event derived from one thread item."""
+    """Return the SSE id of an event derived from one thread item.
+
+    Args:
+        seq: Sequence number of the thread item.
+        rank: Event rank identifying the started, completed, or run event.
+
+    Returns:
+        The sequence-based SSE ID with the suffix for that rank.
+    """
     return f"item-{seq}{_DURABLE_SUFFIX[rank]}"
 
 
 def cursor_from_event_id(event_id: Optional[str]) -> Optional[int]:
-    """Read the cursor a durable event id stands for."""
+    """Read the cursor a durable event id stands for.
+
+    Args:
+        event_id: Last event ID supplied by the client.
+
+    Returns:
+        The durable sequence, one less for a started event, or None for a missing or non-durable ID.
+    """
     if not event_id:
         return None
     match = _DURABLE_ID_RE.fullmatch(event_id)

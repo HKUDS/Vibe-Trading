@@ -49,6 +49,15 @@ def _summary_chunks(msgs: list, limit: int = SUMMARY_CHUNK_CHARS) -> list[str]:
         flush_current()
 
         def fragment_prefix(index: int, total: int) -> str:
+            """Label a fragment of an oversized message.
+
+            Args:
+                index: One-based fragment number.
+                total: Total fragments for that message.
+
+            Returns:
+                Prefix identifying the fragment as a raw JSON slice.
+            """
             return (
                 f"[fragment {index}/{total} of one oversized message — "
                 "raw JSON slice, not valid JSON on its own]\n"

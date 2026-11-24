@@ -50,7 +50,12 @@ class Principal:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the principal to a JSON-safe dictionary."""
+        """Serialize the principal to a JSON-safe dictionary.
+
+        Returns:
+            A JSON-safe dictionary including the authentication method and computed attributable
+            flag.
+        """
         return {
             "subject": self.subject,
             "auth_method": self.auth_method.value,
@@ -61,10 +66,17 @@ class Principal:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Principal:
-        """Recompute attribution from the authentication method so stored records cannot grant it.
+        """Rebuild a principal from its serialized form.
+
+        Args:
+            data: Dictionary produced by to_dict. Attribution is recomputed from auth_method.
+
+        Returns:
+            The reconstructed principal.
 
         Raises:
-            ValueError: The authentication method is missing or unknown.
+            KeyError: If subject or auth_method is missing.
+            ValueError: If auth_method is unknown.
         """
         return cls(
             subject=data["subject"],
@@ -110,7 +122,11 @@ class Session:
     forked_from_turn_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the session to a dictionary."""
+        """Serialize the session to a dictionary.
+
+        Returns:
+            Session fields with the status value and serialized owner, if present.
+        """
         data = asdict(self)
         data["status"] = self.status.value
         data["owner"] = self.owner.to_dict() if self.owner else None
@@ -118,7 +134,15 @@ class Session:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Session:
-        """Deserialize a session from a dictionary."""
+        """Deserialize a session from a dictionary.
+
+        Args:
+            data: Dictionary produced from parsed JSON, with a status value and optional serialized
+                owner.
+
+        Returns:
+            A Session instance.
+        """
         data = dict(data)
         if "status" in data:
             data["status"] = SessionStatus(data["status"])
@@ -143,12 +167,23 @@ class Message:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the message to a dictionary."""
+        """Serialize the message to a dictionary.
+
+        Returns:
+            A dictionary containing all message fields.
+        """
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Message:
-        """Deserialize a message from a dictionary."""
+        """Deserialize a message from a dictionary.
+
+        Args:
+            data: Dictionary produced from parsed JSON.
+
+        Returns:
+            A Message instance.
+        """
         data = dict(data)
         return cls(**data)
 
@@ -172,7 +207,11 @@ class Attempt:
     queued_input_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the attempt to a dictionary."""
+        """Serialize the attempt to a dictionary.
+
+        Returns:
+            Attempt fields with the status value and queued_input_id when set.
+        """
         data = asdict(self)
         if self.queued_input_id is None:
             data.pop("queued_input_id")
@@ -181,7 +220,14 @@ class Attempt:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Attempt:
-        """Deserialize an attempt from a dictionary."""
+        """Deserialize an attempt from a dictionary.
+
+        Args:
+            data: Dictionary produced from parsed JSON, with a status value if present.
+
+        Returns:
+            An Attempt instance with any stored error text redacted.
+        """
         data = dict(data)
         if "status" in data:
             data["status"] = AttemptStatus(data["status"])
@@ -196,30 +242,50 @@ class Attempt:
         self.completed_at = None
 
     def mark_completed(self, summary: Optional[str] = None) -> None:
-        """Mark the attempt as completed."""
+        """Mark the attempt as completed.
+
+        Args:
+            summary: Execution summary. The existing summary is kept if this is empty or None.
+        """
         self._mark_terminal(AttemptStatus.COMPLETED)
         if summary:
             self.summary = summary
 
     def mark_waiting_user(self, summary: Optional[str] = None) -> None:
-        """Pause the attempt while a structured question awaits an answer."""
+        """Pause the attempt while a structured question awaits an answer.
+
+        Args:
+            summary: Optional question or reply text to store as the attempt summary.
+        """
         self._mark_terminal(AttemptStatus.WAITING_USER)
         if summary:
             self.summary = summary
 
     def mark_failed(self, error: str) -> None:
-        """Mark the attempt as failed."""
+        """Mark the attempt as failed.
+
+        Args:
+            error: Error message to redact before storing.
+        """
         self._mark_terminal(AttemptStatus.FAILED)
         self.error = redact_text(error)
 
     def mark_cancelled(self, reason: str = "") -> None:
-        """Mark the attempt as user-cancelled."""
+        """Mark the attempt as user-cancelled.
+
+        Args:
+            reason: Optional free-text reason, redacted before storing.
+        """
         self._mark_terminal(AttemptStatus.CANCELLED)
         if reason:
             self.error = redact_text(reason)
 
     def mark_interrupted(self, reason: str = "") -> None:
-        """Mark the attempt as interrupted by process lifecycle."""
+        """Mark the attempt as interrupted by process lifecycle.
+
+        Args:
+            reason: Optional explanation of the interruption, redacted before storing.
+        """
         self._mark_terminal(AttemptStatus.INTERRUPTED)
         if reason:
             self.error = redact_text(reason)

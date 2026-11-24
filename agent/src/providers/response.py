@@ -21,7 +21,18 @@ def usage_metadata(
     input_details: dict[str, int] | None = None,
     output_details: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    """Build the usage fields shared by provider responses."""
+    """Build the usage fields shared by provider responses.
+
+    Args:
+        tokens_in: Number of input tokens.
+        tokens_out: Number of output tokens.
+        total: Reported total, or None to sum the input and output counts.
+        input_details: Optional breakdown of input token usage.
+        output_details: Optional breakdown of output token usage.
+
+    Returns:
+        Usage metadata with the token totals and any nonempty breakdowns.
+    """
     metadata: dict[str, Any] = {
         "input_tokens": tokens_in,
         "output_tokens": tokens_out,
@@ -35,7 +46,15 @@ def usage_metadata(
 
 
 def tool_call_chunks(calls: list[dict], *, ensure_ascii: bool = True) -> list[dict]:
-    """Serialize complete tool calls as indexed LangChain chunks."""
+    """Serialize complete tool calls as indexed LangChain chunks.
+
+    Args:
+        calls: Complete tool calls, each with id, name, and args fields.
+        ensure_ascii: Whether to escape non-ASCII characters in serialized arguments.
+
+    Returns:
+        One indexed tool-call chunk per call, in input order.
+    """
     return [
         {
             "id": call["id"],
@@ -76,7 +95,16 @@ def _text_content(content: Any) -> str:
 
 
 def reported_model_source(runtime: contracts.LLMRuntimeSnapshot, response_model: Optional[str]) -> str:
-    """Name where a reported model id came from."""
+    """Name where a reported model id came from.
+
+    Args:
+        runtime: Snapshot of the client that made the request.
+        response_model: Model the provider response named, if any.
+
+    Returns:
+        provider_response or configured for the server's selection, and session_provider_response or
+        session for an explicit session selection.
+    """
     if runtime.selection == "session":
         return "session_provider_response" if response_model else "session"
     return "provider_response" if response_model else "configured"
@@ -99,7 +127,16 @@ def _extract_retry_after_s(original: Exception) -> Optional[float]:
 
 
 class ProviderStreamError(RuntimeError):
-    """Raised when provider streaming fails before a complete response."""
+    """Raised when provider streaming fails before a complete response.
+
+    Args:
+        provider: Provider label for the failing request.
+        model: Model label for the failing request.
+        original: Underlying exception used to derive status, retry timing, and the safe error
+            message.
+        usage_metadata: Optional measured usage from the failed request.
+        secrets: Additional secret values to redact from the message.
+    """
 
     def __init__(self, *, provider: str, model: str, original: Exception, usage_metadata: dict | None = None, secrets: tuple[str, ...] = ()) -> None:
         """Initialize a provider-contextual stream error."""
@@ -130,7 +167,12 @@ class ProviderStreamError(RuntimeError):
 
     @property
     def retryable(self) -> bool:
-        """Return whether the original failure permits another attempt."""
+        """Return whether the original failure permits another attempt.
+
+        Returns:
+            False for HTTP client errors other than 408 and 429, otherwise True, including when no
+            status is available.
+        """
         if self.status_code is None:
             return True
         if self.status_code in (408, 429):
@@ -139,7 +181,20 @@ class ProviderStreamError(RuntimeError):
 
 
 def parse_response(ai_message: Any, *, cancelled: bool = False) -> contracts.LLMResponse:
-    """Convert a LangChain AIMessage (or AIMessageChunk) to ``contracts.LLMResponse``."""
+    """Convert a LangChain AIMessage (or AIMessageChunk) to ``contracts.LLMResponse``.
+
+    Args:
+        ai_message: Provider AI message or accumulated message chunk.
+        cancelled: Whether cancellation should suppress tool calls and allow partial output.
+
+    Returns:
+        Normalized response with text, reasoning, available usage, model metadata, and valid tool
+        calls.
+
+    Raises:
+        ValueError: If a non-cancelled response has invalid, incomplete, non-object, or truncated
+            tool arguments.
+    """
     usage = getattr(ai_message, "usage_metadata", None)
     # Cast SDK usage objects before persisting them.
     if usage is not None and not isinstance(usage, dict):

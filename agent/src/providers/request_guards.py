@@ -66,7 +66,14 @@ def _guard_provider_redirects(sync_sdk: Any, async_sdk: Any) -> None:
 
 
 def unwrap_provider_error(error: Exception) -> Exception:
-    """Preserve a deterministic redirect refusal through SDK connection wrappers."""
+    """Preserve a deterministic redirect refusal through SDK connection wrappers.
+
+    Args:
+        error: Exception to inspect along its explicit cause chain.
+
+    Returns:
+        The first ProviderRedirectError found, or the original exception.
+    """
     cause = error
     seen = set()
     while cause is not None and id(cause) not in seen:

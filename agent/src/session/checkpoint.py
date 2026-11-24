@@ -15,7 +15,15 @@ if TYPE_CHECKING:
 
 
 class ResponseCheckpoint:
-    """Persist the first text chunk immediately and coalesce later writes until flush."""
+    """Persist the first text chunk immediately and coalesce later writes until flush.
+
+    Args:
+        store: Store used to open the attempt's thread when no runtime is supplied.
+        attempt: Attempt whose response is checkpointed.
+        min_interval_seconds: Minimum seconds between batched writes. The first chunk is written
+            immediately.
+        runtime: Existing runtime for the attempt's session, if available.
+    """
 
     def __init__(
         self,
@@ -37,7 +45,12 @@ class ResponseCheckpoint:
         self._lock = threading.Lock()
 
     def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Apply an AgentRuntime stream event to the durable snapshot."""
+        """Apply an AgentRuntime stream event to the durable snapshot.
+
+        Args:
+            event_type: Agent event name.
+            data: Event payload. Text deltas append output and text resets clear it.
+        """
         if event_type != vocabulary.ITEM_DELTA or data.get("kind") not in {vocabulary.TEXT_DELTA, vocabulary.TEXT_RESET}:
             return
 
@@ -65,7 +78,11 @@ class ResponseCheckpoint:
 
     @property
     def text(self) -> str:
-        """Text streamed to the user so far, after any stream resets."""
+        """Text streamed to the user so far, after any stream resets.
+
+        Returns:
+            The accumulated response since the most recent reset.
+        """
         with self._lock:
             return self._text
 

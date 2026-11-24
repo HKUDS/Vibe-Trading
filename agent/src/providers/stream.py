@@ -47,7 +47,32 @@ def collect_stream(
     should_cancel: Optional[Callable[[], bool]],
     on_waiting_chunk: Optional[Callable[[], None]],
 ) -> contracts.LLMResponse:
-    """Supervise SDK chunks, retain reported usage and return the terminal response."""
+    """Supervise SDK chunks, retain reported usage and return the terminal response.
+
+    Args:
+        adapter: Original adapter used to identify the stream's terminal-event requirements.
+        prepare: Callable producing the bound adapter, prepared messages, and request keyword
+            arguments.
+        messages: Messages to send to the model.
+        tools: Tool definitions to bind, if any.
+        provider: Provider label for error reporting.
+        model: Model label for error reporting.
+        secrets: Credential strings to redact in error messages.
+        on_text_chunk: Optional callback for released text deltas.
+        on_reasoning_chunk: Optional callback for reasoning-only deltas.
+        timeout: Optional total request timeout in seconds, shared with fallback.
+        idle_timeout_s: Optional timeout in seconds between stream chunks.
+        should_cancel: Optional predicate that requests cancellation.
+        on_waiting_chunk: Optional callback for provider-confirmed waiting activity.
+
+    Returns:
+        The parsed streamed or fallback response, or partial output with available usage after
+        cancellation.
+
+    Raises:
+        ProviderStreamError: If streaming, fallback, or response validation fails, including an
+            expired timeout.
+    """
     accumulated = None
     cancelled = False
     cancelled_usage = None
@@ -106,6 +131,11 @@ def collect_stream(
                 raise TimeoutError("provider stream stopped: total timeout")
 
             def invoke():
+                """Adapt the fallback request to the stream supervisor.
+
+                Yields:
+                    The single response from the non-streaming invocation.
+                """
                 yield llm.invoke(messages, config=config, **call_kwargs)
 
             with closing(supervised_pulls(

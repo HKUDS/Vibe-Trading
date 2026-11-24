@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class SessionStore:
-    """Filesystem-backed persistent storage."""
+    """Filesystem-backed persistent storage.
+
+    Args:
+        base_dir: Root directory containing the session subdirectories. Created if absent.
+    """
 
     def __init__(self, base_dir: Path) -> None:
         """Initialize session storage."""
@@ -32,16 +36,37 @@ class SessionStore:
         return self._session_dir(session_id) / "session.json"
 
     def thread_path(self, session_id: str) -> Path:
-        """Return the location of a session's conversation thread log."""
+        """Return the location of a session's conversation thread log.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The conversation log path inside that session's directory.
+        """
         return self._session_dir(session_id) / THREAD_FILENAME
 
     def thread_log(self, session_id: str) -> ThreadLog:
-        """Open a session's conversation thread log."""
+        """Open a session's conversation thread log.
+
+        Args:
+            session_id: Session ID to migrate if necessary before opening the log.
+
+        Returns:
+            A log handle for the session's durable thread.
+        """
         self.ensure_migrated(session_id)
         return ThreadLog(self.thread_path(session_id))
 
     def ensure_migrated(self, session_id: str):
-        """Migrate a pre-thread session before any thread read or write."""
+        """Migrate a pre-thread session before any thread read or write.
+
+        Args:
+            session_id: Session ID to pass to the migration routine.
+
+        Returns:
+            The migration outcome for that session directory.
+        """
         from src.session.migration import migrate_session
 
         return migrate_session(self._session_dir(session_id), session_id=session_id)
@@ -55,7 +80,17 @@ class SessionStore:
     # Session CRUD
 
     def create_session(self, session: Session) -> Session:
-        """Create and persist a session."""
+        """Create and persist a session.
+
+        Args:
+            session: Session with an unused ID.
+
+        Returns:
+            The supplied session, after its directory and metadata are created.
+
+        Raises:
+            ValueError: If a session directory with that ID already exists.
+        """
         session_dir = self._session_dir(session.session_id)
         if session_dir.exists():
             raise ValueError(f"Session {session.session_id} already exists")
@@ -66,7 +101,14 @@ class SessionStore:
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
-        """Read a session."""
+        """Read a session.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The deserialized session, or None when its metadata cannot be read.
+        """
         path = self._session_file(session_id)
         data = self._read_json(path)
         if data is None:
@@ -75,11 +117,22 @@ class SessionStore:
         return Session.from_dict(data)
 
     def update_session(self, session: Session) -> None:
-        """Update a session."""
+        """Update a session.
+
+        Args:
+            session: Session carrying the metadata to write.
+        """
         self._write_json(self._session_file(session.session_id), session.to_dict())
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete a session and all of its data."""
+        """Remove a session directory and its data.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            True if the directory existed and removal was attempted, otherwise False.
+        """
         session_dir = self._session_dir(session_id)
         if not session_dir.exists():
             return False
@@ -89,7 +142,14 @@ class SessionStore:
         return True
 
     def list_sessions(self, limit: int = 50) -> List[Session]:
-        """List all sessions in descending update-time order."""
+        """List readable sessions in descending update-time order.
+
+        Args:
+            limit: Maximum number of sessions to return.
+
+        Returns:
+            The most recently updated sessions with valid metadata.
+        """
         sessions: List[Session] = []
         if not self.base_dir.exists():
             return sessions
@@ -117,7 +177,17 @@ class SessionStore:
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
     ) -> List[Message]:
-        """Return display messages derived from the session thread."""
+        """Return display messages derived from the session thread.
+
+        Args:
+            session_id: Session ID.
+            limit: Number of newest messages to return. None keeps all, and nonpositive values
+                return no messages.
+
+        Returns:
+            Display messages in order, with durable prompts as a fallback when the thread has no
+            turn starts.
+        """
         if limit is not None and limit <= 0:
             self.ensure_migrated(session_id)
             return []
@@ -182,7 +252,14 @@ class SessionStore:
     # Attempt CRUD
 
     def create_attempt(self, attempt: Attempt) -> Attempt:
-        """Create an execution attempt."""
+        """Create an execution attempt.
+
+        Args:
+            attempt: Attempt whose session and attempt IDs identify its record.
+
+        Returns:
+            The supplied attempt after it is written.
+        """
         attempt_dir = self._attempt_dir(attempt.session_id, attempt.attempt_id)
         attempt_dir.mkdir(parents=True, exist_ok=True)
         self._write_json(
@@ -192,7 +269,15 @@ class SessionStore:
         return attempt
 
     def get_attempt(self, session_id: str, attempt_id: str) -> Optional[Attempt]:
-        """Read an execution attempt."""
+        """Read an execution attempt.
+
+        Args:
+            session_id: Session ID owning the attempt.
+            attempt_id: ID of the attempt record to read.
+
+        Returns:
+            The deserialized attempt, or None if its record cannot be read.
+        """
         path = self._attempt_file(session_id, attempt_id)
         data = self._read_json(path)
         if data is None:
@@ -200,14 +285,22 @@ class SessionStore:
         return Attempt.from_dict(data)
 
     def update_attempt(self, attempt: Attempt) -> None:
-        """Update an execution attempt."""
+        """Update an execution attempt.
+
+        Args:
+            attempt: Attempt whose persisted record should be updated.
+        """
         self._write_json(
             self._attempt_file(attempt.session_id, attempt.attempt_id),
             attempt.to_dict(),
         )
 
     def list_attempts(self) -> List[Attempt]:
-        """Read every valid persisted attempt."""
+        """Read every valid persisted attempt.
+
+        Returns:
+            All valid attempt records, skipping unreadable or corrupt entries.
+        """
         attempts: List[Attempt] = []
         for path in self.base_dir.glob("*/attempts/*/attempt.json"):
             data = self._read_json(path)
@@ -222,7 +315,15 @@ class SessionStore:
     def get_message_for_attempt(
         self, session_id: str, attempt_id: str
     ) -> Optional[Message]:
-        """Return the persisted assistant message linked to an attempt."""
+        """Return the persisted assistant message linked to an attempt.
+
+        Args:
+            session_id: Session ID whose thread to project.
+            attempt_id: Attempt ID used as the turn ID.
+
+        Returns:
+            The projected assistant reply, or None if the turn has no terminal status.
+        """
         items = self.thread_log(session_id).read()
         projection = project_turn(items, attempt_id)
         if projection.status is None:

@@ -26,12 +26,26 @@ _SUPPORTED_TOKEN_PREFIXES = ("gho_", "ghu_", "github_pat_")
 
 
 def is_supported_token(token: str) -> bool:
-    """Return whether ``token`` is accepted by the Copilot SDK."""
+    """Check whether a token has a supported Copilot SDK prefix.
+
+    Args:
+        token: Candidate token string.
+
+    Returns:
+        True for a nonempty token with a supported prefix.
+    """
     return bool(token) and token.startswith(_SUPPORTED_TOKEN_PREFIXES)
 
 
 def gh_cli_token(*, stored_only: bool = False) -> str:
-    """Return a supported token from ``gh auth token``, if available."""
+    """Return a supported token from ``gh auth token``, if available.
+
+    Args:
+        stored_only: Whether to omit environment token overrides when calling gh.
+
+    Returns:
+        A supported token from a successful CLI command, or an empty string.
+    """
     executable = shutil.which("gh")
     if not executable:
         return ""
@@ -51,7 +65,12 @@ def gh_cli_token(*, stored_only: bool = False) -> str:
 
 
 def resolve_copilot_token() -> tuple[str, str]:
-    """Resolve explicit credentials; the SDK handles stored CLI credentials."""
+    """Resolve Copilot credentials from the environment or GitHub CLI.
+
+    Returns:
+        A pair of the token and its source, preferring supported environment values, or two empty
+        strings if unavailable.
+    """
     for name in TOKEN_ENV_NAMES:
         token = os.getenv(name, "").strip()  # noqa: env-gate - provider credential
         if is_supported_token(token):
@@ -80,7 +99,11 @@ def _gh_cli_token() -> str:
 
 
 def get_copilot_login_status() -> Optional[str]:
-    """Return an explicit token, or None when the SDK must resolve login."""
+    """Return an explicit token, or None when the SDK must resolve login.
+
+    Returns:
+        The resolved token when available, or None to let the SDK resolve login.
+    """
     token, _source = resolve_copilot_token()
     return token or None
 
@@ -99,7 +122,11 @@ def _client_options(token: str | None = None) -> dict[str, Any]:
 
 
 def get_copilot_auth_status() -> tuple[bool, str]:
-    """Return the official SDK's authentication status."""
+    """Return the official SDK's authentication status.
+
+    Returns:
+        The authentication flag and status message, login name, or reason the SDK check failed.
+    """
     result: queue.Queue[Any] = queue.Queue(maxsize=1)
 
     async def check() -> tuple[bool, str]:
@@ -313,6 +340,7 @@ async def _run_copilot(
             tool_task = asyncio.create_task(tool_requested.wait())
 
             async def watch_cancel() -> None:
+                """Abort the SDK turn when the caller signals cancellation."""
                 if cancel_event is None:
                     return
                 while not cancel_event.is_set():
@@ -350,7 +378,14 @@ async def _run_copilot(
 
 
 class CopilotSDKLLM:
-    """Minimal LangChain-compatible wrapper around the official Copilot SDK."""
+    """Minimal LangChain-compatible wrapper around the official Copilot SDK.
+
+    Args:
+        model: Model ID to select for Copilot turns.
+        timeout: Default request timeout in seconds.
+        tools: Optional function tools offered to the Copilot session.
+        token: Optional token override supplied to SDK client setup.
+    """
 
     def __init__(
         self,
@@ -366,6 +401,14 @@ class CopilotSDKLLM:
         self._token = token
 
     def bind_tools(self, tools: list[dict[str, Any]]) -> "CopilotSDKLLM":
+        """Bind function tools to a copy of the Copilot model.
+
+        Args:
+            tools: Tool definitions to offer to the SDK session.
+
+        Returns:
+            A new adapter with the supplied tools and the same model, timeout, and token.
+        """
         return CopilotSDKLLM(model=self.model, timeout=self.timeout, tools=tools, token=self._token)
 
     def _request(
@@ -385,6 +428,15 @@ class CopilotSDKLLM:
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> AIMessage:
+        """Run a Copilot turn synchronously.
+
+        Args:
+            messages: Conversation as SDK-compatible message objects or dictionaries.
+            config: Optional run config containing a timeout override in seconds.
+
+        Returns:
+            A LangChain message carrying response text, tool calls, and finish and model metadata.
+        """
         result = self._request(messages, float((config or {}).get("timeout") or self.timeout))
         return AIMessage(
             content=result.content,
@@ -400,6 +452,15 @@ class CopilotSDKLLM:
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> Iterable[AIMessageChunk]:
+        """Stream a Copilot turn from a worker thread.
+
+        Args:
+            messages: Conversation as SDK-compatible message objects or dictionaries.
+            config: Optional run config containing a timeout override in seconds.
+
+        Yields:
+            Text or reasoning chunks, followed by the tool-call or stop chunk.
+        """
         timeout = float((config or {}).get("timeout") or self.timeout)
 
         def run(publish: Callable[[AIMessageChunk], None], cancel_event: threading.Event) -> None:
@@ -442,4 +503,13 @@ class CopilotSDKLLM:
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> AIMessage:
+        """Run a synchronous Copilot turn in a worker thread.
+
+        Args:
+            messages: Conversation as SDK-compatible message objects or dictionaries.
+            config: Optional run config passed through to invoke.
+
+        Returns:
+            The response message returned by invoke.
+        """
         return await asyncio.to_thread(self.invoke, messages, config)

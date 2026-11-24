@@ -108,7 +108,11 @@ class SearchMatch:
     rank: float
 
     def to_dict(self) -> dict:
-        """Serialize to JSON-safe dict."""
+        """Serialize the match for clients.
+
+        Returns:
+            Session ID, title, start time, message count, and matching snippet.
+        """
         return {
             "session_id": self.session_id,
             "title": self.title,
@@ -130,7 +134,11 @@ def _serialized_operation(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 
 class SessionSearchIndex:
-    """SQLite FTS5 index for cross-session search."""
+    """SQLite FTS5 index for cross-session search.
+
+    Args:
+        db_path: Path to the SQLite index. Its parent directory is created when needed.
+    """
 
     def __init__(self, db_path: Path = _DB_PATH) -> None:
         """Initialize the search index."""
@@ -219,7 +227,10 @@ class SessionSearchIndex:
         """Upsert a session without resetting an existing message count.
 
         Args:
-            ts: Explicit epoch start time. None preserves an existing start time.
+            session_id: Session ID.
+            title: Session title.
+            ts: Explicit Unix start time in seconds. None preserves an existing start time or uses
+                the current time for a new session.
         """
         conn = self._get_conn()
         conn.execute(
@@ -237,7 +248,14 @@ class SessionSearchIndex:
     def index_message(
         self, session_id: str, role: str, content: str, tool_name: str | None = None
     ) -> None:
-        """Index a single message."""
+        """Index a single message.
+
+        Args:
+            session_id: Session ID.
+            role: Message role such as user, assistant, or tool.
+            content: Message text. Whitespace-only messages are skipped and long text is capped.
+            tool_name: Tool name if this is a tool result.
+        """
         if not content or not content.strip():
             return
         conn = self._get_conn()
@@ -256,7 +274,11 @@ class SessionSearchIndex:
 
     @_serialized_operation
     def remove_session(self, session_id: str) -> None:
-        """Remove a session and all of its messages from the index."""
+        """Remove a session and all of its messages from the index.
+
+        Args:
+            session_id: Session ID whose indexed text should be removed.
+        """
         conn = self._get_conn()
         with conn:
             conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -272,7 +294,15 @@ class SessionSearchIndex:
 
     @_serialized_operation
     def search(self, query: str, max_sessions: int = 3) -> list[SearchMatch]:
-        """Full-text search across all sessions."""
+        """Full-text search across all sessions.
+
+        Args:
+            query: Search query containing keywords or a phrase.
+            max_sessions: Maximum number of distinct sessions to return.
+
+        Returns:
+            The best match per session ranked by relevance, or an empty list when the query fails.
+        """
         conn = self._get_conn()
         fts_query = self._sanitize_fts_query(query)
         try:
@@ -317,7 +347,14 @@ class SessionSearchIndex:
         return list(seen.values())
 
     def reindex_from_store(self, store_base_dir: Path) -> int:
-        """Rebuild the entire index from file-based session store."""
+        """Rebuild the entire index from the file-based session store.
+
+        Args:
+            store_base_dir: Root directory containing the stored session subdirectories.
+
+        Returns:
+            Number of projected messages processed, or zero if the store is missing.
+        """
         if not store_base_dir.exists():
             return 0
 
@@ -391,7 +428,11 @@ _shared_lock = _threading.Lock()
 
 
 def get_shared_index() -> SessionSearchIndex:
-    """Return a process-wide singleton SessionSearchIndex."""
+    """Access the process-wide session search index.
+
+    Returns:
+        The shared SessionSearchIndex, created on first use.
+    """
     global _shared_index
     if _shared_index is None:
         with _shared_lock:

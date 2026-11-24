@@ -74,7 +74,18 @@ def _is_stream_usage_unsupported_error(exc: BaseException) -> bool:
 if ChatOpenAI is not None:
 
     class ChatOpenAIWithReasoning(ChatOpenAI):  # type: ignore[misc,valid-type]
-        """ChatOpenAI that preserves provider reasoning across invoke + stream."""
+        """ChatOpenAI that preserves provider reasoning across invoke + stream.
+
+        Args:
+            *args: Positional arguments forwarded to ChatOpenAI.
+            vibe_provider: Resolved provider name used for request-specific adapter behavior.
+            vibe_api_key: Resolved credential used when replacing ambient authorization.
+            vibe_environment: Optional environment snapshot supplying client headers, project, and
+                organization settings.
+            vibe_owned_http_clients: HTTP clients owned by this instance and eligible for its
+                cleanup.
+            **kwargs: Keyword arguments forwarded to ChatOpenAI, including explicit default headers.
+        """
 
         _vibe_provider: Optional[str] = PrivateAttr(default=None)
         _vibe_api_key: str = PrivateAttr(default="")

@@ -25,7 +25,23 @@ logger = logging.getLogger(__name__)
 
 
 class ContextCompactor:
-    """Own context measurement and all five compaction layers."""
+    """Own context measurement and all five compaction layers.
+
+    Args:
+        llm: Model client used for summary requests.
+        provider: Provider label used for context sizing.
+        conversation: Conversation state and thread recorder.
+        replay: Replay controller that tracks tool results awaiting visibility.
+        state_summary: Callback that supplies the current agent state as text.
+        should_stop: Callback that reports whether the run should stop.
+        record_usage: Callback that records model usage.
+        verification_ledger: Callback that extracts verified values from the compressed messages.
+        timeout_seconds: Callback that resolves the model request timeout in seconds.
+        threshold_override: Callback that returns an explicit token threshold or None to use the
+            model window.
+        hook: Callback that runs the PreCompact hook.
+        emit: Callback that publishes compaction events.
+    """
 
     def __init__(
         self, *, llm, provider, conversation, replay, state_summary, should_stop,
@@ -54,11 +70,21 @@ class ContextCompactor:
         self.tool_schema_tokens = 0
 
     def update_tool_schemas(self, tools: list) -> None:
-        """Include the current registry schemas in the next compaction decision."""
+        """Include the current registry schemas in the next compaction decision.
+
+        Args:
+            tools: Tool schemas currently exposed to the model.
+        """
         self.tool_schema_tokens = estimate_tokens(tools)
 
     def observe_request(self, usage, messages: list, tools: list | None) -> None:
-        """Anchor the budget on the successful projection and its actual schemas."""
+        """Anchor the budget on the successful projection and its actual schemas.
+
+        Args:
+            usage: Provider usage with a context or input token count, when available.
+            messages: Exact messages sent in the successful request.
+            tools: Tool schemas sent in that request, or None.
+        """
         input_tokens = None
         if isinstance(usage, dict):
             input_tokens = usage.get("context_input_tokens", usage.get("input_tokens"))
@@ -90,7 +116,16 @@ class ContextCompactor:
     def compact_if_needed(
         self, messages: list, run_dir: Path, trace, iteration: int, current_iter: int, *, session_id: str,
     ) -> None:
-        """Apply the model-window budget or the explicit legacy test threshold."""
+        """Apply the model-window budget or the explicit legacy test threshold.
+
+        Args:
+            messages: Conversation messages that compaction may replace in place.
+            run_dir: Run directory used by summary requests.
+            trace: Trace sink for compaction records.
+            iteration: Iteration used by the model-budget and microcompaction paths.
+            current_iter: Iteration reported to the hook and explicit-threshold summarizer.
+            session_id: Session ID passed to the PreCompact hook.
+        """
         threshold = self.threshold_override()
         if threshold is None:
             self._compact_to_budget(messages, run_dir, trace, iteration, current_iter)
@@ -175,6 +210,10 @@ class ContextCompactor:
         """Learn the model limit and compact messages in place.
 
         Args:
+            exc: The provider error that reported the overflow.
+            messages: Message list, mutated in place by compaction.
+            run_dir: Active run directory.
+            trace: Run trace that receives overflow and compaction records.
             iteration: Loop-local iteration.
             current_iter: Session-wide iteration.
         """
@@ -286,7 +325,15 @@ class ContextCompactor:
         focus_topic: str = "",
         iteration: int = 0,
     ) -> None:
-        """Layer 3/4/5: structured LLM summary with token-budget tail protection."""
+        """Summarize older messages while preserving a recent tail.
+
+        Args:
+            messages: Message list, replaced in place when a summary is produced.
+            run_dir: Run directory used by summary requests.
+            trace: Trace sink for compaction records.
+            focus_topic: Optional topic to prioritize in the summary.
+            iteration: Current trace iteration.
+        """
         if self.should_stop():
             return
         readable_before = self.replay._readable_success_keys(messages)

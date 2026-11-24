@@ -62,7 +62,14 @@ class MigrationResult:
 
 
 def marker_path(session_dir: Path) -> Path:
-    """Return the marker path for a session directory."""
+    """Return the marker path for a session directory.
+
+    Args:
+        session_dir: Directory containing the session data.
+
+    Returns:
+        The path to the migration marker.
+    """
     return Path(session_dir) / MIGRATION_MARKER
 
 
@@ -222,7 +229,15 @@ def _append_turn(log: ThreadLog, record: Mapping[str, Any], index: int, attempts
 
 
 def migrate_session(session_dir: Path, *, session_id: str | None = None) -> MigrationResult:
-    """Atomically migrate once before exposing a session's thread."""
+    """Atomically migrate once before exposing a session's thread.
+
+    Args:
+        session_dir: Session directory containing legacy data.
+        session_id: Session identifier override, when supplied.
+
+    Returns:
+        The migration outcome for that directory.
+    """
     with _locked(Path(session_dir)):
         return _migrate_session(Path(session_dir), session_id=session_id)
 
@@ -317,7 +332,15 @@ def _migrate_session(session_dir: Path, *, session_id: str | None = None) -> Mig
 
 
 def migrate_all(sessions_dir: Path) -> list[MigrationResult]:
-    """Migrate every session directory below a sessions root."""
+    """Migrate every session directory below a sessions root.
+
+    Args:
+        sessions_dir: Root containing session directories.
+
+    Returns:
+        Migration outcomes in directory order for children with session.json, or an empty list if
+        the root is absent.
+    """
     root = Path(sessions_dir)
     if not root.exists():
         return []

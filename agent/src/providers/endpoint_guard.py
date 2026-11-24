@@ -20,7 +20,16 @@ _FAKE_IP_RANGE = ipaddress.ip_network("198.18.0.0/15")
 def is_non_public_address(
     address: ipaddress.IPv4Address | ipaddress.IPv6Address, *, resolved: bool = False
 ) -> bool:
-    """Return whether an endpoint address is outside the public internet."""
+    """Return whether an endpoint address is outside the public internet.
+
+    Args:
+        address: The literal or resolved endpoint address. IPv4-mapped IPv6 addresses are checked as
+            IPv4.
+        resolved: Whether the address came from DNS, where the fake-IP range is allowed.
+
+    Returns:
+        True when the endpoint address is disallowed for a direct connection.
+    """
     mapped = getattr(address, "ipv4_mapped", None)
     if mapped is not None:
         address = mapped
@@ -30,7 +39,14 @@ def is_non_public_address(
 
 
 def proxy_applies(url: str) -> bool:
-    """Return whether the process proxy settings route ``url`` through a proxy."""
+    """Return whether the process proxy settings route ``url`` through a proxy.
+
+    Args:
+        url: Endpoint URL whose scheme and hostname are checked.
+
+    Returns:
+        True when the process proxy settings cover the URL and the hostname does not bypass them.
+    """
     parts = urlsplit(url)
     host = parts.hostname or ""
     proxies = urllib.request.getproxies()
@@ -107,14 +123,30 @@ def _guard_pool(transport: httpx.HTTPTransport | httpx.AsyncHTTPTransport) -> No
 
 
 def public_only_async_client(**client_kwargs: Any) -> httpx.AsyncClient:
-    """Build an async client whose every direct connection is checked."""
+    """Build an async client whose every direct connection is checked.
+
+    Args:
+        **client_kwargs: Extra keyword arguments for the async client, such as timeouts or redirect
+            policy.
+
+    Returns:
+        The async client with its direct-connection transport guarded.
+    """
     transport = httpx.AsyncHTTPTransport(proxy=None, trust_env=True)
     _guard_pool(transport)
     return httpx.AsyncClient(transport=transport, **client_kwargs)
 
 
 def build_public_only_clients(**client_kwargs: Any) -> tuple[httpx.Client, httpx.AsyncClient]:
-    """Build sync and async clients whose every direct connection is checked."""
+    """Build sync and async clients whose every direct connection is checked.
+
+    Args:
+        **client_kwargs: Extra keyword arguments for both clients, such as timeouts or redirect
+            policy.
+
+    Returns:
+        A pair of guarded clients, synchronous first and asynchronous second.
+    """
     sync_transport = httpx.HTTPTransport(proxy=None, trust_env=True)
     _guard_pool(sync_transport)
     return (

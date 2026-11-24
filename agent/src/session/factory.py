@@ -43,7 +43,14 @@ class SessionAgentFactory:
     host_tools: dict[str, Any] = field(default_factory=dict)
 
     def register_tool(self, tool: Any) -> str:
-        """Register one explicit host tool for subsequent attempts."""
+        """Register one explicit host tool for subsequent attempts.
+
+        Args:
+            tool: Host tool instance to register alongside discovered tools.
+
+        Returns:
+            The tool name used in subsequent registries.
+        """
         from src.agent.tools import host_tool_name
         from src.tools import _discover_subclasses
 
@@ -67,7 +74,21 @@ class SessionAgentFactory:
         include_shell_tools: bool = False,
         session_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Execute an attempt with its session-bound agent."""
+        """Execute an attempt with its session-bound agent.
+
+        Args:
+            attempt: Current execution attempt.
+            messages: Display history accepted by the runner interface. Model replay comes from the
+                session recorder.
+            include_shell_tools: Whether the registry may include shell tools.
+            session_config: Optional session overrides and model selection.
+
+        Returns:
+            The agent result with streamed text, usage, and numeric run metrics when available.
+
+        Raises:
+            asyncio.CancelledError: If the attempt task is cancelled.
+        """
         from src.tools import build_registry
         from src.tools.background_tools import BackgroundScope, get_background_manager
         from src.session.model_selection import chat_llm_for_session
@@ -90,7 +111,12 @@ class SessionAgentFactory:
             agent_config = load_runtime_agent_config(overrides=safe_overrides)
 
             def event_callback(event_type: str, data: Dict[str, Any]) -> None:
-                """Forward AgentRuntime events to the SSE event bus."""
+                """Forward AgentRuntime events to the SSE event bus.
+
+                Args:
+                    event_type: Agent event name.
+                    data: Mutable event payload to annotate with the attempt ID.
+                """
                 try:
                     checkpoint.handle_event(event_type, data)
                 except OSError as exc:
@@ -210,7 +236,14 @@ class SessionAgentFactory:
 
 
 def load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
-    """Load metrics.csv from a run directory."""
+    """Load metrics.csv from a run directory.
+
+    Args:
+        run_dir: Run directory containing artifacts/metrics.csv.
+
+    Returns:
+        Numeric fields from the first row, or None if no numeric metrics can be loaded.
+    """
     import csv
     metrics_path = run_dir / "artifacts" / "metrics.csv"
     if not metrics_path.exists():
@@ -236,7 +269,17 @@ def load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
 def compact_recorded_history(
     llm, runtime: SessionRuntime, recorder, messages: list, run_dir: Path, focus: str, *, policy: ToolPolicy,
 ) -> None:
-    """Bind manual compaction to the same product policies as a conversation turn."""
+    """Bind manual compaction to the same product policies as a conversation turn.
+
+    Args:
+        llm: Session model client used to write the summary.
+        runtime: Runtime that resolves the session workspace.
+        recorder: Recorder that receives the compaction item.
+        messages: Model-facing history to compact in place.
+        run_dir: Directory for compaction artifacts.
+        focus: Topic to prioritize in the summary.
+        policy: Tool policy used by the temporary agent.
+    """
     from src.agent.runtime import AgentRuntime
     from src.product.resources.memory import WorkspaceMemory
     from src.agent.tools import ToolRegistry

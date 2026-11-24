@@ -48,7 +48,18 @@ def _try_lock(fd: int) -> bool:
 
 
 def claim_sessions_dir(sessions_dir: Path | str, owner: str) -> Path:
-    """Claim a sessions directory for one live session service."""
+    """Claim a sessions directory for one live session service.
+
+    Args:
+        sessions_dir: Sessions directory the service will read and write.
+        owner: Name of the claiming owner in this process.
+
+    Returns:
+        The resolved directory, now held by the owner.
+
+    Raises:
+        SessionsDirInUseError: If another owner or process already serves the directory.
+    """
     key = Path(sessions_dir).expanduser().resolve()
     with _GUARD:
         held = _HELD.get(key)
@@ -74,7 +85,12 @@ def claim_sessions_dir(sessions_dir: Path | str, owner: str) -> Path:
 
 
 def release_sessions_dir(sessions_dir: Path | str, owner: str) -> None:
-    """Release a claim made by ``owner``; a no-op for any other owner."""
+    """Release a claim held by the supplied owner.
+
+    Args:
+        sessions_dir: Sessions directory passed to claim_sessions_dir.
+        owner: Owner that claimed it.
+    """
     key = Path(sessions_dir).expanduser().resolve()
     with _GUARD:
         held = _HELD.get(key)
