@@ -22,6 +22,7 @@ from src.swarm.worker import (
     _delivery_error,
     _collect_artifacts,
     _is_error_result,
+    _no_agent_artifact,
     run_worker,
 )
 import src.swarm.runtime as rt
@@ -408,3 +409,35 @@ def test_chatllm_close_is_best_effort_noop_without_client() -> None:
     llm = ChatLLM.__new__(ChatLLM)
     llm._llm = _BareLLM()  # no root_client / client attributes
     llm.close()  # must not raise
+
+
+# ---- no-artifact workers must not be reported as completed ---------------
+# A worker that read its inputs and then finished with a text summary but
+# wrote no file of its own has delivered nothing. summary.md / messages.json
+# are written by the framework, so their presence proves nothing.
+
+def test_no_agent_artifact_true_for_framework_only_dir(tmp_path):
+    d = tmp_path / "artifacts" / "analyst" / "t1"
+    d.mkdir(parents=True)
+    (d / "summary.md").write_text("I read the inputs and stopped.", encoding="utf-8")
+    (d / "messages.json").write_text("[]", encoding="utf-8")
+    assert _no_agent_artifact(d) is True
+
+
+def test_no_agent_artifact_false_when_worker_wrote_a_file(tmp_path):
+    d = tmp_path / "artifacts" / "analyst" / "t1"
+    d.mkdir(parents=True)
+    (d / "summary.md").write_text("done", encoding="utf-8")
+    (d / "report.md").write_text("# Report\n\nbody", encoding="utf-8")
+    assert _no_agent_artifact(d) is False
+
+
+def test_no_agent_artifact_ignores_empty_worker_files(tmp_path):
+    d = tmp_path / "artifacts" / "analyst" / "t1"
+    d.mkdir(parents=True)
+    (d / "report.md").write_text("", encoding="utf-8")
+    assert _no_agent_artifact(d) is True
+
+
+def test_no_agent_artifact_missing_dir_is_true(tmp_path):
+    assert _no_agent_artifact(tmp_path / "nope") is True
