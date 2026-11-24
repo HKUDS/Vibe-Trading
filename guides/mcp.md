@@ -176,6 +176,109 @@ Run any CLI command — tools from ordinary external servers are automatically i
 vibe-trading run "use my-server to do X"
 ```
 
+### Read-only remote MCP server with OAuth
+
+Ordinary remote research servers using Streamable HTTP and OAuth do not use a
+broker connector command — they authorize directly when you start the
+interactive Vibe-Trading client.
+
+Add a `streamableHttp` entry to `~/.vibe-trading/agent.json` with `auth.type`
+set to `"oauth"`, a placeholder HTTPS endpoint, a dedicated `cacheDir`, and an
+explicit read-only `enabledTools` allowlist naming only the two read operations
+you want to expose:
+
+```json
+{
+  "mcpServers": {
+    "research": {
+      "type": "streamableHttp",
+      "url": "https://mcp.example.com/mcp",
+      "initTimeout": 180,
+      "auth": {
+        "type": "oauth",
+        "scopes": ["research.read"],
+        "clientName": "Vibe-Trading",
+        "cacheDir": "~/.vibe-trading/oauth/research"
+      },
+      "enabledTools": [
+        "lookup_entity",
+        "get_research_brief"
+      ]
+    }
+  }
+}
+```
+
+Configuration constraints:
+
+- `url` must use `https://` when `auth` is enabled.
+- Do not set static `headers` alongside `auth` — the OAuth client manages the `Authorization` header.
+- Set a server-specific `cacheDir` so tokens stay isolated per server (Vibe-Trading creates the directory with `0700` owner-only permissions). Never commit client secrets or cached tokens.
+- Keep `enabledTools` pinned to explicit read-only tool names so unlisted remote tools are never registered.
+
+#### Connect and authorize
+
+1. **Substitute your endpoint and tool names:** Replace `https://mcp.example.com/mcp` with your server's (or HTTPS OAuth test fixture's) Streamable HTTP URL, replace `enabledTools` with the exact two read-only remote tool names it exposes, and update `scopes` to match the read scope(s) the server advertises (or omit `scopes` if the server issues default read scopes).
+2. **Optional static client / callback settings:** If the server disables dynamic client registration or requires a fixed loopback redirect URI, add `callbackPort` and/or provider-issued `clientId` (plus `clientSecret` if confidential, or `clientMetadataUrl`) inside `auth`.
+3. **Start the interactive agent:** Launch `vibe-trading` from a desktop terminal so it can open a browser on your machine:
+
+   ```bash
+   vibe-trading
+   ```
+
+4. **Complete browser authorization when challenged:** When the server responds with an OAuth challenge (`401 Unauthorized`), Vibe-Trading starts a local loopback callback listener (`http://localhost:<port>/callback`) and opens the authorization URL in your browser. Approve read access and wait for the redirect to return to the callback; tokens are cached in `cacheDir` and refreshed automatically on subsequent runs. `initTimeout` widens only the initialize/OAuth window without changing per-call `toolTimeout`.
+
+#### Validation with a neutral fixture
+
+With the config above pointed at a neutral HTTPS OAuth research fixture that
+exposes `lookup_entity`, `get_research_brief`, and an unlisted third tool,
+Vibe-Trading exposes **only** the two allowlisted local wrappers
+(`mcp_research_lookup_entity` and `mcp_research_get_research_brief`):
+
+1. **Discovery lookup (`mcp_research_lookup_entity`)** — resolve a neutral entity query (`{"query": "Acme Holdings"}`) to an identifier:
+
+   ```json
+   {
+     "status": "ok",
+     "data": {
+       "entity_id": "ent_acme_001",
+       "name": "Acme Holdings",
+       "sector": "Industrials"
+     },
+     "server": "research",
+     "remote_tool": "lookup_entity",
+     "tool": "mcp_research_lookup_entity"
+   }
+   ```
+
+2. **OAuth-required research call (`mcp_research_get_research_brief`)** — pass the returned identifier (`{"entity_id": "ent_acme_001"}`) to fetch the read-only research brief:
+
+   ```json
+   {
+     "status": "ok",
+     "data": {
+       "entity_id": "ent_acme_001",
+       "as_of": "2026-10-15",
+       "summary": "Quarterly filing coverage and consensus notes.",
+       "document_count": 4
+     },
+     "server": "research",
+     "remote_tool": "get_research_brief",
+     "tool": "mcp_research_get_research_brief"
+   }
+   ```
+
+Both calls return structured data through the Vibe-Trading client with no
+credentials, bearer tokens, or trading operations involved.
+
+#### Troubleshooting OAuth setup vs. read denials
+
+| Failure stage | Typical symptom | Where to check and how to fix |
+|---------------|-----------------|-------------------------------|
+| **During login / setup** (before tools connect) | `redirect_uri_mismatch`, callback never completes, or callback port already in use | By default `auth.callbackPort` is unset and Vibe-Trading picks a free loopback port. If the provider requires an exact allowlisted redirect URI (for example `http://localhost:8765/callback`), set `auth.callbackPort` to match the registered port, verify no other process is bound to it, and delete stale registration files in `auth.cacheDir` before retrying. |
+| **During login / setup** (before tools connect) | `OAuthRegistrationError`, `400`/`403` on registration or `/authorize`, or `invalid_client` | Check whether the server supports RFC 7591 dynamic client registration. If it requires a pre-registered client, set `auth.clientId` (and `auth.clientSecret` if confidential) or `auth.clientMetadataUrl` inside `auth`. Also confirm `url` is `https://`, `headers` is unset, and `initTimeout` is long enough to complete browser consent. |
+| **After login** (tools connect, but a read call is denied) | `403 Forbidden`, `insufficient_scope`, or tool error denying a read | The callback and client registration already succeeded — do not change `callbackPort` or client registration. First compare `auth.scopes` in `~/.vibe-trading/agent.json` against the read scopes advertised by the server's `.well-known/oauth-protected-resource` / `.well-known/oauth-authorization-server` metadata; after editing `auth.scopes`, clear `auth.cacheDir` and re-authorize so a fresh token is issued. If scopes already match, check the signed-in account's entitlements, tier, or dataset permissions on the remote provider. |
+
 ### Official IBKR MCP read-only probe
 
 Vibe-Trading can connect directly to Interactive Brokers' official remote MCP
@@ -223,7 +326,8 @@ inside `auth`.
 | `args` | array | `[]` | Command-line arguments for stdio servers only. |
 | `env` | object | `{}` | Extra environment variables merged into the subprocess env for stdio servers only. |
 | `url` | string | required for `sse` / `streamableHttp` | Remote SSE / streamable HTTP endpoint URL. Not used for stdio servers. |
-| `headers` | object | `{}` | Extra HTTP headers for `sse` / `streamableHttp` servers only. |
+| `headers` | object | `{}` | Extra HTTP headers for `sse` / `streamableHttp` servers only (mutually exclusive with `auth`). |
+| `auth` | object | unset | OAuth config for HTTPS `streamableHttp` servers (mutually exclusive with `headers`). Supports `type: "oauth"`, `scopes`, `clientName`, `cacheDir`, `callbackPort`, `clientId`, `clientSecret`, and `clientMetadataUrl`. |
 | `toolTimeout` | number | `30` | Per-tool call timeout in seconds |
 | `initTimeout` | number | unset (`max(toolTimeout, 30)`) | MCP initialize / OAuth authorization timeout in seconds. Use this for slow browser authorization without widening ordinary tool calls. |
 | `enabledTools` | array | `["*"]` | Tool allowlist. Use `["*"]` to expose all tools from the server |
