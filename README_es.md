@@ -66,6 +66,9 @@
 
 ## 📰 Noticias
 
+- **2026-11-24** 🛠️ **Compatibilidad con Claude CLI y mayor precisión en los backtests** — El proveedor de Claude CLI lee el resultado final de la salida JSON en modo detallado. Yahoo Finance agrupa datos horarios en velas de cuatro horas y la validación de OHLC marca los precios infinitos como no válidos. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray utiliza los pares para los que se puede estimar la correlación. Cuando la dispersión de los rendimientos es prácticamente nula, la validación por bootstrap, walk-forward y Monte Carlo usa el 0 convencional para indicar que el ratio de Sharpe no está definido. **Disponible en `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
+
 - **2026-11-23** 🛠️ **Investigación reproducible y mayor cobertura de mercados** — Research Lab conserva los precios originales del índice de referencia externo para repetir ejecuciones congeladas y exporta a CSV la curva de capital fuera de muestra de la validación walk-forward. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   Options Lab compara dos estrategias guardadas en una misma cuadrícula de precio al contado y volatilidad implícita. La búsqueda de símbolos y las consultas de cotizaciones ya incluyen acciones y ETF de seis mercados europeos cubiertos por Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo permite consultar cuentas y posiciones en modo de solo lectura. Desde la CLI se puede cancelar una ejecución de Swarm en segundo plano desde otro proceso. **Disponible en `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
@@ -74,6 +77,9 @@
   Los CSV de Options Lab incluyen las alternativas guardadas y sus comparaciones. Las fuentes diarias locales pueden usar `timestamp_basis: session_date` para conservar la fecha de negociación de la bolsa. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   Las entregas programadas respetan el estado más reciente de cada trabajo y Signal guarda por separado los archivos adjuntos con el mismo nombre. La recuperación de trabajos superó las pruebas nativas en Windows x64 y ARM64. **En `main`, para la próxima versión de pip.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
 
+<details>
+<summary>Noticias anteriores</summary>
+
 - **2026-11-20** 📈 **Clases de acciones estadounidenses e histórico de Tencent** — Eastmoney y Yahoo identifican las acciones de clase B de Berkshire como `BRK-B.US`. Antes de cargar los precios de Eastmoney se comprueba el símbolo para distinguir valores como `BW-A.US` y `BWA.US`. Las consultas diarias a Tencent con fechas como `2023-1-5` recuperan todas las páginas. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   La comparación de estrategias valora mejor una caída máxima del −10% que una del −30%. Los backtests conservan precios negativos solo con `allow_nonpositive_prices: true`. La CLI permite retomar un chat con su historial. **Disponible en `main` para la próxima versión de pip.**
 
@@ -81,9 +87,6 @@
 
 - **2026-11-18** 📈 **Backtests de acciones taiwanesas y correcciones de los límites de precio** — Usa barras diarias de Yahoo Finance para probar estrategias en acciones de las bolsas de Taiwán (`.TW`) y Taipéi (`.TWO`). Los motores de Corea, Taiwán y Vietnam comprueban los límites diarios con el precio simulado de ejecución, incluido el deslizamiento adicional. Las solicitudes de backtest intradía para estos mercados se rechazan antes de consultar los datos. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   Al cambiar entre sesiones que ya aparecen en la barra lateral se reutiliza la lista. La habilidad integrada de AKShare admite los nombres de las interfaces actuales y anteriores. Las pruebas de regresión cubren nombres de adjuntos, el orden de búsqueda de la configuración y la vista previa y el reensamblado de datos de mercado en MCP. **Disponible en `main` para la próxima versión de pip.**
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-11-17** 📊 **Detalle del riesgo de cartera y análisis de opciones reutilizable** — Risk X-Ray añade períodos de drawdown observados y contribuciones con signo a la volatilidad por posición. Options Lab exporta instantáneas calculadas como JSON y cuadrículas de escenarios como CSV, y diagnostica cortes de IV observados con límites de cobertura explícitos; no certifica una superficie libre de arbitraje. Las herramientas Agent/MCP comparan estrategias con nombre sobre cuadrículas comunes de precio e IV.
   Se corrigen los metadatos de actualización inválidos y los fallos de verificación de la actualización, el descubrimiento de modelos en modo directo, los nombres de adjuntos, el tratamiento de precios ausentes y las respuestas obsoletas de la lista de sesiones. **En `main`, para la próxima versión de pip.**
