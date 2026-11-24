@@ -95,6 +95,7 @@ def _build_codex_token_storage(path: Path | None = None) -> Any:
         def get_token_path(self) -> Path:
             return token_path
 
+    # Importing the Codex CLI cache would give two clients the same rotating refresh token (#975).
     return VibeCodexTokenStorage(
         token_filename=_CODEX_TOKEN_FILENAME,
         app_name="vibe-trading",
