@@ -293,7 +293,9 @@ def validate_ohlc(
         nonpositive = (open_ == 0) | (high == 0) | (low == 0) | (close == 0)
     else:
         nonpositive = (open_ <= 0) | (high <= 0) | (low <= 0) | (close <= 0)
-    invalid = structural | nonpositive
+    # Infinity can satisfy the ordering checks but cannot represent a price.
+    infinite = frame[list(required)].isin([float("inf"), float("-inf")]).any(axis=1)
+    invalid = structural | nonpositive | infinite
     n_invalid = int(invalid.sum())
     if n_invalid == 0:
         return frame
