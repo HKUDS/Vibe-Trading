@@ -120,6 +120,23 @@ def test_static_weights_are_normalised_and_must_cover_every_factor():
         combine_factors({"a": first, "b": second}, method="explicit", weights={"a": 0.0, "b": 0.0})
 
 
+def test_weights_source_names_the_kind_of_weights_supplied():
+    first, second = sample(rows=6)
+    mapping = combine_factors(
+        {"a": first, "b": second}, method="explicit", weights={"a": 3.0, "b": 1.0}
+    )
+    table = combine_factors(
+        {"a": first, "b": second},
+        method="explicit",
+        weights=pd.DataFrame({"a": [3.0], "b": [1.0]}, index=first.index[:1]),
+    )
+    equal = combine_factors({"a": first, "b": second}, method="equal")
+
+    assert mapping.diagnostics["weights_source"] == "caller_mapping"
+    assert table.diagnostics["weights_source"] == "caller_table"
+    assert equal.diagnostics["weights_source"] == "equal"
+
+
 @pytest.mark.parametrize("weight_kind", ["mapping", "table"])
 def test_large_finite_explicit_weights_are_normalised_without_overflow(weight_kind):
     first, second = sample(rows=5)
