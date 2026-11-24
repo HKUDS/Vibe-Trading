@@ -53,13 +53,7 @@ class SessionAgentFactory:
         return name
 
     def _publish_background_completion(self, owner_id: str, payload: dict) -> None:
-        """Route a background task's terminal state to its owning session.
-
-        The AgentRuntime that started the task may already have exited by the time
-        the command finishes, so this cannot depend on a later iteration draining
-        the queue. The payload keeps the attempt that started the task, which is
-        the attempt the completion belongs to, not whichever one is current.
-        """
+        """Route a background task's terminal state to its owning session."""
         if not owner_id.startswith("session:"):
             return
         session_id = owner_id[len("session:"):]
@@ -73,26 +67,7 @@ class SessionAgentFactory:
         include_shell_tools: bool = False,
         session_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Execute an attempt with its session-bound agent.
-
-        The registry and LLM client are built per attempt: the registry binds
-        this attempt's event callback, cancel flag and background handle, and
-        rebuilding it is how a changed config (MCP servers, tool gates) takes
-        effect. What a conversation carries across turns lives in its
-        :class:`SessionRuntime` instead.
-
-        Args:
-            attempt: Current execution attempt.
-            messages: Display history supplied by the attempt scheduler.
-            include_shell_tools: Whether the registry may include shell tools.
-            session_config: Optional session-level config overrides. MCP server
-                definitions under the ``mcpServers`` key are merged on top of
-                the user config file via ``load_runtime_agent_config`` so each
-                session can extend or override the global MCP server list.
-
-        Returns:
-            Result dictionary containing status, run_dir, run_id, metrics, and related fields.
-        """
+        """Execute an attempt with its session-bound agent."""
         from src.tools import build_registry
         from src.tools.background_tools import BackgroundScope, get_background_manager
         from src.session.model_selection import chat_llm_for_session
@@ -133,14 +108,10 @@ class SessionAgentFactory:
                 """Forward MCP server-name collision warnings to the operator event channel."""
                 self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
 
-            # One flag per turn, shared by the AgentRuntime and the swarm tool. The
-            # loop's own cancel() sets it, so a user stop reaches long-running tools
-            # without a second cancellation channel that can drift out of sync.
+            # Share cancellation with long-running tools.
             turn_cancel = threading.Event()
 
-            # Background tasks belong to the session, not to the attempt: a later
-            # attempt must still read what an earlier one started. The attempt id is
-            # kept on each task so cancellation can be attributed later.
+            # Keep background results accessible across a session's turns.
             background_scope = BackgroundScope(
                 owner_id=f"session:{session_id}", attempt_id=attempt_id
             )
@@ -228,7 +199,6 @@ class SessionAgentFactory:
             result["streamed_text"] = checkpoint.text
             result["usage"] = recorder.usage
 
-            # Load metrics from the run output when available.
             if result.get("run_dir"):
                 metrics = load_metrics(Path(result["run_dir"]))
                 if metrics:
@@ -240,13 +210,7 @@ class SessionAgentFactory:
 
 
 def load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
-    """Load metrics.csv from a run directory.
-
-    A run's metrics row can carry a non-numeric column (e.g.
-    ``benchmark_ticker``) alongside the numeric metrics, so each field is
-    converted independently: one unconvertible field is skipped rather
-    than discarding every metric in the row.
-    """
+    """Load metrics.csv from a run directory."""
     import csv
     metrics_path = run_dir / "artifacts" / "metrics.csv"
     if not metrics_path.exists():

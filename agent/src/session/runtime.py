@@ -1,22 +1,4 @@
-"""Session-level runtime: the conversation, not the run, is the kernel's unit.
-
-One :class:`SessionRuntime` lives per session for as long as the process does
-and is rebuilt from the thread's ``state`` items after a restart. It owns what
-used to be thrown away at the end of every attempt:
-
-* the model input of the next turn, replayed from ``thread.jsonl``;
-* the instrument-identity ledger's own records;
-* the tool schemas the conversation has loaded;
-* the tool-result files earlier turns offloaded, so a later turn's
-  ``read_file`` reaches them by the relative path their receipt names.
-
-Each turn gets a :class:`TurnRecorder`, the sink ``AgentRuntime`` writes thread
-items through. The loop stays usable without one (CLI, tests).
-
-Replayed history is conversation text only. Identity authorization is restored
-from the ledger's persisted records in ``state`` items, never parsed out of
-what the model said or saw.
-"""
+"""Restore session state and record each turn in the canonical thread."""
 
 from __future__ import annotations
 
@@ -33,32 +15,13 @@ from src.session.thread_schema import ThreadItem, ThreadItemError
 
 logger = logging.getLogger(__name__)
 
-#: Directory, inside a run directory, that ``deliver_tool_result`` and
-#: ``persist_calculation_result`` offload complete tool results into.
 TOOL_RESULTS_DIRNAME = "tool-results"
 
 class TurnRecorder:
-    """Thread sink for one turn.
+    """Write one turn's items and retain sequence references for compaction.
 
-    ``AgentRuntime`` writes every item of the turn through this object: the user
-    message as sent, each model response, each delivered tool result, loop
-    injections, compactions and state snapshots. A write failure is logged and
-    the turn continues, as a failed trace or checkpoint write does; the
-    recorder then reports ``degraded``.
-
-    After :meth:`close` (the service finished the turn) further writes are
-    dropped, so a loop thread that outlives its turn cannot interleave items
-    into the next one.
-
-    Attributes:
-        turn_id: The turn (attempt) id.
-        history: Replayed model input for this turn, without the system prompt.
-        user_history: Earlier user-authored text, for resolver constraints.
-        identity_state: Identity ledger records restored from ``state``.
-        loaded_tools: Tool names exposed so far, or None for a new session.
-        session_workspace: Shared artifact workspace for this conversation.
-        usage: Token usage the loop reports at the end of the turn.
-        degraded: Whether any write failed.
+    Failed writes mark the recorder degraded. Closing it blocks writes from
+    a worker that outlives the turn.
     """
 
     def __init__(
@@ -73,15 +36,7 @@ class TurnRecorder:
         provider: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        """Create a recorder for one turn.
-
-        Args:
-            runtime: Owning session runtime.
-            turn_id: The turn (attempt) id.
-            history: Replayed history messages.
-            history_seqs: Source item seq per history message.
-            user_history: Earlier user-authored messages.
-        """
+        """Create a recorder for one turn."""
         self._runtime = runtime
         self.turn_id = turn_id
         self.history = history
@@ -102,8 +57,7 @@ class TurnRecorder:
         self.max_seq = 0
         self._closed = False
         self._lock = threading.Lock()
-        # id(message) -> (seq, message); the message is held so its id is
-        # never reused by another object while it is mapped.
+        # Hold each message so its ID cannot be reused while indexed.
         self._seqs: Dict[int, Tuple[int, Dict[str, Any]]] = {}
         for message, seq in zip(history, history_seqs):
             if seq is not None:
@@ -120,51 +74,29 @@ class TurnRecorder:
         model: Optional[str],
         provider: Optional[str],
     ) -> None:
-        """Record the turn's start and the user message exactly as sent.
-
-        Args:
-            prompt: The user's text as typed.
-            message: The user message the model receives (with envelopes).
-            model: Configured model name.
-            provider: Provider name.
-        """
+        """Record the turn's start and the user message exactly as sent."""
         if self.started:
             return
         self.started = True
         self._write("turn_start", None, prompt=prompt, model=model, provider=provider)
-        self._write(
-            "user", message, content=prompt, llm_content=message.get("content"),
-            input_id=self.queued_input_id, answer_to_question_id=self.answer_to_question_id,
-        )
+        self._write_user(message, prompt, self.queued_input_id, self.answer_to_question_id)
 
     def user(
         self, message: Dict[str, Any], *, content: str, input_id: Optional[str] = None
     ) -> Optional[ThreadItem]:
-        """Record a user message that joined the turn after it started.
+        """Record a user message that joined the turn after it started."""
+        return self._write_user(message, content, input_id, self._runtime.pending_question_id())
 
-        A message sent while the turn was running (``src.session.pending_inputs``)
-        enters the model input between a tool batch and the next model call.
-
-        Args:
-            message: The user message the model receives.
-            content: The user's text as typed.
-
-        Returns:
-            The recorded item, or None when the write failed or the turn has
-            already finished; the caller must then keep the input pending.
-        """
+    def _write_user(
+        self, message: Dict[str, Any], content: str, input_id: Optional[str], question_id: Optional[str],
+    ) -> Optional[ThreadItem]:
         return self._write(
             "user", message, content=content, llm_content=message.get("content"),
-            input_id=input_id, answer_to_question_id=self._runtime.pending_question_id(),
+            input_id=input_id, answer_to_question_id=question_id,
         )
 
     def assistant(self, message: Dict[str, Any], *, phase: str) -> None:
-        """Record one model response as it enters the model's messages.
-
-        Args:
-            message: OpenAI-format assistant message.
-            phase: ``commentary`` (more steps follow) or ``final``.
-        """
+        """Record one model response as it enters the model's messages."""
         self._write(
             "assistant",
             message,
@@ -186,14 +118,7 @@ class TurnRecorder:
         artifact: Optional[Dict[str, Any]] = None,
         images: Optional[list[Dict[str, Any]]] = None,
     ) -> None:
-        """Record one delivered (redacted, size-capped) tool result.
-
-        Args:
-            message: The ``role: tool`` message the model receives.
-            status: ``ok`` or ``error``.
-            elapsed_ms: Execution time.
-            artifact: Display-only report link.
-        """
+        """Record one delivered (redacted, size-capped) tool result."""
         durable_content = message.get("content")
         if not isinstance(durable_content, str):
             parts = []
@@ -220,12 +145,7 @@ class TurnRecorder:
         self._write("hook_decision", None, **dict(decision))
 
     def write(self, event: Dict[str, Any]) -> None:
-        """Record a diagnostic event in the conversation thread.
-
-        The loop historically accepted a trace writer. Keeping this small sink
-        method lets the loop record diagnostics without creating a second JSONL
-        record or a sidecar blob tree.
-        """
+        """Record a diagnostic event in the conversation thread."""
         if not isinstance(event, dict):
             return
         payload = copy.deepcopy(event)
@@ -241,22 +161,11 @@ class TurnRecorder:
         self._write("question", None, question_id=question_id, prompt=prompt, options=options, allow_free_text=allow_free_text)
 
     def inject(self, message: Dict[str, Any]) -> None:
-        """Record a message the loop added on its own (``<system>`` notes).
-
-        Args:
-            message: The injected message.
-        """
+        """Record a message the loop added on its own (``<system>`` notes)."""
         self._write("inject", message, content=message.get("content"), role=message.get("role") or "user")
 
     def compaction(self, message: Dict[str, Any], kept: Iterable[Dict[str, Any]]) -> None:
-        """Record a layer-3 summary so the next replay starts from it.
-
-        The items the summary folded stay in the file; only replay skips them.
-
-        Args:
-            message: The summary message that replaced the folded head.
-            kept: Messages the compaction preserved after the summary.
-        """
+        """Record a layer-3 summary so the next replay starts from it."""
         kept_seqs = [seq for seq in (self.seq_of(m) for m in kept) if seq is not None]
         through = min(kept_seqs) - 1 if kept_seqs else self.max_seq
         if through < 0:
@@ -268,14 +177,7 @@ class TurnRecorder:
             self._remember(message, item.seq)
 
     def compaction_layer(self, layer: int, messages: Iterable[Dict[str, Any]]) -> None:
-        """Record an exact layer-1 or layer-2 view mutation.
-
-        The source items stay immutable. Each replacement is keyed by the
-        source sequence so replay can rebuild the same message bytes after a
-        restart, including tool-result markers and folded tool arguments.
-        Messages that were injected without a thread item are omitted because
-        they have no durable source identity.
-        """
+        """Record L1/L2 message replacements keyed by original seq for exact replay."""
         changes = []
         for message in messages:
             seq = self.seq_of(message)
@@ -297,11 +199,7 @@ class TurnRecorder:
         self._write("compaction", None, **payload)
 
     def state(self, snapshot: Dict[str, Any]) -> None:
-        """Record a state snapshot when it differs from the last one.
-
-        Args:
-            snapshot: JSON-serialisable session state.
-        """
+        """Record a state snapshot when it differs from the last one."""
         if snapshot == self._last_state:
             return
         item = self._write("state", None, **snapshot)
@@ -314,11 +212,7 @@ class TurnRecorder:
         self._write("checkpoint", None, content=content)
 
     def prepare_workspace(self, run_dir: Path) -> None:
-        """Ensure the shared artifact workspace exists before tool execution.
-
-        Args:
-            run_dir: This turn's run directory.
-        """
+        """Ensure the shared artifact workspace exists before tool execution."""
         if self.session_workspace:
             Path(self.session_workspace).mkdir(parents=True, exist_ok=True)
 
@@ -330,14 +224,7 @@ class TurnRecorder:
     # ---- Reading ----
 
     def seq_of(self, message: Mapping[str, Any]) -> Optional[int]:
-        """Return the seq of the item a message was recorded as.
-
-        Args:
-            message: A message object from the loop's message list.
-
-        Returns:
-            The item seq, or None for a message the thread does not hold.
-        """
+        """Return the seq of the item a message was recorded as."""
         entry = self._seqs.get(id(message))
         if entry is not None and entry[1] is message:
             return entry[0]
@@ -385,12 +272,7 @@ class SessionRuntime:
     """
 
     def __init__(self, thread: ThreadLog, session_id: str, *, require_durable_items: bool = False) -> None:
-        """Open the runtime and rebuild its state from the thread.
-
-        Args:
-            thread: The session's thread log.
-            session_id: Session id.
-        """
+        """Open the runtime and rebuild its state from the thread."""
         self.session_id = session_id
         self.thread = thread
         self.require_durable_items = require_durable_items
@@ -419,11 +301,7 @@ class SessionRuntime:
         provider: Optional[str] = None,
         model: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], List[Optional[int]], List[Dict[str, Any]]]:
-        """Return replayed messages, source seqs, and earlier user messages.
-
-        Provider-native reasoning metadata is retained only when the recorded
-        assistant item came from the same provider and model as the request.
-        """
+        """Return replayed messages, source seqs, and earlier user messages."""
         items = self.thread.read()
         replayed, seqs = replay_with_seqs(items, provider=provider, model=model)
         user_history = [
@@ -497,24 +375,11 @@ class SessionRuntime:
         pending_inputs: Optional[list[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Close a turn in the thread.
-
-        A turn that never reached the model (it failed or was cancelled while
-        its tools were still being built) has no ``turn_start``; the user's
-        message is recorded as typed so the next turn still sees what was
-        asked. ``turn_end`` is written once.
+        """Close a turn once, recording the prompt if execution never opened it.
 
         Args:
-            turn_id: Turn (attempt) id.
-            prompt: The user's message.
-            status: ``completed`` / ``cancelled`` / ``failed`` / ``interrupted``.
-            usage: Token usage totals.
-            elapsed_ms: Turn duration.
-            run_dir: The turn's run directory, for the trail's arguments.
-            summary: Stored reply text for durable run events.
-            error: Stored failure reason for durable run events.
-            provider: Provider used by the turn.
-            model: Model used by the turn.
+            summary: Reply text for reconnect and history.
+            metadata: Derived reply metadata for transcript readers.
         """
         with self._lock:
             recorder = self._recorders.pop(turn_id, None)

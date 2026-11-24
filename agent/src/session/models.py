@@ -17,12 +17,7 @@ def _utc_now_iso() -> str:
 
 
 class AuthMethod(str, Enum):
-    """How a request proved it was allowed in.
-
-    The distinction that matters is not which mechanism was used but whether the
-    mechanism can name a human. A shared bearer key and loopback dev-trust both
-    authorise; neither identifies. See :attr:`Principal.attributable`.
-    """
+    """How a request proved it was allowed in."""
 
     #: One process-wide static bearer key. Authorises, cannot identify.
     SHARED_KEY = "shared_key"
@@ -42,29 +37,10 @@ ATTRIBUTABLE_AUTH_METHODS: frozenset[AuthMethod] = frozenset({AuthMethod.FEDERAT
 
 @dataclass(frozen=True)
 class Principal:
-    """Who a session belongs to, and how much that claim is worth.
+    """Represent the actor established by authentication.
 
-    A ``Principal`` exists so that a number produced by this system can be
-    traced to an actor. What it must never do is *manufacture* an identity the
-    authentication layer could not establish.
-
-    Today the API authenticates with one process-wide static bearer key, or with
-    loopback dev-trust when no key is set. Under either, every request from
-    every person looks identical. :attr:`attributable` is therefore False, and
-    it stays False until an identity provider is wired in. Any control that
-    needs a named human -- four-eyes approval, a MiFID II recipient log, SEC
-    17a-4 attribution -- must check ``attributable`` and refuse rather than
-    quote ``subject`` as if it were a person.
-
-    Attributes:
-        subject: Identifier for the actor. Under a shared secret this is a
-            role label such as ``"shared-key-holder"``, not a person.
-        auth_method: How the request was authorised.
-        attributable: Whether ``subject`` names an actual human. Derived from
-            ``auth_method`` at construction, never set by a caller -- a
-            caller-settable flag is a caller-settable lie.
-        tenant: Optional tenant scope, for a future multi-tenant runtime root.
-        display_name: Optional human-readable label for the UI.
+    Shared credentials and loopback trust establish no named identity.
+    Controls requiring a named human must check the derived ``attributable`` flag.
     """
 
     subject: str
@@ -81,12 +57,7 @@ class Principal:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the principal to a JSON-safe dictionary.
-
-        Returns:
-            A dictionary carrying ``attributable`` explicitly, so a consumer
-            reading the serialized form cannot miss it.
-        """
+        """Serialize the principal to a JSON-safe dictionary."""
         return {
             "subject": self.subject,
             "auth_method": self.auth_method.value,
@@ -143,21 +114,7 @@ class AttemptStatus(str, Enum):
 
 @dataclass
 class Session:
-    """A multi-turn conversation session.
-
-    Attributes:
-        session_id: Unique identifier.
-        title: User-visible session title.
-        status: Session status.
-        created_at: Creation time in ISO format.
-        updated_at: Last update time in ISO format.
-        last_attempt_id: ID of the most recent Attempt.
-        config: Session-level configuration such as model overrides or strategy parameters.
-        owner: Principal the session belongs to, or None for a session created
-            before principals existed or by a path that has no request context.
-            None means "unknown owner", which is different from an
-            unattributable one -- do not collapse the two.
-    """
+    """A multi-turn conversation session."""
 
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     title: str = ""
@@ -171,11 +128,7 @@ class Session:
     forked_from_turn_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the session to a dictionary.
-
-        Returns:
-            A JSON-serializable dictionary.
-        """
+        """Serialize the session to a dictionary."""
         data = asdict(self)
         data["status"] = self.status.value
         data["owner"] = self.owner.to_dict() if self.owner else None
@@ -204,17 +157,7 @@ class Session:
 
 @dataclass
 class Message:
-    """A session message such as user input or system output.
-
-    Attributes:
-        message_id: Unique identifier.
-        session_id: Owning session ID.
-        role: Message role: user / assistant / system.
-        content: Message text content.
-        created_at: Creation time in ISO format.
-        linked_attempt_id: Related Attempt ID, if any.
-        metadata: Additional metadata.
-    """
+    """A session message such as user input or system output."""
 
     message_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     session_id: str = ""
@@ -225,11 +168,7 @@ class Message:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the message to a dictionary.
-
-        Returns:
-            A JSON-serializable dictionary.
-        """
+        """Serialize the message to a dictionary."""
         return asdict(self)
 
     @classmethod
@@ -248,24 +187,7 @@ class Message:
 
 @dataclass
 class Attempt:
-    """A strategy execution attempt corresponding to one pipeline run.
-
-    Attributes:
-        attempt_id: Unique identifier.
-        session_id: Owning session ID.
-        parent_attempt_id: Parent Attempt ID for follow-up modification scenarios.
-        status: Execution status.
-        prompt: User input that triggered this execution.
-        run_dir: Run directory path.
-        summary: Execution summary.
-        created_at: Creation time in ISO format.
-        started_at: Wall-clock time (epoch seconds) execution began, once running.
-            Clients that join mid-attempt resume their elapsed clock from it, so
-            it must outlive transient live-event buffering.
-        completed_at: Completion time in ISO format, if available.
-        error: Error message when the attempt fails.
-        metrics: Snapshot of backtest metrics.
-    """
+    """A strategy execution attempt corresponding to one pipeline run."""
 
     attempt_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     session_id: str = ""
@@ -282,11 +204,7 @@ class Attempt:
     queued_input_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize the attempt to a dictionary.
-
-        Returns:
-            A JSON-serializable dictionary.
-        """
+        """Serialize the attempt to a dictionary."""
         data = asdict(self)
         if self.queued_input_id is None:
             data.pop("queued_input_id")
@@ -317,11 +235,7 @@ class Attempt:
         self.completed_at = None
 
     def mark_completed(self, summary: Optional[str] = None) -> None:
-        """Mark the attempt as completed.
-
-        Args:
-            summary: Execution summary.
-        """
+        """Mark the attempt as completed."""
         self._mark_terminal(AttemptStatus.COMPLETED)
         if summary:
             self.summary = summary
@@ -333,35 +247,18 @@ class Attempt:
             self.summary = summary
 
     def mark_failed(self, error: str) -> None:
-        """Mark the attempt as failed.
-
-        Args:
-            error: Error message.
-        """
+        """Mark the attempt as failed."""
         self._mark_terminal(AttemptStatus.FAILED)
         self.error = redact_text(error)
 
     def mark_cancelled(self, reason: str = "") -> None:
-        """Mark the attempt as user-cancelled.
-
-        Cancelled is a distinct terminal status from FAILED so the UI does
-        not misreport a cooperative cancel as an outage. ``AttemptStatus.CANCELLED``
-        was previously dead code: ``SessionService._run_attempt`` lumped the
-        result in with the failure branch and overwrote the status with FAILED.
-
-        Args:
-            reason: Optional free-text reason (usually ``"cancelled by user"``).
-        """
+        """Mark the attempt as user-cancelled."""
         self._mark_terminal(AttemptStatus.CANCELLED)
         if reason:
             self.error = redact_text(reason)
 
     def mark_interrupted(self, reason: str = "") -> None:
-        """Mark the attempt as interrupted by process lifecycle.
-
-        Args:
-            reason: Optional explanation of the interruption.
-        """
+        """Mark the attempt as interrupted by process lifecycle."""
         self._mark_terminal(AttemptStatus.INTERRUPTED)
         if reason:
             self.error = redact_text(reason)
@@ -372,11 +269,4 @@ class Attempt:
 
 
 class SessionBusyError(RuntimeError):
-    """Raised when a session already has an in-flight run.
-
-    One AgentRuntime per session: two loops writing the same session would
-    interleave their messages and attempts. A second concurrent send is
-    therefore rejected unless its caller opted in to queueing
-    (``send_message(queue_if_busy=True)``). Callers surface this as HTTP 409
-    so the user can wait for the running attempt or cancel it first.
-    """
+    """Raised when a session already has an in-flight run."""

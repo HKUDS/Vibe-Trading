@@ -19,19 +19,9 @@ logger = logging.getLogger(__name__)
 def recover_interrupted_attempts(
     store: SessionStore, runtime_for: Callable[[str], SessionRuntime], search_index: SessionSearchIndex,
 ) -> None:
-    """Finalize attempts that could not outlive the previous process.
+    """Finalize pending or running attempts after service restart.
 
-    A newly constructed service has no live AgentRuntime instances. Any
-    attempt still marked pending or running therefore belongs to the
-    previous process. This is only valid because the service is built once
-    per process: two servers sharing one sessions directory would mark each
-    other's in-flight attempts interrupted.
-
-    The thread log already holds every tool result the turn finished; its
-    turn is closed as ``interrupted`` so the next turn's replay shows those
-    results, stubs the call that was cut off and tells the model the turn
-    stopped. The transcript reply keeps the streamed-text snapshot, which
-    covers text the model was still writing when no assistant item existed.
+    Only use this when no other process is executing attempts in the store.
     """
     recoverable = {AttemptStatus.PENDING, AttemptStatus.RUNNING}
     for attempt in store.list_attempts():
@@ -73,16 +63,7 @@ def recover_interrupted_attempts(
 
 
 def recover_pending_inputs(store: SessionStore, pending_inputs: PendingInputQueue) -> None:
-    """Settle queued inputs a previous process was writing when it stopped.
-
-    Runs after the attempts are reconciled, so a turn the process lost is
-    already closed in the thread. An input whose claimed turn holds it is
-    delivered: it leaves the queue, and is settled from the thread if
-    the process stopped before the turn closed. Any other claimed input waits
-    again. Waiting inputs are kept and do not start a turn on their own:
-    a restart must not spend tokens nobody asked for now; the next
-    message sent to the session, or a discard, settles them.
-    """
+    """Settle durable claims after attempt recovery without scheduling new turns."""
     for path in sorted(store.base_dir.glob(f"*/{PENDING_INPUTS_FILENAME}")):
         session_id = path.parent.name
 
@@ -101,14 +82,7 @@ def recover_pending_inputs(store: SessionStore, pending_inputs: PendingInputQueu
 
 
 def _format_interrupted_message(partial: Optional[str]) -> str:
-    """Build the transcript message for a recovered attempt.
-
-    Args:
-        partial: Durable assistant text captured before restart.
-
-    Returns:
-        User-facing interruption notice, including partial text when any.
-    """
+    """Build the transcript message for a recovered attempt."""
     if partial:
         return (
             "Vibe Trading restarted before this response finished. "

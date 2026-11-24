@@ -16,36 +16,14 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def check_session_id(value: object) -> str:
-    """Return ``value`` when it is a safe session id.
-
-    Args:
-        value: Caller-supplied session id.
-
-    Returns:
-        The id, unchanged.
-
-    Raises:
-        ValueError: Not a string, or a shape that could leave the sessions
-            directory (``..``, ``/``) or exceed 128 characters.
-    """
+    """Return ``value`` when it is a safe session id."""
     if not isinstance(value, str) or not SAFE_ID_RE.fullmatch(value):
         raise ValueError("invalid session_id")
     return value
 
 
 def check_message_text(text: object) -> str:
-    """Return ``text`` when it is a sendable user message.
-
-    Args:
-        text: Caller-supplied message.
-
-    Returns:
-        The message, unchanged.
-
-    Raises:
-        ValueError: Not a string, empty, or longer than
-            :data:`MAX_MESSAGE_CHARS`.
-    """
+    """Return ``text`` when it is a sendable user message."""
     if not isinstance(text, str) or not text:
         raise ValueError("Message must contain at least 1 character")
     if len(text) > MAX_MESSAGE_CHARS:

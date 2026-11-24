@@ -1,41 +1,17 @@
-"""User messages sent while a session's turn is running.
-
-A message sent to a busy session is not refused: it waits in the session's
-durable ``pending_inputs.json`` and joins the conversation at the first point
-where the model can take it without losing work:
-
-* the running turn takes it after its current tool batch finished and before
-  its next model call (:class:`QueuedInputDelivery`, called by ``AgentRuntime``);
-* if that turn ends first, the oldest input starts the next turn.
-
-Each input leaves the queue exactly once. Before an input is written into the
-conversation it is *claimed* for that turn, together with the thread's highest
-seq at that moment, and it is removed only after the write. A process that dies
-in between leaves the claim on disk, and :meth:`PendingInputQueue.reconcile`
-settles it on the next start: the input was delivered when the claimed turn
-holds a ``user`` item with its text after that seq (or, for an input that
-started a turn, when that turn's attempt exists with it as its prompt);
-otherwise it is pending again.
-
-A queued input carries the shell-tool entitlement of the request that sent it.
-It can only join a running turn whose tools it was entitled to: an input sent
-without shell tools waits for a turn of its own rather than steering a model
-that has them. Joining a turn never changes the turn's tools, its identity
-ledger or its budgets.
-"""
+"""Persist FIFO input claims and reconcile them after a process restart."""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
+
+from src.session.store import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -55,17 +31,11 @@ class PendingInputLimitError(RuntimeError):
 
 @dataclass(frozen=True)
 class PendingInput:
-    """One user message waiting to join the conversation.
+    """One queued message and its request's shell entitlement.
 
     Attributes:
-        input_id: Unique id.
-        content: The message text, as the user sent it.
-        queued_at: Epoch seconds when it was accepted.
-        queued_during: The turn that was running when it was accepted.
-        include_shell_tools: Whether the sending request may use shell tools.
-        claimed_by: Turn the input is being written into, while that write is
-            in progress (None while it waits).
-        claimed_after_seq: Highest thread seq when the claim was taken.
+        claimed_by: Turn currently writing the input.
+        claimed_after_seq: Highest thread seq when the claim was persisted.
     """
 
     input_id: str
@@ -81,12 +51,7 @@ class PendingInput:
         return replace(self, claimed_by=None, claimed_after_seq=None)
 
     def public(self) -> Dict[str, Any]:
-        """Return the client view of the input.
-
-        Returns:
-            ``input_id``, ``content``, ``queued_at``, ``queued_during`` and
-            ``status`` (``queued`` or ``delivering``).
-        """
+        """Return the client view of the input."""
         return {
             "input_id": self.input_id,
             "content": self.content,
@@ -131,20 +96,10 @@ class PendingInput:
 
 
 class PendingInputQueue:
-    """Durable FIFO of pending inputs, one file per session.
-
-    Every change rewrites the session's file atomically (temporary file,
-    fsync, ``os.replace``) under a per-session lock, so a reader never sees a
-    half-written queue and a crash keeps either the old or the new one.
-    """
+    """Durable FIFO of pending inputs, one file per session."""
 
     def __init__(self, path_for: Callable[[str], Path], *, clock: Callable[[], float] = time.time) -> None:
-        """Create the queue.
-
-        Args:
-            path_for: Maps a session id to its ``pending_inputs.json``.
-            clock: Source of ``queued_at`` (epoch seconds).
-        """
+        """Create the queue."""
         self._path_for = path_for
         self._clock = clock
         self._locks: Dict[str, threading.Lock] = {}
@@ -153,14 +108,7 @@ class PendingInputQueue:
     # ---- Reading ----
 
     def list(self, session_id: str) -> List[PendingInput]:
-        """Return a session's pending inputs, oldest first.
-
-        Args:
-            session_id: Session id.
-
-        Returns:
-            The inputs, claimed ones included.
-        """
+        """Return a session's pending inputs, oldest first."""
         with self._lock(session_id):
             return self._read(session_id)
 
@@ -169,34 +117,13 @@ class PendingInputQueue:
         return [item.public() for item in self.list(session_id)]
 
     def waiting(self, session_id: str) -> List[PendingInput]:
-        """Return the inputs no turn has claimed, oldest first.
-
-        Args:
-            session_id: Session id.
-
-        Returns:
-            Unclaimed inputs.
-        """
+        """Return the inputs no turn has claimed, oldest first."""
         return [item for item in self.list(session_id) if item.claimed_by is None]
 
     # ---- Writing ----
 
     def add(self, session_id: str, content: str, *, queued_during: Optional[str], include_shell_tools: bool) -> PendingInput:
-        """Accept one input at the end of the queue.
-
-        Args:
-            session_id: Session id.
-            content: Message text.
-            queued_during: The turn running now.
-            include_shell_tools: The sending request's shell-tool entitlement.
-
-        Returns:
-            The stored input.
-
-        Raises:
-            PendingInputLimitError: The session already holds the maximum.
-            OSError: The queue could not be written; nothing was accepted.
-        """
+        """Accept one input at the end of the queue."""
         with self._lock(session_id):
             items = self._read(session_id)
             if len(items) >= MAX_PENDING_INPUTS:
@@ -221,22 +148,12 @@ class PendingInputQueue:
         after_seq: int,
         shell_tools: Optional[bool] = None,
     ) -> Optional[PendingInput]:
-        """Claim the oldest waiting input for one turn.
-
-        Only the head of the queue is ever claimed, so inputs join in the
-        order they were sent.
+        """Claim the head of the queue for a turn.
 
         Args:
-            session_id: Session id.
-            turn_id: The turn the input is about to be written into.
-            after_seq: Highest thread seq before that write.
-            shell_tools: The running turn's shell-tool set, when the input is
-                to join it. The head is not claimed when the turn has shell
-                tools and the input was not entitled to them. None claims
-                for a new turn, which takes the input's own entitlement.
-
-        Returns:
-            The claimed input, or None when nothing may be claimed now.
+            after_seq: Highest thread seq before delivery.
+            shell_tools: True requires the input's shell entitlement. None starts
+                a new turn with the input's own entitlement.
         """
         with self._lock(session_id):
             items = self._read(session_id)
@@ -250,25 +167,11 @@ class PendingInputQueue:
             return claimed
 
     def complete(self, session_id: str, input_id: str) -> None:
-        """Remove an input whose write into the conversation finished.
-
-        Args:
-            session_id: Session id.
-            input_id: The delivered input.
-        """
-        with self._lock(session_id):
-            items = self._read(session_id)
-            kept = [item for item in items if item.input_id != input_id]
-            if len(kept) != len(items):
-                self._write(session_id, kept)
+        """Remove an input whose write into the conversation finished."""
+        self._remove(session_id, input_id, waiting_only=False)
 
     def release(self, session_id: str, input_id: str) -> None:
-        """Return a claimed input to the queue, at its old position.
-
-        Args:
-            session_id: Session id.
-            input_id: The input whose write did not happen.
-        """
+        """Return a claimed input to the queue, at its old position."""
         with self._lock(session_id):
             items = self._read(session_id)
             released = [
@@ -280,20 +183,14 @@ class PendingInputQueue:
                 self._write(session_id, released)
 
     def discard(self, session_id: str, input_id: str) -> Optional[PendingInput]:
-        """Remove a waiting input at the user's request.
+        """Remove a waiting input at the user's request."""
+        return self._remove(session_id, input_id, waiting_only=True)
 
-        Args:
-            session_id: Session id.
-            input_id: Input to remove.
-
-        Returns:
-            The removed input, or None when it is not waiting (unknown, or
-            claimed by a turn that is writing it now).
-        """
+    def _remove(self, session_id: str, input_id: str, *, waiting_only: bool) -> Optional[PendingInput]:
         with self._lock(session_id):
             items = self._read(session_id)
             target = next((item for item in items if item.input_id == input_id), None)
-            if target is None or target.claimed_by is not None:
+            if target is None or (waiting_only and target.claimed_by is not None):
                 return None
             self._write(session_id, [item for item in items if item.input_id != input_id])
             return target
@@ -305,17 +202,7 @@ class PendingInputQueue:
         *,
         turn_prompt: Callable[[str], Optional[str]],
     ) -> List[PendingInput]:
-        """Settle claims a previous process left behind.
-
-        Args:
-            session_id: Session id.
-            thread_items: The session's thread items.
-            turn_prompt: Maps a turn id to its attempt's prompt, or None when
-                no such attempt exists.
-
-        Returns:
-            The inputs found delivered and removed.
-        """
+        """Settle claims a previous process left behind."""
         with self._lock(session_id):
             items = self._read(session_id)
             if not any(item.claimed_by for item in items):
@@ -362,22 +249,10 @@ class PendingInputQueue:
         if not items:
             path.unlink(missing_ok=True)
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(
-            {"schema_version": _SCHEMA_VERSION, "inputs": [asdict(item) for item in items]},
-            ensure_ascii=False,
-            indent=2,
-        ).encode("utf-8")
-        fd, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-        temporary_path = Path(temporary_name)
-        try:
-            with os.fdopen(fd, "wb") as temporary_file:
-                temporary_file.write(encoded)
-                temporary_file.flush()
-                os.fsync(temporary_file.fileno())
-            os.replace(temporary_path, path)
-        finally:
-            temporary_path.unlink(missing_ok=True)
+        SessionStore._write_json(path, {
+            "schema_version": _SCHEMA_VERSION,
+            "inputs": [asdict(item) for item in items],
+        })
 
 
 def _was_delivered(
@@ -417,20 +292,7 @@ class QueuedInputDelivery:
         shell_tools: bool,
         on_delivered: Callable[[PendingInput, Any], None],
     ) -> None:
-        """Bind the delivery to one turn.
-
-        Args:
-            queue: The service's pending-input queue.
-            session_id: Session id.
-            turn_id: The running turn.
-            recorder: The turn's ``TurnRecorder``; its ``max_seq`` is at
-                least the seq of the turn's own first user item, which is all
-                a claim's ``after_seq`` has to separate.
-            shell_tools: Whether the running turn has shell tools.
-            on_delivered: Called after each input was recorded and before it
-                leaves the queue, with the input and its thread item (display
-                row, events).
-        """
+        """Bind the delivery to one turn."""
         self._queue = queue
         self._session_id = session_id
         self._turn_id = turn_id
@@ -439,12 +301,7 @@ class QueuedInputDelivery:
         self._on_delivered = on_delivered
 
     def deliver(self) -> List[Dict[str, Any]]:
-        """Write every input that may join the turn now into the thread.
-
-        Returns:
-            The user messages to append to the model input, in order. Each is
-            the object the recorder mapped to its thread item.
-        """
+        """Write every input that may join the turn now into the thread."""
         delivered: List[Dict[str, Any]] = []
         while True:
             try:

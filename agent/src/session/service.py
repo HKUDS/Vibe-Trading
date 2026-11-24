@@ -1,14 +1,4 @@
-"""Session lifecycle orchestration for message flow, attempt creation, and execution scheduling.
-
-The conversation, not the attempt, is the unit: each session has one
-:class:`~src.session.runtime.SessionRuntime` whose ``thread.jsonl`` records
-every turn in full. A turn's model input is replayed from it, and
-display rows are derived from the thread when a consumer requests them.
-
-A caller that opts in (``queue_if_busy``, the web send route) may send while a
-turn runs: the message waits in :mod:`src.session.pending_inputs` and joins
-the running turn after its current tool batch, or starts the next turn.
-"""
+"""Coordinate session leases, input queues, and execution attempts."""
 
 from __future__ import annotations
 
@@ -56,13 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionService:
-    """Session lifecycle service.
-
-    Attributes:
-        store: Session persistence store.
-        event_bus: SSE event bus.
-        runs_dir: Root runs directory.
-    """
+    """Own the active attempts and durable input queue for a session store."""
 
     def __init__(
         self,
@@ -72,43 +56,28 @@ class SessionService:
         *,
         policy: ToolPolicy,
     ) -> None:
-        """Initialize the session service.
-
-        Args:
-            store: Session persistence store.
-            event_bus: SSE event bus.
-            runs_dir: Root runs directory.
-            policy: Tool policy for session runtimes.
-        """
+        """Initialize the session service."""
         self.policy = policy
         self.store = store
         self.event_bus = event_bus
-        # Every event of a running turn is published through this item/run
-        # seam, with thread.jsonl as the durable source of truth.
         self.thread_events = ThreadEvents(event_bus, store.thread_path)
         self.runs_dir = runs_dir
         # Reserve synchronously in send_message. The runtime handle arrives after discovery.
         self._active_loops: Dict[str, "AgentRuntime"] = {}
         # A task handle also allows cancellation during registry discovery.
         self._active_tasks: Dict[str, "asyncio.Task"] = {}
-        # Only task cancellation requested through cancel_current is a user
-        # cancellation. Event-loop shutdown also raises CancelledError, but
-        # that attempt must remain recoverable on the next process start.
+        # Event-loop shutdown must leave the attempt recoverable.
         self._user_cancel_requests: set[str] = set()
         self._inflight: set[str] = set()
         self._inflight_lock = threading.Lock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
-        # One runtime per conversation, alive across its turns. Rebuilt from
-        # the thread's state items on first use after a restart.
         self._runtimes = SessionRuntimes(store.thread_log)
         self._shutting_down = False
-        # Durable records live under the runtime root that owns runs_dir, so a
-        # test pointing runs_dir at a temp root gets its own isolated store.
+        # Use the run directory's runtime root to isolate stores.
         from src.tools.background_tools import init_background_store
 
         self._background_store = init_background_store(Path(runs_dir).parent)
-        # Messages sent while a turn runs, durable per session directory.
         self.pending_inputs = PendingInputQueue(
             lambda session_id: store.thread_path(session_id).parent / PENDING_INPUTS_FILENAME
         )
@@ -131,25 +100,11 @@ class SessionService:
         return self._factory.register_tool(tool)
 
     def runtime(self, session_id: str) -> SessionRuntime:
-        """Return the session's runtime, rebuilding it from its thread if needed.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            The session runtime.
-        """
+        """Return the session's runtime, rebuilding it from its thread if needed."""
         return self._runtimes.get(session_id)
 
     def _reserve_session(self, session_id: str) -> None:
-        """Claim a session for one in-flight run.
-
-        Args:
-            session_id: Session to claim.
-
-        Raises:
-            SessionBusyError: If the session is already claimed.
-        """
+        """Claim a session for one in-flight run."""
         with self._inflight_lock:
             if self._shutting_down:
                 raise SessionBusyError("shutting down; no new runs are accepted")
@@ -160,12 +115,7 @@ class SessionService:
             self._inflight.add(session_id)
 
     def shutdown(self, *, timeout: float = 5.0) -> list[str]:
-        """Stop accepting work, cancel owned background work, and wait for reaping.
-
-        Does not tear down the event bus or thread pools this service may share
-        with other hosts. Returns task ids still running after the wait, so an
-        incomplete cleanup is reported instead of being called a success.
-        """
+        """Stop accepting work, cancel owned background work, and wait for reaping."""
         with self._inflight_lock:
             self._shutting_down = True
         with self._inflight_lock:
@@ -181,18 +131,12 @@ class SessionService:
                    if not task.done()]
         for background in list(self._background_handles.values()):
             remaining = max(0.0, deadline - time.monotonic())
-            # cancel_all, not shutdown: these handles sit over the process-wide
-            # table, and closing it would stop unrelated hosts in this process.
-            # New work is refused by the _shutting_down gate in send_message.
+            # Closing the process-wide task table would stop unrelated sessions.
             pending.extend(background.cancel_all(timeout=remaining)["pending"])
         return pending
 
     def _release_session(self, session_id: str) -> None:
-        """Release a session claim. Safe to call when no claim is held.
-
-        Args:
-            session_id: Session to release.
-        """
+        """Release a session claim. Safe to call when no claim is held."""
         with self._inflight_lock:
             self._inflight.discard(session_id)
 
@@ -202,21 +146,7 @@ class SessionService:
         config: Optional[Dict[str, Any]] = None,
         owner: Optional["Principal"] = None,
     ) -> Session:
-        """Create a new session.
-
-        Args:
-            title: Session title.
-            config: Session configuration.
-            owner: Principal the session belongs to, from the authenticated
-                request. Optional because sessions are also created by the CLI
-                and by internal paths that have no request context; those get
-                ``None``, which reads as "owner unknown" and is deliberately
-                distinct from a principal that authenticated but cannot be
-                attributed to a person (see ``Principal.attributable``).
-
-        Returns:
-            The newly created Session.
-        """
+        """Create a new session."""
         session = Session(title=title, config=config or {}, owner=owner)
         self.store.create_session(session)
         self._search_index.index_session(session.session_id, title)
@@ -333,24 +263,11 @@ class SessionService:
         return self.store.list_sessions(limit)
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete an idle session after purging its searchable text.
-
-        Args:
-            session_id: Session to delete.
-
-        Returns:
-            Whether the on-disk session existed and was deleted.
-
-        Raises:
-            SessionBusyError: If a run could recreate the deleted content.
-            Exception: If the search purge fails; the on-disk session remains
-                available so the user can retry instead of receiving false success.
-        """
+        """Delete an idle session after purging its searchable text."""
         with self._inflight_lock:
             if session_id in self._inflight:
                 raise SessionBusyError("Stop the active run before deleting its session")
-            # Purge even when the directory is absent: a retry can clear stale
-            # index rows left by an older version or an interrupted deletion.
+            # Retry stale index cleanup even if the session directory is gone.
             self._search_index.remove_session(session_id)
             deleted = self.store.delete_session(session_id)
             self._runtimes.discard(session_id)
@@ -369,27 +286,19 @@ class SessionService:
         include_shell_tools: bool = False,
         queue_if_busy: bool = False,
     ) -> Dict[str, Any]:
-        """Send a message to a session and trigger execution.
+        """Accept a message and start or queue a user turn.
 
         Args:
-            session_id: Session ID.
-            content: Message content validated by the caller, including queued inputs.
-            role: Message role.
-            include_shell_tools: Whether this attempt may use shell tools.
-            queue_if_busy: Queue user input durably in send order. It joins the
-                current turn after a tool batch or starts a new turn.
+            include_shell_tools: Shell entitlement of the sending request.
+            queue_if_busy: Durably enqueue instead of refusing a busy session.
 
         Returns:
-            ``message_id`` and ``attempt_id`` for a message that started its
-            own turn. A queued message returns ``status: "queued"``, its
-            ``input_id``, its 1-based ``position`` among waiting messages and
-            ``attempt_id``: the turn running now or just started.
+            A message/attempt receipt or a queued receipt with a 1-based position.
 
         Raises:
-            ValueError: If the session does not exist.
-            SessionBusyError: If queueing is disabled for a busy session or
-                the service is shutting down. HTTP callers surface this as 409.
-            PendingInputLimitError: If the durable queue is full.
+            ValueError: The session is missing.
+            SessionBusyError: The service is shutting down or the session cannot accept the request.
+            PendingInputLimitError: The durable queue is full.
         """
         session = self.store.get_session(session_id)
         if not session:
@@ -435,7 +344,6 @@ class SessionService:
                     include_shell_tools=include_shell_tools,
                 )
             result = self._start_turn(session, content, include_shell_tools=include_shell_tools)
-            # _run_attempt now owns the claim and releases it in its finally.
             handed_off = True
             return result
         finally:
@@ -451,21 +359,7 @@ class SessionService:
         attempt: Optional[Attempt] = None,
         queued: Optional[PendingInput] = None,
     ) -> Dict[str, Any]:
-        """Record the user message and schedule its turn.
-
-        The caller holds the session claim; once the task is scheduled,
-        :meth:`_run_attempt` owns it.
-
-        Args:
-            session: The session.
-            content: The user's message.
-            include_shell_tools: Whether the turn may use shell tools.
-            attempt: A prepared attempt (a queued input claimed it already).
-            queued: The queued input this turn delivers, if any.
-
-        Returns:
-            ``message_id`` and ``attempt_id``.
-        """
+        """Record the user message and schedule its turn."""
         session_id = session.session_id
         message = Message(
             session_id=session_id,
@@ -491,19 +385,7 @@ class SessionService:
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
 
     def _start_queued_turn(self, session: Session) -> Optional[Dict[str, Any]]:
-        """Start a turn from the oldest waiting input. The caller holds the claim.
-
-        The input is claimed for the new attempt before anything is written
-        and removed from the queue only once that attempt exists, so a crash
-        in between is settled by :func:`src.session.recovery.recover_pending_inputs`.
-
-        Args:
-            session: The session.
-
-        Returns:
-            The started turn's ``message_id`` / ``attempt_id``, or None when
-            no input was waiting.
-        """
+        """Start a turn from the oldest waiting input. The caller holds the claim."""
         session_id = session.session_id
         attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id)
         pending = self.pending_inputs.claim_next(session_id, attempt.attempt_id, after_seq=0)
@@ -524,13 +406,7 @@ class SessionService:
         return result
 
     def _start_next_input(self, session_id: str) -> None:
-        """After a turn ended on its own, let the oldest waiting input start one.
-
-        Never raises: it runs in the finally of the turn that just ended.
-
-        Args:
-            session_id: Session ID.
-        """
+        """After a turn ended on its own, let the oldest waiting input start one."""
         try:
             if self._shutting_down or not self.pending_inputs.waiting(session_id):
                 return
@@ -558,17 +434,7 @@ class SessionService:
         running_turn: Optional[str],
         include_shell_tools: bool,
     ) -> Dict[str, Any]:
-        """Accept a message for a busy session and announce it.
-
-        Args:
-            session_id: Session ID.
-            content: The user's message.
-            running_turn: The turn running now, which may take it.
-            include_shell_tools: The sending request's shell-tool entitlement.
-
-        Returns:
-            The queued receipt.
-        """
+        """Accept a message for a busy session and announce it."""
         pending = self.pending_inputs.add(
             session_id, content,
             queued_during=running_turn,
@@ -603,27 +469,11 @@ class SessionService:
         }
 
     def list_pending_inputs(self, session_id: str) -> list[Dict[str, Any]]:
-        """Return the messages waiting to join a session, oldest first.
-
-        Args:
-            session_id: Session ID.
-
-        Returns:
-            Client views of the pending inputs.
-        """
+        """Return the messages waiting to join a session, oldest first."""
         return self.pending_inputs.public_items(session_id)
 
     def discard_pending_input(self, session_id: str, input_id: str) -> Optional[Dict[str, Any]]:
-        """Remove a waiting message at the user's request.
-
-        Args:
-            session_id: Session ID.
-            input_id: The input to remove.
-
-        Returns:
-            The removed input's view, or None when it is not waiting (unknown,
-            or being written into a turn right now).
-        """
+        """Remove a waiting message at the user's request."""
         removed = self.pending_inputs.discard(session_id, input_id)
         if removed is None:
             return None
@@ -662,8 +512,7 @@ class SessionService:
         if loop is not None:
             loop.cancel()
             return True
-        # No loop yet: the run is still building its registry. Cancel the task
-        # itself so the claim is released instead of stranding the session.
+        # Cancel discovery itself if the runtime does not exist yet.
         task = self._active_tasks.get(session_id)
         if task is not None and not task.done():
             self._user_cancel_requests.add(session_id)
@@ -672,13 +521,7 @@ class SessionService:
         return background_cancelled
 
     async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
-        """Execute an Attempt in the background.
-
-        The whole body runs under try/finally: this coroutine owns the
-        in-flight claim taken in :meth:`send_message`, and a failure anywhere —
-        including in the pre-run bookkeeping below — must not leave the session
-        permanently busy.
-        """
+        """Execute an Attempt in the background."""
         try:
             await self._attempts.run(
                 session, attempt, self._factory.run, include_shell_tools=include_shell_tools,
@@ -688,12 +531,9 @@ class SessionService:
                 background = self._background_handles.get(session.session_id)
                 if background is not None:
                     background.cancel_all()
-            # The only release path for the claim taken in send_message.
             self._active_tasks.pop(session.session_id, None)
             self._user_cancel_requests.discard(session.session_id)
             self._release_session(session.session_id)
-            # A turn that ended on its own hands over to the oldest message
-            # sent while it ran. A stop does not: those messages stay queued
-            # and are reported with the cancellation.
+            # Leave waiting inputs queued after an explicit stop.
             if attempt.status in (AttemptStatus.COMPLETED, AttemptStatus.FAILED):
                 self._start_next_input(session.session_id)

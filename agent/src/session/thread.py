@@ -67,12 +67,7 @@ class ThreadLog:
     """
 
     def __init__(self, path: Path, *, clock: Callable[[], float] = time.time) -> None:
-        """Open a thread log.
-
-        Args:
-            path: Location of ``thread.jsonl``; created on first append.
-            clock: Source of item timestamps (epoch seconds).
-        """
+        """Open a thread log."""
         self.path = Path(path)
         self._clock = clock
         self._state = _path_state(self.path)
@@ -80,20 +75,7 @@ class ThreadLog:
     # ---- Writing ----
 
     def append(self, item_type: str, turn_id: str, **payload: Any) -> ThreadItem:
-        """Validate, number and durably append one item.
-
-        Args:
-            item_type: One of :data:`src.session.thread_schema.ITEM_TYPES`.
-            turn_id: Turn (attempt id) the item belongs to.
-            **payload: Type-specific fields.
-
-        Returns:
-            The item as written, with its assigned ``seq`` and ``ts``.
-
-        Raises:
-            ThreadItemError: The item does not match the schema.
-            OSError: The write or fsync failed; ``seq`` is not consumed.
-        """
+        """Validate, number and durably append one item."""
         if not isinstance(turn_id, str) or not turn_id:
             raise ThreadItemError("turn_id must be a non-empty string")
         data = _validate_payload(item_type, payload)
@@ -142,14 +124,7 @@ class ThreadLog:
                     fcntl.flock(log.fileno(), fcntl.LOCK_UN)
 
     def _sync_seq(self, state: _PathState) -> bool:
-        """Re-derive ``last_seq`` when the file is not as this process left it.
-
-        Args:
-            state: Shared writer state (lock held by the caller).
-
-        Returns:
-            Whether the file ends without a newline and needs one first.
-        """
+        """Re-derive ``last_seq`` when the file is not as this process left it."""
         try:
             size = self.path.stat().st_size
         except FileNotFoundError:
@@ -174,16 +149,10 @@ class ThreadLog:
     # ---- Reading ----
 
     def read(self, *, strict: bool = False) -> List[ThreadItem]:
-        """Read every valid item in file order.
+        """Read valid items in file order.
 
-        A line that is not valid UTF-8, not JSON, not an object or does not
-        match the schema is skipped with a warning; its neighbours are kept.
-
-        Args:
-            strict: Refuse unreadable records when callers rely on tool outcomes.
-
-        Returns:
-            Items in write order.
+        Raises:
+            ThreadItemError: With strict enabled, the first corrupt record.
         """
         if not self.path.exists():
             return []
@@ -206,41 +175,19 @@ class ThreadLog:
         return items
 
     def items_after(self, seq: int) -> List[ThreadItem]:
-        """Return items whose ``seq`` is greater than ``seq``.
-
-        Args:
-            seq: Exclusive lower bound.
-
-        Returns:
-            Matching items in write order.
-        """
+        """Return items whose ``seq`` is greater than ``seq``."""
         return [item for item in self.read() if item.seq > seq]
 
     def last_compaction(self) -> Optional[ThreadItem]:
-        """Return the most recent ``compaction`` item, if any.
-
-        Returns:
-            The compaction item or None.
-        """
+        """Return the most recent ``compaction`` item, if any."""
         return last_compaction(self.read())
 
     def open_turns(self) -> List[str]:
-        """Return turns that started but have no ``turn_end``.
-
-        Returns:
-            Turn ids in the order they started.
-        """
+        """Return turns that started but have no ``turn_end``."""
         return open_turns(self.read())
 
     def turn_items(self, turn_id: str) -> List[ThreadItem]:
-        """Return the items of one turn.
-
-        Args:
-            turn_id: Turn id.
-
-        Returns:
-            That turn's items in write order.
-        """
+        """Return the items of one turn."""
         return [item for item in self.read() if item.turn_id == turn_id]
 
 
@@ -256,14 +203,7 @@ def _peek_seq(raw_line: bytes) -> Optional[int]:
 
 
 def last_compaction(items: Iterable[ThreadItem]) -> Optional[ThreadItem]:
-    """Return the most recent ``compaction`` item.
-
-    Args:
-        items: Thread items in write order.
-
-    Returns:
-        The last compaction item or None.
-    """
+    """Return the most recent ``compaction`` item."""
     found = None
     for item in items:
         if item.type == "compaction" and item.get("layer", 3) == 3:
@@ -272,14 +212,7 @@ def last_compaction(items: Iterable[ThreadItem]) -> Optional[ThreadItem]:
 
 
 def open_turns(items: Iterable[ThreadItem]) -> List[str]:
-    """Return turns that have a ``turn_start`` but no ``turn_end``.
-
-    Args:
-        items: Thread items in write order.
-
-    Returns:
-        Turn ids in start order.
-    """
+    """Return turns that have a ``turn_start`` but no ``turn_end``."""
     started: List[str] = []
     ended = set()
     for item in items:

@@ -130,10 +130,7 @@ def replay_with_seqs(
     replayer = MessagePairing()
     start_after = compaction.get("replaces_through_seq") if compaction is not None else 0
 
-    # Apply the recorded view changes in write order. Raw user, assistant and
-    # tool items remain untouched in the log. Layer 1 and 2 events replace the
-    # exact message that was sent after the in-memory mutation, while layer 3
-    # starts a new replay view at its summary boundary.
+    # Layers 1/2 overlay the raw record; L3 moves the replay boundary.
     message_by_seq: Dict[int, Dict[str, Any]] = {}
     replacements = {}
     for event in items:
@@ -168,8 +165,7 @@ def replay_with_seqs(
 
     open_turn: Optional[str] = None
     finished: set = set()
-    # Turns with an item after the start point. A turn the summary already
-    # covers gets no note of its own.
+    # Skip stopped-turn notices for turns already covered by the summary.
     visible: set = set()
 
     def finish_turn(turn_id: str, status: Optional[str]) -> None:
@@ -184,8 +180,6 @@ def replay_with_seqs(
             visible.add(item.turn_id)
         if item.type == "turn_start":
             if open_turn is not None and open_turn != item.turn_id:
-                # The open turn never recorded an end and another turn
-                # started: the process died under it.
                 finish_turn(open_turn, "interrupted")
             open_turn = item.turn_id
             continue
@@ -210,16 +204,7 @@ def replay_with_seqs(
 
 @dataclass
 class TurnProjection:
-    """A read-only view of one finished turn.
-
-    Attributes:
-        turn_id: Turn id.
-        status: ``turn_end`` status, or None when the turn has not ended.
-        content: Final answer text, or None when the turn produced none.
-        tool_results: Compact tool records derived from thread items.
-        usage: ``turn_end`` usage, if recorded.
-        elapsed_ms: ``turn_end`` elapsed time, if recorded.
-    """
+    """A read-only view of one finished turn."""
 
     turn_id: str
     status: Optional[str]
@@ -250,25 +235,7 @@ def project_turn(
     *,
     run_dir: Optional[str] = None,
 ) -> TurnProjection:
-    """Project one turn's items onto the legacy display row.
-
-    The result view follows the former live tool event shape: one entry
-    per call in call order with ``tool`` / ``status`` / ``arguments`` /
-    ``timestamp`` / ``call_id``, completed by its result with ``status``
-    (``ok`` / ``error``), ``elapsed_ms``, ``preview`` and an ``ok`` result's
-    ``artifact``; a result with no recorded call gets an entry of its own.
-    A call that never got a result in a turn that has ended is shown as
-    ``error`` with the interrupted preview rather than ``running`` forever.
-
-    Args:
-        items: Thread items (any superset of the turn's).
-        turn_id: Turn to project.
-        run_dir: The turn's run directory, used to show ``run_dir`` arguments
-            as the live ``tool_call`` event did.
-
-    Returns:
-        The projection.
-    """
+    """Project one turn's items onto the legacy display row."""
     turn = [item for item in items if item.turn_id == turn_id]
     if run_dir is None:
         run_dir = next((item.get("run_dir") for item in reversed(turn) if item.type == "turn_end"), None)
@@ -349,11 +316,7 @@ def project_turn(
 
 
 def diagnostic_records(items: Sequence[ThreadItem]) -> list[dict[str, Any]]:
-    """Derive the run diagnostic view used by evaluation and CLI readers.
-
-    Args:
-        items: Recorded conversation items, in sequence order.
-    """
+    """Derive the run diagnostic view used by evaluation and CLI readers."""
     records: list[dict[str, Any]] = []
     executions = {item.get("data", {}).get("call_id"): item.get("data", {})
                   for item in items if item.type == "event" and item.get("name") == "tool_execution"}
