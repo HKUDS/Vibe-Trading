@@ -4,6 +4,8 @@ import type {
   OptionsChainResponse,
   OptionsPayoffRequest,
   OptionsPayoffResponse,
+  OptionsStrategyCompareRequest,
+  OptionsStrategyCompareResponse,
   VolatilitySurfaceRequest,
   VolatilitySurfaceResponse,
 } from "@/lib/options";
@@ -626,6 +628,8 @@ export const api = {
   startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
     request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),
   getResearchLabJob: (id: string) => request<LabJob>(`/api/research-lab/jobs/${encodeURIComponent(id)}`),
+  downloadResearchLabOosEquity: (id: string): Promise<Blob> =>
+    performRequest(`/api/research-lab/jobs/${encodeURIComponent(id)}/report?format=oos_equity_csv`, { headers: authHeaders() }, (response) => response.blob()),
   getPixelOffice: () => request<OfficeSnapshot>("/api/pixel-office"),
   updatePixelOffice: (action: "create" | "assign" | "complete" | "rank", arguments_: Record<string, unknown>) =>
     request<OfficeSnapshot>("/api/pixel-office/actions", { method: "POST", body: JSON.stringify({ action, arguments: arguments_ }) }),
@@ -901,6 +905,12 @@ export const api = {
   // Options Lab
   analyzeOptionsPayoff: (body: OptionsPayoffRequest, signal?: AbortSignal) =>
     request<OptionsPayoffResponse>("/options/payoff", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  compareOptionsStrategies: (body: OptionsStrategyCompareRequest, signal?: AbortSignal) =>
+    request<OptionsStrategyCompareResponse>("/options/strategy-compare", {
       method: "POST",
       body: JSON.stringify(body),
       signal,
@@ -1722,6 +1732,7 @@ export type SectorAssetClass =
   | "uk_equity"
   | "taiwan_equity"
   | "vietnam_equity"
+  | "europe_equity"
   | "index"
   | "crypto"
   | "futures"

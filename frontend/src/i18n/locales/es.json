@@ -1146,6 +1146,7 @@
         "ca_equity": "Acciones de Canadá",
         "taiwan_equity": "Acciones de Taiwán",
         "vietnam_equity": "Acciones de Vietnam",
+        "europe_equity": "Acciones europeas",
         "ar_equity": "Acciones de Argentina",
         "br_equity": "Acciones de Brasil",
         "uk_equity": "Acciones del Reino Unido",
@@ -1487,6 +1488,7 @@
         "uk_equity": "Renta variable Reino Unido",
         "taiwan_equity": "Acciones de Taiwán",
         "vietnam_equity": "Renta variable Vietnam",
+        "europe_equity": "Acciones europeas",
         "other": "Otros"
       }
     },
@@ -1766,7 +1768,10 @@
       "entry_cost_return": "Coste de entrada / nominal de acciones",
       "higher": "Mayor",
       "lower": "Menor",
-      "equal": "Igual"
+      "equal": "Igual",
+      "scenarioBasis": "Ambas estrategias usan la solicitud completada y una cuadrícula compartida de precio × volatilidad. La diferencia es estrategia menos base, solo descriptiva.",
+      "deltaGrid": "Diferencia de P&L",
+      "gridCapped": "Las cuadrículas comparativas usan como máximo {{count}} puntos de precio."
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "Falló",
     "report": "Informe de investigación",
     "download": "Descargar JSON",
+    "downloadOosCsv": "CSV de patrimonio fuera de muestra",
     "scenario": "Escenario",
     "return": "Rentabilidad",
     "drawdown": "Caída máxima",

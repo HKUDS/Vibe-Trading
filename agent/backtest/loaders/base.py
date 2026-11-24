@@ -61,6 +61,11 @@ _SINGLE_CURRENCY_VENUES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "ARS"),
     (re.compile(r"^[A-Z0-9]+\.SA$", re.I), "BRL"),
     (re.compile(r"^[A-Z0-9&.\-]+\.(?:TO|V)$", re.I), "CAD"),
+    # Euronext, Xetra, SIX and Borsa Italiana also list ETF lines in USD/GBP
+    # beside the home-currency line; only the home line enters the pool.
+    (re.compile(r"^[A-Z0-9&.\-]+\.(?:DE|PA|AS|MI)$", re.I), "EUR"),
+    (re.compile(r"^[A-Z0-9&.\-]+\.SW$", re.I), "CHF"),
+    (re.compile(r"^[A-Z0-9&.\-]+\.WA$", re.I), "PLN"),
 )
 
 
@@ -288,7 +293,9 @@ def validate_ohlc(
         nonpositive = (open_ == 0) | (high == 0) | (low == 0) | (close == 0)
     else:
         nonpositive = (open_ <= 0) | (high <= 0) | (low <= 0) | (close <= 0)
-    invalid = structural | nonpositive
+    # Infinity can satisfy the ordering checks but cannot represent a price.
+    infinite = frame[list(required)].isin([float("inf"), float("-inf")]).any(axis=1)
+    invalid = structural | nonpositive | infinite
     n_invalid = int(invalid.sum())
     if n_invalid == 0:
         return frame

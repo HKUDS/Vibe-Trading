@@ -1140,6 +1140,7 @@
         "ca_equity": "加拿大股票",
         "taiwan_equity": "台湾股票",
         "vietnam_equity": "越南股票",
+        "europe_equity": "欧洲股票",
         "ar_equity": "阿根廷股票",
         "br_equity": "巴西股票",
         "uk_equity": "英国股票",
@@ -1481,6 +1482,7 @@
         "uk_equity": "英股",
         "taiwan_equity": "台湾股票",
         "vietnam_equity": "越股",
+        "europe_equity": "欧洲股票",
         "other": "其他"
       }
     },
@@ -1760,7 +1762,10 @@
       "entry_cost_return": "入场成本／股票名义本金",
       "higher": "高于",
       "lower": "低于",
-      "equal": "相等"
+      "equal": "相等",
+      "scenarioBasis": "两个方案使用同一份已完成请求和统一的标的价 × 波动率网格。差值为备选方案减基准方案，仅作描述，不构成推荐。",
+      "deltaGrid": "盈亏差值",
+      "gridCapped": "比较网格最多使用 {{count}} 个标的价点。"
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "失败",
     "report": "研究报告",
     "download": "下载 JSON",
+    "downloadOosCsv": "样本外权益 CSV",
     "scenario": "情景",
     "return": "收益率",
     "drawdown": "回撤",

@@ -28,7 +28,22 @@ _CONNECTOR_ROOT = Path(__file__).resolve().parents[1] / "src" / "trading" / "con
 
 # Brokers with no runtime paper/live discriminator. Capped at paper; every
 # order entry point must refuse a non-paper config up front.
-_PAPER_CAPPED = frozenset({"longbridge", "dhan", "shoonya", "trading212", "zerodha", "upbit", "toss", "mstock"})
+_PAPER_CAPPED = frozenset(
+    {
+        "longbridge",
+        "dhan",
+        "shoonya",
+        "trading212",
+        "zerodha",
+        "upbit",
+        "toss",
+        "mstock",
+    }
+)
+
+# OpenAlgo's analyzer flag can change server-wide between requests. Both
+# order entry points unconditionally refuse writes, including paper writes.
+_READONLY_ONLY = frozenset({"openalgo"})
 
 # Brokers with a structural discriminator (host separation, demo flag, account
 # id format, trade environment). Live placement is allowed here, but only
@@ -92,13 +107,13 @@ def test_every_connector_is_classified() -> None:
     This is the drift alarm. If it fails, decide whether the new connector has
     a runtime paper/live discriminator and add it to exactly one set above.
     """
-    unclassified = set(_connector_names()) - _PAPER_CAPPED - _LIVE_CAPABLE
+    assert not (_PAPER_CAPPED & _LIVE_CAPABLE)
+    assert not (_READONLY_ONLY & (_PAPER_CAPPED | _LIVE_CAPABLE))
+    unclassified = set(_connector_names()) - _PAPER_CAPPED - _LIVE_CAPABLE - _READONLY_ONLY
 
     assert not unclassified, (
         f"Unclassified broker connector(s): {sorted(unclassified)}. Add each to "
-        "_PAPER_CAPPED (no runtime paper/live discriminator) or _LIVE_CAPABLE "
-        "(has one). Do not guess — check how the connector distinguishes paper "
-        "from live at runtime."
+        "_PAPER_CAPPED, _LIVE_CAPABLE, or _READONLY_ONLY according to its runtime order boundary."
     )
 
 
@@ -131,4 +146,16 @@ def test_paper_capped_connector_refuses_non_paper_before_the_sdk(broker: str) ->
             f"{broker}.{name} checks for paper at statement {guard_index + 1}, "
             f"after {guard_index} other statement(s). The guard must come first "
             "so nothing reaches the broker SDK before the refusal."
+        )
+
+
+@pytest.mark.parametrize("broker", sorted(_READONLY_ONLY))
+def test_readonly_connector_order_entries_raise_immediately(broker: str) -> None:
+    """Read-only implementations reject either order call before any work."""
+    functions = _order_functions(_CONNECTOR_ROOT / broker / "sdk.py")
+    assert set(functions) == set(_ORDER_ENTRY_POINTS)
+    for name, (func, _) in functions.items():
+        body = _executable_body(func)
+        assert len(body) == 1 and isinstance(body[0], ast.Raise), (
+            f"{broker}.{name} must reject every order without running other code"
         )

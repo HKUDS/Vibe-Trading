@@ -1140,6 +1140,7 @@
         "ca_equity": "캐나다 주식",
         "taiwan_equity": "대만 주식",
         "vietnam_equity": "베트남 주식",
+        "europe_equity": "유럽 주식",
         "ar_equity": "아르헨티나 주식",
         "br_equity": "브라질 주식",
         "uk_equity": "영국 주식",
@@ -1481,6 +1482,7 @@
         "uk_equity": "영국 주식",
         "taiwan_equity": "대만 주식",
         "vietnam_equity": "베트남 주식",
+        "europe_equity": "유럽 주식",
         "other": "기타"
       }
     },
@@ -1760,7 +1762,10 @@
       "entry_cost_return": "진입 비용 / 주식 명목금액",
       "higher": "높음",
       "lower": "낮음",
-      "equal": "같음"
+      "equal": "같음",
+      "scenarioBasis": "두 전략은 완료된 요청과 동일한 스팟×IV 그리드를 사용합니다. 차이는 전략에서 기준을 뺀 값이며 설명용입니다.",
+      "deltaGrid": "손익 차이",
+      "gridCapped": "비교 그리드는 최대 {{count}}개의 스팟 포인트를 사용합니다."
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "실패",
     "report": "연구 보고서",
     "download": "JSON 다운로드",
+    "downloadOosCsv": "표본 외 자산 추이 CSV",
     "scenario": "시나리오",
     "return": "수익률",
     "drawdown": "낙폭",

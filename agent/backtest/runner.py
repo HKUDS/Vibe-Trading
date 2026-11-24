@@ -19,7 +19,7 @@ import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
@@ -56,6 +56,9 @@ from backtest.engines._market_hooks import (  # noqa: F401  (re-exported)
     strip_local_prefix,
 )
 from backtest.rebalance_mask import RebalanceMask, validate_rebalance_mask
+
+if TYPE_CHECKING:
+    from backtest.frozen import FrozenBenchmarkInput
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +141,10 @@ class BacktestConfigSchema(BaseModel):
         # routing rule names; the loaders and the benchmark resolve both.
         if any(matched_market(c.strip()) == "jp_equity" for c in v):
             raise ValueError("Japan market data is supported, but Japanese backtest execution rules are not implemented")
+        if any(matched_market(c.strip()) == "europe_equity" for c in v):
+            raise ValueError(
+                "European market data is supported, but European backtest execution rules are not implemented"
+            )
         unrecognised = [
             c for c in v
             if matched_market(c.strip()) is None
@@ -900,6 +907,7 @@ _MARKET_TO_SOURCE = {
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
     "taiwan_equity": "yahoo",
+    "europe_equity": "yahoo",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1605,16 +1613,15 @@ def main(run_dir: Path) -> None:
     # aligned with the data consumed by the engine. A source that prohibits
     # fallback keeps its own loader behind the snapshot: a declared benchmark
     # is usually outside ``codes``, but must still come from that same source.
-    if config.get("frozen_data_manifest"):
-        loader = _AutoLoader(data_map, name="local")
-    elif is_no_network_fallback_source(source):
-        loader = _AutoLoader(
-            data_map,
-            inner=loader,
-            name=str(getattr(loader, "name", None) or source),
-        )
-    else:
-        loader = _AutoLoader(data_map)
+    if not config.get("frozen_data_manifest"):
+        if is_no_network_fallback_source(source):
+            loader = _AutoLoader(
+                data_map,
+                inner=loader,
+                name=str(getattr(loader, "name", None) or source),
+            )
+        else:
+            loader = _AutoLoader(data_map)
 
     if engine_type == "options":
         from backtest.engines.options_portfolio import run_options_backtest
@@ -1816,6 +1823,10 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
 
     if "jp_equity" in markets:
         raise ValueError("Japanese backtest execution rules are not implemented; market data is available")
+    if "europe_equity" in markets:
+        raise ValueError(
+            "European backtest execution rules are not implemented; market data is available"
+        )
 
     # The Hong Kong pool books in HKD. HKEX numbers its RMB and USD counters
     # in their own code ranges, and no source in the hk_equity chain but Yahoo
@@ -2102,13 +2113,15 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     """
     config = copy.deepcopy(config)
     if config.get("frozen_data_manifest"):
-        from backtest.frozen import load_frozen_frames
+        from backtest.frozen import load_frozen_benchmark, load_frozen_frames
 
-        frames, manifest = load_frozen_frames(config["frozen_data_manifest"], config)
+        manifest_path = config["frozen_data_manifest"]
+        frames, manifest = load_frozen_frames(manifest_path, config)
+        reference = load_frozen_benchmark(manifest_path, manifest, config)
         return DataFetchResult(
             frames, list(frames), config.get("source", "auto"),
-            _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),
-            manifest.get("caliber_warning"),
+            _AutoLoader(frames, name="local", benchmark_input=reference),
+            manifest.get("sources", [config.get("source", "auto")]), manifest.get("caliber_warning"),
         )
     with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
         return _fetch_source_data_map(config)
@@ -2312,6 +2325,8 @@ class _AutoLoader:
         data_map: dict,
         inner: Any = None,
         name: str | None = None,
+        *,
+        benchmark_input: "FrozenBenchmarkInput | None" = None,
     ) -> None:
         """Wrap a fetched snapshot.
 
@@ -2321,9 +2336,11 @@ class _AutoLoader:
                 the snapshot does not hold. ``None`` serves the snapshot alone.
             name: Source name of ``inner``. When ``None`` the adapter exposes no
                 ``name``: a bare snapshot does not stand for any one source.
+            benchmark_input: Optional separate reference, never returned by fetch.
         """
         self._data = data_map
         self._inner = inner
+        self.benchmark_input = benchmark_input
         if name is not None:
             self.name = name
 
