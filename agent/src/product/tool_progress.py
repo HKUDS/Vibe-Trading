@@ -9,8 +9,7 @@ from collections import Counter
 NO_PROGRESS_LIMIT = 8
 # Allow one retry for a transient failure. A successful mutation clears the count.
 FAILURE_BLOCK_THRESHOLD = 2
-#: What the user can do next, whatever stalled: #1363's case was an artifact
-#: the agent could not find, where only the exact path helps.
+# An exact path allows recovery when an artifact cannot be found (#1363).
 _NEXT_STEP = (
     "Retry the request, rerun the missing research step with a narrower scope "
     "(fewer symbols, another data source), or give the exact file path if you "
@@ -20,7 +19,6 @@ RECOVERY_MESSAGE = (
     "I stopped because repeated tool attempts did not produce new information, "
     "so I cannot reliably answer. " + _NEXT_STEP
 )
-#: How each kind of unproductive tool call is described in the stop message.
 _NOTE_TEXT = {
     "error": "failed",
     "repeat": "returned results it had already returned",
@@ -59,13 +57,7 @@ class ToolProgress:
         self._stall_notes: list[tuple[str, str, str]] = []
 
     def note(self, kind: str, tool: str, detail: str = "") -> None:
-        """Record why a call in this iteration produced nothing new.
-
-        Args:
-            kind: One of the ``_NOTE_TEXT`` keys.
-            tool: Tool name.
-            detail: Error code or message, when there is one.
-        """
+        """Record why a call in this iteration produced nothing new."""
         self._notes.append((kind, tool, detail))
 
     def record(
@@ -111,15 +103,7 @@ class ToolProgress:
         self._context_restored = True
 
     def is_blocked(self, key: tuple[str, str]) -> bool:
-        """Whether this exact call failed often enough to refuse a repeat.
-
-        Args:
-            key: Canonical call identity (name, serialized arguments).
-
-        Returns:
-            ``True`` once the identity reached :data:`FAILURE_BLOCK_THRESHOLD`
-            failures without an intervening successful mutation.
-        """
+        """Whether this exact call failed often enough to refuse a repeat."""
         return self.failed.get(key, 0) >= FAILURE_BLOCK_THRESHOLD
 
     def finish_iteration(self) -> bool:
@@ -128,9 +112,7 @@ class ToolProgress:
             self.stalled_iterations = 0
             self._stall_notes.clear()
         elif self._context_restored:
-            # One grace iteration: preserve, but do not erase, prior stall
-            # history. This lets the next model turn see the restored evidence
-            # without allowing replay-only loops to run forever.
+            # Give the model one turn to use restored evidence without resetting the stall budget.
             pass
         else:
             self.stalled_iterations += 1
@@ -141,11 +123,7 @@ class ToolProgress:
         return self.stalled_iterations >= NO_PROGRESS_LIMIT
 
     def recovery_message(self) -> str:
-        """Summarize the repeated operations that stalled the run.
-
-        Returns:
-            The stop message shown to the user.
-        """
+        """Summarize the repeated operations that stalled the run."""
         if not self._stall_notes:
             return RECOVERY_MESSAGE
         counts = Counter(self._stall_notes)

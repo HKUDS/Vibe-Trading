@@ -1,8 +1,4 @@
-"""Provider-agnostic tool screening: the deny list and the bash policy.
-
-Both are convenience filters, not a security boundary: ``python -c`` can still
-run anything, and live orders stay bound by the mandate gate and kill switch.
-"""
+"""Provider-agnostic tool screening: the deny list and the bash policy."""
 
 from __future__ import annotations
 
@@ -157,16 +153,7 @@ def _hidden_path(token: str) -> bool:
 
 
 def check_bash_command(command: str) -> tuple[Optional[str], Optional[str]]:
-    """Apply the ``python-only`` policy to one shell command.
-
-    Args:
-        command: The command the model asked ``bash`` to run.
-
-    Returns:
-        ``(rewritten_command, None)`` when allowed, else ``(None, reason)``.
-        An allowed ``python``/``python3`` call is rewritten to this process's
-        interpreter so scripts can import Vibe-Trading's own packages.
-    """
+    """Apply the ``python-only`` policy to one shell command."""
     if "\n" in command or "`" in command or "$(" in command:
         return None, "newlines, backticks and $( ) are not allowed"
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)

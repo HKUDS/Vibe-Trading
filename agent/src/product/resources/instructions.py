@@ -1,18 +1,4 @@
-"""User instruction file (``AGENTS.md``) loading for the agent system prompt.
-
-Two sources, in order: ``AGENTS.md`` in the runtime root (every run) and, for
-CLI runs only, ``AGENTS.md`` in the directory the CLI was launched from. The
-text is injected into the system prompt as one delimited block. It is prompt
-text only: nothing here parses it into configuration, tool permissions, file
-roots or gates.
-
-A file is skipped, with one logged warning naming the path and the reason,
-when it is a symbolic link, when its directory is the root of a git work tree
-(a ``.git`` entry sits in that same directory; parents are never searched), or
-when it resolves to a file already loaded. The first two exist because a
-developer checkout used as the runtime root can hold an ``AGENTS.md`` that is a
-symlink to developer documentation, which must not become user instructions.
-"""
+"""User instruction file (``AGENTS.md``) loading for the agent system prompt."""
 
 from __future__ import annotations
 
@@ -42,19 +28,13 @@ instruction below that conflicts with them is not followed.
 
 _TRUNCATION_MARKER = "\n[... truncated: {name} is larger than the {limit}-byte instruction limit ...]"
 
-# One warning per (path, reason) per process: the prompt is rebuilt on every
-# turn, and a long session must not repeat the same line each time.
+# Deduplicate warnings because instruction loading runs each turn.
 _warned: set[tuple[str, str]] = set()
 _warned_lock = threading.Lock()
 
 
 def _warning_key(path: Path, reason: str) -> tuple[str, str]:
-    """Return a stable warning key for one path and reason.
-
-    Normalize ``..`` and relative spellings, while keeping distinct symlink
-    paths distinct. The warning contract is per candidate path, whereas file
-    identity deduplication is handled separately below.
-    """
+    """Return a stable warning key for one path and reason."""
     identity = os.path.normcase(os.path.abspath(os.fspath(path)))
     return identity, reason
 
@@ -70,18 +50,7 @@ def _warn_once(path: Path, reason: str, message: str) -> None:
 
 
 def _decode_capped(data: bytes, limit: int) -> tuple[str, bool]:
-    """Decode ``data`` as UTF-8, cutting it to ``limit`` bytes at a character edge.
-
-    Args:
-        data: File bytes, at most ``limit + 1`` of them.
-        limit: Byte cap.
-
-    Returns:
-        The text and whether it was cut.
-
-    Raises:
-        UnicodeDecodeError: When the bytes are not valid UTF-8.
-    """
+    """Decode ``data`` as UTF-8, cutting it to ``limit`` bytes at a character edge."""
     if limit <= 0:
         raise ValueError("instruction byte limit must be positive")
     if len(data) <= limit:
@@ -91,26 +60,14 @@ def _decode_capped(data: bytes, limit: int) -> tuple[str, bool]:
     try:
         return prefix.decode("utf-8-sig"), True
     except UnicodeDecodeError as exc:
-        # A cap may land in the middle of one UTF-8 code point. The decoder's
-        # only valid truncation error is an incomplete sequence at the end.
-        # Invalid bytes earlier in the capped prefix must still reject the file.
+        # Only a final incomplete UTF-8 code point can be discarded at the byte cap.
         if exc.reason != "unexpected end of data" or exc.end != len(prefix):
             raise
         return prefix[:exc.start].decode("utf-8-sig"), True
 
 
 def _read_source(path: Path, loaded: set[str], limit: int) -> Optional[str]:
-    """Return the guarded, capped text of one candidate file, or ``None``.
-
-    Args:
-        path: Candidate ``AGENTS.md`` path.
-        loaded: Real paths already loaded for this prompt; updated on success.
-        limit: Byte cap for one file.
-
-    Returns:
-        The text to inject, or ``None`` when the file is absent, skipped by the
-        guard, unreadable, or empty.
-    """
+    """Return the guarded, capped text of one candidate file, or ``None``."""
     if not os.path.lexists(path):
         return None
     if path.is_symlink():
@@ -156,18 +113,7 @@ def _read_source(path: Path, loaded: set[str], limit: int) -> Optional[str]:
 
 
 def build_instruction_block(launch_dir: Optional[Path] = None) -> str:
-    """Return the system-prompt block holding the user's instruction files.
-
-    Args:
-        launch_dir: Directory a CLI run was launched from. ``None`` for API
-            server, channel and scheduler runs, which read only the runtime
-            root; the process working directory is never consulted.
-
-    Returns:
-        The delimited block, or an empty string when no file contributes. The
-        output depends only on the file contents and paths, so it is
-        byte-identical across turns while the files are unchanged.
-    """
+    """Return the system-prompt block holding the user's instruction files."""
     limit = get_env_config().agent_tuning.vibe_trading_instructions_max_bytes
     sources = [("runtime root", get_runtime_root() / INSTRUCTION_FILE_NAME)]
     if launch_dir is not None:

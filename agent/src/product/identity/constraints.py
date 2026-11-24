@@ -1,9 +1,4 @@
-"""Explicit identity constraints carried beside the original conversation.
-
-This module deliberately performs no query rewrite. It keeps the exact current
-user message in memory and extracts only literal market words with source spans
-that the instrument resolver can audit.
-"""
+"""Explicit identity constraints carried beside the original conversation."""
 
 from __future__ import annotations
 
@@ -221,40 +216,23 @@ def _extract_market_constraints(
 ) -> list[IdentityConstraint]:
     constraints: list[IdentityConstraint] = []
     cross_spans: list[tuple[int, int]] = []
-    for match in _CROSS_LISTING_RE.finditer(text or ""):
-        if _constraint_is_negated(text, match.start()):
-            continue
-        cross_spans.append(match.span())
-        clause = _constraint_clause(text, *match.span())
-        subject = _constraint_subject(clause)
-        constraints.extend(
-            IdentityConstraint(
-                subject_text=subject,
-                dimension="market",
-                value=value,
-                source_message_id=source_message_id,
-                source_span=match.span(),
-            )
-            for value in ("cn", "hk")
-        )
-    for value, pattern in _MARKET_PATTERNS:
+    patterns = [
+        (("cn", "hk"), _CROSS_LISTING_RE),
+        *(((market,), pattern) for market, pattern in _MARKET_PATTERNS),
+    ]
+    for markets, pattern in patterns:
         for match in pattern.finditer(text or ""):
-            if _constraint_is_negated(text, match.start()):
+            start, end = match.span()
+            if _constraint_is_negated(text, start):
                 continue
-            if any(
-                start <= match.start() and match.end() <= end
-                for start, end in cross_spans
-            ):
+            if pattern is _CROSS_LISTING_RE:
+                cross_spans.append((start, end))
+            elif any(left <= start and end <= right for left, right in cross_spans):
                 continue
-            clause = _constraint_clause(text, *match.span())
-            constraints.append(
-                IdentityConstraint(
-                    subject_text=_constraint_subject(clause),
-                    dimension="market",
-                    value=value,
-                    source_message_id=source_message_id,
-                    source_span=match.span(),
-                )
+            subject = _constraint_subject(_constraint_clause(text, start, end))
+            constraints.extend(
+                IdentityConstraint(subject, "market", market, source_message_id, (start, end))
+                for market in markets
             )
     return constraints
 

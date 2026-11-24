@@ -1,9 +1,4 @@
-"""Command hooks for the agent lifecycle.
-
-Hooks are deliberately a small, fail-closed boundary.  They observe the same
-tool call that the loop is about to execute, while authorization and the live
-order guards remain owned by the normal registry and identity paths.
-"""
+"""Command hooks for the agent lifecycle."""
 
 from __future__ import annotations
 
@@ -156,12 +151,7 @@ class HookManager:
             self.audit = getattr(sink, "hook", None)
 
     def run(self, event: str, payload: Mapping[str, Any] | None = None) -> HookDecision:
-        """Run matching hooks and return the first refusal.
-
-        A pre-hook timeout, crash, or non-zero exit denies the tool. Other
-        lifecycle hooks record the failure and continue because they are
-        observational.
-        """
+        """Run matching hooks and return the first refusal."""
         if event not in HOOK_EVENTS:
             raise ValueError(f"unknown hook event {event!r}")
         context = dict(payload or {})

@@ -1,5 +1,4 @@
-"""Classify tool outcomes and textual call syntax, identify requested write targets,
-and archive completed backtests."""
+"""Classify tool responses and identify archived backtests and write targets."""
 
 from __future__ import annotations
 
@@ -129,16 +128,7 @@ def _previously_archived(target: Path) -> set[str]:
 def _archive_backtest_result(
     result: str, active_run_dir: str | None, *, roots: FileRoots, source_call_id: str | None = None
 ) -> bool:
-    """Archive a detached backtest after revalidating both paths and pruning only previously copied files.
-
-    Args:
-        result: Serialized successful backtest tool result.
-        active_run_dir: Active turn directory that receives reportable output.
-        source_call_id: Exact tool call recorded with the archive's source path.
-
-    Returns:
-        Whether a detached backtest's output was archived.
-    """
+    """Archive a detached backtest after revalidating both paths and pruning only previously copied files."""
     if not active_run_dir:
         return False
     try:

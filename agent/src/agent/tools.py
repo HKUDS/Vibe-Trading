@@ -17,19 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseTool(ABC):
-    """Tool base class.
-
-    Attributes:
-        name: Unique tool identifier.
-        description: Tool description shown to the LLM.
-        parameters: Parameter definition in JSON Schema format.
-        repeatable: Whether the tool may be called more than once.
-        replay_after_compaction: Whether an exact successful readonly call may
-            restore its run-scoped result after compaction removed the visible
-            payload, even when the tool is otherwise repeatable. Tools opting
-            in must provide an explicit freshness argument when a caller needs
-            to bypass replay (for example ``no_cache=True``).
-    """
+    """Tool base class."""
 
     name: str = ""
     description: str = ""
@@ -48,11 +36,7 @@ class BaseTool(ABC):
 
     @classmethod
     def check_available(cls) -> bool:
-        """Check if this tool's dependencies are met.
-
-        Override in subclasses to check for API keys, packages, etc.
-        Tools that return False are excluded from the registry.
-        """
+        """Check if this tool's dependencies are met."""
         return True
 
     @abstractmethod
@@ -116,12 +100,7 @@ class ToolRegistry:
         self._tools[tool.name] = tool
 
     def register_host_tool(self, tool: BaseTool) -> None:
-        """Register one explicitly supplied, non-trading host tool.
-
-        Host tools are never part of discovery.  The strict collision check is
-        intentionally separate from :meth:`register`, which keeps the
-        registry's existing local/MCP assembly semantics.
-        """
+        """Register one explicitly supplied, non-trading host tool."""
         name = host_tool_name(tool, self._tools)
         self._tools[name] = tool
 

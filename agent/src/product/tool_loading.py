@@ -18,11 +18,7 @@ def loading_policy() -> dict[str, Any]:
 
 
 class DeferredToolRegistry(ToolRegistry):
-    """Per-conversation schema exposure; execution permissions stay with the source tools.
-
-    All registered tools remain in the catalog and full manifest. No retrieval
-    ranking, keyword routing, subagent, or alternate tool dispatcher is involved.
-    """
+    """Per-conversation schema exposure; execution permissions stay with the source tools."""
 
     def __init__(self, source: ToolRegistry) -> None:
         super().__init__(policy=source.policy)
@@ -50,15 +46,7 @@ class DeferredToolRegistry(ToolRegistry):
             return list(self._loaded)
 
     def restore_exposure(self, names: list[str]) -> None:
-        """Expose the schemas an earlier turn of the same conversation loaded.
-
-        Order is kept, so the request's tool definitions match the earlier
-        turn's and the provider's prefix cache still applies. A name this
-        registry does not hold is skipped; ``load_tools`` stays exposed.
-
-        Args:
-            names: Names from :meth:`exposed_names` of an earlier registry.
-        """
+        """Expose the schemas an earlier turn of the same conversation loaded."""
         with self._lock:
             restored = dict.fromkeys(name for name in names if name in self._tools)
             restored.setdefault("load_tools")
@@ -83,14 +71,7 @@ class DeferredToolRegistry(ToolRegistry):
         return "\n".join(lines)
 
     def expose(self, names: list[str]) -> dict[str, Any]:
-        """Load known names atomically without adding tools absent from the registry.
-
-        Args:
-            names: Exact tool names selected from the complete catalog.
-
-        Returns:
-            Acknowledgement of the loaded schemas.
-        """
+        """Load known names atomically without adding tools absent from the registry."""
         if not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names):
             return {"status": "error", "error": "names must be a non-empty list of exact tool names"}
         unknown = [name for name in names if name not in self._tools]

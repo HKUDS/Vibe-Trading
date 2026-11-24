@@ -109,8 +109,7 @@ class ToolInvocation:
             return prepared.result, prepared.elapsed_ms
         effective_args = prepared.arguments
         if order_tool:
-            # Broker errors can mean that the response was lost after acceptance.
-            # Latch before dispatch, including concurrent copies in one batch.
+            # Latch before dispatch because an accepted order can lose its response.
             key = self.replay._identical_call_key(tool_name, effective_args)
             if key is None:
                 return json.dumps({
@@ -131,8 +130,7 @@ class ToolInvocation:
 
         cache = self.successful_reads
         key = None
-        # A resolver call can authorize an instrument in the current ledger.
-        # The node cache survives retries, while that ledger starts fresh.
+        # The node cache outlives the ledger and cannot grant identity in a retry.
         if readonly and cache is not None and tool_name != "search_symbol":
             tool = self.env.registry.get(tool_name)
             bind_workspace = getattr(tool, "workspace_arguments", None)

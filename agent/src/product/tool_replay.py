@@ -114,8 +114,7 @@ class ToolReplay:
             key for key in lost & self._called_ok if self._is_tool_readonly(key[0])
         }
         self._called_ok.difference_update(reopened)
-        # Every lost call reopens, as before replay existed; the replay budget
-        # only decides, at call time, whether it is restored or run again.
+        # The replay budget controls restoration, while lost reads can still execute again.
         self._readonly_replay_protected.difference_update(reopened)
         self._readonly_replay_ready.update(
             key for key in reopened if key in self._readonly_replay_cache
@@ -123,22 +122,27 @@ class ToolReplay:
         return sorted({key[0] for key in reopened})
 
     def _identical_call_key(self, tool_name: str, arguments: Mapping[str, Any]) -> tuple[str, str] | None:
-        """Build a stable key identifying a deterministic tool invocation.
-
-        Args:
-            tool_name: Tool name.
-            arguments: Tool arguments.
-
-        Returns:
-            Tuple of (tool_name, canonical JSON of the args) usable as a
-            dict key, or None when the args cannot be serialized.
-        """
+        """Build a stable key identifying a deterministic tool invocation."""
         try:
             normalized = normalize_tool_run_dir(dict(arguments or {}), self.env.memory.run_dir)
             canonical = json.dumps(normalized, sort_keys=True, ensure_ascii=False, default=str)
         except Exception:  # noqa: BLE001 - un-serializable args are never cached
             return None
         return (tool_name, canonical)
+
+    def record_success(self, call_id: str, key: tuple[str, str] | None) -> None:
+        """Track a successful call and the message carrying its evidence."""
+        if key is not None:
+            self._called_ok.add(key)
+            self._successful_call_keys[call_id] = key
+
+    def _append_cached_result(self, delivery, tc, context, messages, result, key) -> None:
+        delivery._append_tool_result(
+            messages, context, tc.id, tc.name,
+            deliver_tool_result(result, self.env.memory.run_dir, self.env.registry),
+            status="ok", elapsed_ms=0,
+        )
+        self.record_success(tc.id, key)
 
     def deliver_cached(self, tc, tool_def, is_repeatable, dedup_key, context, messages, trace, iteration, delivery):
         """Deliver or skip an already authorized call when its replay policy permits."""
@@ -150,24 +154,14 @@ class ToolReplay:
             and dedup_key in self._readonly_replay_cache
         ):
             cached = self._readonly_replay_cache[dedup_key]
-            restored = _replay_context_result(cached)
-            delivery._append_tool_result(
-                messages, context, tc.id, tc.name,
-                deliver_tool_result(restored, self.env.memory.run_dir, self.env.registry),
-                status="ok", elapsed_ms=0,
-            )
+            self._append_cached_result(delivery, tc, context, messages, _replay_context_result(cached), dedup_key)
             self._readonly_replay_visibility_pending.add(tc.id)
-            self._successful_call_keys[tc.id] = dedup_key
-            self._called_ok.add(dedup_key)
             self._readonly_replay_ready.discard(dedup_key)
             self._readonly_replay_recoveries += 1
-            # A repeatable tool would otherwise re-fetch on the very next
-            # identical call; the restored payload is visible now, so that
-            # call is refused until compaction removes it again.
+            # Refuse identical repeats while restored evidence is still visible.
             if getattr(tool_def, "repeatable", False):
                 self._readonly_replay_protected.add(dedup_key)
-            # Restoring data that compaction removed is forward progress for
-            # the working context, but not a new external observation.
+            # Restoring evidence advances context without creating a new observation.
             delivery.progress.mark_context_restored()
             trace.write({
                 "type": "tool_result_replayed",
@@ -208,13 +202,7 @@ class ToolReplay:
         # Deterministic results can be reused after authorization and compaction.
         if getattr(tool_def, "deterministic", False) and dedup_key in self._called_identical:
             cached = self._called_identical[dedup_key]
-            delivery._append_tool_result(
-                messages, context, tc.id, tc.name,
-                deliver_tool_result(cached, self.env.memory.run_dir, self.env.registry),
-                status="ok", elapsed_ms=0,
-            )
-            self._successful_call_keys[tc.id] = dedup_key
-            self._called_ok.add(dedup_key)
+            self._append_cached_result(delivery, tc, context, messages, cached, dedup_key)
             trace.write({"type": "tool_result_cached", "iter": iteration, "tool": tc.name, "call_id": tc.id})
             delivery.progress.note("cached", tc.name)
             delivery._emit_tool_completed(tc, "ok", 0, cached[:200], cached=True)
@@ -228,18 +216,14 @@ class ToolReplay:
         except Exception:  # noqa: BLE001
             tool_def = None
         cache_key = self._identical_call_key(tc.name, tc.arguments)
-        if tool_def is not None and getattr(tool_def, "deterministic", False):
-            if cache_key is not None:
+        if cache_key is not None:
+            if getattr(tool_def, "deterministic", False):
                 self._called_identical[cache_key] = result
-        elif (
-            cache_key is not None
-            and self._readonly_replay_allowed(tool_def, tc.arguments)
-        ):
-            self._readonly_replay_cache[cache_key] = result
+            elif self._readonly_replay_allowed(tool_def, tc.arguments):
+                self._readonly_replay_cache[cache_key] = result
         # Its payload is visible again, so nothing is waiting to be restored.
         self._readonly_replay_ready.discard(cache_key)
-        # A write can change what a readonly call reads (a factor file, a
-        # config), so no result cached before it may be replayed after it.
+        # Writes invalidate previously cached reads.
         if update_memory and not self._is_tool_readonly(tc.name):
             self._readonly_replay_cache.clear()
             self._readonly_replay_ready.clear()

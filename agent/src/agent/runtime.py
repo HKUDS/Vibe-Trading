@@ -79,24 +79,7 @@ class AgentRuntime:
         local_thread_path: Path | None = None,
         pacing_type: type[TurnPacing] = TurnPacing,
     ) -> None:
-        """Compose a turn runtime.
-
-        Args:
-            registry: Tool registry.
-            llm: ChatLLM client.
-            memory: Workspace memory (created fresh if not provided).
-            event_callback: Event callback (event_type, data).
-            max_iterations: Maximum research iterations, plus one text-only answer retry.
-            persistent_memory: PersistentMemory for cross-session recall.
-            cancel_event: Host-owned flag shared with long-running tools.
-            background_manager: Scoped handle shared with the registry's tools.
-            thread_recorder: Durable item sink carrying identity, tools and
-                offloaded results across turns. Optional for standalone runs.
-            queued_inputs: User input source drained between tool batches.
-            system_prompt: A host-supplied prompt with a fixed tool catalog.
-            local_thread_path: A private durable thread for an isolated task.
-            pacing_type: Turn delivery policy selected by the caller.
-        """
+        """Compose a turn runtime."""
         self._owns_recorder = thread_recorder is None
         self._system_prompt = system_prompt
         self._local_thread_path = local_thread_path
@@ -121,8 +104,7 @@ class AgentRuntime:
         self._event_callback = event_callback
         self.max_iterations = max_iterations
         self.activity = RunActivity(cancel_event if cancel_event is not None else threading.Event())
-        # Resolved once, not per iteration: an unowned handle is private to
-        # itself, so re-deriving it would silently discard this loop's results.
+        # Resolving a private background handle again would lose prior results.
         self._background_manager = (
             background_manager
             or getattr(registry, "background", None)
@@ -154,25 +136,25 @@ class AgentRuntime:
         self.tools = ToolExecution(self.tool_env, self.replay, self.delivery, self.invocation,
                                    self.activity.cancel, self._context_compactor._context_budget,
                                    self._context_compactor._prompt_tokens)
-        swarm_tool = self.registry.get("run_swarm")
-        bind_turn_cancel = getattr(swarm_tool, "bind_turn_cancel", None)
-        if callable(bind_turn_cancel):
-            bind_turn_cancel(self.activity.cancel)
-        bind_turn_usage = getattr(swarm_tool, "bind_turn_usage", None)
-        if callable(bind_turn_usage):
-            bind_turn_usage(self.usage.capture_swarm_usage)
-        spawn_agent = self.registry.get("spawn_agent")
-        set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
-        if callable(set_usage_callback):
-            set_usage_callback(self.usage.record_subagent)
+        for name, method, callback in (
+            ("run_swarm", "bind_turn_cancel", self.activity.cancel),
+            ("run_swarm", "bind_turn_usage", self.usage.capture_swarm_usage),
+            ("spawn_agent", "set_usage_callback", self.usage.record_subagent),
+        ):
+            bind = getattr(self.registry.get(name), method, None)
+            if callable(bind):
+                bind(callback)
 
     def request_backoff(self, streak: int) -> float:
+        """Return the retry delay for this host."""
         return _stream_retry_backoff_s(streak)
 
     def request_max_delay(self) -> float:
+        """Return this host's retry delay cap."""
         return _stream_retry_max_delay_s()
 
     def run_limits(self) -> RunLimits:
+        """Build the kernel limits, including the host's truncation reasons."""
         return RunLimits(self.max_iterations)
 
     def _should_stop(self) -> bool:
@@ -182,22 +164,12 @@ class AgentRuntime:
         """Request cooperative cancellation and stop owned background work."""
         self.activity.cancel.set()
         self._run_hook("Stop", {"session_id": self.tool_env.session_id})
-        # Stop must reach commands the current or an earlier turn spawned, not
-        # only the ReAct cycle. Normal successful turns do not call cancel().
+        # Stop also reaches commands started by earlier turns.
         if self._background_manager is not None:
             self._background_manager.cancel_all()
 
     def run(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
-        """Run a turn with its provider session ID bound through cleanup.
-
-        Args:
-            user_message: User message.
-            history: Prior conversation messages.
-            session_id: Session ID.
-
-        Returns:
-            Execution result dict.
-        """
+        """Run a turn with its provider session ID bound through cleanup."""
         token = bind_llm_session_id(session_id)
         result = None
         try:
@@ -231,19 +203,14 @@ class AgentRuntime:
 
     def _run_bound(self, user_message: str, history: Optional[list[ModelMessage]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run a turn with the LLM session already bound."""
-        # Preserve cancellation accepted while the first run is queued.  A
-        # completed loop may still be reused deliberately, so clear terminal
-        # state only after the first run has begun.
+        # Keep cancellation accepted while the first turn was queued.
         self.tool_env.session_id = session_id
         if self._has_run:
             self.activity.cancel.clear()
         else:
             self._has_run = True
-        self.replay.reset()
-        self.invocation.reset()
-        self.delivery.reset()
-        self._context_compactor.reset()
-        self._write_targets.reset()
+        for component in (self.replay, self.invocation, self.delivery, self._context_compactor, self._write_targets):
+            component.reset()
         self.goals.stop_reason = None
         self.activity.start()
         self._conversation.turn_messages = None
@@ -355,10 +322,7 @@ class AgentRuntime:
         trace.prepare_workspace(run_dir)
 
         self.tool_env.data_window = UserDataWindow.parse(user_message)
-        # Authorization carried from an earlier turn comes only from the
-        # ledger's own exported records. Replayed history (tool results, the
-        # model's prose) is never parsed for symbols; for resolver constraints
-        # the ledger reads what the user typed, as it did before replay.
+        # History only narrows constraints and cannot carry authorization.
         self.tool_env.identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,
@@ -387,7 +351,6 @@ class AgentRuntime:
             recorded_user = {"role": "user", "content": llm_user_message}
             messages = [{"role": "system", "content": self._system_prompt}, *(history or [recorded_user])]
         self._conversation.turn_messages = messages
-        # Persist the exact enriched prompt for later replay.
         trace.start(
             prompt=user_message,
             message=recorded_user,

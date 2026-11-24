@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 from datetime import datetime, timezone
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from src.kernel.contracts import ModelMessage
+from src.providers.messages import assistant_message
 from src.product.resources.instructions import build_instruction_block
 from src.product.resources.memory import WorkspaceMemory
 from src.product.resources.skills import SkillsLoader
@@ -21,8 +21,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Backtest attribution thresholds (Sharpe/MaxDD bands and the 60-day OLS
-# window) live in the strategy-generate skill and load only for explicit requests.
+# Attribution thresholds live in strategy-generate and load only for explicit backtest requests.
 _SYSTEM_PROMPT = """You are Vibe Trading's finance research agent. Answer the user's question first, then deepen only when the user explicitly asks for research, a backtest, or a report.
 
 ## Request Triage
@@ -152,29 +151,13 @@ _MEMORY_SECTION = """
 
 
 class ContextBuilder:
-    """Builds message context for AgentRuntime.
-
-    Attributes:
-        registry: Tool registry.
-        memory: Workspace memory.
-        skills_loader: Skills loader.
-    """
+    """Builds message context for AgentRuntime."""
 
     def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
                  skills_loader: Optional[SkillsLoader] = None,
                  persistent_memory: Optional[PersistentMemory] = None,
                  instruction_launch_dir: Optional[Path] = None) -> None:
-        """Initialize ContextBuilder.
-
-        Args:
-            registry: Tool registry.
-            memory: Workspace memory.
-            skills_loader: Skills loader (auto-created if not provided).
-            persistent_memory: PersistentMemory instance for cross-session recall.
-            instruction_launch_dir: Directory a CLI run was launched from; its
-                ``AGENTS.md`` is loaded too. ``None`` (API, channel, scheduler)
-                reads only the runtime root.
-        """
+        """Initialize ContextBuilder."""
         self.instruction_launch_dir = instruction_launch_dir
         self.registry = registry
         self.memory = memory
@@ -182,24 +165,14 @@ class ContextBuilder:
         self._persistent_memory = persistent_memory
 
     def build_system_prompt(self, user_message: str = "") -> str:
-        """Build the stable prompt from skill summaries, static instructions and the memory snapshot.
-
-        Args:
-            user_message: User message (kept for API compatibility).
-
-        Returns:
-            System prompt text.
-        """
-        # Build memory section only if there are saved memories
+        """Build the stable prompt from skill summaries, static instructions and the memory snapshot."""
         memory_section = ""
         if self._persistent_memory and self._persistent_memory.snapshot:
             memory_section = _MEMORY_SECTION.format(
                 snapshot=self._persistent_memory.snapshot,
             )
 
-        # Strategy-discovery routing text is injected only when all three
-        # discovery tools are actually registered (phantom-tool fail-safe),
-        # and prompt construction must never break startup.
+        # Keep tools absent from the registry out of routing instructions.
         try:
             from src.strategy_discovery.guard import routing_block
 
@@ -229,22 +202,13 @@ class ContextBuilder:
         )
 
     def build_messages(self, user_message: str, history: Optional[list[ModelMessage]] = None) -> list[ModelMessage]:
-        """Put volatile workspace state and memory recall in the user message to preserve the prompt cache.
-
-        Args:
-            user_message: User message.
-            history: Prior conversation messages.
-
-        Returns:
-            OpenAI-format message list.
-        """
+        """Put volatile workspace state and memory recall in the user message to preserve the prompt cache."""
         messages: list[ModelMessage] = [
             {"role": "system", "content": self.build_system_prompt(user_message)},
         ]
         if history:
             messages.extend(history)
 
-        # Auto-recall: inject relevant memories into user message
         enriched = user_message
         if self._persistent_memory:
             try:
@@ -259,10 +223,7 @@ class ContextBuilder:
             except Exception as exc:
                 logger.debug("Auto-recall failed: %s", exc)
 
-        # Date and workspace state ride in the first user message so the
-        # system prompt stays byte-stable across turns. The date is resolved
-        # at message-build time with minute precision, alongside the existing
-        # agent-state envelope.
+        # Keep volatile date and workspace state out of the cached system prompt.
         state_summary = self.memory.to_summary()
         volatile_lines = [
             f"- current-date-time: {datetime.now(timezone.utc).strftime('%A, %B %d, %Y %H:%M UTC')}"
@@ -309,24 +270,8 @@ class ContextBuilder:
         reasoning_content: Optional[str] = None,
         provider_items: Optional[list] = None,
     ) -> ModelMessage:
-        """Format an assistant tool_calls message, preserving thinking text.
-
-        Args:
-            tool_calls: List of tool call objects.
-            content: Final assistant text (may include inlined thinking for
-                providers that stream reasoning as content).
-            reasoning_content: Provider-specific reasoning field (Kimi K2.5,
-                DeepSeek reasoner, Qwen thinking). Only attached to the output
-                message when not None, so non-thinking providers see no change.
-            provider_items: Opaque items the provider must receive back verbatim
-                with this turn (Codex encrypted reasoning). Attached only when
-                non-empty; only the adapter that produced them reads them.
-
-        Returns:
-            OpenAI-format assistant message.
-        """
+        """Format an assistant tool_calls message, preserving thinking text."""
         formatted_tool_calls = []
-        has_extra_content = False
         for tc in tool_calls:
             tool_call = {
                 "id": tc.id,
@@ -339,20 +284,13 @@ class ContextBuilder:
             extra_content = getattr(tc, "extra_content", None)
             if extra_content:
                 tool_call["extra_content"] = dict(extra_content)
-                has_extra_content = True
             formatted_tool_calls.append(tool_call)
 
-        message = {
-            "role": "assistant",
+        message = assistant_message({
             "content": content,
             "tool_calls": formatted_tool_calls,
-        }
-        if has_extra_content:
-            message["additional_kwargs"] = {
-                "tool_calls": copy.deepcopy(formatted_tool_calls),
-            }
-        if reasoning_content is not None:
-            message["reasoning_content"] = reasoning_content
-        if provider_items:
-            message["provider_items"] = list(provider_items)
+            "reasoning_content": reasoning_content,
+            "provider_items": provider_items,
+        })
+        message.setdefault("tool_calls", [])
         return message

@@ -3,21 +3,7 @@ import json
 
 
 def _verification_ledger(messages: list) -> str:
-    """Extract terse deterministic-verification records from a message list.
-
-    Walks the conversation for successful financial_rigor tool results
-    (the deterministic calculator/verifier) and renders each as a short
-    "already verified" line. Re-attached to the compressed context after
-    auto-compact so the model does not re-run identical expressions it can
-    no longer see (2026-08-20 INTC run re-ran the same calcs 5-9x each
-    after compaction cleared the outputs).
-
-    Args:
-        messages: Message list to scan (tool results only).
-
-    Returns:
-        Newline-joined ledger lines, or an empty string when nothing found.
-    """
+    """Extract terse deterministic-verification records from a message list."""
     lines: list[str] = []
     for msg in messages:
         if msg.get("role") != "tool":
@@ -53,13 +39,4 @@ def _verification_ledger(messages: list) -> str:
             reliable = payload.get("reliable")
             conformity = payload.get("conformity", "?")
             lines.append(f"benford reliable={reliable} conformity={conformity}")
-    # Deduplicate while preserving order; cap the ledger size.
-    seen: set[str] = set()
-    unique: list[str] = []
-    for line in lines:
-        if line not in seen:
-            seen.add(line)
-            unique.append(line)
-        if len(unique) >= 60:
-            break
-    return "\n".join(unique)
+    return "\n".join(list(dict.fromkeys(lines))[:60])
