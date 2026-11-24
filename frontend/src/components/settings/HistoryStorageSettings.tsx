@@ -16,6 +16,7 @@ export function HistoryStorageSettings() {
     kr_equity: t("settings.sourcePriority.markets.kr_equity"),
     ca_equity: t("settings.sourcePriority.markets.ca_equity"),
     vietnam_equity: t("settings.sourcePriority.markets.vietnam_equity"),
+    europe_equity: t("settings.sourcePriority.markets.europe_equity"),
     ar_equity: t("settings.sourcePriority.markets.ar_equity"),
     br_equity: t("settings.sourcePriority.markets.br_equity"),
     uk_equity: t("settings.sourcePriority.markets.uk_equity"),
