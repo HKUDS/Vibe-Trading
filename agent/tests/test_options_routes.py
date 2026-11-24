@@ -196,6 +196,71 @@ def test_payoff_unexpected_tool_exception_maps_to_502(
     assert r.json() == {"ok": False, "error": "payoff computation failed"}
 
 
+def _strategy_compare_body(**over: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "strategies": [
+            {
+                "name": "lower_premium",
+                "legs": [{"option_type": "call", "strike": 100.0, "qty": 1, "premium": 5.0}],
+            },
+            {
+                "name": "higher_premium",
+                "legs": [{"option_type": "call", "strike": 100.0, "qty": 1, "premium": 10.0}],
+            },
+        ],
+        "baseline_index": 1,
+        "entry_spot": 100.0,
+        "expiry_days": 30.0,
+        "commission_rate": 0.0,
+        "spot_min": 80.0,
+        "spot_max": 120.0,
+        "spot_points": 21,
+    }
+    body.update(over)
+    return body
+
+
+def test_strategy_compare_preserves_pair_order_and_shared_delta_grid() -> None:
+    r = _client().post("/options/strategy-compare", json=_strategy_compare_body())
+
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["comparison"] == {"baseline_index": 1, "baseline_name": "higher_premium"}
+    assert [entry["name"] for entry in payload["strategies"]] == ["lower_premium", "higher_premium"]
+    assert payload["expiry_curve"]["delta_to_baseline"]["lower_premium"] == pytest.approx([5.0] * 21)
+    for row in payload["scenario_grid"]["delta_to_baseline"]["lower_premium"]:
+        assert row == pytest.approx([5.0] * 21)
+
+
+def test_strategy_compare_rejects_boolean_baseline() -> None:
+    r = _client().post("/options/strategy-compare", json=_strategy_compare_body(baseline_index=True))
+    assert r.status_code == 422
+
+
+def test_strategy_compare_duplicate_names_map_to_tool_error() -> None:
+    body = _strategy_compare_body()
+    body["strategies"][1]["name"] = "lower_premium"
+
+    r = _client().post("/options/strategy-compare", json=body)
+
+    assert r.status_code == 400
+    assert "unique" in r.json()["error"]
+
+
+def test_strategy_compare_unexpected_tool_exception_maps_to_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(self: Any, **kwargs: Any) -> str:
+        raise RuntimeError("comparison engine exploded")
+
+    monkeypatch.setattr("src.api.options_routes.OptionsStrategyCompareTool.execute", explode)
+
+    r = _client().post("/options/strategy-compare", json=_strategy_compare_body())
+
+    assert r.status_code == 502
+    assert r.json() == {"ok": False, "error": "strategy comparison failed"}
+
+
 def _surface_body(**over: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "observations": [

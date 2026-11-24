@@ -131,6 +131,11 @@ _CANONICAL_SYMBOL_RE = re.compile(
     # _market_hooks._MARKET_PATTERNS); test_market_identity_parity keeps the
     # two in step, because .L / .VN / .BA each landed there without landing here.
     r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V|BA|SA|L|VN)|"
+    # European venues, case-SENSITIVE for the same reason as US. above: a
+    # folded match would read any ".de" host in a source URL
+    # (www.boerse-frankfurt.de) as a Xetra symbol. Codes may start with a
+    # digit (1COV.DE).
+    r"(?-i:[A-Z0-9][A-Z0-9&-]{0,19}\.(?:DE|PA|AS|MI|SW|WA))|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"[A-Z]{2,15}(?:" + "|".join(_JOINED_CRYPTO_QUOTE_SUFFIXES) + r")|"
     r"\^[A-Z0-9&.\-]{1,20}|"
@@ -263,6 +268,12 @@ def _infer_venue(symbol: str) -> str | None:
         ".VN": "hose",
         ".TW": "twse",
         ".TWO": "tpex",
+        ".DE": "xetra",
+        ".PA": "euronext_paris",
+        ".AS": "euronext_amsterdam",
+        ".MI": "borsa_italiana",
+        ".SW": "six",
+        ".WA": "gpw",
     }
     for suffix, venue in suffixes.items():
         if upper.endswith(suffix):
@@ -334,6 +345,14 @@ def _infer_currency(symbol: str) -> str | None:
         ".VN": "VND",
         ".TW": "TWD",
         ".TWO": "TWD",
+        # One table with the backtest's europe_venue_currency(): the loaders
+        # hold each venue's lines to this currency.
+        ".DE": "EUR",
+        ".PA": "EUR",
+        ".AS": "EUR",
+        ".MI": "EUR",
+        ".SW": "CHF",
+        ".WA": "PLN",
     }
     for suffix, currency in suffixes.items():
         if upper.endswith(suffix):

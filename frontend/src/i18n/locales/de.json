@@ -1146,6 +1146,7 @@
         "ca_equity": "Kanada-Aktien",
         "taiwan_equity": "Taiwanesische Aktien",
         "vietnam_equity": "Vietnam-Aktien",
+        "europe_equity": "Europäische Aktien",
         "ar_equity": "Argentinien-Aktien",
         "br_equity": "Brasilien-Aktien",
         "uk_equity": "UK-Aktien",
@@ -1487,6 +1488,7 @@
         "uk_equity": "UK-Aktien",
         "taiwan_equity": "Taiwanesische Aktien",
         "vietnam_equity": "Vietnam-Aktien",
+        "europe_equity": "Europäische Aktien",
         "other": "Sonstige"
       }
     },
@@ -1766,7 +1768,10 @@
       "entry_cost_return": "Einstiegskosten / Aktiennominalwert",
       "higher": "Höher",
       "lower": "Niedriger",
-      "equal": "Gleich"
+      "equal": "Gleich",
+      "scenarioBasis": "Beide Strategien verwenden die abgeschlossene Anfrage und ein gemeinsames Spot-×-IV-Raster. Delta ist Strategie minus Basis, rein deskriptiv.",
+      "deltaGrid": "P&L-Differenz",
+      "gridCapped": "Vergleichsraster verwenden höchstens {{count}} Kurs­punkte."
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "Fehlgeschlagen",
     "report": "Forschungsbericht",
     "download": "JSON herunterladen",
+    "downloadOosCsv": "CSV zur Kapitalentwicklung außerhalb der Stichprobe",
     "scenario": "Szenario",
     "return": "Rendite",
     "drawdown": "Drawdown",

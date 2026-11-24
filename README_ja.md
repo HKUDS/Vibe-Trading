@@ -66,6 +66,10 @@
 
 ## 📰 ニュース
 
+- **2026-11-23** 🛠️ **研究の再現性向上と対応市場の拡大** — 研究ラボでは、固定した研究結果を再実行する際に元の外部ベンチマーク価格を使い、ウォークフォワード検証のアウト・オブ・サンプル資産曲線を CSV で出力できます。 [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
+  オプションラボでは、保存済みの二つの戦略を、原資産価格とインプライド・ボラティリティの共通グリッドで比較できます。Yahoo Finance が扱う欧州六市場の株式と ETF で、銘柄検索と価格データの取得に対応しました。 [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
+  OpenAlgo では口座と保有ポジションを読み取り専用で照会できます。CLI から別プロセスで動作中のバックグラウンド Swarm を取り消せます。**`main` に反映済みです。** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
+
 - **2026-11-22** 🛠️ **バックテストの精度向上とオプション分析のエクスポート拡充** — 研究ラボのウォークフォワード分析では、元の評価日だけを採点し、それ以前の足は指標のウォームアップに使えます。外部ベンチマークの価格が負になっても、資産曲線と報告収益率は一致します。暗号資産の無期限先物では、日中足の資金調達料を UTC の 00:00、08:00、16:00 に計上します。 [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   オプション分析の CSV に、保存した代替戦略と比較結果が含まれます。ローカルの日足データでは `timestamp_basis: session_date` を指定して取引所の日付を保持できます。 [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   定期配信は新しいジョブ状態を保持し、Signal の同名添付ファイルは個別に保存します。ジョブの復旧処理は Windows x64 と ARM64 のネイティブテストに合格しました。 **`main` に反映済みで、次回の pip リリースに含まれます。** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
@@ -252,6 +256,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | mstock | ✓ | — | — |
 | mt5 | ✓ | ✓ | ✓ |
 | okx | ✓ | ✓ | ✓ |
+| openalgo | ✓ | — | — |
 | robinhood | ✓ | — | ✓ |
 | scalable | ✓ | — | — |
 | shoonya | ✓ | ✓ | — |

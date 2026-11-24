@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import json
 import io
+import json
 import os
 import shutil
 from pathlib import Path
@@ -13,6 +13,14 @@ from typing import Any
 
 import pandas as pd
 
+from backtest.frozen import (
+    BENCHMARK_PRICE_ARTIFACT,
+    BENCHMARK_PRICE_FILENAME,
+    frozen_benchmark_entry,
+    read_benchmark_prices,
+    read_frozen_input,
+    write_benchmark_prices,
+)
 from src.config.paths import get_runs_dir
 from src.core.runner import Runner
 from src.tools.backtest_tool import _backtest_timeout_seconds
@@ -131,6 +139,29 @@ def freeze_run(
         "strategy_sha256": strategy_hash,
         "config_sha256": config_hash,
     }
+    if "benchmark_input" in card:
+        reference = card["benchmark_input"]
+        if (
+            not isinstance(reference, dict)
+            or reference.get("path") != BENCHMARK_PRICE_ARTIFACT
+            or BENCHMARK_PRICE_ARTIFACT not in entries
+        ):
+            raise ValueError("source run has no manifested benchmark prices; rerun its backtest")
+        ticker = reference.get("ticker")
+        if not isinstance(ticker, str) or not ticker or ticker != card.get("metrics", {}).get("benchmark_ticker"):
+            raise ValueError("source benchmark prices do not match its recorded ticker")
+        entry = entries[BENCHMARK_PRICE_ARTIFACT]
+        raw = read_frozen_input(run, entry, "benchmark")
+        prices = read_benchmark_prices(raw, reference.get("timezone"))
+        (snapshot / BENCHMARK_PRICE_FILENAME).write_bytes(raw)
+        manifest["benchmark_input"] = {
+            "ticker": ticker,
+            "path": BENCHMARK_PRICE_FILENAME,
+            "sha256": entry["sha256"],
+            "rows": len(prices),
+        }
+        if reference.get("timezone") is not None:
+            manifest["benchmark_input"]["timezone"] = reference["timezone"]
     manifest_path = snapshot / "manifest.json"
     if calendar is None or len(calendar) < 2:
         raise ValueError("snapshot needs at least two trading bars")
@@ -169,6 +200,14 @@ def freeze_run(
     return config, manifest_path, calendar.sort_values(), strategy_hash
 
 
+def _snapshot_price_entries(manifest: dict):
+    for entry in manifest["frames"].values():
+        yield entry, False
+    reference = frozen_benchmark_entry(manifest)
+    if reference is not None:
+        yield reference, True
+
+
 def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: dict | None = None) -> dict:
     """Execute a real sandboxed engine trial and return persisted measurements."""
     root = study / "trials" / name
@@ -190,19 +229,22 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
     parent_hash = hashlib.sha256(parent_bytes).hexdigest()
     parent_snapshot = json.loads(parent_bytes)
     frozen = json.loads(parent_bytes)
-    for entry in frozen["frames"].values():
+    for entry, is_benchmark in _snapshot_price_entries(frozen):
         source = manifest.parent / entry["path"]
         target = local_snapshot / entry["path"]
-        raw = source.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
-            raise ValueError("sealed prices changed before trial execution")
-        frame = pd.read_csv(io.BytesIO(raw), index_col=0, parse_dates=True)
+        raw = read_frozen_input(manifest.parent, entry, "benchmark" if is_benchmark else "portfolio")
+        if is_benchmark:
+            frame = read_benchmark_prices(raw, entry.get("timezone"))
+        else:
+            frame = pd.read_csv(io.BytesIO(raw), index_col=0, parse_dates=True)
         visible = frame.loc[settings["start_date"] : settings["end_date"]]
         if len(visible) == len(frame):
             try:
                 os.link(source, target)
             except OSError:
                 shutil.copyfile(source, target)
+        elif is_benchmark:
+            write_benchmark_prices(target, visible)
         else:
             visible.to_csv(target)
         entry.update(sha256=digest(target), rows=len(visible))
@@ -225,8 +267,9 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
         raise ValueError(f"trial {name} failed; inspect its logs in {root}")
     if digest(manifest) != parent_hash or digest(manifest.parent / "signal_engine.py") != parent_snapshot["strategy_sha256"]:
         raise ValueError("sealed manifest or strategy changed during trial execution")
-    for entry in parent_snapshot["frames"].values():
-        if digest(manifest.parent / entry["path"]) != entry["sha256"]:
+    for entry, _ in _snapshot_price_entries(parent_snapshot):
+        path = manifest.parent / entry["path"]
+        if not path.is_file() or digest(path) != entry["sha256"]:
             raise ValueError("sealed prices changed during trial execution")
     card = json.loads((root / "run_card.json").read_text())
     equity = pd.read_csv(root / "artifacts/equity.csv", index_col=0, parse_dates=True)
@@ -246,10 +289,18 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
     }
     if not metrics:
         raise ValueError(f"trial {name} produced no structured metrics")
+    card_metrics = card.get("metrics", {})
+    benchmark = {
+        key.removeprefix("benchmark_"): card_metrics[key]
+        for key in ("benchmark_kind", "benchmark_label", "benchmark_ticker", "benchmark_return")
+        if key in card_metrics
+    }
+    if benchmark:
+        benchmark["frozen_input_used"] = "benchmark_input" in card
     return {
         "run_dir": str(root),
         "metrics": metrics,
         "equity": equity,
-        "benchmark": card.get("benchmark"),
+        "benchmark": benchmark or None,
         "config": settings,
     }
