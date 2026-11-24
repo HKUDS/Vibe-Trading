@@ -1,16 +1,4 @@
-"""First-launch onboarding wizard.
-
-Triggered automatically when ``~/.vibe-trading/.env`` does not exist. Five
-back-steppable steps (provider → model → key → timeout → optional Tushare),
-matching §3.2 of the 2026-05-19 UI/UX design proposal.
-
-Each step persists immediately to ``~/.vibe-trading/.env.partial`` and the
-file is atomically renamed to ``.env`` only on completion, so a crash mid-
-wizard never leaves a corrupt ``.env`` behind. API key entry is masked.
-
-Prefers ``questionary`` when available; otherwise drives prompt_toolkit
-directly so Esc / Left-arrow can be bound to a back-step sentinel.
-"""
+"""First-launch onboarding wizard."""
 
 from __future__ import annotations
 
@@ -100,11 +88,7 @@ def _finalize(values: dict[str, str]) -> Path:
 def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
                        default_index: int = 0,
                        console: Console | None = None) -> str | object:
-    """Vertically-scrollable selector. Returns chosen value, BACK, or CANCEL.
-
-    Keybindings: ↑/↓ navigate, Enter confirm, Esc/← back, Ctrl+C cancel.
-    Falls back to a numeric stdin prompt if prompt_toolkit is unavailable.
-    """
+    """Vertically-scrollable selector."""
     cons = console or get_console()
     cons.print()
     cons.print(Text(f"? {prompt}", style=Theme.label))
@@ -314,11 +298,7 @@ def _intro_header(console: Console) -> None:
 
 
 def run_onboarding(*, console: Console | None = None) -> Path | None:
-    """Run the 5-step wizard. Returns the written ``.env`` path or None.
-
-    Returns ``None`` when the user cancels (Ctrl+C / Esc at step 1) so the
-    caller can exit cleanly without writing a partial config.
-    """
+    """Run the 5-step wizard."""
     cons = console or get_console()
     _intro_header(cons)
 

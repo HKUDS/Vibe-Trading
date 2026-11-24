@@ -47,15 +47,7 @@ def cmd_connector_list() -> int:
 
 
 def cmd_connector_init(connector_id: str, destination: str = ".") -> int:
-    """Create a local-only read connector template.
-
-    Args:
-        connector_id: Lowercase connector id used for the template directory.
-        destination: Parent directory the template is created in.
-
-    Returns:
-        The process exit code.
-    """
+    """Create a local-only read connector template."""
     from src.trading.plugin_scaffold import scaffold_connector
 
     try:
@@ -72,14 +64,7 @@ def cmd_connector_init(connector_id: str, destination: str = ".") -> int:
 
 
 def cmd_connector_validate(directory: str) -> int:
-    """Validate a local read-only connector manifest.
-
-    Args:
-        directory: Directory holding the connector manifest.
-
-    Returns:
-        The process exit code.
-    """
+    """Validate a local read-only connector manifest."""
     from src.trading.plugin_scaffold import validate_connector
 
     try:
@@ -92,14 +77,7 @@ def cmd_connector_validate(directory: str) -> int:
 
 
 def cmd_connector_install(directory: str) -> int:
-    """Install a validated connector into the user's private connector directory.
-
-    Args:
-        directory: Directory holding the validated connector.
-
-    Returns:
-        The process exit code.
-    """
+    """Install a validated connector into the user's private connector directory."""
     from src.trading.plugin_scaffold import install_connector
 
     try:
@@ -272,22 +250,7 @@ def cmd_connector_setup(
     host: str | None = None,
     port: int | None = None,
 ) -> int:
-    """Create a local read-only connection and collect secrets outside AI prompts.
-
-    Args:
-        profile_id: Read-only portfolio profile to connect through.
-        connection_id: Local id; defaults to ``<connector>-<environment>``.
-        label: Display name; defaults to the profile label.
-        skip_check: Skip the connectivity check (and, for an account-scoped
-            profile, the account selection that needs the broker).
-        account: Account to scope an account-scoped connection to; without it
-            the user picks from the broker's account list.
-        host: Optional connection-specific IBKR/Futu gateway host; requires port.
-        port: Optional connection-specific gateway port; requires host.
-
-    Returns:
-        The process exit code.
-    """
+    """Create a local read-only connection and collect secrets outside AI prompts."""
     from dataclasses import replace
 
     from src.trading.connections import (
@@ -373,19 +336,7 @@ def cmd_connector_select_account(
     account: str | None = None,
     clear: bool = False,
 ) -> int:
-    """Scope an account-scoped connection to one account from the broker's list.
-
-    There is no default: without ``account`` the user picks from the list, and
-    an account the broker does not list is refused.
-
-    Args:
-        connection_id: Connection to update.
-        account: Account reference to select; prompts when omitted.
-        clear: Remove the selection instead.
-
-    Returns:
-        The process exit code.
-    """
+    """Scope an account-scoped connection to one account from the broker's list."""
     from src.trading.accounts import AccountListUnavailable, choose_account, connection_accounts
     from src.trading.connections import ConnectionStore
 
@@ -429,13 +380,7 @@ def cmd_connector_select_account(
 
 
 def _first_present(row: dict[str, common.Any], *keys: str) -> common.Any:
-    """Return the first key whose value is not None (0/'' are kept), else None.
-
-    Connectors expose different result schemas (IBKR-style ``position``/``avg_cost``
-    vs Longbridge-style ``quantity``/``cost_price``); the shared CLI renderers use
-    this to read whichever key a given connector emitted without dropping a real
-    zero quantity via a falsy ``or`` chain.
-    """
+    """Return the first key whose value is not None (0/'' are kept), else None."""
     for key in keys:
         value = row.get(key)
         if value is not None:
@@ -444,15 +389,7 @@ def _first_present(row: dict[str, common.Any], *keys: str) -> common.Any:
 
 
 def _print_connector_balances(result: dict[str, common.Any]) -> int:
-    """Render the ``balances`` list returned by ``broker_sdk`` connectors.
-
-    Two row shapes arrive here. Longbridge reports one row per currency with
-    net assets, cash, buying power and margins. ccxt (Binance spot) reports one
-    row per asset with ``free`` / ``used`` / ``total``, where ``used`` is locked
-    in open orders. Each shape gets its own columns: read through the other
-    one's keys, every cell was empty (#1539), and a coin quantity is not a
-    net-asset figure.
-    """
+    """Render the ``balances`` list returned by ``broker_sdk`` connectors."""
     cell = lambda v: "" if v is None else str(v)  # noqa: E731
     rows = result.get("balances", [])
     if any("asset" in row for row in rows):
@@ -492,11 +429,7 @@ def _print_connector_balances(result: dict[str, common.Any]) -> int:
 
 
 def _print_balance_details(rows: list[dict[str, common.Any]]) -> None:
-    """Print broker cash legs and financing in each reported currency.
-
-    Args:
-        rows: Balance rows from a connector or a saved portfolio snapshot.
-    """
+    """Print broker cash legs and financing in each reported currency."""
     cell = lambda value: "—" if value is None else common.rich_escape(str(value))  # noqa: E731
     for row in rows:
         if not row.get("cash_infos") and all(row.get(key) is None for key in (
@@ -542,16 +475,7 @@ def _print_connector_assets(result: dict[str, common.Any]) -> int:
 
 
 def _normalize_mcp_value(value: common.Any) -> common.Any:
-    """Unwrap a value from a remote MCP call into plain JSON-safe data.
-
-    Remote connectors (e.g. Robinhood) return their payload as an instance of
-    ``fastmcp``'s auto-generated ``Root`` type — a *dataclass* built at runtime
-    via ``dataclasses.make_dataclass`` from the tool's JSON Schema, not a
-    Pydantic model. ``dataclasses.asdict()`` is the correct unwrap (it also
-    recurses into nested dataclass fields, e.g. ``buying_power``); a stray
-    Pydantic model elsewhere falls back to ``model_dump()``. Anything else
-    (already a dict/list/scalar) is returned as-is.
-    """
+    """Unwrap a value from a remote MCP call into plain JSON-safe data."""
     import dataclasses
 
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -576,15 +500,7 @@ def _flatten_account_fields(
     *,
     skip_zero: bool = True,
 ) -> list[tuple[str, str]]:
-    """Flatten a remote-MCP account payload into (tag, value) rows.
-
-    Nested one level (e.g. ``buying_power.buying_power``) rather than
-    recursing arbitrarily deep, since broker account payloads are shallow.
-    Skips ``None``. By default it also skips zero-valued numeric-looking fields,
-    matching remote-MCP guidance where zero means an absent asset-class balance.
-    Direct SDK account summaries can disable that behavior because a zero or
-    false risk/status field is meaningful account state.
-    """
+    """Flatten a remote-MCP account payload into (tag, value) rows."""
     rows: list[tuple[str, str]] = []
     for key, value in data.items():
         if key == "currency" or value is None:
@@ -641,13 +557,7 @@ def _print_connector_account_mapping(
 
 
 def _enum_text(value: common.Any) -> str:
-    """Render ``OrderSide.BUY``-style enum reprs as ``BUY``.
-
-    broker_sdk connectors stringify SDK enums, so the raw repr reaches the
-    table. Only strips when the prefix looks like a CamelCase class name (it
-    must contain a lowercase letter), so ticker symbols such as ``BRK.B`` and
-    decimal values are left alone.
-    """
+    """Render ``OrderSide.BUY``-style enum reprs as ``BUY``."""
     text = str(value or "")
     match = common.re.fullmatch(r"([A-Z][A-Za-z0-9_]*)\.([A-Z][A-Z0-9_]*)", text)
     if match and any(ch.islower() for ch in match.group(1)):
@@ -1036,15 +946,7 @@ def cmd_connector_start(profile_id: common.Optional[str]) -> int:
 
 
 def cmd_connector_runner_settings(profile_id: common.Optional[str], settings_file: common.Optional[str] = None) -> int:
-    """Show model budgets or save a JSON settings file for a stopped runner.
-
-    Args:
-        profile_id: Selected live connector profile.
-        settings_file: Optional JSON file containing DecisionSettings fields.
-
-    Returns:
-        CLI process exit code.
-    """
+    """Show model budgets or save a JSON settings file for a stopped runner."""
     from urllib.parse import urlencode
 
     code, broker = live._live_profile_connector(profile_id, require_runner=True)

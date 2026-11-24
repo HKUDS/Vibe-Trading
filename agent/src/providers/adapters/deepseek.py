@@ -35,12 +35,7 @@ def _build_native_deepseek(
     snapshot: Any,
     callbacks: Any = None,
 ) -> Any | None:
-    """Build the optional native DeepSeek adapter when installed.
-
-    Returns:
-        A ChatDeepSeek instance, or ``None`` when the optional package is not
-        available.
-    """
+    """Build the optional native DeepSeek adapter when installed."""
     try:
         module = import_module("langchain_deepseek")
         chat_deepseek = getattr(module, "ChatDeepSeek")
@@ -126,13 +121,7 @@ def _is_possible_dsml_tool_call_prefix(content: str) -> bool:
 
 
 def _parse_dsml_tool_calls(content: Any) -> list[contracts.ToolCallRequest]:
-    """Parse DeepSeek-style DSML tool calls embedded as assistant content.
-
-    Some OpenAI-compatible relays/models return tool calls as a textual DSML
-    block rather than LangChain ``AIMessage.tool_calls``. Treat only pure DSML
-    tool-call payloads as executable so examples embedded in normal prose never
-    cross into the tool path.
-    """
+    """Parse DeepSeek-style DSML tool calls embedded as assistant content."""
     if not isinstance(content, str):
         return []
 

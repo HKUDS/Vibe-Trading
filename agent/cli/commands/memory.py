@@ -1,10 +1,4 @@
-"""``/memory`` — list / show persistent memory snippets.
-
-Delegates to the legacy ``cmd_memory_list`` / ``cmd_memory_show`` /
-``cmd_memory_search`` callables. ``/memory`` with no args lists; with
-a single arg shows one; with ``search <q>`` runs FTS; with
-``forget <name>`` deletes one.
-"""
+"""``/memory`` — list / show persistent memory snippets."""
 
 from __future__ import annotations
 
@@ -22,13 +16,7 @@ def _resolve_console() -> Console:
 
 
 def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Dispatch sub-actions:
-
-    * ``/memory``              → list
-    * ``/memory <name>``       → show
-    * ``/memory search <q>``   → full-text search
-    * ``/memory forget <name>``→ delete a snippet
-    """
+    """Dispatch sub-actions:."""
     console = _resolve_console()
 
     if not args:

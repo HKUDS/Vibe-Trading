@@ -83,34 +83,27 @@ def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
 
 def cmd_channels_start(*, json_mode: bool = False) -> int:
     """Start configured IM channels through the API runtime."""
-    payload = _channels_api_call("POST", "/channels/start")
-    failed = payload.get("status") == "error"
-    if json_mode:
-        print(common.json.dumps(payload, indent=2, ensure_ascii=False))
-    elif failed:
-        common.console.print(f"[red]Failed to start IM channels:[/red] {payload.get('error')}")
-        common.console.print(
-            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
-        )
-    else:
-        common.console.print("[green]IM channels started.[/green]")
-        _print_channels_status(payload)
-    return common.EXIT_RUN_FAILED if failed else common.EXIT_SUCCESS
+    return _change_channels("start", json_mode=json_mode)
 
 
 def cmd_channels_stop(*, json_mode: bool = False) -> int:
     """Stop configured IM channels through the API runtime."""
-    payload = _channels_api_call("POST", "/channels/stop")
+    return _change_channels("stop", json_mode=json_mode)
+
+
+def _change_channels(action: str, *, json_mode: bool) -> int:
+    payload = _channels_api_call("POST", f"/channels/{action}")
     failed = payload.get("status") == "error"
     if json_mode:
         print(common.json.dumps(payload, indent=2, ensure_ascii=False))
     elif failed:
-        common.console.print(f"[red]Failed to stop IM channels:[/red] {payload.get('error')}")
+        common.console.print(f"[red]Failed to {action} IM channels:[/red] {payload.get('error')}")
         common.console.print(
             "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
         )
     else:
-        common.console.print("[green]IM channels stopped.[/green]")
+        completed = "started" if action == "start" else "stopped"
+        common.console.print(f"[green]IM channels {completed}.[/green]")
         _print_channels_status(payload)
     return common.EXIT_RUN_FAILED if failed else common.EXIT_SUCCESS
 

@@ -21,9 +21,6 @@ from src.providers.settings import ProviderConfig, resolve_config
 logger = logging.getLogger(__name__)
 
 
-# Kimi reasoning models (K-series: kimi-k2*, kimi-k3, …, and the
-# kimi-for-coding alias) reject any temperature other than 1 with
-# "invalid temperature: only 1 is allowed for this model".
 _KIMI_FORCED_TEMPERATURE_RE = re.compile(r"kimi-(k\d+|for-coding)", re.IGNORECASE)
 
 
@@ -57,22 +54,7 @@ def build_llm(
     callbacks: Any = None,
     snapshot: ProviderConfig | None = None,
 ) -> Any:
-    """Construct the configured LangChain chat model.
-
-    Args:
-        snapshot: Resolved immutable config; defaults to current settings.
-        model_name: Model name; defaults to LANGCHAIN_MODEL_NAME.
-        callbacks: Optional LangChain callbacks.
-
-    Returns:
-        Provider-specific LangChain chat model.
-
-    Raises:
-        RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
-        ValueError: If a Moonshot kimi-k3.1 configuration carries a
-            ``LANGCHAIN_REASONING_EFFORT`` outside the published
-            low/high/max set.
-    """
+    """Construct the configured LangChain chat model."""
     snapshot = snapshot or resolve_config(model_name=model_name)
     name = model_name or snapshot.model
     if not name:
@@ -81,10 +63,10 @@ def build_llm(
     caps = get_provider_capabilities(provider, name)
     options = snapshot.options
     temperature = options.langchain_temperature
+    effort = options.langchain_reasoning_effort.strip().lower()
     if snapshot.backend == "openai_codex":
         from src.providers.openai_codex import OpenAICodexLLM
 
-        effort = options.langchain_reasoning_effort.strip().lower()
         return OpenAICodexLLM(
             roots=policy.file_roots,
             model=name,
@@ -106,7 +88,7 @@ def build_llm(
             policy=policy,
             model=name,
             timeout=options.timeout_seconds,
-            reasoning_effort=options.langchain_reasoning_effort.strip().lower(),
+            reasoning_effort=effort,
             environment=dict(snapshot.environment),
         )
 
@@ -116,7 +98,7 @@ def build_llm(
             temperature=temperature,
             callbacks=callbacks,
             snapshot=snapshot,
-            effort=options.langchain_reasoning_effort.strip().lower(),
+            effort=effort,
         )
 
     if snapshot.backend == "deepseek":
@@ -135,12 +117,9 @@ def build_llm(
 
     if openai_adapter.ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
-    # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
-    # default 0.0 is used to avoid an API validation error.
+    # MiniMax rejects a zero temperature.
     if provider == "minimax" and temperature <= 0.0:
         temperature = 0.01
-    # Kimi reasoning models reject any temperature other than 1
-    # ("invalid temperature: only 1 is allowed for this model").
     if (
         caps.name in {"moonshot", "kimi-coding"}
         and _KIMI_FORCED_TEMPERATURE_RE.match(name)
@@ -148,11 +127,9 @@ def build_llm(
     ):
         logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
         temperature = 1.0
-    effort = options.langchain_reasoning_effort.strip().lower()
     # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.
-    configured_responses_api = options.langchain_use_responses_api
     use_responses_api = uses_responses_api(
-        provider, configured_responses_api, options.vibe_trading_deepseek_adapter
+        provider, options.langchain_use_responses_api, options.vibe_trading_deepseek_adapter
     )
     _validate_moonshot_reasoning_effort(caps, name, effort, snapshot.base_url)
     api_key = snapshot.api_key
@@ -165,8 +142,7 @@ def build_llm(
         "timeout": options.timeout_seconds,
         "max_retries": options.max_retries,
         "callbacks": callbacks,
-        # Ask for real token usage on streamed calls (issue #1224); endpoints
-        # that reject stream_options self-heal in _stream_with_usage_fallback.
+        # Request stream usage and let the adapter negotiate support (#1224).
         "stream_usage": True,
         "output_version": "responses/v1" if use_responses_api else None,
         "use_responses_api": use_responses_api,
@@ -205,14 +181,12 @@ def build_llm(
         kwargs["default_headers"] = headers
     disable_proxy = options.vibe_trading_disable_http_proxy
     if provider == "custom":
-        # Imported here: the guard needs httpx/httpcore/anyio, and the
-        # background-tool lifecycle checks import this module without them.
+        # Keep HTTP transport dependencies lazy for non-network callers.
         from src.providers.endpoint_guard import build_public_only_clients, proxy_applies
     clients = None
     explicit_proxy = snapshot.environment.get("OPENAI_PROXY", "")
     if provider == "custom" and (disable_proxy or not (explicit_proxy or proxy_applies(snapshot.base_url))):
-        # A saved custom endpoint is re-checked on every connection, so a
-        # host that re-resolves to a private address later is refused.
+        # Recheck each connection to prevent DNS rebinding.
         clients = build_public_only_clients()
     elif disable_proxy:
         clients = request_guards._build_http_clients()

@@ -1,18 +1,4 @@
-"""Shared rendering and dispatch for the institutional workflow commands.
-
-Every ``/comps``-style command funnels through :func:`run_playbook`:
-
-* no arguments (or ``help`` / ``-h`` / ``--help`` / ``?``) renders the full
-  playbook card — objective, numbered execution skeleton, the worked numeric
-  example, the data-gap policy and the not-advice notice — followed by a
-  friendly follow-up question. This is a normal, successful outcome, so it
-  returns ``0``; missing arguments are not an error here.
-* with arguments the same skeleton is rendered into a prompt and queued on
-  ``ctx.pending_prompt``, which ``cli.main._interactive_loop`` drains into a
-  real agent turn (the mechanism ``/journal`` and ``/shadow`` already use).
-  When the context cannot hold a queued prompt — a bare test stub, or a
-  non-interactive caller — the prompt is printed instead so it can be pasted.
-"""
+"""Shared rendering and dispatch for the institutional workflow commands."""
 
 from __future__ import annotations
 
@@ -53,12 +39,7 @@ def _console() -> Console:
 
 
 def _render_card(playbook: Playbook) -> None:
-    """Print the full playbook card for ``playbook``.
-
-    Steps go into a two-column ``Table.grid`` rather than a flat ``Text`` so
-    the ``in`` / ``compute`` / ``out`` labels keep a hanging indent when the
-    body wraps on a narrow terminal.
-    """
+    """Print the full playbook card for ``playbook``."""
     header = Text()
     header.append(playbook.objective + "\n\n")
     header.append("Usage  ", style="dim")
@@ -102,19 +83,7 @@ def _render_card(playbook: Playbook) -> None:
 
 
 def build_prompt(playbook: Playbook, subject: str) -> str:
-    """Render ``playbook`` plus the user's arguments into an agent prompt.
-
-    The full skeleton, the worked example, the gap policy and the not-advice
-    notice all travel with the prompt so the behaviour does not depend on any
-    particular system prompt being loaded.
-
-    Args:
-        playbook: The workflow to run.
-        subject: The user's raw arguments, already trimmed and length-capped.
-
-    Returns:
-        The prompt text to hand to the agent loop.
-    """
+    """Render ``playbook`` plus the user's arguments into an agent prompt."""
     lines = [
         f"Run the {playbook.slug.upper()} research playbook.",
         "",
@@ -158,21 +127,7 @@ def build_prompt(playbook: Playbook, subject: str) -> str:
 
 
 def run_playbook(slug: str, ctx: Any = None, *args: str) -> int:
-    """Render or dispatch the playbook registered under ``slug``.
-
-    Args:
-        slug: Playbook key, matching the slash command keyword.
-        ctx: The interactive context. Needs a writable ``pending_prompt``
-            attribute for the queued-turn path; anything else falls back to
-            printing the prompt.
-        *args: Raw slash-command arguments.
-
-    Returns:
-        ``0`` in every user-facing path — a missing argument is answered with
-        the playbook card and a follow-up question, not an error. ``1`` only
-        when ``slug`` is not a registered playbook, which is a programming
-        error rather than a user mistake.
-    """
+    """Render or dispatch the playbook registered under ``slug``."""
     playbook = PLAYBOOKS_BY_SLUG.get(slug)
     if playbook is None:
         _console().print(Text(f"Unknown research playbook: {slug}", style="bold red"))

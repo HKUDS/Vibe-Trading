@@ -1,21 +1,11 @@
-"""Claude Code CLI provider: the local ``claude -p`` as a decision-only chat model.
-
-Each call starts one headless ``claude -p`` process with every built-in tool and
-MCP server disabled, and constrains its output with ``--json-schema`` to either
-"call these tools" or "final answer". Vibe-Trading executes the tools itself, so
-the ReAct loop, the grounding ledger and the swarm deliverable checks see every
-tool result exactly as they would with an API provider.
-
-Authentication is whatever the local Claude Code login provides; no API key is
-read or required.
-"""
+"""Claude Code CLI provider: the local ``claude -p`` as a decision-only chat model."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import json
 import os
-import queue
 import shutil
 import subprocess
 import tempfile
@@ -27,6 +17,10 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from langchain_core.messages import AIMessage, AIMessageChunk
+
+from src.providers.messages import message_value
+from src.providers.response import tool_call_chunks, usage_metadata
+from src.providers.stream_guard import threaded_stream
 
 from src.config.accessor import get_env_config
 from src.product.tool_policy import (
@@ -41,15 +35,10 @@ _MAX_RETRIES = 3
 _POLL_INTERVAL_S = 0.5
 _HEARTBEAT_S = 1.0
 
-# The union of the levels any model accepts as ``--effort``. Anything outside it
-# (``""``, a ``none`` saved for another provider) is never passed. The CLI does
-# not reject a level the chosen model lacks, so narrowing to the selected
-# model's own levels happens in the settings form.
+# The settings form narrows these effort levels to the selected model.
 CLAUDE_CLI_EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
-# The flags that keep a child away from user settings, hooks, MCP servers and
-# built-in tools. Model discovery uses them too, so the list matches what a turn
-# can actually run.
+# Isolate Claude subprocesses from user hooks, MCP servers and native tools.
 ISOLATION_ARGS = (
     "--restricted",
     "--strict-mcp-config",
@@ -58,8 +47,7 @@ ISOLATION_ARGS = (
     "--no-session-persistence",
 )
 
-# The child process must authenticate with the local login, never with a key
-# meant for the in-process Anthropic provider.
+# Use the local Claude login without inheriting another provider’s credentials.
 _STRIPPED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
 
 
@@ -88,14 +76,7 @@ _FALLBACK_CLI_PATH = Path.home() / ".local" / "bin" / "claude"
 
 
 def resolve_claude_cli(environment: dict[str, str] | None = None) -> str:
-    """Return the ``claude`` executable: ``CLAUDE_CLI_PATH``, PATH, then ``~/.local/bin``.
-
-    Returns:
-        Path or command name of the executable to run.
-
-    Raises:
-        RuntimeError: No executable was found.
-    """
+    """Return the ``claude`` executable: ``CLAUDE_CLI_PATH``, PATH, then ``~/.local/bin``."""
     explicit = (get_env_config().llm.claude_cli_path if environment is None else environment.get("CLAUDE_CLI_PATH", "")).strip()
     if explicit:
         return explicit
@@ -111,15 +92,7 @@ def resolve_claude_cli(environment: dict[str, str] | None = None) -> str:
 
 
 def get_claude_cli_auth_status() -> tuple[bool, str]:
-    """Report the local Claude Code login, as a turn would see it; never raises.
-
-    Runs with the same environment as a turn: an ``ANTHROPIC_API_KEY`` meant for
-    the in-process Anthropic provider would otherwise report ``api_key`` as
-    logged in while every turn, which strips it, fails.
-
-    Returns:
-        ``(logged_in, auth_method)``; on failure ``(False, "unavailable: ...")``.
-    """
+    """Report the local Claude Code login, as a turn would see it; never raises."""
     try:
         result = subprocess.run(
             [resolve_claude_cli(), "auth", "status"],
@@ -137,12 +110,6 @@ def get_claude_cli_auth_status() -> tuple[bool, str]:
     )
 
 
-def _message_value(message: Any, key: str, default: Any = None) -> Any:
-    if isinstance(message, dict):
-        return message.get(key, default)
-    return getattr(message, key, default)
-
-
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -151,8 +118,7 @@ def _content_text(content: Any) -> str:
         for part in content:
             if isinstance(part, dict):
                 if part.get("type", "text") != "text":
-                    # Dropping an image silently would let the model answer a
-                    # question about a picture it never saw.
+                    # Refuse unsupported images before answering without them.
                     raise RuntimeError(
                         f"claude-cli supports text input only, not {part.get('type')!r}"
                     )
@@ -181,42 +147,37 @@ def _tool_content_text(content: Any) -> str:
 
 def _role(message: Any) -> str:
     return str(
-        _message_value(message, "role", "") or _message_value(message, "type", "")
+        message_value(message, "role", "") or message_value(message, "type", "")
     )
 
 
 def _render(messages: list[Any]) -> tuple[str, str]:
-    """Split messages into the system prompt and the stdin transcript.
-
-    A lone user message is passed through verbatim so a swarm worker's prompt
-    reaches the model byte-for-byte; longer histories keep role boundaries and
-    tool results in a fixed text layout.
-    """
+    """Split messages into the system prompt and the stdin transcript."""
     system: list[str] = []
     rest: list[Any] = []
     for message in messages:
         role = _role(message)
         if role == "system":
-            system.append(_content_text(_message_value(message, "content", "")))
+            system.append(_content_text(message_value(message, "content", "")))
         else:
             rest.append(message)
     if len(rest) == 1 and _role(rest[0]) in {"user", "human"}:
         return "\n\n".join(system), _content_text(
-            _message_value(rest[0], "content", "")
+            message_value(rest[0], "content", "")
         )
     parts: list[str] = []
     for message in rest:
         role = _role(message)
-        content = _tool_content_text(_message_value(message, "content", "")) if role == "tool" else _content_text(_message_value(message, "content", ""))
-        tool_calls = _message_value(message, "tool_calls")
+        content = _tool_content_text(message_value(message, "content", "")) if role == "tool" else _content_text(message_value(message, "content", ""))
+        tool_calls = message_value(message, "tool_calls")
         if role in {"assistant", "ai"} and tool_calls:
             calls = [
                 {
-                    "id": _message_value(tc, "id"),
-                    "name": (_message_value(tc, "function") or {}).get("name")
-                    or _message_value(tc, "name"),
-                    "arguments": (_message_value(tc, "function") or {}).get("arguments")
-                    or _message_value(tc, "args"),
+                    "id": message_value(tc, "id"),
+                    "name": (message_value(tc, "function") or {}).get("name")
+                    or message_value(tc, "name"),
+                    "arguments": (message_value(tc, "function") or {}).get("arguments")
+                    or message_value(tc, "args"),
                 }
                 for tc in tool_calls
             ]
@@ -225,7 +186,7 @@ def _render(messages: list[Any]) -> tuple[str, str]:
             )
         elif role == "tool":
             parts.append(
-                f"[tool result: {_message_value(message, 'name')} id={_message_value(message, 'tool_call_id')}]\n{content}"
+                f"[tool result: {message_value(message, 'name')} id={message_value(message, 'tool_call_id')}]\n{content}"
             )
         else:
             parts.append(f"[{role}]\n{content}")
@@ -286,8 +247,6 @@ def _run_cli(
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(system)
-        # An empty or foreign level (``none`` saved for another provider) leaves
-        # the model's own default in place.
         effort_args = ["--effort", effort] if effort in CLAUDE_CLI_EFFORT_LEVELS else []
         cmd = [
             resolve_claude_cli(environment),
@@ -362,17 +321,12 @@ def _usage(payload: dict[str, Any]) -> dict[str, Any]:
     cache_read = int(usage.get("cache_read_input_tokens") or 0)
     tokens_in = int(usage.get("input_tokens") or 0) + cache_creation + cache_read
     tokens_out = int(usage.get("output_tokens") or 0)
-    result: dict[str, Any] = {
-        "input_tokens": tokens_in,
-        "output_tokens": tokens_out,
-        "total_tokens": tokens_in + tokens_out,
-    }
-    if cache_creation or cache_read:
-        result["input_token_details"] = {
-            "cache_read": cache_read,
-            "cache_creation": cache_creation,
-        }
-    return result
+    return usage_metadata(
+        tokens_in,
+        tokens_out,
+        input_details={"cache_read": cache_read, "cache_creation": cache_creation}
+        if cache_read or cache_creation else None,
+    )
 
 
 def _native_attempt_reason(payload: dict[str, Any]) -> str:
@@ -381,9 +335,7 @@ def _native_attempt_reason(payload: dict[str, Any]) -> str:
         return "permission_denials is non-empty"
     turns = payload.get("num_turns")
     if isinstance(turns, int) and turns > 2:
-        # Ordinary structured responses can already report two turns. Only
-        # turns beyond the model-plus-StructuredOutput baseline are a fallback
-        # signal when the CLI does not itemize the denied calls.
+        # Only extra turns suggest a native tool attempt when denials are absent.
         return f"num_turns={turns}"
     return ""
 
@@ -399,11 +351,7 @@ def _decide(
     cancel_event: threading.Event,
     environment: dict[str, str] | None = None,
 ) -> Optional[_Decision]:
-    """Ask the CLI for the next step; refused calls are fed back for a new choice.
-
-    Every attempt shares one deadline, so feedback retries cannot stretch a
-    decision past ``timeout``.
-    """
+    """Ask the CLI for the next step; refused calls are fed back for a new choice."""
     deadline = time.monotonic() + timeout
     offered = policy.offered_tools(tools, legacy_defaults=True)
     offered_names = {tool_name(t) for t in offered}
@@ -438,8 +386,7 @@ def _decide(
         if payload.get("cancelled"):
             return None
         attempt = _usage(payload)
-        # Billing accumulates every invocation; compaction uses only the last
-        # prompt, not the sum of prompts resent during feedback retries.
+        # Billing counts all attempts, while compaction sees the latest prompt only.
         decision.usage["context_input_tokens"] = attempt["input_tokens"]
         decision.usage["calls"] = decision.usage.get("calls", 0) + 1
         for key in ("input_tokens", "output_tokens", "total_tokens"):
@@ -467,8 +414,7 @@ def _decide(
                 )
                 failure = f"native tool calls kept bypassing the host protocol ({native_reason})"
                 continue
-            # Under --json-schema, payload["result"] is the structured output as text, so
-            # an empty content must not fall back to it: the user would see raw JSON.
+            # Avoid displaying raw structured JSON as the assistant answer.
             content = str(output.get("content") or "")
             if content.strip():
                 decision.content = content
@@ -517,20 +463,7 @@ class ClaudeCliLLM:
         tools: list[dict[str, Any]] | None = None,
         environment: dict[str, str] | None = None,
     ) -> None:
-        """Configure one CLI-backed model.
-
-        Args:
-            model: Full model name or CLI alias, passed to ``--model``.
-            timeout: Per-decision budget in seconds; never below
-                ``_TIMEOUT_FLOOR_S``.
-            reasoning_effort: Level passed as ``--effort``; values outside
-                ``CLAUDE_CLI_EFFORT_LEVELS`` leave the model's default.
-            tools: Tool definitions in OpenAI function format.
-
-        Raises:
-            RuntimeError: ``CLAUDE_CLI_BASH_POLICY`` is not a known policy, so
-                the error surfaces before a paid turn rather than after one.
-        """
+        """Configure one CLI-backed model."""
         policy.bash_policy(legacy_defaults=True)
         self.policy = policy
         self.environment = None if environment is None else dict(environment)
@@ -540,14 +473,7 @@ class ClaudeCliLLM:
         self.tools = tools or []
 
     def bind_tools(self, tools: list[dict[str, Any]]) -> "ClaudeCliLLM":
-        """Return a copy that offers *tools* to the model.
-
-        Args:
-            tools: Tool definitions in OpenAI function format.
-
-        Returns:
-            A new instance with the same model, timeout and reasoning effort.
-        """
+        """Return a copy that offers *tools* to the model."""
         return ClaudeCliLLM(
             policy=self.policy,
             model=self.model,
@@ -558,8 +484,7 @@ class ClaudeCliLLM:
         )
 
     def _budget(self, config: Optional[dict[str, Any]]) -> float:
-        # Vibe sizes timeouts for one HTTP request; one CLI turn also pays for
-        # process start-up and prompt-cache creation, so keep a higher floor.
+        # Allow for CLI startup and prompt-cache creation.
         return float(
             max((config or {}).get("timeout") or self.timeout or 0, _TIMEOUT_FLOOR_S)
         )
@@ -578,16 +503,7 @@ class ClaudeCliLLM:
     def invoke(
         self, messages: list[Any], config: Optional[dict[str, Any]] = None, **_: Any
     ) -> AIMessage:
-        """Run one decision and return it as a single message.
-
-        Args:
-            messages: Conversation so far, as LangChain messages or dicts.
-            config: Optional run config; its ``timeout`` raises the budget above
-                the floor.
-
-        Returns:
-            The final answer, or the tool calls to execute next.
-        """
+        """Run one decision and return it as a single message."""
         return self._message(self._decision(messages, self._budget(config), threading.Event()) or _Decision())
 
     def _decision(
@@ -607,74 +523,25 @@ class ClaudeCliLLM:
     def stream(
         self, messages: list[Any], config: Optional[dict[str, Any]] = None, **_: Any
     ) -> Iterable[AIMessageChunk]:
-        """Run one decision, yielding an empty chunk every second until it lands.
-
-        Args:
-            messages: Conversation so far, as LangChain messages or dicts.
-            config: Optional run config; its ``timeout`` raises the budget above
-                the floor.
-
-        Yields:
-            Empty keep-alive chunks while the CLI runs, then one chunk carrying
-            the answer or tool calls. Closing the iterator kills the child.
-        """
-        chunks: queue.Queue[Any] = queue.Queue()
-        sentinel = object()
-        cancel_event = threading.Event()
+        """Run one decision, yielding an empty chunk every second until it lands."""
         budget = self._budget(config)
 
-        def run() -> None:
-            try:
-                decision = self._decision(messages, budget, cancel_event)
-                if decision is not None:
-                    chunks.put(
-                        AIMessageChunk(
-                            content=decision.content,
-                            tool_call_chunks=[
-                                {
-                                    "id": call["id"],
-                                    "name": call["name"],
-                                    "args": json.dumps(
-                                        call["args"], ensure_ascii=False
-                                    ),
-                                    "index": index,
-                                    "type": "tool_call_chunk",
-                                }
-                                for index, call in enumerate(decision.tool_calls)
-                            ],
-                            usage_metadata=decision.usage,
-                            response_metadata={
-                                "finish_reason": (
-                                    "tool_calls" if decision.tool_calls else "stop"
-                                ),
-                                "model_name": self.model,
-                            },
-                        )
-                    )
-            except Exception as exc:
-                chunks.put(exc)
-            finally:
-                chunks.put(sentinel)
+        def run(emit: Callable[[AIMessageChunk], None], cancel_event: threading.Event) -> None:
+            decision = self._decision(messages, budget, cancel_event)
+            if decision is not None:
+                message = self._message(decision)
+                emit(AIMessageChunk(
+                    content=message.content,
+                    tool_call_chunks=tool_call_chunks(decision.tool_calls, ensure_ascii=False),
+                    usage_metadata=message.usage_metadata,
+                    response_metadata=message.response_metadata,
+                ))
 
-        threading.Thread(target=run, daemon=True).start()
-        try:
-            while True:
-                try:
-                    chunk = chunks.get(timeout=_HEARTBEAT_S)
-                except queue.Empty:
-                    # One decision is a single chunk that can take minutes. Without
-                    # empty chunks meanwhile, vibe's idle timeout discards an answer
-                    # that is still on its way and the stop button is never polled.
-                    yield AIMessageChunk(content="", additional_kwargs={"provider_waiting": True})
-                    continue
-                if chunk is sentinel:
-                    return
-                if isinstance(chunk, Exception):
-                    raise chunk
-                yield chunk
-        finally:
-            # Closing the iterator (vibe's cooperative cancel) kills the child.
-            cancel_event.set()
+        # Keep a pending CLI decision alive through the caller's idle timeout.
+        def heartbeat() -> AIMessageChunk:
+            return AIMessageChunk(content="", additional_kwargs={"provider_waiting": True})
+
+        yield from threaded_stream(run, heartbeat=heartbeat, interval=_HEARTBEAT_S)
 
     async def ainvoke(
         self,
@@ -682,16 +549,7 @@ class ClaudeCliLLM:
         config: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ) -> AIMessage:
-        """Run :meth:`invoke` in a worker thread.
-
-        Args:
-            messages: Conversation so far, as LangChain messages or dicts.
-            config: Optional run config, passed through to :meth:`invoke`.
-            **kwargs: Passed through to :meth:`invoke`.
-
-        Returns:
-            The message :meth:`invoke` returns.
-        """
+        """Run :meth:`invoke` in a worker thread."""
         return await asyncio.to_thread(self.invoke, messages, config, **kwargs)
 
 
@@ -701,40 +559,19 @@ _MODEL_LIST_TTL_S = 300
 
 @dataclass(frozen=True)
 class ClaudeCliModel:
-    """One model the local login can run, with the effort levels it accepts.
-
-    Attributes:
-        model_id: Full model name, as passed to ``--model``.
-        effort_levels: Levels the model accepts; empty when it takes none.
-    """
+    """Model available to the local Claude login and its supported effort levels."""
 
     model_id: str
     effort_levels: tuple[str, ...]
 
 
 _model_cache: dict[str, tuple[float, tuple[ClaudeCliModel, ...]]] = {}
-# One CLI launch at a time: a settings page opened twice, or an auto-load racing
-# a manual refresh, should wait for the first answer instead of spawning another.
+# Serialize discovery to avoid redundant subprocesses.
 _model_cache_lock = threading.Lock()
 
 
 def list_claude_cli_models(*, refresh: bool = False) -> tuple[ClaudeCliModel, ...]:
-    """Return the models the local Claude Code login can run.
-
-    Asks the CLI with an ``initialize`` control request, which starts no model
-    turn. Aliases such as ``opus`` and ``default`` resolve to the same full name,
-    so entries are de-duplicated on that name: a saved full name stays pinned
-    instead of following whatever an alias points to after a CLI update.
-
-    Args:
-        refresh: Skip the cached list and ask the CLI again.
-
-    Returns:
-        One entry per distinct full model name, in the CLI's order.
-
-    Raises:
-        RuntimeError: The CLI is missing, failed, or returned no models.
-    """
+    """Return the models the local Claude Code login can run."""
     executable = resolve_claude_cli()
     with _model_cache_lock:
         cached = _model_cache.get(executable)

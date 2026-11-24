@@ -1,12 +1,4 @@
-"""Single source of truth for the CLI version string.
-
-Reads ``vibe-trading-ai``'s installed package metadata when available
-(``pip install -e .`` is enough). For an un-installed checkout (e.g. running
-straight from a clone with ``PYTHONPATH=agent``) it falls back to reading the
-version straight out of ``pyproject.toml`` — so ``pyproject.toml`` is the one
-and only place the version is ever written. There is deliberately no hardcoded
-version constant to drift out of sync on release (issue #156).
-"""
+"""Single source of truth for the CLI version string."""
 
 from __future__ import annotations
 
@@ -14,13 +6,7 @@ from typing import Final
 
 
 def _version_from_pyproject() -> str:
-    """Read ``[project] version`` from the repo's ``pyproject.toml``.
-
-    Returns:
-        The declared version, or ``"unknown"`` if the file cannot be located
-        or parsed (only reachable for an un-installed checkout whose tree has
-        been moved away from its ``pyproject.toml``).
-    """
+    """Read ``[project] version`` from the repo's ``pyproject.toml``."""
     import tomllib
     from pathlib import Path
 

@@ -1,12 +1,4 @@
-"""Bottom hint bar — left + right aligned.
-
-Renders a single-line hint where the right-aligned segment hugs the
-terminal edge regardless of left-segment width. Mirrors dexter's
-``hint-bar.ts``.
-
-Used to surface keyboard guidance ("Tab to complete · /help for
-commands") and ephemeral state ("input cleared", "cancelled").
-"""
+"""Bottom hint bar — left + right aligned."""
 
 from __future__ import annotations
 
@@ -25,20 +17,7 @@ def _terminal_width(default: int = 80) -> int:
 
 
 def render_hint_bar(left: str, right: str = "", *, width: int | None = None) -> Text:
-    """Return a Rich :class:`Text` row with ``left`` and right-aligned ``right``.
-
-    The bar always fits the terminal width:
-        * If ``left + right`` fits, pad with spaces between them
-        * Otherwise truncate the left segment with an ellipsis so the
-          right hint remains visible (right-side hint usually carries
-          the *current* Ctrl+C semantics — losing it is worse than
-          losing context)
-
-    Args:
-        left: Left segment (e.g. ``"↑/↓ navigate · Tab/⏎ select"``).
-        right: Right segment (e.g. ``"Esc to cancel"``); may be empty.
-        width: Override terminal width. Defaults to autodetect.
-    """
+    """Return a Rich :class:`Text` row with ``left`` and right-aligned ``right``."""
     cols = width if width is not None else _terminal_width()
     if right == "":
         # Only a left hint — clip and pad to width, dim style throughout.

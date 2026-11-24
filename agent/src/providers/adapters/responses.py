@@ -26,14 +26,7 @@ class _ResponsesMappingEvent:
 
 
 def _normalize_responses_stream_event(event: Any) -> Any:
-    """Adapt raw mapping events to the attribute shape LangChain expects.
-
-    Native OpenAI SDK streams yield typed response event objects. Some
-    OpenAI-compatible gateways yield the same wire events as plain dicts;
-    langchain-openai's Responses converter accesses ``event.type`` and a few
-    nested attributes directly. Preserve typed events unchanged and adapt only
-    the mapping form.
-    """
+    """Adapt raw mapping events to the attribute shape LangChain expects."""
     if not isinstance(event, Mapping):
         return event
 
@@ -162,28 +155,12 @@ class _ResponsesAsyncClient:
         return getattr(self._client, name)
 
 
-# Models whose Chat Completions endpoint refused function tools and named
-# /v1/responses as the way out (issue #1473). OpenAI's gpt-5.6-* answer HTTP 400
-# "Function tools with reasoning_effort are not supported for <model> in
-# /v1/chat/completions. To use function tools, use /v1/responses or set
-# reasoning_effort to 'none'" whenever the request carries tools and the effort
-# is anything but 'none' -- the model's own default when none is configured
-# included. Setting 'none' would run the model without its reasoning, so the
-# request is retried on /v1/responses instead, where the effort travels as
-# ``reasoning.effort``. Membership is populated on that first refusal and reused
-# process-wide so later calls skip the failed request.
+# Route to Responses when Chat Completions refuses reasoning with tools (#1473).
 _RESPONSES_REQUIRED: set[tuple[str, str, str]] = set()
 
 
 def _is_responses_required_error(exc: BaseException) -> bool:
-    """Return True when an endpoint refused tools and pointed at /v1/responses.
-
-    Matches the endpoint's own instruction, not a model name: the message has
-    to name ``reasoning_effort``, say it is not supported, and offer
-    ``/v1/responses``. A gateway that merely rejects ``reasoning_effort`` as an
-    unknown field does not match, because nothing says its Responses route
-    would fare better.
-    """
+    """Return True when an endpoint refused tools and pointed at /v1/responses."""
     message = str(getattr(exc, "message", "") or exc).lower()
     if "reasoning_effort" not in message or "/v1/responses" not in message:
         return False

@@ -1,10 +1,4 @@
-"""``/history``, ``/search``, ``/export`` — session lifecycle commands.
-
-* ``/history`` lists recent sessions (legacy ``cmd_sessions``).
-* ``/search <query>`` runs FTS5 across the session store via
-  :class:`src.session.search.SessionSearchIndex`.
-* ``/export`` is a placeholder — the rich export lives in the Web bubble.
-"""
+"""``/history``, ``/search``, ``/export`` — session lifecycle commands."""
 
 from __future__ import annotations
 

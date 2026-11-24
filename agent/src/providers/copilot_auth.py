@@ -1,9 +1,4 @@
-"""GitHub Copilot SDK adapter.
-
-Authentication and transport are delegated to GitHub's supported SDK. The SDK
-resolves ``COPILOT_GITHUB_TOKEN``, stored Copilot CLI credentials, and ``gh``
-credentials without Vibe-Trading borrowing an OAuth client or editor identity.
-"""
+"""GitHub Copilot SDK adapter."""
 
 from __future__ import annotations
 
@@ -20,6 +15,10 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from langchain_core.messages import AIMessage, AIMessageChunk
+
+from src.providers.messages import message_value
+from src.providers.response import tool_call_chunks
+from src.providers.stream_guard import threaded_stream
 
 COPILOT_TOKEN_ENV = "COPILOT_GITHUB_TOKEN"
 TOKEN_ENV_NAMES = (COPILOT_TOKEN_ENV, "GH_TOKEN", "GITHUB_TOKEN")
@@ -137,12 +136,6 @@ class _CopilotResult:
     tool_calls: list[dict[str, Any]] | None = None
 
 
-def _message_value(message: Any, key: str, default: Any = None) -> Any:
-    if isinstance(message, dict):
-        return message.get(key, default)
-    return getattr(message, key, default)
-
-
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -160,25 +153,25 @@ def _convert_messages(messages: list[Any]) -> tuple[str, str]:
     system: list[str] = []
     transcript: list[dict[str, Any]] = []
     for message in messages:
-        role = str(_message_value(message, "role", "") or "")
+        role = str(message_value(message, "role", "") or "")
         if not role:
-            message_type = str(_message_value(message, "type", "") or "")
+            message_type = str(message_value(message, "type", "") or "")
             role = {
                 "human": "user",
                 "ai": "assistant",
                 "system": "system",
                 "tool": "tool",
             }.get(message_type, message_type or "user")
-        content = _content_text(_message_value(message, "content", ""))
+        content = _content_text(message_value(message, "content", ""))
         if role == "system":
             if content:
                 system.append(content)
             continue
         item: dict[str, Any] = {"role": role, "content": content}
-        tool_call_id = _message_value(message, "tool_call_id")
+        tool_call_id = message_value(message, "tool_call_id")
         if tool_call_id:
             item["tool_call_id"] = str(tool_call_id)
-        tool_calls = _message_value(message, "tool_calls")
+        tool_calls = message_value(message, "tool_calls")
         if tool_calls:
             item["tool_calls"] = tool_calls
         transcript.append(item)
@@ -293,8 +286,6 @@ async def _run_copilot(
         elif isinstance(data, SessionIdleData):
             finished.set()
 
-    # ponytail: one runtime per call keeps lifecycle simple; pool it if startup
-    # latency becomes material in profiling.
     async with CopilotClient(**_client_options(token)) as client:
         sdk_tools = _convert_tools(tools)
         available_tools = ToolSet()
@@ -339,8 +330,7 @@ async def _run_copilot(
                     timeout=timeout,
                 )
                 if tool_task in done:
-                    # ponytail: 100 ms debounce collects parallel tool events;
-                    # replace it if the SDK exposes an explicit batch-complete event.
+                    # Debounce to collect parallel tool requests before returning.
                     await asyncio.sleep(0.1)
             finally:
                 for task in (finish_task, tool_task, cancel_task):
@@ -378,21 +368,24 @@ class CopilotSDKLLM:
     def bind_tools(self, tools: list[dict[str, Any]]) -> "CopilotSDKLLM":
         return CopilotSDKLLM(model=self.model, timeout=self.timeout, tools=tools, token=self._token)
 
+    def _request(
+        self, messages: list[Any], timeout: float, **stream_options: Any
+    ) -> _CopilotResult:
+        return asyncio.run(_run_copilot(
+            model=self.model,
+            token=self._token,
+            messages=messages,
+            tools=self.tools,
+            timeout=timeout,
+            **stream_options,
+        ))
+
     def invoke(
         self,
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> AIMessage:
-        timeout = float((config or {}).get("timeout") or self.timeout)
-        result = asyncio.run(
-            _run_copilot(
-                model=self.model,
-                token=self._token,
-                messages=messages,
-                tools=self.tools,
-                timeout=timeout,
-            )
-        )
+        result = self._request(messages, float((config or {}).get("timeout") or self.timeout))
         return AIMessage(
             content=result.content,
             tool_calls=result.tool_calls or [],
@@ -408,82 +401,41 @@ class CopilotSDKLLM:
         config: Optional[dict[str, Any]] = None,
     ) -> Iterable[AIMessageChunk]:
         timeout = float((config or {}).get("timeout") or self.timeout)
-        chunks: queue.Queue[Any] = queue.Queue()
-        sentinel = object()
-        cancel_event = threading.Event()
 
-        def run() -> None:
+        def run(publish: Callable[[AIMessageChunk], None], cancel_event: threading.Event) -> None:
             emitted_text = False
 
             def emit(kind: str, value: str) -> None:
                 nonlocal emitted_text
                 emitted_text = emitted_text or kind == "text"
-                chunks.put(
+                publish(AIMessageChunk(
+                    content=value if kind == "text" else "",
+                    additional_kwargs={"reasoning_content": value} if kind == "reasoning" else {},
+                ))
+
+            result = self._request(messages, timeout, emit=emit, cancel_event=cancel_event)
+            if result.content and not emitted_text:
+                publish(AIMessageChunk(content=result.content))
+            if result.tool_calls:
+                publish(
                     AIMessageChunk(
-                        content=value if kind == "text" else "",
-                        additional_kwargs=(
-                            {"reasoning_content": value} if kind == "reasoning" else {}
-                        ),
+                        content="",
+                        tool_call_chunks=tool_call_chunks(result.tool_calls),
+                        response_metadata={"finish_reason": "tool_calls"},
+                    )
+                )
+            else:
+                publish(
+                    AIMessageChunk(
+                        content="",
+                        response_metadata={
+                            "finish_reason": "stop",
+                            "model_name": result.model or self.model,
+                        },
                     )
                 )
 
-            try:
-                result = asyncio.run(
-                    _run_copilot(
-                        model=self.model,
-                        token=self._token,
-                        messages=messages,
-                        tools=self.tools,
-                        timeout=timeout,
-                        emit=emit,
-                        cancel_event=cancel_event,
-                    )
-                )
-                if result.content and not emitted_text:
-                    chunks.put(AIMessageChunk(content=result.content))
-                if result.tool_calls:
-                    chunks.put(
-                        AIMessageChunk(
-                            content="",
-                            tool_call_chunks=[
-                                {
-                                    "id": call["id"],
-                                    "name": call["name"],
-                                    "args": json.dumps(call["args"]),
-                                    "index": index,
-                                    "type": "tool_call_chunk",
-                                }
-                                for index, call in enumerate(result.tool_calls)
-                            ],
-                            response_metadata={"finish_reason": "tool_calls"},
-                        )
-                    )
-                else:
-                    chunks.put(
-                        AIMessageChunk(
-                            content="",
-                            response_metadata={
-                                "finish_reason": "stop",
-                                "model_name": result.model or self.model,
-                            },
-                        )
-                    )
-            except Exception as exc:
-                chunks.put(exc)
-            finally:
-                chunks.put(sentinel)
-
-        threading.Thread(target=run, daemon=True).start()
-        try:
-            while True:
-                chunk = chunks.get()
-                if chunk is sentinel:
-                    return
-                if isinstance(chunk, Exception):
-                    raise chunk
-                yield chunk
-        finally:
-            cancel_event.set()
+        yield from threaded_stream(run)
 
     async def ainvoke(
         self,

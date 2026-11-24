@@ -1,30 +1,4 @@
-"""Playbook definitions for the institutional research slash commands.
-
-Pure data — this module imports nothing from :mod:`cli`, so
-:mod:`cli.commands.slash_router` can pull the command specs at its own import
-time without a circular import.
-
-Each :class:`Playbook` carries four things that make the command more than a
-prompt forwarder:
-
-1. ``steps`` — an ordered execution skeleton where every step names its
-   inputs, the computation, and the artifact it must produce.
-2. ``worked_example`` — a fully arithmetic-consistent numeric walkthrough.
-   Every number below was computed and reconciled by hand; the totals tie out
-   (the Brinson decomposition sums exactly to the active return, the earnings
-   bridge sums exactly to the EPS delta). Both the user and the agent can
-   reproduce them, which is what makes the skeleton checkable.
-3. ``tools`` — the real registered tool names the agent should reach for.
-   Verified against ``src/tools/*`` (``get_financial_statements``,
-   ``get_stock_profile``, ``get_market_data``, ``get_sec_filings``,
-   ``get_macro_series``, ``screen_market``, ``get_stock_news``,
-   ``get_research_reports``, ``portfolio_risk_xray``).
-4. ``gap_policy`` — what to do when a number cannot be fetched. The shared
-   default forbids filling gaps from model memory.
-
-Numbers in the worked examples are illustrative teaching figures, not
-quotes for any real security.
-"""
+"""Playbook definitions for the institutional research slash commands."""
 
 from __future__ import annotations
 

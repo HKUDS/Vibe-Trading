@@ -19,12 +19,7 @@ _OFFLOADED = "[Worker context result saved: "
 
 
 class NodeContext:
-    """Track real prompt size and save old observations before removing them.
-
-    A result stays visible for at least one successful model request. Under
-    pressure, older results may move to readable files inside this worker's
-    workspace. Neither a tool count nor a batch position implies obsolescence.
-    """
+    """Track real prompt size and save old observations before removing them."""
 
     def __init__(self, *, model: str, artifact_dir: Path, can_read_files: bool) -> None:
         cfg = get_env_config()
@@ -56,16 +51,7 @@ class NodeContext:
         self.pending.clear()
 
     def compact(self, messages: list[dict], tools: list[dict] | None) -> list[dict[str, Any]]:
-        """Offload only old results needed to get below the pressure threshold.
-
-        Args:
-            messages: Mutable current worker conversation.
-            tools: Exact schemas for the next model request.
-
-        Returns:
-            Receipts for results successfully saved to disk. An unavailable
-            reader or failed write leaves the original result in context.
-        """
+        """Offload only old results needed to get below the pressure threshold."""
         budget = self.budget(messages, tools)
         target = min(budget.micro_at, budget.total)
         if not self.can_read_files or self.tokens(messages, tools) <= target:
@@ -99,12 +85,7 @@ class NodeContext:
         return receipts
 
     def _save_result(self, content: str, digest: str) -> list[str]:
-        """Save parts that fit through the real read_file result envelope.
-
-        JSON escaping and the path count toward the shared result cap. Splitting
-        prevents a successfully saved observation from being truncated again
-        when the model reads it back. Existing symlinks cannot redirect writes.
-        """
+        """Save parts that fit through the real read_file result envelope."""
         return save_result_parts(
             content, self.artifact_dir / "context-results" / digest, self.artifact_dir,
         )

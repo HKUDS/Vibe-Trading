@@ -76,11 +76,7 @@ def _redact_proxy_url(name: str, raw: str | None) -> str:
 
 
 def provider_diagnostics(*, policy: ToolPolicy) -> dict[str, Any]:
-    """Build a redacted provider diagnostic snapshot.
-
-    Returns:
-        Redacted provider/model/package/env/proxy/capability details.
-    """
+    """Build a redacted provider diagnostic snapshot."""
     snapshot = resolve_config()
     environment = snapshot.environment
     provider, model = snapshot.provider, snapshot.model

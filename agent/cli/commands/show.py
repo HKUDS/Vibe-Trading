@@ -1,8 +1,4 @@
-"""``/show``, ``/skill``, ``/pine`` — read-only inspect commands.
-
-Slash commands validate their arguments and render errors before calling
-the inspection command handlers.
-"""
+"""``/show``, ``/skill``, ``/pine`` — read-only inspect commands."""
 
 from __future__ import annotations
 

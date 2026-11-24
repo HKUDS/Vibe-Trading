@@ -5,14 +5,7 @@ from cli.commands import common
 from cli.commands import connectors
 
 def _portfolio_service(service: common.Any | None = None) -> common.Any:
-    """Return the injected portfolio service, or build the default one.
-
-    Args:
-        service: Optional pre-built service (tests inject a stub).
-
-    Returns:
-        A ``PortfolioService`` instance.
-    """
+    """Return the injected portfolio service, or build the default one."""
     if service is not None:
         return service
     from src.portfolio.service import PortfolioService
@@ -21,11 +14,7 @@ def _portfolio_service(service: common.Any | None = None) -> common.Any:
 
 
 def _print_portfolio_snapshot(snapshot: dict[str, common.Any]) -> None:
-    """Render one portfolio snapshot: totals, per-source accounts, holdings, warnings.
-
-    Args:
-        snapshot: A snapshot envelope as produced by ``PortfolioService``.
-    """
+    """Render one portfolio snapshot: totals, per-source accounts, holdings, warnings."""
     totals = snapshot.get("totals") or {}
     usd = float(totals.get("usd") or 0.0)
     cny = float(totals.get("cny") or 0.0)
@@ -84,15 +73,7 @@ def _print_portfolio_snapshot(snapshot: dict[str, common.Any]) -> None:
 
 
 def cmd_portfolio_show(service: common.Any | None = None, snapshot_id: str | None = None) -> int:
-    """Print the latest snapshot or one exact stored observation.
-
-    Args:
-        service: Optional ``PortfolioService`` (tests inject a stub).
-        snapshot_id: Optional immutable snapshot id; never falls back to latest.
-
-    Returns:
-        The process exit code.
-    """
+    """Print the latest snapshot or one exact stored observation."""
     instance = _portfolio_service(service)
     snapshot = instance.latest() if snapshot_id is None else instance.snapshot_by_id(snapshot_id)
     if snapshot is None:
@@ -109,17 +90,7 @@ def cmd_portfolio_show(service: common.Any | None = None, snapshot_id: str | Non
 
 
 def cmd_portfolio_refresh(service: common.Any | None = None) -> int:
-    """Read every enabled source now, store a new snapshot, and print it.
-
-    A source that fails is reported and excluded from the totals; the command
-    then exits non-zero so scripts notice the portfolio is incomplete.
-
-    Args:
-        service: Optional ``PortfolioService`` (tests inject a stub).
-
-    Returns:
-        ``EXIT_SUCCESS`` for a complete snapshot, ``EXIT_RUN_FAILED`` otherwise.
-    """
+    """Read every enabled source now, store a new snapshot, and print it."""
     try:
         snapshot = _portfolio_service(service).refresh()
     except RuntimeError as exc:
@@ -130,14 +101,7 @@ def cmd_portfolio_refresh(service: common.Any | None = None) -> int:
 
 
 def cmd_portfolio_sources(service: common.Any | None = None) -> int:
-    """List the local read-only connections and whether the portfolio uses them.
-
-    Args:
-        service: Optional ``PortfolioService`` (tests inject a stub).
-
-    Returns:
-        The process exit code.
-    """
+    """List the local read-only connections and whether the portfolio uses them."""
     rows = _portfolio_service(service).sources()
     table = common.Table(title="Portfolio sources", box=common.box.SIMPLE_HEAVY, show_lines=False)
     table.add_column("Selected", justify="center", width=8)
@@ -171,14 +135,7 @@ def cmd_portfolio_sources(service: common.Any | None = None) -> int:
 
 
 def _dispatch_portfolio(args: common.argparse.Namespace) -> int:
-    """Route ``vibe-trading portfolio <subcommand>``; bare ``portfolio`` shows.
-
-    Args:
-        args: Parsed CLI arguments.
-
-    Returns:
-        The process exit code.
-    """
+    """Route ``vibe-trading portfolio <subcommand>``; bare ``portfolio`` shows."""
     sub = getattr(args, "portfolio_command", None) or "show"
     if sub == "show":
         return cmd_portfolio_show(snapshot_id=getattr(args, "snapshot_id", None))

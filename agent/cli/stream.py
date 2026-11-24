@@ -1,18 +1,4 @@
-"""Streaming renderer + thinking spinner for the interactive CLI.
-
-Single-agent mode (the only mode demoed in Parcel α): a short-lived
-``Rich.Live`` with ``transient=True`` drives the spinner while the model
-thinks; tool events and the final answer are emitted as *static* prints so
-they persist on screen after the live area is erased. This avoids the
-"ghost re-paint" bug that plagued Vibe-Trading's earlier Live-based
-dashboards (prior terminal-rendering lesson, design proposal §3.5).
-
-Swarm mode is a stub: callers should fall through to the legacy Rich Live
-dashboard in ``cli/_legacy.py``. The full multi-agent grid lands in Parcel β.
-
-Tool events use the dexter-style ``⏺ Tool Name (args)  duration · summary``
-format. Tool names are auto-Title-Cased with a small acronym whitelist.
-"""
+"""Streaming renderer + thinking spinner for the interactive CLI."""
 
 from __future__ import annotations
 
@@ -99,12 +85,7 @@ class _SpinnerState:
 
 
 class ThinkingSpinner:
-    """Transient spinner that can be paused/resumed safely.
-
-    ``pause()`` is a context manager: stops the underlying ``Live`` (clearing
-    its line), yields so the caller can print a static line, then restarts.
-    This follows the reference renderer pattern and avoids ANSI escape interleaving.
-    """
+    """Transient spinner that can be paused/resumed safely."""
 
     def __init__(self, console: Console | None = None) -> None:
         self._console = console or get_console()
@@ -217,11 +198,7 @@ class ToolCall:
 
 
 class StreamRenderer:
-    """Drives the streaming display for a single agent turn.
-
-    Mode ``"single"`` is the focus of Parcel α. Mode ``"swarm"`` is a stub
-    — callers should detect it and route to ``_legacy`` swarm rendering.
-    """
+    """Drives the streaming display for a single agent turn."""
 
     def __init__(self, *, mode: str = "single",
                   console: Console | None = None) -> None:

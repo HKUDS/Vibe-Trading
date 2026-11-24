@@ -125,21 +125,7 @@ def _format_tool_result_preview(tool: str, status: str, preview: str) -> str:
 
 
 def _load_full_proposal(proposal_id: str) -> common.Optional[common.Dict[str, common.Any]]:
-    """Reload a persisted ``mandate.proposal`` payload by id, broker-agnostic.
-
-    The propose tool persists the full proposal under
-    ``<runtime_root>/live/<broker>/proposals/<proposal_id>.json`` before
-    returning. The ``tool_result`` preview is only the first 200 chars of the
-    JSON body, far too short to carry the full proposal, so the relay reloads it
-    from disk. The broker segment is unknown from the preview alone, so every
-    broker's proposals directory is searched (mirrors api_server).
-
-    Args:
-        proposal_id: The ``mp_...`` id parsed from the tool_result preview.
-
-    Returns:
-        The full proposal dict, or ``None`` when not found / unreadable.
-    """
+    """Reload a persisted ``mandate.proposal`` payload by id, broker-agnostic."""
     try:
         from src.live.paths import live_root
 
@@ -156,22 +142,7 @@ def _load_full_proposal(proposal_id: str) -> common.Optional[common.Dict[str, co
 
 
 def _mandate_proposal_from_tool_result(data: common.Dict[str, common.Any]) -> common.Optional[common.Dict[str, common.Any]]:
-    """Recover a full ``mandate.proposal`` payload from a propose-tool result.
-
-    Detection mirrors the session SSE reader's ``_mandate_proposal_frame_from_tool_result``:
-    the event must be a successful ``tool_result`` for ``propose_mandate_profiles``
-    whose preview carries a ``proposal_id``. The full proposal is then reloaded
-    from disk (the preview is truncated).
-
-    Args:
-        data: The ``tool_result`` event payload (``tool`` / ``status`` /
-            ``preview``).
-
-    Returns:
-        The full proposal dict ready to feed ``proposal_sink`` (arming
-        ``ctx.pending_proposal``), or ``None`` when this is not a recoverable
-        propose-tool result.
-    """
+    """Recover a full ``mandate.proposal`` payload from a propose-tool result."""
     if data.get("tool") != _PROPOSAL_TOOL_NAME or data.get("status") != "ok":
         return None
     match = _PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
@@ -196,25 +167,7 @@ def _scheduled_proposal_from_tool_result(data: common.Dict[str, common.Any]) -> 
 
 
 def _ensure_session_id(title: str, *, session_id: common.Optional[str] = None) -> str:
-    """Return a host-owned session id, registering the session record if new.
-
-    The research-goal tools are registered unconditionally and resolve their
-    session from the host runtime, so any entry point that calls
-    :func:`_run_agent` without an id makes every goal call fail validation with
-    ``session_id is required`` while the run still reports success (#885).
-
-    Persistence is best effort. ``Session`` populates ``session_id`` on
-    construction, so a store or index failure still yields a usable id rather
-    than falling back to the empty string that caused the bug.
-
-    Args:
-        title: Text used as the session title; truncated for display.
-        session_id: Explicit id to register, for callers that need the same
-            session across repeated invocations. Defaults to a fresh id.
-
-    Returns:
-        A non-empty session id.
-    """
+    """Return a host-owned session id, registering the session record if new."""
     from src.session.models import Session, SessionStatus
     from src.session.store import SessionStore
 
@@ -250,21 +203,7 @@ def _run_agent(
     session_id: str = "",
     proposal_sink: common.Optional[common.Any] = None,
 ) -> dict:
-    """Build AgentRuntime and execute, return result dict.
-
-    A turn with a ``session_id`` is recorded like a web turn
-    (:mod:`cli.conversation`): the history the model sees is replayed from the
-    session's thread log, never passed in by the caller, and the turn's items
-    and reply row are written back to the session.
-
-    Args:
-        proposal_sink: Optional callable invoked with the payload of every
-            ``mandate.proposal`` event the agent emits. The interactive REPL
-            uses this to capture an outstanding live-trading mandate proposal so
-            it can intercept the user's numeric pick *before* the model — a pick
-            is a privileged surface action (commit), never a tool the model can
-            call (SPEC.md Consent §2).
-    """
+    """Build AgentRuntime and execute, return result dict."""
     from src.config.accessor import get_env_config
     from src.product.tool_policy import ToolPolicy
     from src.tools import build_registry
@@ -518,24 +457,7 @@ def _run_with_graceful_cancel(
     no_rich: bool,
     session_id: str = "",
 ) -> dict:
-    """Run an agent loop with first-Ctrl+C = graceful cancel.
-
-    First SIGINT during the run sets ``agent._cancelled`` so the loop exits
-    cleanly after the current LLM/tool step finishes. A second SIGINT within
-    two seconds restores the default handler and re-raises ``KeyboardInterrupt``
-    for hard quit. Outside of a run the parent CLI's normal SIGINT handling
-    (exit on input prompt) is unaffected — the handler is restored in
-    ``finally``.
-
-    Args:
-        agent: AgentRuntime instance ready to ``run()``.
-        prompt: User prompt.
-        history: Recent message history.
-        no_rich: Whether the parent caller is rendering with Rich Live.
-
-    Returns:
-        AgentRuntime result dict.
-    """
+    """Run an agent loop with first-Ctrl+C = graceful cancel."""
     import signal as _signal
 
     state = {"requested": False, "last_ts": 0.0}
@@ -576,14 +498,7 @@ def _run_with_graceful_cancel(
 
 
 def _build_benchmark_table(m: dict) -> common.Optional[common.Table]:
-    """Build a benchmark comparison table from metrics dict.
-
-    Args:
-        m: Metrics dictionary (from _read_metrics or result dict).
-
-    Returns:
-        Rich Table, or None if no benchmark data is present.
-    """
+    """Build a benchmark comparison table from metrics dict."""
     bench_ticker  = m.get("benchmark_ticker")
     bench_ret_str = m.get("benchmark_return")
     bench_ret_raw = m.get("_benchmark_return_raw")

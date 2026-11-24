@@ -66,27 +66,14 @@ class ProviderConfig:
 
 
 def current_settings() -> dict[str, str]:
-    """Copy the process's current connection settings, `.env` included.
-
-    Returns:
-        A private copy a caller may change without affecting the process or
-        any other client resolved from it.
-    """
+    """Copy the process's current connection settings, `.env` included."""
     with CONFIG_LOCK:
         _ensure_dotenv()
         return dict(os.environ)
 
 
 def resolve_config(*, model_name: str | None = None, environment: Mapping[str, str] | None = None) -> ProviderConfig:
-    """Resolve once from supplied settings and, for custom providers, the vault.
-
-    Args:
-        model_name: Optional model override.
-        environment: Complete connection settings, or None for current settings.
-
-    Returns:
-        An immutable config for one client and all of its subsequent requests.
-    """
+    """Resolve once from supplied settings and, for custom providers, the vault."""
     with CONFIG_LOCK:
         values = current_settings() if environment is None else dict(environment)
         options = ModelOptions(**values)
@@ -120,14 +107,7 @@ def resolve_config(*, model_name: str | None = None, environment: Mapping[str, s
 
 
 def _redact_env_source(loaded: Path | None) -> str:
-    """Map a resolved `.env` candidate to a stable, leak-free label.
-
-    Returns a symbolic slot label (never the absolute path) so a stale
-    or shadowed `.env` stays diagnosable without exposing the OS
-    username, home, or CWD (CWE-209). A candidate outside the fixed
-    list (e.g. one injected by a test) collapses to a generic
-    placeholder rather than echoing a real path.
-    """
+    """Map a resolved `.env` candidate to a stable, leak-free label."""
     if loaded is None:
         return "none (no .env file found)"
     for label, candidate in zip(_ENV_LABELS, _ENV_CANDIDATES):
@@ -137,12 +117,7 @@ def _redact_env_source(loaded: Path | None) -> str:
 
 
 def _load_env_file(path: Path) -> None:
-    """Load a single .env file into os.environ without clobbering real vars.
-
-    Exported environment variables are explicit operator intent and outrank
-    the file; ``.env`` only fills the gaps (pinned by
-    ``test_dispatch_connector_never_overrides_a_real_environment_variable``).
-    """
+    """Load a single .env file into os.environ without clobbering real vars."""
     if load_dotenv is not None:
         load_dotenv(dotenv_path=path, override=False)
     else:
@@ -185,17 +160,7 @@ def get_llm_credentials(
     model: str | None,
     *, environment: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """Resolve legacy-compatible credentials without changing process settings.
-
-    Args:
-        provider: Configured provider name.
-        model: Configured model name, including legacy model-based inference.
-        environment: Captured settings, or None for current environment/login.
-
-    Returns:
-        Provider, API key, endpoint and model. Custom profiles read the active
-        credential vault; other providers retain the generic OPENAI_* fallback.
-    """
+    """Resolve legacy-compatible credentials without changing process settings."""
     env = os.environ if environment is None else environment
     normalized_provider = (provider or "").strip().lower().replace("_", "-")
     if normalized_provider == "custom":

@@ -1,18 +1,4 @@
-"""Minimal chat-log renderer — stub for the demo.
-
-Iterates a list of turn dicts and prints user / assistant lines with the
-expected meta header. Defer the rich features (collapsible tool
-timeline, markdown rendering, action footer) to post-demo work — they
-belong in the Web bubble (Parcel C / D), not in the CLI replay.
-
-Turn shape:
-    {
-        "role": "user" | "assistant",
-        "content": str,
-        "timestamp": str | None,   # ISO or formatted clock
-        "meta": str | None,        # "Vibe · 4.1s · 1.2k tokens · $0.003"
-    }
-"""
+"""Minimal chat-log renderer — stub for the demo."""
 
 from __future__ import annotations
 
@@ -54,14 +40,7 @@ def render_history(
     *,
     console: Optional[Console] = None,
 ) -> None:
-    """Print past turns to ``console``.
-
-    Args:
-        turns: Iterable of turn dicts (see module docstring for shape).
-        console: Override; defaults to the shared CLI console.
-
-    No return value — this is a side-effecting renderer.
-    """
+    """Print past turns to ``console``."""
     cons = _resolve_console(console)
     for turn in turns:
         cons.print(_render_turn(turn))

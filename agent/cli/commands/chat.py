@@ -98,13 +98,7 @@ def _change_session_model(ctx: Any, args: tuple[str, ...]) -> int:
 
 
 def cmd_model(ctx: Any = None, *args: str) -> int:
-    """Show the configuration, or set/clear the current session's model.
-
-    ``/model`` prints the configured provider/model and the session's own
-    selection when it has one; ``/model set <provider> <model> [effort]`` and
-    ``/model clear`` change that selection. Only providers the server is
-    configured for are accepted, and only from the next turn on.
-    """
+    """Show the configuration, or set/clear the current session's model."""
     if args:
         return _change_session_model(ctx, args)
     console = _resolve_console()
@@ -214,12 +208,7 @@ def cmd_clear(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def _queue_prompt(ctx: Any, prompt: str) -> bool:
-    """Stash ``prompt`` on ``ctx.pending_prompt`` for the loop to consume.
-
-    Returns ``True`` if the context exposes a writable ``pending_prompt``
-    attribute, ``False`` otherwise (e.g. a tiny test stub) — the caller
-    falls back to printing the canonical instruction in that case.
-    """
+    """Stash ``prompt`` on ``ctx.pending_prompt`` for the loop to consume."""
     if ctx is None or not hasattr(ctx, "pending_prompt"):
         return False
     try:
@@ -230,14 +219,7 @@ def _queue_prompt(ctx: Any, prompt: str) -> bool:
 
 
 def cmd_journal(ctx: Any = None, *args: str) -> int:
-    """Queue an "analyze my trade journal at <path>" agent turn.
-
-    With a path: ``/journal trades.csv`` becomes the prompt
-    ``Analyze my trade journal at trades.csv`` which is queued on
-    ``ctx.pending_prompt`` and executed by the interactive loop on the
-    next tick. Without a path the command prints the canonical
-    instruction so the user can paste it themselves.
-    """
+    """Queue an "analyze my trade journal at <path>" agent turn."""
     console = _resolve_console()
     path = " ".join(args).strip()
     if not path:
@@ -261,14 +243,7 @@ def cmd_journal(ctx: Any = None, *args: str) -> int:
 
 
 def cmd_shadow(ctx: Any = None, *args: str) -> int:
-    """Queue a Shadow Account agent turn.
-
-    ``/shadow`` opens / inspects the shadow account. ``/shadow <path>``
-    trains a new shadow from a trade journal at that path. Both forms
-    queue the canonical natural-language prompt on ``ctx.pending_prompt``
-    so the ReAct loop picks the right tool (``extract_shadow_strategy``,
-    ``run_shadow_backtest``, ``render_shadow_report``).
-    """
+    """Queue a Shadow Account agent turn."""
     console = _resolve_console()
     path = " ".join(args).strip()
     if path:
@@ -296,13 +271,7 @@ def cmd_swarm(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_debug(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Toggle the debug summary that prints after each agent turn.
-
-    When ON the interactive loop appends a single muted line after every
-    turn containing ``iter``, ``tools``, ``elapsed``, and the turn's token
-    usage — see ``_print_debug_summary`` in
-    :mod:`cli.main`. When OFF the summary is suppressed.
-    """
+    """Toggle the debug summary that prints after each agent turn."""
     console = _resolve_console()
     if ctx is not None and hasattr(ctx, "debug"):
         try:
@@ -328,11 +297,7 @@ def cmd_debug(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_quit(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Signal exit by returning a distinct exit code.
-
-    The interactive loop interprets ``2`` as "user-requested quit" and
-    performs session persistence + final farewell before terminating.
-    """
+    """Signal exit by returning a distinct exit code."""
     return 2
 
 

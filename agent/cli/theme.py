@@ -1,23 +1,4 @@
-"""Centralised Rich Style table for the Vibe-Trading CLI.
-
-All visible colour decisions for the CLI live here so the look stays consistent
-with the web app (see ``frontend/src/index.css`` design tokens). The brand
-accent is the orange wordmark colour selected in the 2026-05-19 UI/UX design
-proposal (§1.3):
-
-* light terminals: ``#d97706`` (WCAG-AA white-on-orange contrast 4.8:1)
-* dark terminals:  ``#fa9842`` (matches web ``--primary`` in dark mode)
-
-Semantic styles follow the design proposal's "Orange discipline rule" — only
-the brand wordmark, the primary CTA, and the agent identity should ever use
-``Theme.primary``. Tool status, success, danger and warning use their own
-semantic tokens so the orange stays meaningful.
-
-The module exposes a single shared :class:`rich.console.Console` instance via
-:func:`get_console` so every component (banner, onboarding wizard, stream
-renderer, status bar) renders to the same TTY. ``NO_COLOR`` is honoured by
-forcing Rich into no-color mode at construction time.
-"""
+"""Centralised Rich Style table for the Vibe-Trading CLI."""
 
 from __future__ import annotations
 
@@ -41,25 +22,7 @@ BRAND_ORANGE_DARK: Final[str] = "#fa9842"
 
 
 def _is_dark_terminal(console: Console) -> bool:
-    """Heuristically decide whether the terminal is rendering on a dark theme.
-
-    Rich does not expose a foolproof "dark mode?" probe, so we use a best-effort
-    chain:
-
-    1. Explicit override via ``VIBE_TRADING_THEME`` env var (``dark``/``light``).
-    2. ``COLORFGBG`` (set by xterm/rxvt/Konsole): the part after ``;`` is the
-       background colour index. ``0`` (black) → dark, anything else → light.
-    3. macOS Terminal.app sets ``TERM_PROGRAM=Apple_Terminal`` without a colour
-       hint — assume dark (it is the macOS Big Sur+ default).
-    4. Fallback: dark (matches the modern default across iTerm, Alacritty,
-       Windows Terminal, VS Code integrated terminal).
-
-    Args:
-        console: Rich console (used to short-circuit when colour is disabled).
-
-    Returns:
-        ``True`` if dark mode should be assumed.
-    """
+    """Heuristically decide whether the terminal is rendering on a dark theme."""
 
     from src.config.accessor import get_env_config
 
@@ -163,14 +126,7 @@ def _build_styles(dark: bool, no_color: bool) -> _ThemeStyles:
 
 
 def _make_console() -> Console:
-    """Create the shared Rich console.
-
-    ``force_terminal`` is *not* set: Rich's own ``isatty`` detection is
-    correct and forcing it leaks ANSI escapes into ``docker exec -i`` /
-    piped output (prior terminal-rendering lesson, issue #3265).
-
-    ``no_color`` honours ``NO_COLOR`` (https://no-color.org).
-    """
+    """Create the shared Rich console."""
 
     return Console(
         no_color=_NO_COLOR,
@@ -189,11 +145,7 @@ _styles: _ThemeStyles = _build_styles(_dark, _NO_COLOR or _console.color_system 
 
 
 def get_console() -> Console:
-    """Return the shared console instance.
-
-    Returns:
-        The single :class:`Console` everyone in ``agent/cli`` writes to.
-    """
+    """Return the shared console instance."""
 
     return _console
 
@@ -205,17 +157,7 @@ def is_dark() -> bool:
 
 
 class Theme:
-    """Namespace of Rich :class:`Style` instances used across the CLI.
-
-    Use as attribute access (``Theme.primary``) so that swapping the
-    underlying palette only requires editing this module. Each attribute is a
-    :class:`rich.style.Style` and can be passed to ``console.print`` directly
-    or composed via ``Text("…", style=Theme.primary)``.
-
-    Example:
-        >>> from cli.theme import Theme, get_console
-        >>> get_console().print("Vibe-Trading", style=Theme.primary)
-    """
+    """Namespace of Rich :class:`Style` instances used across the CLI."""
 
     primary: Final[Style] = _styles.primary
     primary_dim: Final[Style] = _styles.primary_dim

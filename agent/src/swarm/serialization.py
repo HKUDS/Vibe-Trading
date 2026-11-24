@@ -1,14 +1,4 @@
-"""Shared serialization helpers for the swarm read boundaries.
-
-Single source of truth for projecting a :class:`SwarmTask` into the per-task
-JSON dict returned by the MCP tools (``run_swarm`` / ``get_swarm_status`` /
-``get_run_result``) and the in-process ``run_swarm`` agent tool.
-
-Before this module each boundary hand-maintained its own field allowlist and
-all three silently omitted ``SwarmTask.error``: a misconfigured provider
-produced ``status="failed"`` with no diagnosable reason anywhere the caller
-could see, even though the error was captured on disk (see P04).
-"""
+"""Shared serialization helpers for the swarm read boundaries."""
 
 from __future__ import annotations
 
@@ -18,11 +8,7 @@ from src.tools.redaction import redact_internal_paths
 
 
 def serialize_task(task: Any) -> dict:
-    """Project a SwarmTask into its public per-task dict.
-
-    ``error`` and ``iterations`` are always included so a failed or degraded
-    task is diagnosable from every read path, not only the on-disk artifacts.
-    """
+    """Project a SwarmTask into its public per-task dict."""
     status = task.status.value if hasattr(task.status, "value") else str(task.status)
     return {
         "id": task.id,
@@ -39,11 +25,7 @@ def serialize_task(task: Any) -> dict:
 
 
 def run_level_error(run: Any) -> str | None:
-    """First failed task's error, for a top-level ``error`` field.
-
-    Returns ``None`` (an explicit null, not an absent key) when no task carries
-    an error, so a caller that only reads the top level still gets a signal.
-    """
+    """First failed task's error, for a top-level ``error`` field."""
     for task in getattr(run, "tasks", None) or []:
         err = getattr(task, "error", None)
         if err:

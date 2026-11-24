@@ -1,17 +1,4 @@
-"""CLI turns recorded through the session thread, the way a web turn is.
-
-Every CLI entry that runs the agent inside a session (interactive REPL,
-``run``, ``continue``, ``session`` chat) goes through :func:`open_turn`:
-
-* the user's message is recorded in ``thread.jsonl`` when the turn starts;
-* :meth:`SessionRuntime.begin_turn` replays ``thread.jsonl`` into the model's
-  history, and hands the loop a recorder that writes the turn's items;
-* :meth:`CliTurn.finish` closes the turn in the thread and derives its display
-  view from thread items.
-
-So a session started in the terminal resumes in the web UI, and the other way
-round, with the same tool calls and results in the model's history.
-"""
+"""CLI turns recorded through the session thread, the way a web turn is."""
 
 from __future__ import annotations
 
@@ -45,16 +32,7 @@ def index_message(session_id: str, role: str, content: str) -> None:
 
 
 def _reply_text(status: str, result: Dict[str, Any], streamed_text: str) -> str:
-    """Return the assistant row's text, as the web service words it.
-
-    Args:
-        status: ``completed`` / ``cancelled`` / ``failed``.
-        result: The loop's result dict.
-        streamed_text: Text streamed to the user during the turn.
-
-    Returns:
-        The reply text shown in the transcript.
-    """
+    """Return the assistant row's text, as the web service words it."""
     if status == "completed":
         return str(result.get("content") or "").strip() or _EMPTY_REPLY
     if status == "waiting_user":
@@ -66,12 +44,7 @@ def _reply_text(status: str, result: Dict[str, Any], streamed_text: str) -> str:
 
 
 class CliTurn:
-    """One CLI turn in progress.
-
-    Attributes:
-        turn_id: The turn (attempt) id written on every thread item.
-        recorder: Sink the agent loop writes thread items through.
-    """
+    """One CLI turn in progress."""
 
     def __init__(
         self,
@@ -81,15 +54,7 @@ class CliTurn:
         session_id: str,
         prompt: str,
     ) -> None:
-        """Create a turn; use :func:`open_turn`.
-
-        Args:
-            store: Session store.
-            runtime: The session's runtime.
-            recorder: The turn's recorder.
-            session_id: Session id.
-            prompt: The user's message.
-        """
+        """Create a turn; use :func:`open_turn`."""
         self._store = store
         self._runtime = runtime
         self.recorder = recorder
@@ -105,15 +70,7 @@ class CliTurn:
         return self.recorder.history
 
     def finish(self, result: Dict[str, Any], streamed_text: str = "") -> Dict[str, Any]:
-        """Close the turn and write its display row.
-
-        Args:
-            result: The loop's result dict; ``usage`` is added to it.
-            streamed_text: Text streamed to the user, kept in a stopped reply.
-
-        Returns:
-            ``result``, with the turn's token usage under ``usage``.
-        """
+        """Close the turn and write its display row."""
         if self._finished:
             return result
         self._finished = True
@@ -147,12 +104,7 @@ class CliTurn:
         return result
 
     def abort(self, status: str = "cancelled", reason: str = "Interrupted") -> None:
-        """Close a turn whose run ended by an exception (a forced quit).
-
-        Args:
-            status: Loop status to close the turn with (``cancelled``/``failed``).
-            reason: Why it ended, shown in a failed turn's reply.
-        """
+        """Close a turn whose run ended by an exception (a forced quit)."""
         self.finish({"status": status, "reason": reason})
 
 
@@ -164,20 +116,7 @@ def open_turn(
     provider: Optional[str] = None,
     model: Optional[str] = None,
 ) -> Optional[CliTurn]:
-    """Start a recorded turn in a session.
-
-    Replays the session's thread and opens the turn's recorder. Existing
-    pre-thread sessions are migrated by the session migration entry point.
-
-    Args:
-        store: Session store rooted at the user-level sessions directory.
-        session_id: Session id.
-        prompt: The user's message.
-
-    Returns:
-        The turn, or None when the session store cannot be used; the caller
-        then runs the loop without history, as a store failure always did.
-    """
+    """Start a recorded turn in a session."""
     try:
         runtime = SessionRuntime(store.thread_log(session_id), session_id)
         recorder = runtime.begin_turn(
