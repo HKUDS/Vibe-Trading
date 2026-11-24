@@ -60,6 +60,7 @@ A runnable end-to-end example lives at `sec-edgar/scripts/sec_filings_example.py
 ## Scripts
 
 - [End-to-end fetch example](scripts/sec_filings_example.py) — ticker → CIK → recent 10-Ks → a metric series, using the bundled client.
+- [Filing context example](scripts/firecrawl_filing_context_example.py) — the `get_filing_context` tool: SEC filings first, then optional Firecrawl text excerpts that keep each filing's URL and date. Needs `FIRECRAWL_API_KEY`; without it the SEC result is returned with a note and no Firecrawl request is made.
 
 ## Notes
 

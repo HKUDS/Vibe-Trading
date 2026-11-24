@@ -1,0 +1,57 @@
+{
+  "_comment": "Redacted fixtures for get_filing_context tests. sec_submissions is a slice of the public SEC submissions index for AAPL (CIK 0000320193); the third row is synthetic and has no primary document. firecrawl_scrape is a Firecrawl /v2/scrape response for the first filing, with the markdown cut before Item 9.01 and request ids, cache times and account fields removed.",
+  "ticker": "AAPL",
+  "cik": "0000320193",
+  "sec_submissions": {
+    "cik": "320193",
+    "name": "Apple Inc.",
+    "filings": {
+      "recent": {
+        "form": [
+          "8-K",
+          "8-K",
+          "8-K"
+        ],
+        "accessionNumber": [
+          "0001140361-26-042798",
+          "0000320193-26-000024",
+          "0000000000-00-000000"
+        ],
+        "filingDate": [
+          "2026-11-09",
+          "2026-11-02",
+          "2026-10-01"
+        ],
+        "reportDate": [
+          "2026-11-05",
+          "2026-11-02",
+          ""
+        ],
+        "primaryDocument": [
+          "ef20085077_8k.htm",
+          "aapl-20261102.htm",
+          ""
+        ],
+        "primaryDocDescription": [
+          "",
+          "8-K",
+          ""
+        ]
+      }
+    }
+  },
+  "firecrawl_scrape": {
+    "success": true,
+    "data": {
+      "markdown": "* * *\n\nUNITED STATES\n\n\nSECURITIES AND EXCHANGE COMMISSION\n\n\nWashington, D.C. 20549\n\n* * *\n\nFORM 8-K\n\nCURRENT REPORT\n\nPursuant to Section 13 OR 15(d) of The Securities Exchange Act of 1934\n\nNovember 5, 2026\n\nDate of Report (Date of earliest event reported)\n\n\n* * *\n\n![](https://www.sec.gov/Archives/edgar/data/320193/000114036126042798/image1.jpg)\n\nApple Inc.\n\n(Exact name of Registrant as specified in its charter)\n\n\n|     |     |     |\n| --- | --- | --- |\n|  |  |  |\n| California | 001-36743 | 94-2404110 |\n| (State or other jurisdiction of incorporation) | (Commission File Number) | (I.R.S. Employer Identification No.) |\n\nOne Apple Park Way\n\nMS 927-4GC\n\nCupertino, California95014\n\n(Address of principal executive offices) (Zip Code)\n\n\n(408) 996-1010\n\n(Registrant’s telephone number, including area code)\n\n\nNot applicable\n\n(Former name or former address, if changed since last report.)\n\n\nCheck the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the Registrant under any of the following provisions:\n\n\n☐\n\nWritten communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)\n\n☐\n\nSoliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)\n\n☐\n\nPre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))\n\n☐\n\nPre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))\n\n* * *\n\nSecurities registered pursuant to Section 12(b) of the Act:\n\n|     |     |     |\n| --- | --- | --- |\n|  |  |  |\n| Title of each class | Trading symbol(s) | Name of each exchange on which registered |\n| Common Stock, $0.00001 par value per share | AAPL | The Nasdaq Stock Market LLC |\n| 1.625% Notes due 2026 | — | The Nasdaq Stock Market LLC |\n| 2.000% Notes due 2027 | — | The Nasdaq Stock Market LLC |\n| 1.375% Notes due 2029 | — | The Nasdaq Stock Market LLC |\n| 3.050% Notes due 2029 | — | The Nasdaq Stock Market LLC |\n| 0.500% Notes due 2031 | — | The Nasdaq Stock Market LLC |\n| 3.600% Notes due 2042 | — | The Nasdaq Stock Market LLC |\n\n* * *\n\nIndicate by check mark whether the Registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).\n\n\nEmerging growth company  ☐\n\nIf an emerging growth company, indicate by check mark if the Registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act.  ☐\n\n* * *\n\n1\n\n* * *\n\nItem 8.01\n\nOther Events.\n\nOn November 9, 2026, Apple Inc. (“Apple”) consummated the issuance and sale of $500,000,000 aggregate principal amount of its Floating Rate Notes due 2028 (the “2028 Floating Rate Notes”), $750,000,000 aggregate principal amount of its Floating Rate Notes due 2029 (the “2029 Floating Rate Notes”), $1,000,000,000 aggregate principal amount of its 4.650% Notes due 2028 (the “2028 Fixed Rate Notes”), $1,000,000,000 aggregate principal amount of its 4.750% Notes due 2029 (the “2029 Fixed Rate Notes”), $1,000,000,000 aggregate principal amount of its 4.900% Notes due 2031 (the “2031 Fixed Rate Notes”), $1,250,000,000 aggregate principal amount of its 5.100% Notes due 2033 (the “2033 Fixed Rate Notes”) and $2,000,000,000 aggregate principal amount of its 5.350% Notes due 2036 (the “2036 Fixed Rate Notes” and, together with the 2028 Floating Rate Notes, the 2029 Floating Rate Notes, the 2028 Fixed Rate Notes, the 2029 Fixed Rate Notes, the 2031 Fixed Rate Notes and the 2033 Fixed Rate Notes, the “Notes”), pursuant to an underwriting agreement (the “Underwriting Agreement”) dated November 5, 2026 among Apple and Goldman Sachs & Co. LLC, BofA Securities, Inc., Deutsche Bank Securities Inc. and J.P. Morgan Securities LLC, as representatives of the several underwriters named therein.\n\n\nThe Notes are being issued pursuant to an indenture, dated as of November 1, 2024 (the “Indenture”), between Apple and The Bank of New York Mellon Trust Company, N.A., as trustee, together with the officer’s certificate, dated November 9, 2026 (the “Officer’s Certificate”), issued pursuant to the Indenture establishing the terms of each series of Notes.\n\n\nThe Notes are being issued pursuant to Apple’s Registration Statement on Form S-3 filed with the Securities and Exchange Commission and dated November 1, 2024 (Reg. No. 333-282937) (the “Registration Statement”).\n\n\nInterest on the 2028 Floating Rate Notes and the 2029 Floating Rate Notes will be paid quarterly in arrears on February 9, May 9, August 9 and November 9 of each year, beginning on February 9, 2027. Interest on the 2028 Fixed Rate Notes, the 2029 Fixed Rate Notes, the 2031 Fixed Rate Notes, the 2033 Fixed Rate Notes, and the 2036 Fixed Rate Notes will be paid semi-annually in arrears on May 9 and November 9 of each year, beginning on May 9, 2027.\n\n\nThe 2028 Floating Rate Notes will mature on November 9, 2028. The 2029 Floating Rate Notes will mature on November 9, 2029. The 2028 Fixed Rate Notes will mature on November 9, 2028. The 2029 Fixed Rate Notes will mature on November 9, 2029. The 2031 Fixed Rate Notes will mature on November 9, 2031. The 2033 Fixed Rate Notes will mature on November 9, 2033. The 2036 Fixed Rate Notes will mature on November 9, 2036.\n\n\nThe Notes will be Apple’s senior unsecured obligations and will rank equally with Apple’s other unsecured and unsubordinated debt from time to time outstanding.\n\n\nThe foregoing description of the Notes and related agreements is qualified in its entirety by the terms of the Underwriting Agreement, the Indenture and the Officer’s Certificate (including the forms of the Notes). Apple is furnishing the Underwriting Agreement and the Officer’s Certificate (including the forms of the Notes) attached hereto as Exhibits 1.1 and 4.1 through 4.8, respectively, and they are incorporated herein by reference. The Indenture is filed as Exhibit 4.1 to the Registration Statement. An opinion regarding the legality of the Notes is filed as Exhibit 5.1, and is incorporated by reference into the Registration Statement; and a consent relating to the incorporation of such opinion is incorporated by reference into the Registration Statement and is filed as Exhibit 23.1 by reference to its inclusion within Exhibit 5.1.",
+      "metadata": {
+        "title": " ",
+        "sourceURL": "https://www.sec.gov/Archives/edgar/data/320193/000114036126042798/ef20085077_8k.htm",
+        "url": "https://www.sec.gov/Archives/edgar/data/320193/000114036126042798/ef20085077_8k.htm",
+        "statusCode": 200,
+        "contentType": "text/html",
+        "scrapeId": "redacted"
+      }
+    }
+  }
+}

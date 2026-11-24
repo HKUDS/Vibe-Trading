@@ -143,6 +143,7 @@ is required only where listed (no key listed = free / no auth).
 | Sell-side research reports | `get_research_reports` | A-share | — |
 | Stock news | `get_stock_news` | A-share, US, HK | — |
 | SEC filings (EDGAR) | `get_sec_filings` | US | — |
+| SEC filing text excerpts (EDGAR + Firecrawl) | `get_filing_context` | US | `FIRECRAWL_API_KEY` |
 | Financial statements | `get_financial_statements` | A-share, US, HK | — |
 | Options chain | `get_options_chain` | US | — |
 | Stock profile / fundamentals | `get_stock_profile` | US | — |
@@ -207,7 +208,7 @@ main and could retry a source the gateway has already cooled down.
 - **Sina / Yahoo also throttle by IP** — same per-host wrapper, same fallback rule.
 - **Key-gated sources need their env key** (`FINNHUB_API_KEY`,
   `ALPHAVANTAGE_API_KEY`, `TIINGO_API_KEY`, `FMP_API_KEY`, `FRED_API_KEY`,
-  `VIBE_TRADING_IWENCAI_KEY`, `TUSHARE_TOKEN`). If the key is absent the tool/loader
+  `FIRECRAWL_API_KEY`, `VIBE_TRADING_IWENCAI_KEY`, `TUSHARE_TOKEN`). If the key is absent the tool/loader
   is unavailable — route to a free same-market source instead of erroring out.
 - A single failing symbol or transient HTTP error is reported inside the envelope;
   it never aborts the surrounding batch.

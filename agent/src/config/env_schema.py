@@ -219,7 +219,8 @@ class DataConfig(_EnvBase):
     """Market-data source credentials and tuning.
 
     Sources: ``backtest/loaders/*.py``, ``src/tools/web_search_tool.py``,
-    ``src/tools/iwencai_tool.py``, ``src/tools/fred_macro_tool.py``.
+    ``src/tools/iwencai_tool.py``, ``src/tools/fred_macro_tool.py``,
+    ``src/tools/firecrawl_filing_context_tool.py``.
     """
 
     tushare_token: str = Field(alias="TUSHARE_TOKEN", default="")
@@ -241,6 +242,7 @@ class DataConfig(_EnvBase):
     # Standard-version (srv-tool) NL research endpoint — see src/tools/gildata_srv.py.
     gildata_srv_tool_url: str = Field(alias="GILDATA_SRV_TOOL_URL", default="")
     fred_api_key: str = Field(alias="FRED_API_KEY", default="")
+    firecrawl_api_key: str = Field(alias="FIRECRAWL_API_KEY", default="")
     vibe_trading_iwencai_key: str = Field(alias="VIBE_TRADING_IWENCAI_KEY", default="")
     vibe_trading_sec_ua: str = Field(alias="VIBE_TRADING_SEC_UA", default="")
     # 13F scan bounds. No gt=0 constraint: a non-positive override must fall
