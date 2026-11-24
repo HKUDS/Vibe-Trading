@@ -5,6 +5,8 @@ research capabilities. These adapters preserve vendor schemas for additional
 fields, without introducing an SDK executor, cache or credential store.
 """
 
+from backtest.loaders.akshare_compat import history_endpoint
+
 from .reads import managed_reader
 
 
@@ -55,7 +57,7 @@ def akshare_query(endpoint, **kwargs):
 
     if not endpoint.isidentifier() or endpoint.startswith("_"):
         raise ValueError("Expected a public AKShare data endpoint")
-    return getattr(akshare, endpoint)(**kwargs)
+    return history_endpoint(akshare, endpoint)(**kwargs)
 
 
 @managed_reader

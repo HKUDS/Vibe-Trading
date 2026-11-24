@@ -16,6 +16,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to Cloudflare Pages
+    environment: wiki-production
     runs-on: ubuntu-latest
     permissions:
       contents: read

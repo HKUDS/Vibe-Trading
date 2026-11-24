@@ -90,10 +90,8 @@ def _load_cli_env() -> None:
     except Exception:
         pass
 
-# Benchmarkable data universes: every name here must have a panel loader in
-# ``src.tools.alpha_bench_tool._UNIVERSE_TAG``. NIFTY 100 uses NSE equities;
-# KRX and BSE panels remain unsupported.
-_UNIVERSE_CHOICES = ["csi300", "sp500", "nifty100", "btc-usdt"]
+# Cross-sectional benchmark universes with a panel loader.
+_UNIVERSE_CHOICES = ["csi300", "sp500", "nifty100"]
 
 # Per-row fields that only ``bench_runner_strict`` produces. They are the
 # statistics ``categorise_strict`` actually gates on, so a strict run that

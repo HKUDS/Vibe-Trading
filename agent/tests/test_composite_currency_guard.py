@@ -9,10 +9,12 @@ the engine refuses the run instead.
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from backtest.engines._market_hooks import code_currency
 from backtest.engines.composite import CompositeEngine, _reject_mixed_currency
+from backtest.models import Position
 
 
 class TestCodeCurrency:
@@ -29,6 +31,8 @@ class TestCodeCurrency:
             ("TD.TO", "CAD"),
             ("PNG.V", "CAD"),
             ("VIC.VN", "VND"),
+            ("2330.TW", "TWD"),
+            ("6488.TWO", "TWD"),
             ("IF2406.CFFEX", "CNY"),
         ],
     )
@@ -84,6 +88,16 @@ class TestRejectMixedCurrency:
 
     def test_two_hose_symbols_are_one_currency(self):
         _reject_mixed_currency(["VIC.VN", "FPT.VN"])
+
+    def test_twd_is_named_rather_than_marked_unknown(self):
+        with pytest.raises(ValueError) as excinfo:
+            _reject_mixed_currency(["2330.TW", "AAPL.US"])
+        message = str(excinfo.value)
+        assert "TWD" in message
+        assert "UNKNOWN" not in message
+
+    def test_twse_and_tpex_symbols_are_one_currency(self):
+        _reject_mixed_currency(["2330.TW", "6488.TWO"])
 
     def test_the_error_names_every_currency_and_its_codes(self):
         with pytest.raises(ValueError) as excinfo:
@@ -144,3 +158,19 @@ class TestCompositeRunInterval:
         except Exception:
             pass  # the pipeline needs a real loader; only the re-read matters here
         assert engine._run_interval == "4H"
+
+
+class TestCompositeFunding:
+    def test_intraday_crypto_funding_skips_daily_fallback(self) -> None:
+        codes = ["BTC-USDT"]
+        engine = CompositeEngine(
+            {"initial_cash": 100_000, "interval": "4H", "funding_rate": 0.0001}, codes
+        )
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0
+        )
+        initial = engine.capital
+        bar = pd.Series({"close": 60000.0, "open": 60000.0})
+        for hour in (0, 4, 8, 12, 16, 20):
+            engine.on_bar("BTC-USDT", bar, pd.Timestamp(f"2025-01-01 {hour:02d}:00:00"))
+        assert initial - engine.capital == pytest.approx(18.0)

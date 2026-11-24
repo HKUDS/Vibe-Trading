@@ -264,3 +264,45 @@ def test_state_dir_helpers_do_not_create_directories(
     get_runs_dir()
 
     assert not root.exists()
+
+
+def test_get_config_candidates_default_order_under_runtime_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With no explicit path, candidates are json/yaml/yml, in that priority order."""
+    from src.config.paths import get_config_candidates
+
+    root = tmp_path / "state-root"
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
+
+    assert get_config_candidates() == [
+        root / "agent.json",
+        root / "agent.yaml",
+        root / "agent.yml",
+    ]
+
+
+def test_get_config_candidates_explicit_path_returns_only_that_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An explicit config path short-circuits the default lookup entirely."""
+    from src.config.paths import get_config_candidates
+
+    # Env override must be ignored once an explicit path is supplied.
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path / "other-root"))
+    config_path = tmp_path / "custom" / "agent.yaml"
+
+    assert get_config_candidates(config_path) == [config_path]
+
+
+def test_get_config_candidates_expands_user_in_explicit_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A '~'-relative explicit path must be expanded, like the no-path default."""
+    from src.config.paths import get_config_candidates
+
+    monkeypatch.delenv("VIBE_TRADING_HOME", raising=False)
+
+    candidates = get_config_candidates(Path("~/custom-agent.json"))
+
+    assert candidates == [Path.home() / "custom-agent.json"]

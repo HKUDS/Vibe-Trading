@@ -4,9 +4,12 @@ import type {
   OptionsChainResponse,
   OptionsPayoffRequest,
   OptionsPayoffResponse,
+  OptionsStrategyCompareRequest,
+  OptionsStrategyCompareResponse,
   VolatilitySurfaceRequest,
   VolatilitySurfaceResponse,
 } from "@/lib/options";
+import type { SurfaceDiagnosticsRequest, SurfaceDiagnosticsResponse } from "@/lib/surfaceDiagnostics";
 
 const BASE = "";
 const configuredTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
@@ -625,6 +628,8 @@ export const api = {
   startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
     request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),
   getResearchLabJob: (id: string) => request<LabJob>(`/api/research-lab/jobs/${encodeURIComponent(id)}`),
+  downloadResearchLabOosEquity: (id: string): Promise<Blob> =>
+    performRequest(`/api/research-lab/jobs/${encodeURIComponent(id)}/report?format=oos_equity_csv`, { headers: authHeaders() }, (response) => response.blob()),
   getPixelOffice: () => request<OfficeSnapshot>("/api/pixel-office"),
   updatePixelOffice: (action: "create" | "assign" | "complete" | "rank", arguments_: Record<string, unknown>) =>
     request<OfficeSnapshot>("/api/pixel-office/actions", { method: "POST", body: JSON.stringify({ action, arguments: arguments_ }) }),
@@ -904,8 +909,20 @@ export const api = {
       body: JSON.stringify(body),
       signal,
     }),
+  compareOptionsStrategies: (body: OptionsStrategyCompareRequest, signal?: AbortSignal) =>
+    request<OptionsStrategyCompareResponse>("/options/strategy-compare", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
   computeVolatilitySurface: (body: VolatilitySurfaceRequest, signal?: AbortSignal) =>
     request<VolatilitySurfaceResponse>("/options/volatility-surface", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  diagnoseVolatilitySurface: (body: SurfaceDiagnosticsRequest, signal?: AbortSignal) =>
+    request<SurfaceDiagnosticsResponse>("/options/volatility-surface/diagnostics", {
       method: "POST",
       body: JSON.stringify(body),
       signal,
@@ -1474,6 +1491,24 @@ export interface ValidationData {
   };
 }
 
+export interface RiskDrawdownPeriod {
+  peak: string | null;
+  trough: string | null;
+  recovery: string | null;
+  depth: number;
+  duration_bars: number;
+}
+
+export type RiskDrawdownEpisodes = {
+  basis: "constant_weight_model";
+  duration_unit: "bars";
+  recovery_rtol: number;
+  limit: number;
+} & (
+  | { available: true; reason: null; total: number; items: RiskDrawdownPeriod[]; current: RiskDrawdownPeriod | null }
+  | { available: false; reason: "missing_return_observations" | "empty_path" | "non_finite_wealth" | "non_positive_wealth"; total: null; items: []; current: null }
+);
+
 export interface RiskXRayPayload {
   inputs?: {
     symbols?: string[];
@@ -1485,7 +1520,7 @@ export interface RiskXRayPayload {
   };
   concentration?: { hhi?: number; effective_n?: number; top_weight?: number };
   volatility?: { annualized_vol?: number };
-  drawdown?: { max_drawdown?: number };
+  drawdown?: { max_drawdown?: number; episodes?: RiskDrawdownEpisodes };
   tail_risk?: Record<string, unknown>;
   diversification?: Record<string, unknown>;
   correlation?: Record<string, unknown>;
@@ -1695,7 +1730,9 @@ export type SectorAssetClass =
   | "ar_equity"
   | "br_equity"
   | "uk_equity"
+  | "taiwan_equity"
   | "vietnam_equity"
+  | "europe_equity"
   | "index"
   | "crypto"
   | "futures"

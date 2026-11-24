@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2611.24845"><b>📄 阅读技术报告</b>&nbsp; <img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
+</p>
+
+<p align="center">
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading&amp;type=trending" height="55" alt="Star History: GitHub Trending"/></a>
   <a href="https://trendshift.io/repositories/25527"><img src="https://trendshift.io/api/badge/trendshift/repositories/25527/daily" height="55" alt="Trendshift: daily ranking"/></a>
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading" height="55" alt="Star History: global star ranking"/></a>
@@ -23,6 +27,11 @@
   <a href="https://github.com/search?q=topic%3Abacktesting&amp;type=repositories&amp;s=stars&amp;o=desc">#1 回测</a> &nbsp;·&nbsp;
   <a href="https://github.com/search?q=topic%3Aalgorithmic-trading&amp;type=repositories&amp;s=stars&amp;o=desc">#3 算法交易</a> &nbsp;·&nbsp;
   <a href="https://github.com/search?q=topic%3Aquantitative-finance&amp;type=repositories&amp;s=stars&amp;o=desc">#4 量化金融</a>
+</p>
+
+<p align="center">
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
 </p>
 
 <p align="center">
@@ -57,6 +66,31 @@
 
 ## 📰 新闻
 
+- **2026-11-23** 🛠️ **研究回放、期权对比与欧洲行情** — 研究实验室会为冻结回放保留原始外部基准价格，并支持将滚动验证的样本外权益曲线导出为 CSV。 [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
+  期权实验室可在同一张标的价格与隐含波动率网格上比较两个已保存的策略。Yahoo Finance 覆盖的六个欧洲市场现已支持股票和 ETF 的代码搜索与行情查询。 [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
+  OpenAlgo 支持只读查询账户和持仓。命令行可以从另一个进程取消后台 Swarm 运行。**已合入 `main`。** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
+
+- **2026-11-22** 🛠️ **回测口径修复与期权导出** — 研究实验室的滚动样本外测试沿用原回测的评估日期，较早的行情仍可用于指标预热。外部基准经过负价时，权益曲线与报告收益保持一致。加密永续的盘中资金费按 00:00、08:00 和 16:00 UTC 结算。 [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  期权实验室的 CSV 现在包含已保存的备选方案及对比结果。本地日线可设置 `timestamp_basis: session_date`，按交易所日期读取行情。 [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  定时投递会保留较新的任务状态，Signal 同名附件分开保存，任务恢复通过了 Windows x64 和 ARM64 原生测试。 **已合入 `main`，将随下一次 pip 版本发布。** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
+- **2026-11-20** 📈 **美股多股类代码与腾讯历史行情** — 东财和 Yahoo 现在都能搜到伯克希尔 B 股 `BRK-B.US`。东财取行情前会核对代码，区分 `BW-A.US` 和 `BWA.US` 等不同证券。用 `2023-1-5` 这样的日期查询腾讯日线，也能取回完整的分页数据。 [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
+  策略对比页会把 −10% 的回撤排在 −30% 之前。回测仅在显式设置 `allow_nonpositive_prices: true` 时保留负价。命令行也能带着历史消息继续已有会话。 **已合入 `main`，将随下次 pip 版本发布。**
+
+- **2026-11-19** 📄 **技术报告发布** — 报告介绍了 Vibe-Trading 如何将研究结果追溯到数据来源和运行记录、保留研究修订历史，并将实盘交易限制在用户授权的范围内。 [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
+
+- **2026-11-18** 📈 **台股回测与涨跌停修复** — 通过 Yahoo Finance 日线回测台湾证券交易所（`.TW`）和柜买中心（`.TWO`）股票。韩国、台湾和越南回测用包含额外滑点的模拟成交价检查日涨跌停，并在取数前拒绝这三个市场的盘中回测。 [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
+  切换已列出的会话时复用侧栏列表。内置 AKShare 技能兼容新旧接口名。新增回归测试覆盖附件文件名、配置查找顺序，以及 MCP 市场数据摘要预览和分片重组。**已合入 `main`，将随下次 pip 版本发布。**
+
+<details>
+<summary>更早的新闻</summary>
+
+- **2026-11-17** 📊 **组合风险明细与可复用的期权分析** — Risk X-Ray 新增观测回撤区间及各持仓带符号的波动贡献。期权实验室支持将已计算快照导出为 JSON、情景网格导出为 CSV，并对观测 IV 切片进行诊断，明确检查覆盖边界，不将结果作为无套利认证。Agent/MCP 工具可在共享价格与 IV 网格上比较多个命名期权策略。
+  修复更新元数据异常与升级验证失败的处理、直连模式模型发现、附件文件名、缺失价格处理及过期会话列表响应。**已合入 `main`，随下一次 pip 发版提供。**
+
+- **2026-11-16** 🛠️ **报告、记忆检索与消息处理修复** — 影子账户报告将未测得的盈亏标为不可用，不再显示为零，缓存的 HTML/PDF 导出也保持这一口径。记忆检索自动修复旧索引，PDF OCR 部分失败时明确标注质量降级。
+  修复 Signal 配对、Napcat 图片元数据异常导致文本丢失的问题；Anthropic 温度重试仅针对相关参数校验错误，AKShare 历史行情兼容新旧接口。详见 [CHANGELOG](CHANGELOG.md)。**已合入 `main`，随下一次 pip 发版提供。**
+
 - **2026-11-15** 📡 **统一数据网关与开箱即用的 CSV** — 历史行情和美股期权快照接入同一个[本地数据网关](agent/src/data_gateway/README.md)，共享数据源回退、缓存及并发限额，保留来源、币种和复权口径，并明确标注覆盖范围与数据新鲜度。
   Agent 取行情时可直接获得 JSON 与 CSV。对于明确列出标的和单一 `YYYY-MM-DD` 日期范围的受支持请求，运行时在取数前约束日期；计算所需的预热数据单独声明，现有指标和回测的历史回看不受影响。**已合入 `main`，随下一次 pip 发版提供。**
 
@@ -65,9 +99,6 @@
 
 - **2026-11-13** 🛠️ **研究交付与计算工具重构** — 研究回答直接流式交付，移除自动删数、强制改写和按格式判断完成的门槛。委员会运行中断时保留部分成果，支持复用已完成工作、续跑未完成角色。
   完整行情引用接入无需 shell 的 QuantLib 计算，委员会角色之间传递原始证据。Options Lab 与 `options_payoff` 支持股票加期权组合，并在一次调用中计算、比较多个方案，直接返回费用、收益边界和比较方向。回测实际费用及截断、错误状态明确呈现，实盘交易授权限额继续保留。**尚未发布。**
-
-<details>
-<summary>更早的新闻</summary>
 
 - **2026-11-12** 🛠️ **回测时序、报告数字与研究完成判定修复** — 影子账户按指定本金运行；因输出 token 上限截断的 worker 回复不再判为完成。委员会 PM 可直接综合有效的上游报告，无须重复取数；原生 Anthropic 适配器默认输出预算设为可配置的 16,384 tokens。
   生成策略若被检测到对输出目标额外移位，须明确声明为有意延迟，否则拒绝运行；正常指标 lookback 保持可用。Grounding 支持金额单位的不同写法及精确观测值声明，同时保留证据校验。SPY／GLD 实际回测的 206／140 笔成交及总收益均与独立账本一致。**尚未发布。**
@@ -141,6 +172,14 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 打开 **Run Detail** 对比策略与买入持有，查看回撤期间的成交和运行卡片上的数据源。
 
+### 查看组合回撤区间
+
+在 **Run Detail > 组合工作室 > 风险透视** 中，查看历史上最深的五次回撤，以及各自的峰值、谷底、恢复点和持续时长。输入窗口末端仍未恢复的回撤会单独显示，即使它没有进入最深五项。同一份 `drawdown.episodes` 数据会写入 `artifacts/risk_xray.json`，在 `artifacts/risk_xray.md` 中汇总，也由 `portfolio_risk_xray` Agent/MCP 工具返回。
+
+这里分析的是固定权重收益模型，不是账户净值、策略实际损益或预测。回测使用实际执行持仓的平均权重，但模型本身不包含手续费或资金流。时长指从峰值到恢复点的观测 bar 间隔数，尚未恢复时计至窗口末端，不是日历天数。日、周、月观测均保留原始标签。
+
+中间缺少收益观测，或模型净值出现非正值、非有限值时，回撤区间会明确标为不可用，不当作没有回撤或零风险。模型净值与历史峰值的相对差距在 `1e-12` 内时，视为回到峰值，避免浮点误差让恢复时间多出一根 bar；更小的差异不作区分。JSON 中用 `recovery_rtol` 声明此精度。原有标量统计和没有区间元数据的旧报告继续兼容。
+
 ## 🧪 研究流程
 
 | 步骤 | 以上述均线策略为例 |
@@ -181,9 +220,11 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 |---|---|
 | Alpha Zoo | 评测 Qlib、Alpha101、GTJA、学术与基本面因子，比较不同期限的 IC，并用滚动样本外检验复核。 |
 | 回测引擎 | 模拟 A 股涨跌停、加密资产资金费率与期货保证金，跨市场共享资金池并逐笔检查成交。 |
-| 期权实验室 | 逐腿构建价差，查看到期损益、希腊字母以及现货价格与隐含波动率变化的影响。 |
-| 组合风险 | 查看回撤、VaR 和预期损失，用 Brinson 区分配置与选股贡献，并观察市场相关性的变化。 |
+| 期权实验室 | 逐腿构建价差，查看到期损益、希腊字母以及现货价格与隐含波动率变化的影响。可将精确的分析请求和结果导出为 JSON，或将完整到期与情景网格导出为 CSV。 `options_strategy_compare` agent/MCP 工具可在统一现货/IV 网格上比较最多四个策略，并给出相对基准损益。 |
+| 组合风险 | 查看回撤、VaR 和预期损失，用 Brinson 区分配置与选股贡献。风险透视的 JSON 与 Markdown 报告列出各持仓对组合波动率的贡献，保留对冲资产的负贡献，并观察市场相关性的变化。 |
 | 策略跟踪 | 登记策略及证据，跟踪后续结果中的夏普比率和因子 IC。 |
+
+风险透视在 Agent 工具返回值及保存的 JSON/Markdown 报告中提供 `risk_contributions`。每项贡献为「权重 × 资产收益与组合收益的协方差 ÷ 组合波动率」，沿用总波动率的样本与年化口径，合计等于总波动率，不是组合收益。`assets` 每行携带 `symbol`，`risk_contribution` 是小数形式的年化波动贡献，`contribution_pct` 是百分数值（60 表示 60%）。对冲项占比可以为负，其他持仓可以超过 100%；波动率为零或样本不足时不伪造占比。它描述历史加权篮子的风险，不是实际盈亏归因或未来预测。
 
 ### 账户与交易
 
@@ -225,6 +266,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | mstock | ✓ | — | — |
 | mt5 | ✓ | ✓ | ✓ |
 | okx | ✓ | ✓ | ✓ |
+| openalgo | ✓ | — | — |
 | robinhood | ✓ | — | ✓ |
 | scalable | ✓ | — | — |
 | shoonya | ✓ | ✓ | — |
@@ -366,7 +408,27 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 |---|---|---|
 | 模拟交易 | 跨会话保存每日现金、成交和净值。独立模拟可按五分钟回放 A 股交易日。 | 可选的按成交量占比撮合（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)，草稿）。 |
 | 研究 | 运行卡片记录回测指标与证据。带日期的研究记录保留修订历史，并可搜索。 | 研究记录中加入结构化财务数据（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)，审阅中）。 |
-| 期权实验室 | 支持多腿损益、希腊字母及现价 × 隐含波动率情景。 | 在 `/options` 提供交互式波动率曲面网格。 |
+| 期权实验室 | 支持多腿损益、希腊字母、现价 × IV 情景，并可在 `/options` 编辑 IV 网格、检查观测切片的模型价格一致性。 | 这些检查不做曲面校准，也不提供无套利认证。 |
+
+观测切片诊断使用你输入的标的价格、连续复利无风险利率和股息率，重构欧式看涨期权模型价格，检查同一观测到期日内的垂直价差界限和蝶式凸性。结果明确列出覆盖不足和无法定价的切片，最多展示前 20 项问题，但不缩减实际检查数量，也不改变插值网格。只读 `quantlib_call` 的 `volatility.diagnose_iv_surface` 和 `POST /options/volatility-surface/diagnostics` 使用相同观测值及小数形式的利率。这是模型价格检查，不是可成交报价或交易建议。
+
+详见[模型边界与示例](agent/src/skills/options-advanced/SKILL.md#volatility-surface)。
+
+## 引用
+
+如果你在研究中使用了 Vibe-Trading，请引用这篇技术报告。
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## 参与贡献
 

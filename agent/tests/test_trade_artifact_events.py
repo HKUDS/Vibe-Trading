@@ -8,7 +8,7 @@ import pytest
 
 from backtest.engines.china_a import ChinaAEngine
 from backtest.models import TradeRecord
-from backtest.validation import _load_trades, monte_carlo_test
+from backtest.validation import _load_equity, _load_trades, monte_carlo_test
 from src.strategy_discovery.run_artifacts import read_trade_activity
 
 
@@ -62,10 +62,65 @@ def test_exported_trades_keep_zero_pnl_exits(
     )
     frame = pd.read_csv(tmp_path / "artifacts/trades.csv")
     assert frame["event"].tolist() == ["entry", "exit"] * 3
+    assert frame["timestamp"].tolist() == [
+        timestamp.date().isoformat()
+        for trade in engine.trades
+        for timestamp in (trade.entry_time, trade.exit_time)
+    ]
     if middle_pnl != 0.00001:
         assert monte_carlo_test(restored, 1000.0, n_simulations=30) == (
             monte_carlo_test(engine.trades, 1000.0, n_simulations=30)
         )
+
+
+@pytest.mark.parametrize(
+    ("start", "tz"),
+    [
+        ("2026-01-02 00:00", None),
+        ("2026-01-02 00:00", "Asia/Hong_Kong"),
+        ("2026-03-08 01:55", "America/New_York"),
+    ],
+)
+def test_exported_intraday_trades_align_with_equity_bars(
+    tmp_path: Path, start: str, tz: str | None
+) -> None:
+    engine = ChinaAEngine({"initial_cash": 1000.0, "interval": "5m"})
+    dates = pd.date_range(start, periods=3, freq="5min", tz=tz)
+    engine.trades = [
+        TradeRecord(
+            symbol="TEST",
+            direction=1,
+            entry_price=100.0,
+            exit_price=101.0,
+            entry_time=dates[0],
+            exit_time=dates[2],
+            size=1.0,
+            leverage=1.0,
+            pnl=1.0,
+            pnl_pct=1.0,
+            exit_reason="signal",
+            holding_bars=2,
+            commission=0.0,
+        )
+    ]
+    equity = pd.Series(1000.0, index=dates)
+    engine._write_artifacts(
+        tmp_path,
+        {},
+        dates,
+        equity,
+        equity,
+        pd.Series(0.0, index=dates),
+        pd.DataFrame(index=dates),
+        {},
+        ["TEST"],
+    )
+
+    restored, = _load_trades(tmp_path)
+    equity_dates = _load_equity(tmp_path).index
+    assert isinstance(equity_dates, pd.DatetimeIndex)
+    assert (restored.entry_time, restored.exit_time) == (equity_dates[0], equity_dates[2])
+    assert read_trade_activity(tmp_path / "artifacts/trades.csv") == ([dates[2].date()], 1)
 
 
 def test_exported_trades_keep_sub_penny_fill_prices(tmp_path: Path) -> None:

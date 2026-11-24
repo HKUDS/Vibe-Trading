@@ -63,7 +63,9 @@ def client():
 
 
 def test_core_api_and_cli_universe_contracts_stay_in_sync():
-    assert set(cli._UNIVERSE_CHOICES) == api._BENCH_UNIVERSES == set(tool._UNIVERSE_TAG)
+    # API accepts BTC only to return its existing explicit single-asset error.
+    assert set(cli._UNIVERSE_CHOICES) == api._BENCH_UNIVERSES - {"btc-usdt"}
+    assert set(cli._UNIVERSE_CHOICES) == set(tool._UNIVERSE_TAG)
     assert (
         cli._LIST_UNIVERSE_ALIASES["nifty100"]
         == tool._UNIVERSE_TAG["nifty100"]
@@ -154,14 +156,16 @@ def test_api_rejects_invalid_or_single_asset_jobs_before_worker(
 
 
 @pytest.mark.parametrize("command", ["bench", "compare"])
-@pytest.mark.parametrize("universe", ["csi300", "sp500", "nifty100", "btc-usdt"])
+@pytest.mark.parametrize("universe", ["csi300", "sp500", "nifty100"])
 def test_cli_parser_accepts_benchmark_choices(command, universe):
     args = parser().parse_args(["alpha", command, "--universe", universe])
     assert args.universe == universe
 
 
 @pytest.mark.parametrize("command", ["bench", "compare"])
-@pytest.mark.parametrize("universe", ["equity_in", "krx", "nifty50", "unknown"])
+@pytest.mark.parametrize(
+    "universe", ["equity_in", "krx", "nifty50", "unknown", "btc-usdt"]
+)
 def test_cli_parser_rejects_unknown_or_metadata_benchmarks(command, universe):
     with pytest.raises(SystemExit) as caught:
         parser().parse_args(["alpha", command, "--universe", universe])
@@ -348,9 +352,15 @@ def test_cli_outputs_do_not_expose_constituent_exception_details(
     [
         (
             "alpha_bench",
-            "csi300 | sp500 | btc-usdt (resolved via existing data tools).",
+            "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+            "data loading. Alphas requiring fund:* SEC filings need sp500; "
+            "elsewhere they are excluded.",
         ),
-        ("alpha_compare", "csi300 | sp500 | btc-usdt."),
+        (
+            "alpha_compare",
+            "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+            "data loading. csi300 needs TUSHARE_TOKEN; fund:* alphas require sp500.",
+        ),
     ],
 )
 def test_discovered_tool_schemas_advertise_nifty100_without_changing_old_descriptions(
@@ -365,7 +375,8 @@ def test_discovered_tool_schemas_advertise_nifty100_without_changing_old_descrip
     field = definitions[tool_name]["parameters"]["properties"]["universe"]
     description = field["description"]
     assert description.replace(" | nifty100", "") == previous_description
-    advertised = description.split(" (")[0].rstrip(".").split(" | ")
+    advertised = description.split(".", 1)[0].split(" | ")
     assert advertised == cli._UNIVERSE_CHOICES
-    assert set(advertised) == api._BENCH_UNIVERSES == set(tool._UNIVERSE_TAG)
+    assert set(advertised) == api._BENCH_UNIVERSES - {"btc-usdt"}
+    assert set(advertised) == set(tool._UNIVERSE_TAG)
     assert field["type"] == "string"

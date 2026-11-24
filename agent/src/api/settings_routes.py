@@ -16,9 +16,9 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
-from src.config.accessor import reset_env_config
+from src.config.accessor import get_env_value, reset_env_config
 from src.config.gildata_features import FEATURES_ENV, GildataFeature, selected_features
-from src.providers.settings import SettingsStore
+from src.providers.settings import ModelOptions, SettingsStore
 
 logger = logging.getLogger(__name__)
 
@@ -556,10 +556,16 @@ def register_settings_routes(
                 saved_key = current_values.get(provider.api_key_env, "").strip()
                 if _host()._is_configured_secret(saved_key, LLM_API_KEY_PLACEHOLDERS):
                     api_key = saved_key
+        discovery_values = dict(current_values)
+        exported_disable_proxy = get_env_value("VIBE_TRADING_DISABLE_HTTP_PROXY")
+        if exported_disable_proxy:
+            discovery_values["VIBE_TRADING_DISABLE_HTTP_PROXY"] = exported_disable_proxy
+        discovery_options = ModelOptions(**discovery_values)
         return await _list_provider_models(
             provider,
             base_url=base_url,
             api_key=api_key,
+            disable_proxy=discovery_options.vibe_trading_disable_http_proxy,
         )
 
     @app.get(

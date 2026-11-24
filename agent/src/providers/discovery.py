@@ -203,6 +203,7 @@ async def _list_provider_models(
     *,
     base_url: str,
     api_key: str,
+    disable_proxy: bool = False,
 ) -> LLMModelsResponse:
     """Best-effort live model discovery with a safe editable fallback."""
     fallback = LLMModelsResponse(provider=provider.name, models=[provider.default_model], source="default")
@@ -223,8 +224,13 @@ async def _list_provider_models(
     headers = {"Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    # Match the chat transport: direct mode mounts no ambient proxy while
+    # retaining SSL_CERT_FILE / SSL_CERT_DIR for custom certificate authorities.
+    client_options: dict[str, Any] = {}
+    if disable_proxy:
+        client_options["transport"] = httpx.AsyncHTTPTransport(proxy=None, trust_env=True)
     try:
-        async with httpx.AsyncClient(timeout=12.0, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=False, **client_options) as client:
             response = await client.get(_model_list_url(base_url), headers=headers)
             response.raise_for_status()
             models = _extract_model_ids(response.json())

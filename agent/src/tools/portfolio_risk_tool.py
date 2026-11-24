@@ -40,9 +40,11 @@ class PortfolioRiskXrayTool(BaseTool):
     description = (
         "Portfolio risk x-ray: given symbols (and optional weights), fetch "
         "recent closes through the data fallback chain and compute "
-        "concentration (HHI/effective N), annualized volatility, max drawdown, "
-        "historical VaR/expected shortfall, diversification ratio, and "
-        "correlation/beta. Long-only baskets are normalized to sum to 1; "
+        "concentration (HHI/effective N), annualized volatility and signed per-asset volatility contributions, max drawdown "
+        "and observed drawdown periods, historical VaR/expected shortfall, "
+        "diversification ratio, and correlation/beta. Drawdown periods use a "
+        "constant-weight return model and observed bar durations, not account NAV. "
+        "Long-only baskets are normalized to sum to 1; "
         "baskets with short positions preserve their signed exposure scale."
     )
     parameters = {
@@ -194,13 +196,15 @@ class PortfolioRiskXrayTool(BaseTool):
             times: list[Any] = []
             prices: list[float] = []
             for record in records:
-                if not isinstance(record, Mapping) or "close" not in record:
+                if not isinstance(record, Mapping):
                     continue
                 when = next((record[k] for k in _DATE_KEYS if k in record), None)
                 try:
-                    price = float(record["close"])
+                    price = float(record.get("close"))
                 except (TypeError, ValueError):
-                    continue
+                    # Keep this bar in the timeline: removing it would turn a
+                    # multi-bar move across the gap into a one-bar return.
+                    price = float("nan")
                 times.append(when)
                 prices.append(price)
             if not prices:

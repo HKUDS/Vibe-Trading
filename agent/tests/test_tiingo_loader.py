@@ -112,6 +112,16 @@ def test_rows_to_frame_empty_returns_none() -> None:
     assert _rows_to_frame([{"open": 1.0}]) is None  # no date field
 
 
+def test_rows_to_frame_keeps_mixed_iso_timestamp_precision() -> None:
+    rows = _sample_rows()
+    rows[1]["date"] = "2024-01-03T00:00:00Z"
+
+    frame = _rows_to_frame(rows)
+
+    assert frame is not None
+    assert frame.index.tolist() == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")]
+
+
 def test_rows_to_frame_drops_rows_missing_ohlc() -> None:
     rows = _sample_rows() + [{"date": "2024-01-04T00:00:00.000Z", "volume": 100}]
     df = _rows_to_frame(rows)

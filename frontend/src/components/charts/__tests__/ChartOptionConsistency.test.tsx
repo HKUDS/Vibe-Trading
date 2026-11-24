@@ -98,4 +98,31 @@ describe("legend swatch colors stay in sync with line colors", () => {
     expect(pnlSeries.itemStyle?.color).toBeDefined();
     expect(pnlSeries.itemStyle?.color).toBe(pnlSeries.lineStyle?.color);
   });
+
+  it("OptionsPayoffChart overlays backend alternative curves on the shared spot grid", () => {
+    const comparisonCurves = [
+      { label: "Strategy B", curve: { spot: [80, 100, 120], pnl: [-20, 10, 30] } },
+    ];
+    render(
+      <OptionsPayoffChart
+        curve={{ spot: [80, 100, 120], pnl: [-10, 20, 40] }}
+        entrySpot={100}
+        breakevens={[96]}
+        comparisonCurves={comparisonCurves}
+      />,
+    );
+
+    const option = lastOption();
+    const series = option.series as Array<{ name?: string; data?: [number, number][]; lineStyle?: { color?: string } }>;
+    expect(series.find((entry) => entry.name === "Strategy B")?.data).toEqual([
+      [80, -20],
+      [100, 10],
+      [120, 30],
+    ]);
+    const baseColor = series[0].lineStyle?.color;
+    const comparisonColor = series.find((entry) => entry.name === "Strategy B")?.lineStyle?.color;
+    expect(comparisonColor).toBeDefined();
+    expect(comparisonColor).not.toBe(baseColor);
+    expect((option.legend as { data: string[] }).data).toContain("Strategy B");
+  });
 });

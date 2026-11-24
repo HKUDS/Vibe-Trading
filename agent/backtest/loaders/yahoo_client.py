@@ -20,6 +20,8 @@ Symbol convention (Vibe-Trading -> Yahoo):
     ``.TO``/``.V`` suffix verbatim)
   * Vietnam ``VIC.VN`` -> unchanged (Yahoo carries the ``.VN`` suffix
     verbatim; HOSE listings only)
+  * Taiwan ``2330.TW`` / ``6488.TWO`` -> unchanged (Yahoo carries the
+    ``.TW``/``.TWO`` suffix verbatim)
   * Anything else is passed through unchanged (e.g. ``BTC-USD``, ``^GSPC``).
 
 This module is provider-specific glue only; it returns plain Python

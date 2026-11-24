@@ -238,6 +238,12 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     # Vietnam (.VN): Yahoo lists HOSE only — HNX and UPCOM are unsupported,
     # so those two are reachable only through the user's local files.
     "vietnam_equity": ["yahoo", "yfinance", "local"],
+    # Taiwan: TWSE (.TW) and TPEx (.TWO) — Yahoo carries both suffixes
+    # verbatim; direct Yahoo first, SDK fallback second.
+    "taiwan_equity": ["yahoo", "yfinance", "local"],
+    # Europe: Xetra (.DE), Euronext Paris/Amsterdam (.PA/.AS), Borsa Italiana
+    # (.MI), SIX (.SW) and Warsaw (.WA). Yahoo carries each suffix verbatim.
+    "europe_equity": ["yahoo", "yfinance", "local"],
     # OKX first (native), then dedicated Binance, then generic CCXT / Yahoo.
     "crypto": ["okx", "binance", "ccxt", "yfinance", "local"],
     # tushare led this chain while implementing no futures endpoint at all

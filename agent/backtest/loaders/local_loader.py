@@ -2,7 +2,7 @@
 
 Configuration lives at ``~/.vibe-trading/data-bridge/config.yaml``.
 Each entry maps a symbol to a data file with optional column-name overrides,
-date format, and (for DuckDB) an SQL query.
+date format, timestamp basis, and (for DuckDB) an SQL query.
 
 Example config::
 
@@ -18,6 +18,7 @@ Example config::
           close: "Close"
           volume: "Volume"
         date_format: "%Y-%m-%d"
+        timestamp_basis: session_date  # optional, for daily exchange date labels
 
       - symbol: "BTC-USDT"
         type: parquet
@@ -134,6 +135,8 @@ def _source_cache_identity(entry: dict[str, Any]) -> str:
         key: entry.get(key)
         for key in ("type", "path", "db_path", "query", "date_format")
     }
+    if entry.get("timestamp_basis", "utc") != "utc":
+        identity["timestamp_basis"] = entry["timestamp_basis"]
     columns = entry.get("columns")
     identity["columns"] = (
         sorted(
@@ -183,18 +186,15 @@ def _normalize_columns(
     df: pd.DataFrame,
     col_map: dict[str, str],
     date_fmt: str | None,
+    timestamp_basis: str = "utc",
 ) -> pd.DataFrame | None:
-    # A DatetimeIndex carries the bar dates (parquet files, and duckdb
-    # relations whose query set one). An explicitly mapped date column wins
-    # over the index; otherwise the index becomes the date column, whatever
-    # date_fmt is configured. Dropping the index on the first path also
-    # sidesteps the reset_index crash when index and column share a name.
-    if isinstance(df.index, pd.DatetimeIndex):
-        if col_map.get("date", "date") in df.columns:
-            df = df.reset_index(drop=True)
-        else:
-            df = df.reset_index()
-            col_map = {**col_map, "date": df.columns[0]}
+    date_col = col_map.get("date", "date")
+    # Use index dates directly so a same-named column cannot shadow them.
+    index_dates = (
+        df.index.to_series()
+        if isinstance(df.index, pd.DatetimeIndex) and date_col not in df.columns
+        else None
+    )
     rename: dict[str, str] = {}
     for std_name, src_name in col_map.items():
         if std_name == "date":
@@ -207,19 +207,24 @@ def _normalize_columns(
     if not required.issubset(df.columns):
         return None
 
-    date_col = col_map.get("date", "date")
-    if date_col not in df.columns:
+    if index_dates is None and date_col not in df.columns:
         return None
 
-    if date_fmt:
-        parsed_dates = pd.to_datetime(
-            df[date_col], format=date_fmt, errors="coerce", utc=True
+    dates = index_dates if index_dates is not None else df[date_col]
+    if timestamp_basis == "session_date":
+        # Parse each label before converting it to a date so mixed DST offsets
+        # and timezone-aware Parquet indexes keep their written calendar day.
+        date_labels = dates.map(
+            lambda value: pd.Timestamp(
+                pd.to_datetime(value, format=date_fmt, errors="coerce")
+            ).date()
         )
+        df["trade_date"] = pd.to_datetime(date_labels)
+        if df["trade_date"].dropna().duplicated().any():
+            raise ValueError("session_date sources require one bar per calendar date")
     else:
-        parsed_dates = pd.to_datetime(df[date_col], errors="coerce", utc=True)
-    # Normalize every input to the loader's UTC-naive index contract. Parsing
-    # as UTC first also handles files that span daylight-saving offset changes.
-    df["trade_date"] = parsed_dates.dt.tz_convert(None)
+        parsed_dates = pd.to_datetime(dates, format=date_fmt, errors="coerce", utc=True)
+        df["trade_date"] = parsed_dates.dt.tz_convert(None)
     df = df.dropna(subset=["trade_date"])
     df = df.set_index("trade_date").sort_index()
 
@@ -241,24 +246,29 @@ def _normalize_columns(
     return df
 
 
-def _read_csv(path: str, col_map: dict[str, str], date_fmt: str | None) -> pd.DataFrame | None:
+def _read_csv(
+    path: str, col_map: dict[str, str], date_fmt: str | None, timestamp_basis: str = "utc",
+) -> pd.DataFrame | None:
     df = pd.read_csv(path)
-    return _normalize_columns(df, col_map, date_fmt)
+    return _normalize_columns(df, col_map, date_fmt, timestamp_basis)
 
 
-def _read_parquet(path: str, col_map: dict[str, str], date_fmt: str | None) -> pd.DataFrame | None:
+def _read_parquet(
+    path: str, col_map: dict[str, str], date_fmt: str | None, timestamp_basis: str = "utc",
+) -> pd.DataFrame | None:
     df = pd.read_parquet(path)
-    return _normalize_columns(df, col_map, date_fmt)
+    return _normalize_columns(df, col_map, date_fmt, timestamp_basis)
 
 
 def _read_duckdb(
-    db_path: str, query: str, col_map: dict[str, str], date_fmt: str | None
+    db_path: str, query: str, col_map: dict[str, str], date_fmt: str | None,
+    timestamp_basis: str = "utc",
 ) -> pd.DataFrame | None:
     import duckdb
 
     with duckdb.connect(db_path, read_only=True) as conn:
         df = conn.execute(query).df()
-    return _normalize_columns(df, col_map, date_fmt)
+    return _normalize_columns(df, col_map, date_fmt, timestamp_basis)
 
 
 _READERS = {
@@ -377,6 +387,12 @@ class DataLoader:
         if isinstance(user_fmt, str) and user_fmt.strip():
             date_fmt = user_fmt.strip()
 
+        timestamp_basis = entry.get("timestamp_basis", "utc")
+        if timestamp_basis not in ("utc", "session_date"):
+            raise ValueError(f"unknown timestamp_basis {timestamp_basis!r}; use utc or session_date")
+        if timestamp_basis == "session_date" and interval not in ("1D", "1d", "1W", "1M"):
+            raise ValueError("session_date sources require daily or coarser bars")
+
         if src_type == "duckdb":
             db_path = str(Path(entry.get("db_path", "")).expanduser())
             query = entry.get("query", "").strip()
@@ -385,22 +401,20 @@ class DataLoader:
                     "local loader: missing db_path or query for duckdb symbol %s", symbol
                 )
                 return None
-            df = _read_duckdb(db_path, query, col_map, date_fmt)
+            df = _read_duckdb(db_path, query, col_map, date_fmt, timestamp_basis)
         else:
             path = entry.get("path", "").strip()
             if not path:
                 logger.warning("local loader: missing path for symbol %s", symbol)
                 return None
             expanded = str(Path(path).expanduser())
-            df = reader(expanded, col_map, date_fmt)
+            df = reader(expanded, col_map, date_fmt, timestamp_basis)
 
         if df is None:
             return None
 
         start = pd.Timestamp(start_date)
-        # Treat ``end_date`` as inclusive of the whole day so intraday bars on
-        # the end day survive the filter (a bare midnight bound dropped them,
-        # which would defeat any sub-daily ``interval``).
+        # Include the entire end day in the configured timestamp basis.
         end = pd.Timestamp(end_date) + pd.Timedelta(days=1)
         # A half-open boundary includes fractional seconds on the end day
         # without admitting the following midnight.

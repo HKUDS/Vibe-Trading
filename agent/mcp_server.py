@@ -1305,6 +1305,49 @@ def analyze_options_payoff(
     return registry.execute("options_payoff", params)
 
 
+@mcp.tool
+def compare_options_strategies(
+    strategies: _lenient_dict_list,
+    entry_spot: float,
+    expiry_days: float,
+    baseline_index: int = 0,
+    risk_free_rate: float = 0.05,
+    volatility: float = 0.3,
+    multiplier: float = 1.0,
+    commission_rate: float = 0.001,
+    spot_min: float | None = None,
+    spot_max: float | None = None,
+    spot_points: int = 121,
+    scenario_iv_values: _lenient_float_list_opt = None,
+) -> str:
+    """Compare up to four option strategies on one deterministic spot/IV grid.
+
+    Each strategy has a unique ``name`` and ``legs`` in the same form as
+    ``analyze_options_payoff``. Returns analytic summaries plus expiry and
+    scenario P&L deltas against ``baseline_index``. Research only; no strategy
+    ranking, recommendation or order path is provided.
+    """
+    params: dict[str, Any] = {
+        "strategies": strategies,
+        "entry_spot": entry_spot,
+        "expiry_days": expiry_days,
+        "baseline_index": baseline_index,
+        "risk_free_rate": risk_free_rate,
+        "volatility": volatility,
+        "multiplier": multiplier,
+        "commission_rate": commission_rate,
+        "spot_points": spot_points,
+    }
+    if spot_min is not None:
+        params["spot_min"] = spot_min
+    if spot_max is not None:
+        params["spot_max"] = spot_max
+    if scenario_iv_values is not None:
+        params["scenario_iv_values"] = scenario_iv_values
+    registry = _get_registry()
+    return registry.execute("options_strategy_compare", params)
+
+
 # ---------------------------------------------------------------------------
 # Pattern recognition tool
 # ---------------------------------------------------------------------------
@@ -1622,6 +1665,8 @@ def get_strategy_evidence(strategy_id: str, regime: str | None = None) -> str:
 def adapt_strategy(strategy_id: str, name: str, universe: str, config: dict, position_sizing: str | None = None) -> str:
     """Prepare a child from fresh adequate SDM evidence, preserving signal logic.
 
+    config must contain explicit ``codes``, ``source``, ``start_date`` and
+    ``end_date`` values. Nothing is inferred or defaulted.
     Returns description and a bound run_dir. Load strategy-generate, write the
     child's code, backtest there, then refresh its evidence with scope=strategies.
     Does not generate code or run a backtest by itself, or copy parent metrics.
@@ -1637,9 +1682,12 @@ def refresh_strategy_evidence(manifest_path: str | None = None, runs: list | Non
     """Rebuild the strategy-discovery evidence cache from backtest run artifacts.
 
     WRITE tool with disposable-cache-only scope: it replaces the facade-owned
-    strategy-evidence cache (drop-and-rebuild by contract) from local run
-    artifacts and NEVER touches the Alpha Zoo or SDM sources of truth. No
-    network access, no credentials, no broker paths.
+    strategy-evidence cache from local run artifacts and NEVER touches the
+    Alpha Zoo or SDM sources of truth. No network access, credentials, or
+    broker paths. ``adapt_strategy`` is the other write and updates the SDM
+    store. ``scope=all`` replaces the whole cache. ``scope=strategies``
+    replaces only successfully refreshed named strategies and is required
+    after adaptation.
 
     Provide EXACTLY ONE of the two parameters:
     - manifest_path: path to a JSON manifest — an object with a "runs" array

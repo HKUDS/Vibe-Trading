@@ -417,11 +417,13 @@ class SessionService:
             session_id: Session ID.
 
         Returns:
-            Whether cancellation succeeded. True means an active loop existed and received a cancel signal.
+            Whether cancellation succeeded. True means an active loop, task,
+            swarm run, or owned background task received a cancel signal.
         """
         background_handle = self._background_handles.get(session_id)
+        background_cancelled = False
         if background_handle is not None:
-            background_handle.cancel_all()
+            background_cancelled = bool(background_handle.cancel_all().get("requested"))
         loop = self._active_loops.get(session_id)
         if loop is not None:
             loop.cancel()
@@ -441,7 +443,7 @@ class SessionService:
         # started may still be running in the background.
         if _cancel_session_swarm_runs(session_id):
             return True
-        return False
+        return background_cancelled
 
     async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
         """Execute an Attempt in the background.

@@ -13,6 +13,7 @@ import math
 import os
 import re
 import shutil
+import tempfile
 import time
 from collections import Counter
 from pathlib import Path
@@ -157,6 +158,36 @@ def extract_key_sentences(
     return " ".join(selected)
 
 
+def copy_to_archive(entry_path: Path, archive_dir: Path) -> Path:
+    """Publish a complete backup at the first unused name in the archive.
+
+    Args:
+        entry_path: Original memory file.
+        archive_dir: Directory for archived versions.
+
+    Returns:
+        The backup path, with a numbered suffix when a backup already exists.
+
+    Raises:
+        OSError: If the backup cannot be created.
+    """
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=archive_dir, prefix=".backup-") as staging:
+        staged = Path(staging) / entry_path.name
+        shutil.copy2(entry_path, staged)
+        candidate = archive_dir / entry_path.name
+        counter = 1
+        while True:
+            try:
+                # Publish the completed file without overwriting a name
+                # claimed by another process between backup and publication.
+                os.link(staged, candidate)
+                return candidate
+            except FileExistsError:
+                candidate = archive_dir / f"{entry_path.stem}.{counter}{entry_path.suffix}"
+                counter += 1
+
+
 # ─── CompressionPipeline ─────────────────────────────────────────────────────
 
 
@@ -261,35 +292,18 @@ class CompressionPipeline:
     def archive_original(self, entry_path: Path) -> Optional[Path]:
         """Backup original file to archive/ before compression.
 
-        Returns archive path or None on failure. Creates archive/ dir
-        on demand. Uses atomic copy (write tmp + rename) for safety.
+        Returns archive path or None on failure. Creates archive/ on demand.
         """
         if not entry_path.exists():
             logger.warning("Cannot archive non-existent file: %s", entry_path)
             return None
 
         try:
-            self._archive_dir.mkdir(parents=True, exist_ok=True)
-            archive_path = self._archive_dir / entry_path.name
-            tmp_path = archive_path.with_suffix(archive_path.suffix + ".tmp")
-
-            # Atomic copy: write to tmp then rename
-            shutil.copy2(str(entry_path), str(tmp_path))
-            os.replace(str(tmp_path), str(archive_path))
-
+            archive_path = copy_to_archive(entry_path, self._archive_dir)
             logger.debug("Archived %s -> %s", entry_path.name, archive_path)
             return archive_path
         except OSError as exc:
             logger.error("Archive failed for %s: %s", entry_path, exc)
-            # Clean up tmp file if it exists
-            tmp_path = (self._archive_dir / entry_path.name).with_suffix(
-                entry_path.suffix + ".tmp"
-            )
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
             return None
 
     def apply_compression(

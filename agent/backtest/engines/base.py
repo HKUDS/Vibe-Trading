@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.constraints import apply_constraints_frame, load_constraints
+from backtest.loaders.base import ohlc_price_policy
 from backtest.loaders.rsshub_events import (
     FeedSpec,
     RSSHubEventProvider,
@@ -574,9 +575,7 @@ class BaseEngine(ABC):
         # "reject any open_price <= 0" behavior. An exactly-zero open is always
         # rejected (undefined size = notional / price); negatives are handled by
         # abs()-based sizing and margin below.
-        self.allow_nonpositive_prices: bool = bool(
-            config.get("allow_nonpositive_prices", False)
-        )
+        self.allow_nonpositive_prices = config.get("allow_nonpositive_prices") is True
         #: Bar fields consulted, in order, for the price-limit base price.
         #: Futures engines put ``pre_settle`` first: exchanges set the band off
         #: the previous settlement, not the previous close.
@@ -1016,8 +1015,10 @@ class BaseEngine(ABC):
         if not data_map:
             print(json.dumps({"error": "No data fetched"}))
             sys.exit(1)
-        data_map = _maybe_enrich_fundamentals(data_map, config)
-        data_map = _maybe_enrich_events(data_map, config)
+        # Frozen run artifacts already contain the enrichment seen by the strategy.
+        if not config.get("frozen_data_manifest"):
+            data_map = _maybe_enrich_fundamentals(data_map, config)
+            data_map = _maybe_enrich_events(data_map, config)
         data_map = self.prepare_market_data(data_map)
 
         # 2. Generate signals
@@ -1077,7 +1078,7 @@ class BaseEngine(ABC):
         # at its first traded open in the window, as the strategy can.
         basket_ret = _basket_entry_returns(close_df, data_map, list(ret_df.columns))
         bench_ret = basket_ret.mean(axis=1) if basket_ret.shape[1] > 0 else pd.Series(0.0, index=dates)
-        from backtest.benchmark import default_benchmark, resolve_benchmark
+        from backtest.benchmark import benchmark_from_prices, default_benchmark, resolve_benchmark
 
         basket_codes = list(ret_df.columns)
         basket_label = (
@@ -1085,25 +1086,43 @@ class BaseEngine(ABC):
             else f"equal-weight basket of {len(basket_codes)} symbols"
         )
         benchmark_metadata = {"benchmark_kind": "equal_weight", "benchmark_label": basket_label}
+        external_equity = None
         requested = config.get("benchmark")
         source = config.get("source", "yfinance")
-        ticker = default_benchmark(basket_codes, source) if requested == "auto" else requested
+        frozen = bool(config.get("frozen_data_manifest"))
+        reference = getattr(loader, "benchmark_input", None) if frozen else None
+        ticker = requested
+        if requested == "auto":
+            ticker = reference.ticker if reference is not None else default_benchmark(basket_codes, source)
+        benchmark_to_save = None
         reason = "no default benchmark for the evaluated symbols" if requested == "auto" else "no benchmark requested"
         if ticker:
-            result = resolve_benchmark(
-                strategy_codes=basket_codes,
-                source="local" if config.get("frozen_data_manifest") else source,
-                explicit=ticker,
-                start_date=config.get("start_date", ""), end_date=config.get("end_date", ""),
-                interval=interval, loader=loader if source != "auto" or config.get("frozen_data_manifest") else None,
-            )
-            window_return = result.total_return_over(dates) if result is not None else None
-            if result is not None and window_return is not None:
+            if reference is not None:
+                result = benchmark_from_prices(reference.ticker, reference.prices)
+            else:
+                # The benchmark may fetch bars after the strategy's loader scope has ended.
+                with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
+                    result = resolve_benchmark(
+                        strategy_codes=basket_codes,
+                        source="local" if frozen else source,
+                        explicit=ticker,
+                        start_date=config.get("start_date", ""),
+                        end_date=config.get("end_date", ""),
+                        interval=interval,
+                        loader=loader if source != "auto" or frozen else None,
+                    )
+            external_equity = result.normalized_equity_over(dates) if result is not None else None
+            if result is not None and external_equity is not None:
                 bench_ret = result.returns_over(dates)
                 benchmark_metadata = {
                     "benchmark_kind": "external", "benchmark_label": result.ticker,
-                    "benchmark_ticker": result.ticker, "benchmark_return": window_return,
+                    "benchmark_ticker": result.ticker,
+                    "benchmark_return": float(external_equity.iloc[-1]) - 1.0,
                 }
+                if not frozen or reference is not None:
+                    benchmark_to_save = result
+            elif reference is not None:
+                raise ValueError(f"frozen benchmark {ticker!r} lacks usable prices in the evaluation window")
             else:
                 reason = f"benchmark {ticker!r} could not be resolved over the evaluation window"
         benchmark_warning = (
@@ -1111,7 +1130,9 @@ class BaseEngine(ABC):
             if benchmark_metadata["benchmark_kind"] == "equal_weight" else None
         )
 
-        bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
+        bench_equity = self.initial_capital * (
+            external_equity if external_equity is not None else (1 + bench_ret).cumprod()
+        )
 
         # 6. Metrics
         realized_turnover = calc_fill_turnover_series(self.fill_records, equity_series)
@@ -1247,8 +1268,20 @@ class BaseEngine(ABC):
             target_pos, m, valid_codes,
         )
 
+        benchmark_input = None
+        if benchmark_to_save is not None:
+            from backtest.frozen import BENCHMARK_PRICE_ARTIFACT, write_benchmark_prices
+
+            prices = benchmark_to_save.input_prices()
+            write_benchmark_prices(run_dir / BENCHMARK_PRICE_ARTIFACT, prices)
+            benchmark_input = {"ticker": benchmark_to_save.ticker, "path": BENCHMARK_PRICE_ARTIFACT}
+            if prices.index.tz is not None:
+                benchmark_input["timezone"] = str(prices.index.tz)
+
         # 9. Trust Layer run card
         card_warnings = list(config.get("content_filter_warnings") or [])
+        if frozen and requested and reference is None:
+            card_warnings.append("No frozen benchmark prices were saved; the original benchmark is not verified.")
         if config.get("_run_card_caliber_warning"):
             card_warnings.append(config["_run_card_caliber_warning"])
         if config.get("_run_card_annualisation_warning"):
@@ -1267,6 +1300,7 @@ class BaseEngine(ABC):
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
             warnings=card_warnings or None,
+            benchmark_input=benchmark_input,
             tool_traces=[
                 {
                     "tool": "backtest",
@@ -2435,13 +2469,16 @@ class BaseEngine(ABC):
         # entry_price is the weighted cost after any scale-ins while its
         # entry_time stays on the first open, so pairing those two would
         # report a fill that never happened. Scale-ins stay in fills.jsonl.
+        # Keep date-only output for naive midnight bars. Other runs need
+        # full timestamps to match trades to the equity curve.
+        date_only = dates.tz is None and dates.equals(dates.normalize())
         trade_rows = []
         for t in self.trades:
             # Entry event
             entry_price = t.entry_price if t.open_price is None else t.open_price
             entry_qty = t.size if t.open_size is None else t.open_size
             trade_rows.append({
-                "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
+                "timestamp": t.entry_time.date().isoformat() if date_only else t.entry_time.isoformat(),
                 "code": t.symbol,
                 "side": "buy" if t.direction == 1 else "sell",
                 "price": entry_price,
@@ -2459,7 +2496,7 @@ class BaseEngine(ABC):
             except Exception:
                 hold_days = 0
             trade_rows.append({
-                "timestamp": str(t.exit_time.date()) if hasattr(t.exit_time, "date") else str(t.exit_time),
+                "timestamp": t.exit_time.date().isoformat() if date_only else t.exit_time.isoformat(),
                 "code": t.symbol,
                 "side": "sell" if t.direction == 1 else "buy",
                 "price": t.exit_price,

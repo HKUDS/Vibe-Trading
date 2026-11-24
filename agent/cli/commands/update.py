@@ -138,6 +138,10 @@ def _verify_upgrade(expected: str) -> int:
         console.print(f"[yellow]Upgrade ran but verification failed:[/yellow] {exc}")
         return EXIT_FAILED
 
+    if proc.returncode != 0:
+        console.print("[yellow]Upgrade ran but verification failed:[/yellow] version check exited unsuccessfully.")
+        return EXIT_FAILED
+
     installed = proc.stdout.strip()
     try:
         confirmed = bool(installed) and Version(installed) == Version(expected)

@@ -203,9 +203,13 @@ class ChannelRuntime:
                         if events is not None and attempt_id else None)
             try:
                 reply = await self._wait_for_reply(session_id, attempt_id, progress=progress)
-            finally:
+            except BaseException:
                 if progress is not None:
-                    await progress.close()
+                    await progress.close(resuming=True)
+                raise
+            else:
+                if progress is not None:
+                    await progress.close(resuming=False)
             reply_content = reply.content
             try:
                 from src.scheduled_research.proposals import latest_pending_for_session

@@ -112,6 +112,10 @@ _CANONICAL_SYMBOL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"[A-Z0-9]{4}\.T|"
     r"\d{3,6}\.(?:SH|SZ|BJ|SS|HK|KS|KQ)|"
+    # Taiwan (TWSE .TW / TPEx .TWO): numeric codes, and an ETF code can end in
+    # a letter (00400A.TW). TWO is listed first so 6488.TWO is not read as
+    # 6488.TW with a stray "O".
+    r"\d{4,6}[A-Z]?\.(?:TWO|TW)|"
     # Futu writes the venue as a PREFIX (HK.00700 / SH.600519 / US.AAPL). The
     # suffix branch above cannot see it, so a user who pasted a connector code
     # got no identity lock at all and every market tool answered
@@ -127,6 +131,11 @@ _CANONICAL_SYMBOL_RE = re.compile(
     # _market_hooks._MARKET_PATTERNS); test_market_identity_parity keeps the
     # two in step, because .L / .VN / .BA each landed there without landing here.
     r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V|BA|SA|L|VN)|"
+    # European venues, case-SENSITIVE for the same reason as US. above: a
+    # folded match would read any ".de" host in a source URL
+    # (www.boerse-frankfurt.de) as a Xetra symbol. Codes may start with a
+    # digit (1COV.DE).
+    r"(?-i:[A-Z0-9][A-Z0-9&-]{0,19}\.(?:DE|PA|AS|MI|SW|WA))|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"[A-Z]{2,15}(?:" + "|".join(_JOINED_CRYPTO_QUOTE_SUFFIXES) + r")|"
     r"\^[A-Z0-9&.\-]{1,20}|"
@@ -257,6 +266,14 @@ def _infer_venue(symbol: str) -> str | None:
         ".SA": "b3",
         ".L": "lse",
         ".VN": "hose",
+        ".TW": "twse",
+        ".TWO": "tpex",
+        ".DE": "xetra",
+        ".PA": "euronext_paris",
+        ".AS": "euronext_amsterdam",
+        ".MI": "borsa_italiana",
+        ".SW": "six",
+        ".WA": "gpw",
     }
     for suffix, venue in suffixes.items():
         if upper.endswith(suffix):
@@ -326,6 +343,16 @@ def _infer_currency(symbol: str) -> str | None:
         # GBP, the same contract as the backtest's _MARKET_CURRENCY.
         ".L": "GBP",
         ".VN": "VND",
+        ".TW": "TWD",
+        ".TWO": "TWD",
+        # One table with the backtest's europe_venue_currency(): the loaders
+        # hold each venue's lines to this currency.
+        ".DE": "EUR",
+        ".PA": "EUR",
+        ".AS": "EUR",
+        ".MI": "EUR",
+        ".SW": "CHF",
+        ".WA": "PLN",
     }
     for suffix, currency in suffixes.items():
         if upper.endswith(suffix):

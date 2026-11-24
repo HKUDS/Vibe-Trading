@@ -16,10 +16,10 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
     found = []
     inherited = safe_path("upstream/index.json", source)
     if inherited.is_file():
-        for entry in json.loads(inherited.read_text()).get("observations", []):
+        for entry in json.loads(inherited.read_text(encoding="utf-8")).get("observations", []):
             try:
                 path = safe_path(entry["path"], source)
-                raw = path.read_text()
+                raw = path.read_text(encoding="utf-8")
                 if hashlib.sha256(raw.encode()).hexdigest() != entry["sha256"]:
                     raise ValueError("Inherited evidence file changed")
                 found.append((entry, raw))
@@ -29,7 +29,7 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
     if not messages_path.is_file():
         return found
     calls = {}
-    for message in json.loads(messages_path.read_text()):
+    for message in json.loads(messages_path.read_text(encoding="utf-8")):
         for call in message.get("tool_calls", []):
             calls[call["id"]] = call.get("function", {})
         if message.get("role") != "tool":
@@ -69,7 +69,7 @@ def _observations(source: Path, task_id: str, errors: list[str]) -> list[tuple[d
                 if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
                     raise ValueError("Invalid observation digest")
                 path = safe_path(f"tool-results/{digest}/result.json", source)
-                raw = path.read_text()
+                raw = path.read_text(encoding="utf-8")
                 if hashlib.sha256(raw.encode()).hexdigest() != digest:
                     raise ValueError("Source observation file changed")
             except (OSError, ValueError, KeyError, TypeError) as exc:

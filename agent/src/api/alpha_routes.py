@@ -420,12 +420,32 @@ def register_alpha_routes(
         registry = get_default_registry()
         configured = bool(get_env_config().data.tushare_token.strip())
         installed = importlib.util.find_spec("tushare") is not None
-        return {"universes": {
-            "csi300": {"ready": configured and installed, "reason": "tushare_ready" if configured and installed else "tushare_token_missing" if not configured else "tushare_dependency_missing"},
-            "sp500": {"ready": True, "reason": "public_data"},
-            "nifty100": {"ready": True, "reason": "public_data", "description": "NIFTY 100 (NSE), current constituents; survivorship-biased. Source availability is checked at run time."},
-            "btc-usdt": {"ready": False, "reason": "single_asset"},
-        }, "zoo_counts": {zoo: len(registry.list(zoo=zoo)) for zoo in sorted(_VALID_ZOOS)}}
+        return {
+            "universes": {
+                "csi300": {
+                    "ready": configured and installed,
+                    "reason": (
+                        "tushare_ready"
+                        if configured and installed
+                        else (
+                            "tushare_token_missing"
+                            if not configured
+                            else "tushare_dependency_missing"
+                        )
+                    ),
+                },
+                "sp500": {"ready": True, "reason": "public_data"},
+                "nifty100": {
+                    "ready": True,
+                    "reason": "public_data",
+                    "description": "NIFTY 100 (NSE), current constituents; survivorship-biased. Source availability is checked at run time.",
+                },
+                "btc-usdt": {"ready": False, "reason": "single_asset"},
+            },
+            "zoo_counts": {
+                zoo: len(registry.list(zoo=zoo)) for zoo in sorted(_VALID_ZOOS)
+            },
+        }
 
     @app.get("/alpha/bench/{job_id}", dependencies=[Depends(require_auth)])
     async def bench_snapshot(job_id: str):
@@ -454,7 +474,12 @@ def register_alpha_routes(
                 detail=f"unknown theme {theme!r}; expected one of {sorted(_VALID_THEMES)}",
             )
         if universe is not None:
-            _ALIAS = {"csi300": "equity_cn", "sp500": "equity_us", "nifty100": "equity_in", "btc-usdt": "crypto"}
+            _ALIAS = {
+                "csi300": "equity_cn",
+                "sp500": "equity_us",
+                "nifty100": "equity_in",
+                "btc-usdt": "crypto",
+            }
             universe = _ALIAS.get(universe, universe)
         if universe is not None and universe not in _VALID_UNIVERSES:
             raise HTTPException(
