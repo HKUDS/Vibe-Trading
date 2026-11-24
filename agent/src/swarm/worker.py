@@ -1070,6 +1070,9 @@ def _run_worker_impl(
                 summary = _resolve_summary(artifact_dir, summary)
             _finalize_run(artifact_dir, summary, messages)
             reason = _delivery_error(response.content or "") if resume and not response.content else _delivery_error(summary)
+            if reason is None and _no_agent_artifact(artifact_dir):
+                reason = ("worker produced no artifact files (only framework-written "
+                          "summary.md/messages.json); nothing was delivered")
             if reason:
                 _emit(event_callback, "worker_incomplete", agent_id, task_id,
                       {"iterations": iteration + 1, "reason": reason})
@@ -1461,3 +1464,31 @@ def _collect_artifacts(run_dir: Path, artifact_dir: Path) -> list[str]:
             # failure is not a durable artifact and must not escape the run.
             continue
     return sorted(artifacts)
+
+
+
+_FRAMEWORK_ARTIFACTS = {"summary.md", "messages.json"}
+
+
+def _no_agent_artifact(artifact_dir: Path) -> bool:
+    """True iff the worker wrote no deliverable file of its own.
+
+    ``summary.md`` and ``messages.json`` are written by the framework itself
+    (``_finalize_run``), so their presence proves nothing about the worker's
+    output. A worker that read files and then finished without writing a
+    single artifact of its own has delivered nothing, yet it used to be
+    reported as a completed run because the text summary was non-empty.
+    """
+    if not artifact_dir.exists():
+        return True
+    for path in artifact_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name in _FRAMEWORK_ARTIFACTS:
+            continue
+        try:
+            if path.stat().st_size > 0:
+                return False
+        except OSError:
+            continue
+    return True
