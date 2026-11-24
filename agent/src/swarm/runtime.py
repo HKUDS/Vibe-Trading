@@ -166,9 +166,20 @@ _LAYER_STOP_POLL_S = 0.05
 
 
 class _LayerStop:
-    def __init__(self, run_cancel: threading.Event) -> None:
+    def __init__(
+        self,
+        run_cancel: threading.Event,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> None:
         self._run_cancel = run_cancel
         self._expired = threading.Event()
+        # Optional cross-process check (SwarmStore.cancel_requested): a
+        # separate `--swarm-cancel` process leaves a marker in the run dir
+        # instead of setting this process's in-memory event. Workers poll
+        # is_set()/wait() while they run, so consulting the marker here is
+        # what lets a foreign cancel reach an in-flight layer; the check is
+        # one stat call and never raises.
+        self._cancel_requested = cancel_requested
 
     def expire(self) -> None:
         self._expired.set()
@@ -177,7 +188,9 @@ class _LayerStop:
         return not self._expired.is_set()
 
     def is_set(self) -> bool:
-        return self._run_cancel.is_set() or self._expired.is_set()
+        if self._run_cancel.is_set() or self._expired.is_set():
+            return True
+        return self._cancel_requested is not None and self._cancel_requested()
 
     def wait(self, timeout: float | None = None) -> bool:
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -655,7 +668,14 @@ class SwarmRuntime:
 
             for layer_idx, layer_task_ids in enumerate(layers):
                 # Check cancellation between layers
-                if cancel_event.is_set():
+                if cancel_event.is_set() or self._store.cancel_requested(run_id):
+                    # A separate `--swarm-cancel` process shares no memory
+                    # with this one, so it cannot set cancel_event directly;
+                    # it leaves a durable marker in the run dir instead
+                    # (SwarmStore.request_cancel). Pick it up here and set
+                    # the event so the current layer's workers stop promptly
+                    # too, and the finalize step below lands on `cancelled`.
+                    cancel_event.set()
                     logger.info("Run %s cancelled at layer %d", run_id, layer_idx)
                     self._cancel_remaining_tasks(task_store, layer_task_ids, run.tasks)
                     all_succeeded = False
@@ -807,8 +827,13 @@ class SwarmRuntime:
             )
 
         # Finalize run
+        # A marker written after the last layer finished never reaches the
+        # between-layers check above; honour it here so the run still lands
+        # on `cancelled` instead of `failed`/`completed`.
         final_status = (
-            RunStatus.cancelled if cancel_event.is_set() else RunStatus.completed if all_succeeded else RunStatus.failed
+            RunStatus.cancelled
+            if cancel_event.is_set() or self._store.cancel_requested(run_id)
+            else RunStatus.completed if all_succeeded else RunStatus.failed
         )
         run.status = final_status
         run.completed_at = datetime.now(timezone.utc).isoformat()
@@ -1077,7 +1102,10 @@ class SwarmRuntime:
             Mapping of task_id -> WorkerResult for all tasks in this layer.
         """
         results: dict[str, WorkerResult] = {}
-        layer_stop = _LayerStop(cancel_event)
+        layer_stop = _LayerStop(
+            cancel_event,
+            cancel_requested=lambda: self._store.cancel_requested(run.id),
+        )
 
         def _event_callback(event: SwarmEvent) -> None:
             self._emit_event(run.id, event, accept=layer_stop.accepts_events)

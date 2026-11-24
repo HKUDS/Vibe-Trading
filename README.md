@@ -73,6 +73,10 @@
 
 ## 📰 News
 
+- **2026-11-23** 🛠️ **Replayable research and broader market coverage** — Research Lab preserves the original external benchmark prices for frozen replays and exports walk-forward out-of-sample equity as CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
+  Options Lab compares two saved strategies on the same spot-price and implied-volatility grid. Symbol search and market data now cover equities and ETFs from six European exchanges via Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
+  OpenAlgo provides read-only access to account and position data. The CLI can cancel a background Swarm run from a separate process. **On `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
+
 - **2026-11-22** 🛠️ **Backtest accuracy and richer Options Lab exports** — Research Lab walk-forward studies keep earlier bars for indicators and score only the original evaluation dates. External benchmark equity matches the reported return across negative prices, and intraday crypto funding follows the 00:00, 08:00 and 16:00 UTC settlements. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   Options Lab CSVs include saved alternatives and comparison results. Local daily data can use `timestamp_basis: session_date` to preserve exchange dates. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   Scheduled deliveries preserve newer job state, Signal keeps same-named attachments separate, and job recovery passed native Windows x64 and ARM64 checks. **On `main`, for the next pip release.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
@@ -216,6 +220,8 @@ The loader supports **28 market-data sources**. With `source: "auto"`, it infers
 
 You can also choose a source explicitly. For example, installing `vibe-trading-ai[ashare]` adds the token-free BaoStock loader for daily A-share bars. The [data source reference](guides/capabilities.md#-data-sources--smart-fallback) lists the full chains and credential requirements.
 
+Yahoo `4H`/`4h` requests aggregate hourly OHLCV into four-hour bars aligned to UTC midnight. Partial buckets are retained; empty buckets are omitted.
+
 ## 🔩 Detailed Capabilities
 
 ### Market research
@@ -233,7 +239,7 @@ You can also choose a source explicitly. For example, installing `vibe-trading-a
 |---|---|
 | Alpha Zoo | Benchmark signals from Qlib, Alpha101, GTJA and the academic and fundamental libraries. Compare information coefficients across horizons, then check whether the result survives a walk-forward test. |
 | Backtest engines | Model A-share price limits, crypto funding or futures margin. Use a shared capital pool for a cross-market strategy and inspect the individual fills behind its returns. |
-| Options Lab | Build a spread leg by leg. Save named alternatives to overlay their backend-computed expiry curves with distinct colors on the same spot axis, then compare return metrics. Inspect the Greeks and see how each position responds to a change in spot price and implied volatility. Export the exact analysis request and result as JSON, or export the primary and saved-alternative expiry/scenario grids together with comparison outcomes as CSV. The `options_strategy_compare` Agent/MCP tool compares up to four strategies on a shared spot/IV grid with baseline-relative P&L. |
+| Options Lab | Build a spread leg by leg. Save named alternatives to overlay their backend-computed expiry curves with distinct colors on the same spot axis, then compare return metrics. Select any two saved strategies to inspect their raw and baseline-relative spot × IV grids on one completed snapshot, using at most 201 spot points. Inspect the Greeks and see how each position responds to a change in spot price and implied volatility. Export the exact analysis request and result as JSON, or export the primary and saved-alternative expiry/scenario grids together with comparison outcomes as CSV. The `options_strategy_compare` Agent/MCP tool compares up to four strategies on a shared spot/IV grid with baseline-relative P&L. |
 | Portfolio risk | Inspect drawdowns, estimate value at risk and expected shortfall, or use Brinson attribution to separate allocation from stock selection. Risk X-Ray reports each holding's signed contribution to portfolio volatility, including hedges that offset risk. The correlation view shows when markets start moving together. |
 | Strategy tracking | Register a strategy with its evidence and track how its Sharpe ratio or factor information coefficient changes as new results come in. |
 
@@ -281,6 +287,7 @@ Yes indicates a declared capability. A dash means no matching profile is declare
 | mstock | Yes | — | — |
 | mt5 | Yes | Yes | Yes |
 | okx | Yes | Yes | Yes |
+| openalgo | Yes | — | — |
 | robinhood | Yes | — | Yes |
 | scalable | Yes | — | — |
 | shoonya | Yes | Yes | — |

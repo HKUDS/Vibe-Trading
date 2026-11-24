@@ -1146,6 +1146,7 @@
         "ca_equity": "Saham Kanada",
         "taiwan_equity": "Saham Taiwan",
         "vietnam_equity": "Saham Vietnam",
+        "europe_equity": "Saham Eropa",
         "ar_equity": "Saham Argentina",
         "br_equity": "Saham Brasil",
         "uk_equity": "Saham Inggris",
@@ -1487,6 +1488,7 @@
         "uk_equity": "Saham Inggris",
         "taiwan_equity": "Saham Taiwan",
         "vietnam_equity": "Saham Vietnam",
+        "europe_equity": "Saham Eropa",
         "other": "Lainnya"
       }
     },
@@ -1766,7 +1768,10 @@
       "entry_cost_return": "Biaya masuk / nosional saham",
       "higher": "Lebih tinggi",
       "lower": "Lebih rendah",
-      "equal": "Sama"
+      "equal": "Sama",
+      "scenarioBasis": "Kedua strategi memakai permintaan yang selesai dan grid harga × volatilitas yang sama. Delta adalah strategi dikurangi dasar, hanya deskriptif.",
+      "deltaGrid": "Selisih P&L",
+      "gridCapped": "Grid perbandingan memakai paling banyak {{count}} titik harga."
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "Gagal",
     "report": "Laporan riset",
     "download": "Unduh JSON",
+    "downloadOosCsv": "CSV ekuitas di luar sampel",
     "scenario": "Skenario",
     "return": "Imbal hasil",
     "drawdown": "Penurunan",

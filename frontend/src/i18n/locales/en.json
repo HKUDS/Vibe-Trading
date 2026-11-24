@@ -1146,6 +1146,7 @@
         "ca_equity": "Canada Equities",
         "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam Equities",
+        "europe_equity": "European Equities",
         "ar_equity": "Argentina Equities",
         "br_equity": "Brazil Equities",
         "uk_equity": "UK Equities",
@@ -1487,6 +1488,7 @@
         "uk_equity": "UK equity",
         "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam equity",
+        "europe_equity": "European Equities",
         "other": "Other"
       }
     },
@@ -1766,7 +1768,10 @@
       "entry_cost_return": "Entry cost / stock notional",
       "higher": "Higher",
       "lower": "Lower",
-      "equal": "Equal"
+      "equal": "Equal",
+      "scenarioBasis": "Both strategies use the completed request and one shared spot × IV grid. Delta is strategy minus base, descriptive only.",
+      "deltaGrid": "P&L delta",
+      "gridCapped": "Comparison grids use at most {{count}} spot points."
     }
   },
   "alphaZoo": {
@@ -2784,6 +2789,7 @@
     "failed": "Failed",
     "report": "Research report",
     "download": "Download JSON",
+    "downloadOosCsv": "OOS CSV",
     "scenario": "Scenario",
     "return": "Return",
     "drawdown": "Drawdown",
