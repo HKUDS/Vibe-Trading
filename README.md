@@ -265,7 +265,7 @@ Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JS
 |---|---|
 | Swarm and Pixel Office | Run a bull–bear investment committee or a quant research desk and inspect the workers’ reports. In Pixel Office, assign a task to a teammate and record the result on the shared board. |
 | Scheduled briefs | Start from a premarket brief, an earnings tracker or a portfolio checkup. Choose a schedule and send the report to a configured channel such as Slack, Telegram or email. |
-| Research history | Search older sessions and reopen a saved run. Save a dated conclusion with its evidence and compare revisions when the investment case changes. |
+| Research history | Search older sessions and reopen a saved run. Copy prompts or answers to the clipboard, save a dated conclusion with its evidence, and compare revisions when the investment case changes. |
 | Run records | Inspect the data source, model, execution record and metric references behind a backtest. Reopen the saved trades and equity curve to check a reported figure. |
 
 <!-- BEGIN GENERATED broker-capability-matrix -->
