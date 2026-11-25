@@ -2790,6 +2790,7 @@
     "report": "リサーチレポート",
     "download": "JSONをダウンロード",
     "downloadOosCsv": "アウト・オブ・サンプルの資産推移 CSV",
+    "downloadFoldsCsv": "フォールド監査 CSV",
     "scenario": "シナリオ",
     "return": "リターン",
     "drawdown": "ドローダウン",
