@@ -18,10 +18,6 @@ const comparisonKey = (index: number) => `strategy-${index}`;
 interface CompletedComparison {
   request: OptionsStrategyCompareRequest;
   result: OptionsStrategyCompareResponse;
-  sourceRequest: OptionsPayoffRequest;
-  baselineLabel: string;
-  targetLabel: string;
-  targetKey: string;
 }
 
 export function StrategyScenarioComparison({ request }: { request: OptionsPayoffRequest }) {
@@ -85,14 +81,7 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
     api.compareOptionsStrategies(compareRequest, controller.signal)
       .then((response) => {
         if (generation.current === gen && currentSignature.current === signature) {
-          setCompleted({
-            request: compareRequest,
-            result: response,
-            sourceRequest: request,
-            baselineLabel: strategies[baseline].name,
-            targetLabel: strategies[target].name,
-            targetKey: comparisonKey(target),
-          });
+          setCompleted({ request: compareRequest, result: response });
         }
       })
       .catch((reason: unknown) => {
@@ -107,26 +96,27 @@ function ComparisonPairs({ request }: { request: OptionsPayoffRequest }) {
       generation.current += 1;
       controller.abort();
     };
-    // The completed request snapshot owns the fetch; its JSON identity is sufficient.
+    // Only pricing inputs should trigger a comparison. Labels come from the completed payoff request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, signature, retry]);
 
   const completedSnapshot = completed && JSON.stringify(completed.request) === signature ? completed : null;
   const result = completedSnapshot?.result ?? null;
-  const baselineName = completedSnapshot?.baselineLabel ?? strategies[baseline].name;
-  const targetName = completedSnapshot?.targetLabel ?? strategies[target].name;
+  const baselineName = strategies[baseline].name;
+  const targetName = strategies[target].name;
+  const targetKey = comparisonKey(target);
   const grid = result?.scenario_grid;
-  const rawGrid = grid?.pnl[completedSnapshot?.targetKey ?? comparisonKey(target)];
-  const deltaGrid = grid?.delta_to_baseline[completedSnapshot?.targetKey ?? comparisonKey(target)];
+  const rawGrid = grid?.pnl[targetKey];
+  const deltaGrid = grid?.delta_to_baseline[targetKey];
 
   const exportComparison = (format: "json" | "csv") => {
     if (!completedSnapshot) return;
     try {
       const context = {
-        source_request: completedSnapshot.sourceRequest,
-        baseline_label: completedSnapshot.baselineLabel,
-        target_label: completedSnapshot.targetLabel,
-        target_key: completedSnapshot.targetKey,
+        source_request: request,
+        baseline_label: baselineName,
+        target_label: targetName,
+        target_key: targetKey,
       };
       const json = format === "json";
       const content = json
