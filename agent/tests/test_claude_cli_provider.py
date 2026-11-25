@@ -119,6 +119,41 @@ def test_final_answer_maps_to_content(fake_cli, monkeypatch) -> None:
     assert not response.has_tool_calls
 
 
+def test_verbose_message_array_uses_the_result_message(fake_cli) -> None:
+    set_replies, _ = fake_cli
+    result = payload({"action": "final", "content": "close 6.125"})
+    set_replies(
+        {
+            "raw": json.dumps(
+                [
+                    {"type": "system", "subtype": "init"},
+                    {"type": "assistant", "message": {"content": "intermediate"}},
+                    result,
+                ]
+            )
+        }
+    )
+
+    message = claude_cli.ClaudeCliLLM().invoke([{"role": "user", "content": "hi"}])
+
+    assert message.content == "close 6.125"
+
+
+def test_json_array_without_a_result_message_has_a_clear_error(fake_cli) -> None:
+    set_replies, _ = fake_cli
+    set_replies({"raw": json.dumps([{"type": "assistant", "message": {}}])})
+
+    with pytest.raises(RuntimeError, match="claude -p returned no result message"):
+        claude_cli._run_cli(
+            system="S",
+            user_input="x",
+            allow_tools=False,
+            model="m",
+            timeout=60,
+            cancel_event=threading.Event(),
+        )
+
+
 def test_final_without_content_is_fed_back_and_retried(fake_cli) -> None:
     set_replies, calls = fake_cli
     set_replies(

@@ -73,6 +73,9 @@
 
 ## 📰 News
 
+- **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
+
 - **2026-11-23** 🛠️ **Replayable research and broader market coverage** — Research Lab preserves the original external benchmark prices for frozen replays and exports walk-forward out-of-sample equity as CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   Options Lab compares two saved strategies on the same spot-price and implied-volatility grid. Symbol search and market data now cover equities and ETFs from six European exchanges via Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo provides read-only access to account and position data. The CLI can cancel a background Swarm run from a separate process. **On `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
@@ -81,13 +84,13 @@
   Options Lab CSVs include saved alternatives and comparison results. Local daily data can use `timestamp_basis: session_date` to preserve exchange dates. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   Scheduled deliveries preserve newer job state, Signal keeps same-named attachments separate, and job recovery passed native Windows x64 and ARM64 checks. **On `main`, for the next pip release.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
 
+<details>
+<summary>Earlier news</summary>
+
 - **2026-11-21** 🛠️ **Research replay, backtest routing and channel reliability** — Frozen Research Lab studies now replay saved fundamental and event columns without refetching providers ([#2296](https://github.com/HKUDS/Vibe-Trading/pull/2296)), and backtests retry symbols whose returned bars fail validation while benchmarks inherit the run's signed-price policy ([#2294](https://github.com/HKUDS/Vibe-Trading/pull/2294), [#2292](https://github.com/HKUDS/Vibe-Trading/pull/2292)). Swarm deadlines stop overdue workers and clean completed run handles ([#2285](https://github.com/HKUDS/Vibe-Trading/pull/2285), [#2279](https://github.com/HKUDS/Vibe-Trading/pull/2279)); Research Lab reports recover after worker exit, backtests expose return-distribution shape metrics, and Options Lab overlays alternative payoff curves ([#2260](https://github.com/HKUDS/Vibe-Trading/pull/2260), [#2264](https://github.com/HKUDS/Vibe-Trading/pull/2264), [#2242](https://github.com/HKUDS/Vibe-Trading/pull/2242)). Session cancellation, Mochat delivery, Feishu completion reactions and DingTalk image downloads now handle their edge cases safely ([#2284](https://github.com/HKUDS/Vibe-Trading/pull/2284), [#2283](https://github.com/HKUDS/Vibe-Trading/pull/2283), [#2251](https://github.com/HKUDS/Vibe-Trading/pull/2251), [#2250](https://github.com/HKUDS/Vibe-Trading/pull/2250)). Strategy adaptation documentation now states its required inputs and scoped evidence refresh contract ([#2299](https://github.com/HKUDS/Vibe-Trading/pull/2299)). **On `main`, for the next pip release.**
 
 - **2026-11-20** 📈 **US share classes and Tencent price history** — Eastmoney and Yahoo search now agree on `BRK-B.US`. Eastmoney checks the ticker before loading prices, keeping listings such as `BW-A.US` and `BWA.US` distinct. Tencent now returns all pages of daily bars when dates are entered as `2023-1-5`. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   Strategy Comparison ranks a −10% drawdown above −30%. Backtests retain negative prices only with `allow_nonpositive_prices: true`. CLI users can resume a saved chat with its history. **On `main`, for the next pip release.**
-
-<details>
-<summary>Earlier news</summary>
 
 - **2026-11-19** 📄 **Technical report published** — The report describes how Vibe-Trading traces results to source data and runs, preserves research revisions, and enforces user-authorized limits on live trading. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
@@ -193,6 +196,8 @@ In backtests with `allow_nonpositive_prices: true`, a separately loaded benchmar
 
 In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.
 
+Risk X-Ray correlation summaries use only estimable pairs. A holding with constant returns does not hide correlations between other holdings; the average and strongest pair are unavailable when no pair can be estimated.
+
 This is a constant-weight return model, not account NAV, strategy P&L or a forecast. Backtests use the average executed basket weights; the model itself does not include fees or cash flows. Duration counts observed bar intervals from peak to recovery, or to the window's end if unrecovered, not calendar days. Daily, weekly and monthly observations retain their original labels.
 
 A missing interior return or non-positive/non-finite model wealth makes the periods unavailable, rather than an empty set or zero risk. Values within a relative `1e-12` of a running peak are treated as at that peak to avoid an extra recovery bar caused only by floating-point noise; smaller differences are not distinguished. The JSON report declares this as `recovery_rtol`. Existing scalar statistics and older reports without episode metadata remain supported.
@@ -219,6 +224,8 @@ The loader supports **28 market-data sources**. With `source: "auto"`, it infers
 | Futures | Chinese contracts can use AKShare or local bars. Supply local bars for global contracts. |
 
 You can also choose a source explicitly. For example, installing `vibe-trading-ai[ashare]` adds the token-free BaoStock loader for daily A-share bars. The [data source reference](guides/capabilities.md#-data-sources--smart-fallback) lists the full chains and credential requirements.
+
+Yahoo `4H`/`4h` requests aggregate hourly OHLCV into four-hour bars aligned to UTC midnight. Partial buckets are retained; empty buckets are omitted.
 
 ## 🔩 Detailed Capabilities
 
