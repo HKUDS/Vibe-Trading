@@ -151,6 +151,18 @@ export function ResearchLab() {
     }
   }
 
+  async function downloadFoldSummary() {
+    if (!job || job.action !== "walk_forward") return;
+    const id = job.id;
+    try {
+      const blob = await api.downloadResearchLabFoldSummary(id);
+      saveBlob(blob, `research-${id}-folds.csv`);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("researchLab.failed"));
+    }
+  }
+
   return <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-8">
     <header className="border-b pb-6"><h1 className="flex items-center gap-3 text-2xl font-semibold"><FlaskConical className="h-6 w-6 text-primary" />{t("researchLab.title")}</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">{t("researchLab.subtitle")}</p></header>
     <div role="tablist" aria-label={t("researchLab.title")} className="flex flex-wrap gap-2">{(["cost_sensitivity", "walk_forward", "factor_audit", "replay"] as const).map((name) =>
@@ -168,7 +180,7 @@ export function ResearchLab() {
     </form>
     {(error || job?.error) && <p role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive">{error || job?.error}</p>}
     {busy && <p role="status" className="text-sm text-muted-foreground">{t("researchLab.running")} {job?.progress && `${job.progress.completed} / ${job.progress.total}`}</p>}
-    {job?.result && <section className="space-y-4 rounded-xl border bg-card p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">{t("researchLab.report")}</h2><div className="flex gap-2">{job.action === "walk_forward" && <button type="button" onClick={() => void downloadOosEquity()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Download className="h-4 w-4" /> {t("researchLab.downloadOosCsv")}</button>}<button type="button" onClick={download} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Download className="h-4 w-4" />{t("researchLab.download")}</button></div></div>{typeof job.request?.run_dir === "string" && <p className="text-xs text-muted-foreground">{t("researchLab.sourceRun")}: {job.request.run_dir}</p>}<LabReport result={job.result} /></section>}
+    {job?.result && <section className="space-y-4 rounded-xl border bg-card p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">{t("researchLab.report")}</h2><div className="flex flex-wrap justify-end gap-2">{job.action === "walk_forward" && <><button type="button" onClick={() => void downloadOosEquity()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Download className="h-4 w-4" /> {t("researchLab.downloadOosCsv")}</button><button type="button" onClick={() => void downloadFoldSummary()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Download className="h-4 w-4" /> {t("researchLab.downloadFoldsCsv")}</button></>}<button type="button" onClick={download} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Download className="h-4 w-4" />{t("researchLab.download")}</button></div></div>{typeof job.request?.run_dir === "string" && <p className="text-xs text-muted-foreground">{t("researchLab.sourceRun")}: {job.request.run_dir}</p>}<LabReport result={job.result} /></section>}
   </div>;
 }
 

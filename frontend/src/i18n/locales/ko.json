@@ -2790,6 +2790,7 @@
     "report": "연구 보고서",
     "download": "JSON 다운로드",
     "downloadOosCsv": "표본 외 자산 추이 CSV",
+    "downloadFoldsCsv": "폴드 감사 CSV",
     "scenario": "시나리오",
     "return": "수익률",
     "drawdown": "낙폭",

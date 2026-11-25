@@ -6,10 +6,11 @@ import asyncio
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict
 
 from src.research_lab import service
+from src.research_lab.exports import build_walk_forward_folds_csv
 
 _TASKS: set[asyncio.Task] = set()
 _MAX_WORKERS = 2
@@ -49,7 +50,7 @@ def register_research_lab_routes(app: FastAPI, require_auth, require_write_auth)
             raise HTTPException(404, str(exc)) from exc
 
     @app.get("/api/research-lab/jobs/{job_id}/report", dependencies=[Depends(require_auth)])
-    async def report(job_id: str, format: Literal["json", "oos_equity_csv"] = "json"):
+    async def report(job_id: str, format: Literal["json", "oos_equity_csv", "folds_csv"] = "json"):
         try:
             state = service.get_job(job_id)
         except (ValueError, OSError) as exc:
@@ -58,6 +59,18 @@ def register_research_lab_routes(app: FastAPI, require_auth, require_write_auth)
             raise HTTPException(409, "research report is not complete")
         if format == "json":
             return state["result"]
+        if format == "folds_csv":
+            if state["action"] != "walk_forward":
+                raise HTTPException(422, "Fold export is only available for walk-forward jobs")
+            try:
+                content = build_walk_forward_folds_csv(state["result"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise HTTPException(422, str(exc)) from exc
+            return Response(
+                content,
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="research-{job_id}-folds.csv"'},
+            )
         if state["action"] != "walk_forward":
             raise HTTPException(422, "OOS equity export is only available for walk-forward jobs")
         artifact = service.job_root(job_id) / "oos_equity.csv"
