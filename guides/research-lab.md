@@ -121,7 +121,7 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 
 ## API and saved reports
 
-- `GET /api/research-lab/catalog`: available runs, parameters and task prompts.
+- `GET /api/research-lab/catalog`: available runs, parameters and task prompts. A run with malformed saved metadata is skipped without hiding other runs.
 - `POST /api/research-lab/jobs`: `{ "action": "cost_sensitivity|walk_forward|factor_audit|replay", "request": {...} }`.
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.

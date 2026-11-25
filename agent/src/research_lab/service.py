@@ -48,25 +48,32 @@ def catalog() -> dict:
                 ):
                     continue
                 config = json.loads((root / "config.json").read_text()) if (root / "config.json").is_file() else {}
+                if not isinstance(config, dict):
+                    continue
                 if not config and not (root / "req.json").is_file():
+                    continue
+                codes = config.get("codes", [])
+                parameters = config.get("signal_parameters", {})
+                if not isinstance(codes, list) or not all(isinstance(code, str) for code in codes):
+                    continue
+                if not isinstance(parameters, dict):
                     continue
                 signal = root / "code/signal_engine.py"
                 rows.append(
                     {
                         "id": root.name,
-                        "codes": config.get("codes", []),
+                        "codes": codes,
                         "start_date": config.get("start_date"),
                         "end_date": config.get("end_date"),
-                        "has_prices": bool(config.get("codes"))
+                        "has_prices": bool(codes)
                         and (root / "run_card.json").is_file()
                         and all(
-                            (root / f"artifacts/ohlcv_{code.removeprefix('local:')}.csv").is_file()
-                            for code in config.get("codes", [])
+                            (root / f"artifacts/ohlcv_{code.removeprefix('local:')}.csv").is_file() for code in codes
                         ),
                         "has_trace": (root / "trace.jsonl").is_file(),
                         "parameters": {
                             **(constructor_defaults(signal.read_text()) if signal.is_file() else {}),
-                            **config.get("signal_parameters", {}),
+                            **parameters,
                         },
                     }
                 )
