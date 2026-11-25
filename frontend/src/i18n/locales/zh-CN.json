@@ -1191,6 +1191,9 @@
     "gildataTokenDesc": "可选的海量数据：A 股复权日线、港股及指数原始行情、场外基金净值，以及中国宏观、公告和研报工具。"
   },
   "agent": {
+    "forkedFrom": "分支自 {{title}}",
+    "viewOriginal": "查看原会话",
+    "forkWaitForUpload": "请等待附件上传完成后再创建分支。",
     "reasoningStrength": "推理强度",
     "unknownProvider": "未知提供商",
     "unknownModel": "未知模型",
@@ -2060,6 +2063,8 @@
     "copied": "已复制",
     "copy": "复制",
     "copyFailed": "复制失败，请选择文本后按 Ctrl+C。",
+    "fork": "分支",
+    "forking": "正在创建分支…",
     "timeoutHint": "执行超时。可简化策略或减少资产。",
     "apiFailedHint": "API 请求失败。请稍后重试。",
     "executionFailedHint": "执行失败。请重试。",

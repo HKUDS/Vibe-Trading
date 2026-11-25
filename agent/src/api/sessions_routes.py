@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from src.session.events import SSEEvent
@@ -99,6 +100,14 @@ class SessionResponse(BaseModel):
     created_at: str
     updated_at: str
     last_attempt_id: Optional[str] = None
+    forked_from_session_id: Optional[str] = None
+    forked_from_message_id: Optional[str] = None
+
+
+class ForkSessionRequest(BaseModel):
+    """Select the completed assistant turn at which to fork."""
+
+    message_id: str = Field(..., min_length=1, max_length=128)
 
 
 # Bound interactive request size. This character limit is independent of the
@@ -467,6 +476,8 @@ def register_sessions_routes(app: FastAPI) -> None:
             created_at=session.created_at,
             updated_at=session.updated_at,
             last_attempt_id=session.last_attempt_id,
+            forked_from_session_id=session.forked_from_session_id,
+            forked_from_message_id=session.forked_from_message_id,
         )
 
     @app.get("/sessions", response_model=List[SessionResponse], dependencies=[Depends(require_auth)])
@@ -484,6 +495,8 @@ def register_sessions_routes(app: FastAPI) -> None:
                 created_at=s.created_at,
                 updated_at=s.updated_at,
                 last_attempt_id=s.last_attempt_id,
+                forked_from_session_id=s.forked_from_session_id,
+                forked_from_message_id=s.forked_from_message_id,
             )
             for s in sessions
         ]
@@ -505,6 +518,54 @@ def register_sessions_routes(app: FastAPI) -> None:
             created_at=session.created_at,
             updated_at=session.updated_at,
             last_attempt_id=session.last_attempt_id,
+            forked_from_session_id=session.forked_from_session_id,
+            forked_from_message_id=session.forked_from_message_id,
+        )
+
+    @app.post(
+        "/sessions/{source_id}/fork",
+        response_model=SessionResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def fork_session(
+        source_id: str,
+        payload: ForkSessionRequest,
+        principal=Depends(require_auth),
+    ):
+        """Fork the committed prefix ending at a completed assistant turn."""
+        _host_validate_path_param(source_id, "session_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        from src.session.fork import (
+            ForkAuthorizationError,
+            ForkSelectionError,
+            ForkSourceNotFound,
+        )
+
+        try:
+            session = await run_in_threadpool(
+                svc.fork_session,
+                source_id,
+                payload.message_id,
+                owner=principal,
+                goal_store=_get_goal_store(),
+            )
+        except ForkSourceNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ForkAuthorizationError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ForkSelectionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return SessionResponse(
+            session_id=session.session_id,
+            title=session.title,
+            status=session.status.value,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            last_attempt_id=session.last_attempt_id,
+            forked_from_session_id=session.forked_from_session_id,
+            forked_from_message_id=session.forked_from_message_id,
         )
 
     # -----------------------------------------------------------------------

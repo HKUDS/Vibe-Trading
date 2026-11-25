@@ -1,6 +1,6 @@
 import i18n from '@/i18n';
 import { Component, lazy, memo, Suspense, useState, useCallback, type ReactNode } from "react";
-import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target, Clock3 } from "lucide-react";
+import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target, Clock3, GitFork, Loader2 } from "lucide-react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -163,7 +163,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className={`absolute top-2 end-2 p-1.5 rounded-md bg-muted/80 hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity`}
+      className="p-1.5 rounded-md bg-muted/80 hover:bg-muted text-muted-foreground hover:text-foreground transition-opacity"
       aria-label={label}
       title={label}
     >
@@ -174,6 +174,31 @@ function CopyButton({ text }: { text: string }) {
         </span>
       )}
     </button>
+  );
+}
+
+function ForkButton({ forking, onClick }: { forking: boolean; onClick: () => void }) {
+  const label = forking ? i18n.t("messageBubble.forking") : i18n.t("messageBubble.fork");
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={forking}
+      className="p-1.5 rounded-md bg-muted/80 hover:bg-muted text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-50 transition-opacity"
+      aria-label={label}
+      title={label}
+    >
+      {forking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitFork className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+function AnswerActions({ text, onFork, forking }: { text: string; onFork?: () => void; forking: boolean }) {
+  return (
+    <div className="absolute top-2 end-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+      <CopyButton text={text} />
+      {onFork && <ForkButton forking={forking} onClick={onFork} />}
+    </div>
   );
 }
 
@@ -191,6 +216,8 @@ function getRetryHint(content: string): string {
 interface Props {
   msg: StoredAgentMessage;
   onRetry?: (msg: AgentMessage) => void;
+  onFork?: (msg: StoredAgentMessage) => void;
+  forking?: boolean;
 }
 
 function formatElapsed(elapsedMs: number): string {
@@ -201,7 +228,7 @@ function formatElapsed(elapsedMs: number): string {
   return `${minutes}m ${Math.round(seconds % 60)}s`;
 }
 
-export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({ msg, onRetry, onFork, forking = false }: Props) {
   if (msg.type === "user") {
     const meta = msg.meta;
     const attachments = meta?.attachments
@@ -247,7 +274,11 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
       <div className="flex gap-3 group relative">
         <AgentAvatar />
         <div className="flex-1 min-w-0 space-y-1.5">
-          <CopyButton text={msg.content} />
+          <AnswerActions
+            text={msg.content}
+            onFork={onFork ? () => onFork(msg) : undefined}
+            forking={forking}
+          />
           <MarkdownContent content={msg.content} />
           {msg.elapsed_ms != null && (
             <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground/55">

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
 import threading
 import uuid
@@ -597,6 +596,124 @@ class GoalStore:
             "evidence": [_to_json_dict(item) for item in evidence],
             "evidence_count": self.count_evidence(goal.goal_id),
         }
+
+    @_synchronized
+    def clone_current_goal(
+        self,
+        session_id: str,
+        *,
+        target_session_id: str,
+        remap_reference: Callable[[str], str] | None = None,
+        remap_run_id: Callable[[str], str] | None = None,
+    ) -> dict | None:
+        """Transactionally clone a session's current goal and ledger rows.
+
+        The clone owns fresh goal, claim, criterion, and evidence identifiers.
+        Source timestamps and usage are retained because this is a snapshot of
+        the ledger at fork time, not a new research goal. Continuable goals are
+        paused so the child cannot resume work without a new user turn. Audits
+        are deliberately not copied: they belong to the source goal's history.
+
+        Args:
+            session_id: Session whose current goal is the snapshot source.
+            target_session_id: Owning session for the clone.
+            remap_reference: Optional rewrite for artifact paths and source URIs.
+            remap_run_id: Optional dedicated rewrite for evidence run ids.
+
+        Returns:
+            The complete cloned snapshot, or None when there is no current goal.
+        """
+        session_id = normalize_required_text(session_id, "session_id")
+        target_session_id = normalize_required_text(target_session_id, "target_session_id")
+        if session_id == target_session_id:
+            raise ValueError("source and target sessions must differ")
+        remap_reference = remap_reference or (lambda value: value)
+        remap_run_id = remap_run_id or remap_reference
+        continuable = {"active", "needs_refresh", "insufficient_evidence"}
+        with self._write_transaction():
+            current_values = [status.value for status in _CURRENT_STATUSES]
+            placeholders = ",".join("?" for _ in current_values)
+            goal_row = self._conn.execute(
+                f"""
+                SELECT * FROM goals
+                WHERE session_id = ? AND status IN ({placeholders})
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                [session_id, *current_values],
+            ).fetchone()
+            if goal_row is None:
+                return None
+            source_goal_id = goal_row["goal_id"]
+            new_goal_id = _id("goal")
+            claims = self._conn.execute(
+                "SELECT * FROM goal_claims WHERE goal_id = ? AND session_id = ? "
+                "ORDER BY created_at, claim_id",
+                (source_goal_id, session_id),
+            ).fetchall()
+            criteria = self._conn.execute(
+                "SELECT * FROM goal_criteria WHERE goal_id = ? AND session_id = ? "
+                "ORDER BY created_at, criterion_id",
+                (source_goal_id, session_id),
+            ).fetchall()
+            evidence = self._conn.execute(
+                "SELECT * FROM goal_evidence WHERE goal_id = ? AND session_id = ? "
+                "ORDER BY created_at, evidence_id",
+                (source_goal_id, session_id),
+            ).fetchall()
+            claim_ids = {row["claim_id"]: _id("claim") for row in claims}
+            criterion_ids = {row["criterion_id"]: _id("criterion") for row in criteria}
+
+            def insert_clone(row, *, table: str, id_key: str, new_id: str) -> None:
+                values = dict(row)
+                values[id_key] = new_id
+                values["goal_id"] = new_goal_id
+                values["session_id"] = target_session_id
+                columns = list(values)
+                self._conn.execute(
+                    f"INSERT INTO {table} ({','.join(columns)}) "
+                    f"VALUES ({','.join('?' for _ in columns)})",
+                    [values[column] for column in columns],
+                )
+
+            goal_values = dict(goal_row)
+            goal_values["goal_id"] = new_goal_id
+            goal_values["session_id"] = target_session_id
+            if goal_values["status"] in continuable:
+                goal_values["status"] = GoalStatus.PAUSED.value
+            insert_clone(goal_values, table="goals", id_key="goal_id", new_id=new_goal_id)
+            for row in claims:
+                insert_clone(row, table="goal_claims", id_key="claim_id", new_id=claim_ids[row["claim_id"]])
+            for row in criteria:
+                insert_clone(
+                    row, table="goal_criteria", id_key="criterion_id",
+                    new_id=criterion_ids[row["criterion_id"]],
+                )
+            for row in evidence:
+                values = dict(row)
+                values["evidence_id"] = _id("ev")
+                values["goal_id"] = new_goal_id
+                values["session_id"] = target_session_id
+                if values["criterion_id"] is not None:
+                    values["criterion_id"] = criterion_ids[values["criterion_id"]]
+                if values["claim_id"] is not None:
+                    values["claim_id"] = claim_ids[values["claim_id"]]
+                if values["run_id"] is not None:
+                    values["run_id"] = remap_run_id(values["run_id"])
+                if values["artifact_path"] is not None:
+                    values["artifact_path"] = remap_reference(values["artifact_path"])
+                if values["source_uri"] is not None:
+                    values["source_uri"] = remap_reference(values["source_uri"])
+                contradictions = _json_loads(values["contradicts_claim_ids_json"], [])
+                if isinstance(contradictions, list):
+                    contradictions = [claim_ids.get(item, item) for item in contradictions]
+                    values["contradicts_claim_ids_json"] = _json_dumps(contradictions)
+                columns = list(values)
+                self._conn.execute(
+                    f"INSERT INTO goal_evidence ({','.join(columns)}) "
+                    f"VALUES ({','.join('?' for _ in columns)})",
+                    [values[column] for column in columns],
+                )
+        return self.get_goal_snapshot(new_goal_id, evidence_limit=None)
 
     @_synchronized
     def append_evidence(

@@ -968,6 +968,15 @@ vibe-trading --max-iter 40 -p "prompt"</code></pre>
             `
           },
           {
+            id: "fork",
+            title: "Fork a conversation",
+            body: `
+              <p>On any completed assistant answer, choose <strong>Fork</strong> beside Copy to create an independent child conversation from the history through that answer. The whole assistant turn is included, including its tool calls and outputs; later turns are excluded. Failed, cancelled, and streaming answers cannot be forked.</p>
+              <p>The child opens immediately with a blank composer and a <strong>Forked from</strong> banner linking back to the source. The source keeps running and stays in history. Drafts and attachments stay with the session where they were written; the child inherits the title, session configuration, copied run artifacts, and the current goal snapshot. Persistent memory, uploads, generated reports, and connections remain shared. Parent and child can be deleted independently.</p>
+              <p>API clients can use <code>POST /sessions/{source_id}/fork</code> with <code>{"message_id":"..."}</code>. See the <a href="https://github.com/HKUDS/Vibe-Trading/blob/main/guides/cli-and-api.md#fork-a-session" target="_blank" rel="noreferrer">API guide</a> for the full state boundary.</p>
+            `
+          },
+          {
             id: "auth",
             title: "Access and security",
             body: `
@@ -1001,6 +1010,7 @@ vibe-trading playbook create premarket-brief</code></pre>
                   <tr><td><code>POST /sessions</code>, <code>POST /sessions/{id}/messages</code></td><td>Create a session, send a message</td></tr>
                   <tr><td><code>GET /sessions/{id}/events</code></td><td>Server-sent event stream</td></tr>
                   <tr><td><code>POST /sessions/{id}/cancel</code></td><td>Stop the run in flight</td></tr>
+                  <tr><td><code>POST /sessions/{source_id}/fork</code></td><td>Fork a completed assistant turn into an independent child session</td></tr>
                   <tr><td><code>GET /runs</code>, <code>GET /runs/{run_id}</code></td><td>Runs</td></tr>
                   <tr><td><code>POST /upload</code></td><td>Upload a document, data file or image</td></tr>
                   <tr><td><code>POST /swarm/runs</code></td><td>Start a swarm run</td></tr>

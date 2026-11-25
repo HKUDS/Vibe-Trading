@@ -1157,6 +1157,9 @@
     "reasoningEffortReset": "Seçilen model {{level}} düzeyini desteklemiyor; sağlayıcı varsayılanına sıfırlandı."
   },
   "agent": {
+    "forkedFrom": "{{title}} konuşmasından dallandı",
+    "viewOriginal": "Orijinali görüntüle",
+    "forkWaitForUpload": "Dal oluşturmadan önce eklerin yüklenmesini tamamlanmasını bekleyin.",
     "reasoningStrength": "Akıl yürütme düzeyi",
     "unknownProvider": "Bilinmeyen sağlayıcı",
     "unknownModel": "Bilinmeyen model",
@@ -2022,6 +2025,8 @@
     "accountHint": "Aracı yalnızca bu hesapta işlem yapar. Sizin adınıza seçim yapılmaz."
   },
   "messageBubble": {
+    "fork": "Dal",
+    "forking": "Dal oluşturuluyor…",
     "elapsedTime": "Toplam yanıt süresi",
     "copied": "Kopyalandı",
     "copy": "Kopyala",

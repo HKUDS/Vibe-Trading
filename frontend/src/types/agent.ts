@@ -63,6 +63,10 @@ export interface AgentMessage {
   status?: "running" | "ok" | "error";
   elapsed_ms?: number;
   timestamp: number;
+  /** Persisted message ID used by message-level actions such as Fork. */
+  sourceMessageId?: string;
+  /** Whether the persisted assistant turn is eligible for Fork. */
+  canFork?: boolean;
   runId?: string;
   swarmRunId?: string;
   swarmStatus?: SwarmRunStatus;

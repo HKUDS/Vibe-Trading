@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { useSearchParams } from "react-router";
-import { ArrowDown } from "lucide-react";
+import { Link, useSearchParams } from "react-router";
+import { ArrowDown, GitFork } from "lucide-react";
 import { toast } from "sonner";
 import {
   useAgentStore,
@@ -267,9 +267,12 @@ export function Agent() {
   const visibleRowsSessionRef = useRef<string | null>(null);
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
+  const forkingRef = useRef(false);
   const [runtimeIdentity, setRuntimeIdentity] = useState<RuntimeIdentity>({});
 
   const messages = useAgentStore(s => s.messages);
+  const sessions = useSessionsStore(s => s.sessions);
   const streamingText = useAgentStore(s => s.streamingText);
   const status = useAgentStore(s => s.status);
   const sessionId = useAgentStore(s => s.sessionId);
@@ -293,6 +296,11 @@ export function Agent() {
   const visibleRuntimeIdentity = runtimeIdentity.sessionId === urlSessionId
     ? runtimeIdentity
     : {};
+  const activeSession = sessions.find((session) => session.session_id === sessionId);
+  const forkSourceId = activeSession?.forked_from_session_id ?? null;
+  const forkSource = forkSourceId
+    ? sessions.find((session) => session.session_id === forkSourceId)
+    : undefined;
 
   /* Smart scroll — only auto-scroll when near bottom */
   const isNearBottom = useCallback(() => {
@@ -558,6 +566,10 @@ export function Agent() {
       for (const m of msgs) {
         const meta = m.metadata as Record<string, unknown> | undefined;
         const runId = meta?.run_id as string | undefined;
+        const canFork = (meta?.status === undefined || meta.status === "completed")
+          && !["streaming", "partial", "in_progress", "failed", "cancelled", "interrupted"].some(
+            (key) => Boolean(meta?.[key]),
+          );
         const metrics = meta?.metrics as Record<string, number> | undefined;
         const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
         if (
@@ -619,7 +631,15 @@ export function Agent() {
         } else if (runId) {
           // Show text answer first (if non-empty), then chart card
           if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+            agentMsgs.push({
+              id: m.message_id + "_ans",
+              type: "answer",
+              content: m.content,
+              elapsed_ms: elapsedMs,
+              timestamp: assistantTs,
+              sourceMessageId: m.message_id,
+              canFork,
+            });
           }
           if (hasStoredMetrics(metrics)) {
             agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
@@ -630,7 +650,15 @@ export function Agent() {
             }
           }
         } else {
-          agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+          agentMsgs.push({
+            id: m.message_id,
+            type: "answer",
+            content: m.content,
+            elapsed_ms: elapsedMs,
+            timestamp: assistantTs,
+            sourceMessageId: m.message_id,
+            canFork,
+          });
         }
       }
       if (genRef.current !== gen) return;
@@ -1621,6 +1649,33 @@ export function Agent() {
     submitComposerPrompt(userContent);
   }, [status, submitComposerPrompt]);
 
+  const handleFork = useCallback(async (msg: StoredAgentMessage) => {
+    const sourceMessageId = msg.sourceMessageId;
+    if (!sessionId || !sourceMessageId || !msg.canFork || forkingRef.current) return;
+    if (composerRef.current?.isUploading()) {
+      toast.warning(t("agent.forkWaitForUpload"));
+      return;
+    }
+    forkingRef.current = true;
+    setForkingMessageId(sourceMessageId);
+    try {
+      const child = await api.forkSession(sessionId, sourceMessageId);
+      useSessionsStore.getState().upsert(child);
+      if (act().sessionId === sessionId) {
+        setSearchParams({ session: child.session_id });
+        requestAnimationFrame(() => composerRef.current?.focus());
+      }
+    } catch (error) {
+      const message = isAuthRequiredError(error)
+        ? AUTH_REQUIRED_MESSAGE
+        : error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(message);
+    } finally {
+      forkingRef.current = false;
+      setForkingMessageId(null);
+    }
+  }, [sessionId, setSearchParams, t]);
+
   const handleContinueActivity = useCallback(() => {
     submitComposerPrompt(t("agent.continuePrompt" as never));
   }, [submitComposerPrompt, t]);
@@ -1777,6 +1832,18 @@ export function Agent() {
         runtimeModel={visibleRuntimeIdentity.model}
         runtimeReasoningEffort={visibleRuntimeIdentity.reasoningEffort}
       />
+      {forkSourceId && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+          <GitFork className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>{t("agent.forkedFrom", { title: forkSource?.title || forkSourceId })}</span>
+          <Link
+            to={`/agent?session=${forkSourceId}`}
+            className="font-medium text-primary hover:underline"
+          >
+            {t("agent.viewOriginal")}
+          </Link>
+        </div>
+      )}
       {historyError && (
         <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs">
           <span>{t("layout.sessionsLoadFailed")} {historyError}</span>
@@ -1898,7 +1965,12 @@ export function Agent() {
                 data-msg-idx={g.msgIdx}
                 className={shouldAnimate ? "msg-enter" : undefined}
               >
-                <MessageBubble msg={g.msg} onRetry={g.msg.type === "error" ? handleRetry : undefined} />
+                <MessageBubble
+                  msg={g.msg}
+                  onRetry={g.msg.type === "error" ? handleRetry : undefined}
+                  onFork={g.msg.type === "answer" && g.msg.canFork ? handleFork : undefined}
+                  forking={g.msg.sourceMessageId === forkingMessageId}
+                />
               </div>
             );
           })}
@@ -1945,6 +2017,7 @@ export function Agent() {
           >
             <Composer
               ref={composerRef}
+              sessionId={sessionId}
               streaming={status === "streaming"}
               activityVerb={activity?.verb}
               hasCompletedTurn={hasCompletedTurn}

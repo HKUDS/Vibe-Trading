@@ -230,6 +230,7 @@ vibe-trading serve --port 8899
 | `GET` | `/scheduled-runs/playbooks/{slug}` | Show one template, with its variables |
 | `POST` | `/scheduled-runs/playbooks/{slug}` | Schedule a job from a template |
 | `POST` | `/sessions/{id}/cancel` | Stop the session's in-flight run (recorded as cancelled, not failed) |
+| `POST` | `/sessions/{source_id}/fork` | Create an independent child from a completed assistant turn |
 | `POST` | `/sessions/{id}/title/auto` | Summarize the first exchange into a session title (never overwrites a manual rename) |
 | `GET` | `/correlation/regime` | Correlation edge-density regime timeline |
 | `GET` | `/agents.json` · `POST` `/v1/query` | OpenBB Workspace bridge — registered only with the optional `openbb` extra; `/v1/query` requires auth |
@@ -238,6 +239,33 @@ Interactive docs are available at `http://localhost:8899/docs` in keyless
 loopback development mode. When `API_AUTH_KEY` is configured, `/docs` and
 `/redoc` are disabled; authenticated tooling can fetch `/openapi.json` with an
 `Authorization: Bearer <key>` header.
+
+### Fork a session
+
+Create an independent child conversation from the committed history through a
+completed assistant turn. The cutoff is the whole selected turn, including its
+tool calls and outputs; the API does not cut at an arbitrary assistant item.
+Failed, cancelled, and streaming turns are not eligible.
+
+```bash
+curl -X POST http://localhost:8899/sessions/source-session-id/fork \
+  -H "Content-Type: application/json" \
+  -d '{"message_id":"assistant-message-id"}'
+```
+
+The response is the new `SessionItem`, including its `session_id`,
+`forked_from_session_id`, and `forked_from_message_id`. The child inherits the
+source title, non-secret session configuration, copied message/attempt/run
+history with remapped IDs and referenced artifacts, and the current goal,
+claims, criteria, and evidence snapshot at fork time. Goal state is not
+reconstructed at the historical cutoff.
+
+Persistent memory, uploads, generated reports, and provider/data-source
+connections remain shared. Later turns, live loops and background state,
+partial responses, temporary compaction summaries, and unsent drafts are not
+copied. Forking never stops or modifies the source; the child starts idle.
+Parent and child are deleted independently, and the lineage is for navigation
+and tracking rather than ownership.
 
 ### Security defaults
 

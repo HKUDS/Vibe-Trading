@@ -16,6 +16,7 @@ vi.mock("sonner", () => ({
 }));
 
 const baseProps = {
+  sessionId: null,
   streaming: false,
   hasCompletedTurn: false,
   showExport: false,
@@ -117,6 +118,32 @@ describe("Composer", () => {
     await user.type(screen.getByRole("textbox"), "local composer state");
 
     expect(messageListRenderCount).toBe(1);
+  });
+
+  it("keeps unsent drafts scoped to their session", () => {
+    const { rerender } = render(<Composer {...baseProps} sessionId="source" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "source draft" } });
+
+    rerender(<Composer {...baseProps} sessionId="child" />);
+    expect(screen.getByRole("textbox")).toHaveValue("");
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "child draft" } });
+    rerender(<Composer {...baseProps} sessionId="source" />);
+    expect(screen.getByRole("textbox")).toHaveValue("source draft");
+  });
+
+  it("keeps unsent attachments scoped to their session", async () => {
+    const { container, rerender } = render(<Composer {...baseProps} sessionId="source" />);
+    fireEvent.drop(container.querySelector("form")!, {
+      dataTransfer: { files: [new File(["data"], "source.csv", { type: "text/csv" })], types: ["Files"] },
+    });
+    await screen.findByText("source.csv");
+
+    rerender(<Composer {...baseProps} sessionId="child" />);
+    expect(screen.queryByText("source.csv")).not.toBeInTheDocument();
+
+    rerender(<Composer {...baseProps} sessionId="source" />);
+    expect(await screen.findByText("source.csv")).toBeInTheDocument();
   });
 
   it("uploads multiple dropped files and submits them together", async () => {

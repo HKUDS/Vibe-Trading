@@ -59,9 +59,11 @@ export interface ComposerHandle {
   fill(prompt: string): void;
   focus(): void;
   submit(prompt: string): void;
+  isUploading(): boolean;
 }
 
 interface Props {
+  sessionId: string | null;
   streaming: boolean;
   activityVerb?: AgentActivity["verb"];
   hasCompletedTurn: boolean;
@@ -80,6 +82,7 @@ interface Props {
 }
 
 export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer({
+  sessionId,
   streaming,
   activityVerb,
   hasCompletedTurn,
@@ -109,6 +112,24 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const uploadMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftsRef = useRef(new Map<string, { input: string; attachments: ComposerAttachment[] }>());
+  const draftSessionRef = useRef(sessionId);
+
+  useEffect(() => {
+    const previousSessionId = draftSessionRef.current;
+    if (previousSessionId === sessionId) return;
+    draftsRef.current.set(previousSessionId ?? "__draft__", { input, attachments });
+    const draft = draftsRef.current.get(sessionId ?? "__draft__");
+    setInput(draft?.input ?? "");
+    setAttachments(draft?.attachments ?? []);
+    draftSessionRef.current = sessionId;
+    requestAnimationFrame(() => {
+      const composer = inputRef.current;
+      if (!composer) return;
+      composer.style.height = "auto";
+      composer.style.height = `${composer.scrollHeight}px`;
+    });
+  }, [attachments, input, sessionId]);
 
   const focus = useCallback(() => {
     inputRef.current?.focus({ preventScroll: true });
@@ -144,7 +165,8 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
     },
     focus,
     submit: submitPrompt,
-  }), [focus, submitPrompt]);
+    isUploading: () => uploading,
+  }), [focus, submitPrompt, uploading]);
 
   const handleSubmit = useCallback((event: FormEvent) => {
     event.preventDefault();

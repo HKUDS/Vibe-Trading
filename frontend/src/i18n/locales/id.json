@@ -1197,6 +1197,9 @@
     "gildataTokenDesc": "Data Gildata opsional: harga harian saham A yang disesuaikan, harga mentah saham Hong Kong/indeks, NAB reksa dana di luar bursa, serta alat makroekonomi, pengumuman, dan riset Tiongkok."
   },
   "agent": {
+    "forkedFrom": "Dicabangkan dari {{title}}",
+    "viewOriginal": "Lihat asli",
+    "forkWaitForUpload": "Tunggu hingga lampiran selesai diunggah sebelum membuat cabang.",
     "reasoningStrength": "Tingkat Reasoning",
     "unknownProvider": "Provider tidak diketahui",
     "unknownModel": "Model tidak diketahui",
@@ -2062,6 +2065,8 @@
     "accountHint": "Agent hanya melakukan trading pada akun ini. Tidak ada akun yang dipilih secara otomatis untuk Anda."
   },
   "messageBubble": {
+    "fork": "Cabang",
+    "forking": "Membuat cabang…",
     "elapsedTime": "Total waktu respons",
     "copied": "Disalin",
     "copy": "Salin",

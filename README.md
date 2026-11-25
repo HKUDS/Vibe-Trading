@@ -268,7 +268,7 @@ Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JS
 |---|---|
 | Swarm and Pixel Office | Run a bull–bear investment committee or a quant research desk and inspect the workers’ reports. In Pixel Office, assign a task to a teammate and record the result on the shared board. |
 | Scheduled briefs | Start from a premarket brief, an earnings tracker or a portfolio checkup. Choose a schedule and send the report to a configured channel such as Slack, Telegram or email. |
-| Research history | Search older sessions and reopen a saved run. Save a dated conclusion with its evidence and compare revisions when the investment case changes. |
+| Research history | Search older sessions, fork any completed assistant answer into an independent conversation, and reopen a saved run. Save a dated conclusion with its evidence and compare revisions when the investment case changes. |
 | Run records | Inspect the data source, model, execution record and metric references behind a backtest. Reopen the saved trades and equity curve to check a reported figure. |
 
 <!-- BEGIN GENERATED broker-capability-matrix -->
@@ -384,6 +384,7 @@ Start a local server with `vibe-trading serve --port 8899`. In a second terminal
 | Create the conversation | `POST /sessions` |
 | Send the research question | `POST /sessions/{id}/messages` |
 | Follow progress as it happens | `GET /sessions/{id}/events` |
+| Fork a completed assistant turn | `POST /sessions/{source_id}/fork` |
 
 Open `http://localhost:8899/docs` to try the endpoints interactively. [Authenticated clients](guides/cli-and-api.md#security-defaults) send the API key in the `Authorization: Bearer` header.
 

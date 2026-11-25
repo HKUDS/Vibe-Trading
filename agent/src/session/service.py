@@ -116,6 +116,9 @@ class SessionService:
         self._user_cancel_requests: set[str] = set()
         self._inflight: set[str] = set()
         self._inflight_lock = threading.Lock()
+        # Fork publication/duplicate detection is serialized independently of
+        # execution claims: a busy source must remain usable and untouched.
+        self._fork_lock = threading.RLock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
         self._shutting_down = False
@@ -302,6 +305,26 @@ class SessionService:
     def get_session(self, session_id: str) -> Optional[Session]:
         """Return a session by ID."""
         return self.store.get_session(session_id)
+
+    def fork_session(
+        self,
+        source_id: str,
+        message_id: str,
+        *,
+        owner: Optional[Principal] = None,
+        goal_store=None,
+    ) -> Session:
+        """Create an idle child from a committed assistant-message prefix.
+
+        Unlike ``send_message``, this never claims or mutates the source. The
+        returned child has no task, loop, event, background, or swarm state.
+        """
+        from src.session.fork import fork_session
+
+        with self._fork_lock:
+            return fork_session(
+                self, source_id, message_id, owner=owner, goal_store=goal_store
+            )
 
     def update_session(self, session: Session) -> None:
         """Persist session metadata and refresh its search label."""

@@ -746,6 +746,10 @@ export const api = {
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  forkSession: (sid: string, messageId: string) => request<SessionItem>(`/sessions/${encodeURIComponent(sid)}/fork`, {
+    method: "POST",
+    body: JSON.stringify({ message_id: messageId }),
+  }),
   // Codex-style LLM summary title from the first exchange; backend refuses to
   // overwrite a manual rename, so this is safe to fire-and-forget.
   autoTitleSession: (sid: string) => request<{ status: string; title: string }>(`/sessions/${sid}/title/auto`, { method: "POST" }),
@@ -1853,6 +1857,8 @@ export interface SessionItem {
   created_at?: string;
   updated_at?: string;
   last_attempt_id?: string;
+  forked_from_session_id?: string | null;
+  forked_from_message_id?: string | null;
 }
 
 // --- Goal types ---
