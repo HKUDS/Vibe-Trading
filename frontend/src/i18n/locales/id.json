@@ -2790,6 +2790,7 @@
     "report": "Laporan riset",
     "download": "Unduh JSON",
     "downloadOosCsv": "CSV ekuitas di luar sampel",
+    "downloadFoldsCsv": "CSV audit fold",
     "scenario": "Skenario",
     "return": "Imbal hasil",
     "drawdown": "Penurunan",

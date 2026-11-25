@@ -2790,6 +2790,7 @@
     "report": "تقرير البحث",
     "download": "تنزيل JSON",
     "downloadOosCsv": "CSV لقيمة المحفظة خارج العينة",
+    "downloadFoldsCsv": "CSV لتدقيق الطيات",
     "scenario": "السيناريو",
     "return": "العائد",
     "drawdown": "التراجع",
