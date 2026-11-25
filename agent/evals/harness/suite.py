@@ -9,6 +9,18 @@ from .report import aggregate_reports
 from .runner import evaluate_case, load_case
 from .schema import VerdictStatus
 
+# A disproved claim or corrupt artifact takes precedence over missing evidence.
+_REPLAY_STATUSES = {
+    VerdictStatus.INVALID_ARTIFACT: "invalid_artifact",
+    VerdictStatus.FAIL: "failed",
+    VerdictStatus.NOT_EVALUABLE: "not_evaluable",
+    VerdictStatus.PASS: "passed",
+}
+
+
+def _evaluation_status(statuses: set[str]) -> str:
+    return next((status for status in _REPLAY_STATUSES.values() if status in statuses), "passed")
+
 
 def case_paths() -> dict[str, Path]:
     """Discover evaluator cases; fixture JSON is never mistaken for a case."""
@@ -46,16 +58,8 @@ def replay_run(run_dir: Path, case_ids: list[str] | None = None, trace_dir: Path
         raise ValueError(f"unknown harness cases: {', '.join(sorted(missing))}")
     reports = [evaluate_case(load_case(paths[key]), run_dir, trace_dir=trace_dir) for key in dict.fromkeys(case_ids)]
     summary = aggregate_reports(reports)
-    statuses = {verdict.status for report in reports for verdict in report.verdicts}
-    status = (
-        "invalid_artifact"
-        if VerdictStatus.INVALID_ARTIFACT in statuses
-        else "failed"
-        if VerdictStatus.FAIL in statuses
-        else "not_evaluable"
-        if VerdictStatus.NOT_EVALUABLE in statuses
-        else "passed"
-    )
+    statuses = {_REPLAY_STATUSES[verdict.status] for report in reports for verdict in report.verdicts}
+    status = _evaluation_status(statuses)
     return {
         "kind": "replay",
         "evaluation_status": status,
@@ -76,10 +80,12 @@ def replay_suite(bindings: list[dict]) -> dict:
             Path(entry["run_dir"]), [entry["case_id"]], Path(entry["trace_dir"]) if entry.get("trace_dir") else None
         )
         results.append(result)
+    status = _evaluation_status({result["evaluation_status"] for result in results})
     return {
         "kind": "replay_suite",
+        "evaluation_status": status,
         "results": results,
-        "passed": all(result["evaluation_status"] == "passed" for result in results),
+        "passed": status == "passed",
         "case_count": len(results),
         "llm_calls": 0,
         "network_calls": 0,
