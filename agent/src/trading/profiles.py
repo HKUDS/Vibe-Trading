@@ -16,6 +16,7 @@ from src.trading.connectors.longbridge.profiles import LONGBRIDGE_PROFILES
 from src.trading.connectors.mstock.profiles import MSTOCK_PROFILES
 from src.trading.connectors.mt5.profiles import MT5_PROFILES
 from src.trading.connectors.okx.profiles import OKX_PROFILES
+from src.trading.connectors.openalgo.profiles import OPENALGO_PROFILES
 from src.trading.connectors.robinhood.profiles import ROBINHOOD_PROFILES
 from src.trading.connectors.scalable.profiles import SCALABLE_PROFILES
 from src.trading.connectors.shoonya.profiles import SHOONYA_PROFILES
@@ -50,6 +51,7 @@ BUILTIN_PROFILES: tuple[TradingProfile, ...] = (
     *TOSS_PROFILES,
     *SCALABLE_PROFILES,
     *MSTOCK_PROFILES,
+    *OPENALGO_PROFILES,
 )
 
 

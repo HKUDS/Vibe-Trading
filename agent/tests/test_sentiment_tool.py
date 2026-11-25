@@ -25,8 +25,26 @@ class TestTokenize:
         assert "estimates" in tokens
         assert "!!!" not in " ".join(tokens)
 
+    def test_typographic_quotes_dashes_and_ellipsis(self):
+        # Headlines from news feeds use curly quotes, em/en dashes and "…";
+        # a lexicon word touching one of them must still be counted.
+        tokens = _tokenize("Analysts turn “bullish” ‘again’")
+        assert tokens == ["analysts", "turn", "bullish", "again"]
+        assert _tokenize("Shares surge—analysts upgrade") == [
+            "shares", "surge", "analysts", "upgrade"
+        ]
+        assert _tokenize("rally–then slump…") == ["rally", "then", "slump"]
+
+    def test_hyphenated_compounds_stay_dropped(self):
+        # "short-term" must not score as "short", nor "profit-taking" as "profit".
+        assert _tokenize("short-term profit-taking") == []
+
 
 class TestScoreText:
+    def test_curly_quoted_headline_is_not_neutral(self):
+        r = _score_text("Analysts turn “bullish” on chipmakers")
+        assert r == {"score": 1.0, "positive": 1, "negative": 0}
+
     def test_strongly_bullish(self):
         r = _score_text("profit surge growth rally record beat upgrade strong")
         assert r["score"] == 1.0

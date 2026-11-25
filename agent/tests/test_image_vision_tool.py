@@ -5,12 +5,14 @@ The LLM call is mocked; the only real I/O is a tiny PNG written to tmp_path.
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.config.paths import get_uploads_dir
 from src.tools.image_vision_tool import AnalyzeImageTool
 
 # 1x1 transparent PNG
@@ -84,3 +86,57 @@ def test_provider_failure_closes_chat_client(tool, png_in_allowed_root):
 
     assert result["ok"] is False
     chat_cls.return_value.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("handle", ["uploads/chart.png", "agent/uploads/chart.png", "uploads/chat/chart.png"])
+@pytest.mark.parametrize("custom_home", [False, True])
+@pytest.mark.parametrize("stale_copy", [False, True])
+def test_browser_upload_handle_uses_runtime_root(tool, tmp_path, monkeypatch, handle, custom_home, stale_copy):
+    """Browser attachment handles must not depend on the service working directory."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    if custom_home:
+        monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path / "custom-runtime"))
+    else:
+        monkeypatch.delenv("VIBE_TRADING_HOME", raising=False)
+    relative_name = handle.split("uploads/", 1)[1]
+    image = get_uploads_dir() / relative_name
+    image.parent.mkdir(parents=True, exist_ok=True)
+    image.write_bytes(_PNG_BYTES)
+    service_dir = tmp_path / "service"
+    service_dir.mkdir()
+    monkeypatch.chdir(service_dir)
+    # A stale same-named file under cwd must not override the uploaded image.
+    if stale_copy:
+        stale = service_dir / handle
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_bytes(b"stale image")
+    response = MagicMock(content="Uploaded image.")
+    with patch("src.providers.chat.ChatLLM") as chat_cls:
+        chat_cls.return_value.chat.return_value = response
+        result = json.loads(tool.execute(path=handle))
+
+    assert result["ok"] is True
+    assert result["data"]["path"] == str(image.resolve())
+    messages = chat_cls.return_value.chat.call_args.args[0]
+    assert messages[0]["content"][1]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(_PNG_BYTES).decode("ascii")
+    )
+
+
+@pytest.mark.parametrize("escape", ["traversal", "symlink"])
+def test_upload_handle_cannot_escape_allowed_roots(tool, tmp_path, monkeypatch, escape):
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path / "runtime"))
+    uploads = tmp_path / "runtime" / "uploads"
+    uploads.mkdir(parents=True)
+    outside = tmp_path / "private.png"
+    outside.write_bytes(_PNG_BYTES)
+    if escape == "symlink":
+        (uploads / "link.png").symlink_to(outside)
+        handle = "uploads/link.png"
+    else:
+        handle = "uploads/../../private.png"
+    with patch("src.providers.chat.ChatLLM") as chat_cls:
+        result = json.loads(tool.execute(path=handle))
+    assert result["ok"] is False
+    chat_cls.assert_not_called()

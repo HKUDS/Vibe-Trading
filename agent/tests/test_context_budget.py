@@ -153,6 +153,11 @@ def test_overflow_errors_are_recognised_and_their_limit_read() -> None:
     assert parse_context_limit(deepseek) == 131_072
     assert is_context_overflow('{"error": {"code": "context_length_exceeded"}}')
     assert is_context_overflow("prompt is too long: 210000 tokens > 200000 maximum")
+    gemini = ("Error code: 400 - [{'error': {'code': 400, 'message': 'The input token count "
+              "(140000) exceeds the maximum number of tokens allowed (131072).', "
+              "'status': 'INVALID_ARGUMENT'}}]")
+    assert is_context_overflow(gemini)
+    assert parse_context_limit(gemini) == 131_072
     assert not is_context_overflow("The usage limit has been reached")
     assert not is_context_overflow("Insufficient Balance")
 
@@ -187,8 +192,10 @@ class ComparisonLLM:
     failure under test; faking that here would test the fake.
     """
 
-    def __init__(self, model: str, codes: list[str], *, overflow_above: int | None = None) -> None:
+    def __init__(self, model: str, codes: list[str], *, overflow_above: int | None = None,
+                 overflow_message: str | None = None) -> None:
         self.model_name = model
+        self.overflow_message = overflow_message
         self.reasoning = "r" * REASONING_CHARS
         self.codes = codes
         self.overflow_above = overflow_above
@@ -203,10 +210,11 @@ class ComparisonLLM:
         tokens = self._input_tokens(messages)
         if self.overflow_above is not None and tokens > self.overflow_above:
             self.overflows += 1
-            original = RuntimeError(
-                f"Error code: 400 - This model's maximum context length is {self.overflow_above} "
-                f"tokens. However, you requested {tokens} tokens."
+            template = self.overflow_message or (
+                "Error code: 400 - This model's maximum context length is {limit} "
+                "tokens. However, you requested {tokens} tokens."
             )
+            original = RuntimeError(template.format(limit=self.overflow_above, tokens=tokens))
             original.status_code = 400
             raise ProviderStreamError(provider="deepseek", model=self.model_name, original=original)
         self.sent_tokens.append(tokens)
@@ -234,7 +242,8 @@ REASONING_CHARS = 12_000
 
 
 def _run(tmp_path: Path, monkeypatch, *, provider: str, model: str, payload_chars: int = 24_000,
-         env_window: int | None = None, overflow_above: int | None = None):
+         env_window: int | None = None, overflow_above: int | None = None,
+         overflow_message: str | None = None):
     monkeypatch.setenv("LANGCHAIN_PROVIDER", provider)
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", model)
     if env_window:
@@ -243,7 +252,7 @@ def _run(tmp_path: Path, monkeypatch, *, provider: str, model: str, payload_char
     tool = FilingTool(payload_chars)
     registry = ToolRegistry()
     registry.register(tool)
-    llm = ComparisonLLM(model, CODES, overflow_above=overflow_above)
+    llm = ComparisonLLM(model, CODES, overflow_above=overflow_above, overflow_message=overflow_message)
     loop = AgentLoop(registry=registry, llm=llm, max_iterations=30)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -307,6 +316,24 @@ def test_a_context_length_error_teaches_the_window_and_the_run_recovers(tmp_path
     # stays near the line after compacting; each further summary must wait
     # for 8K of regrowth instead of firing every iteration (13 before).
     assert len([e for e in trace if e.get("type") == "compact"]) <= 8
+
+
+def test_a_gemini_token_limit_error_teaches_the_window_and_the_run_recovers(tmp_path, monkeypatch) -> None:
+    """Gemini words the same 400 as an input token count over an allowed maximum."""
+    result, _, llm, loop, trace = _run(
+        tmp_path, monkeypatch, provider="gemini", model="gemini-3.5-flash", overflow_above=90_000,
+        overflow_message=(
+            "Error code: 400 - [{{'error': {{'code': 400, 'message': 'The input token count "
+            "({tokens}) exceeds the maximum number of tokens allowed ({limit}).', "
+            "'status': 'INVALID_ARGUMENT'}}}}]"
+        ),
+    )
+    overflow = [e for e in trace if e.get("type") == "context_overflow"]
+
+    assert result["status"] == "success", result.get("reason")
+    assert overflow and overflow[0]["stated_limit"] == 90_000
+    assert loop._learned_context_window == 90_000
+    assert llm.overflows == 1
 
 
 class CompactingLLM(ComparisonLLM):

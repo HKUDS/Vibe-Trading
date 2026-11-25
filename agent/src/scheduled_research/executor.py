@@ -578,10 +578,12 @@ class ScheduledResearchExecutor:
             return 0
 
         changed = 0
-        now = self._now_fn()
-        for job in list(self._store.load().values()):
-            if not job.delivery.session_id:
+        jobs = self._store.load()
+        for job_id in tuple(jobs):
+            job = jobs.get(job_id)
+            if job is None or not job.delivery.session_id:
                 continue
+            now = self._now_fn()
             if job.delivery.status is DeliveryStatus.NONE:
                 # No briefing is owed to a channel, but this sweep is the only
                 # terminal-observer a channel-less monitor has: read the run's
@@ -621,40 +623,57 @@ class ScheduledResearchExecutor:
             current = self._store.get(job.id)
             if current is None or current.delivery.key != job.delivery.key:
                 continue
+            now = self._now_fn()
             if not self._delivery_is_eligible(current, now):
                 continue
             current.delivery.status = DeliveryStatus.SENDING
             current.delivery.updated_at = now
             self._store.upsert(current, validate=False)
 
+            receipt = None
+            send_error: Exception | None = None
             try:
-                if job.protect_pdf:
+                if current.protect_pdf:
                     receipt = await self._channel_sender(
-                        job.delivery_channel,
-                        job.delivery_target,
+                        current.delivery_channel,
+                        current.delivery_target,
                         text,
-                        job.delivery_format,
+                        current.delivery_format,
                         True,
                     )
-                elif job.delivery_format is None:
+                elif current.delivery_format is None:
                     receipt = await self._channel_sender(
-                        job.delivery_channel, job.delivery_target, text
+                        current.delivery_channel, current.delivery_target, text
                     )
                 else:
                     receipt = await self._channel_sender(
-                        job.delivery_channel,
-                        job.delivery_target,
+                        current.delivery_channel,
+                        current.delivery_target,
                         text,
-                        job.delivery_format,
+                        current.delivery_format,
                     )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error("briefing delivery failed for job %s", job.id, exc_info=True)
-                self._mark_delivery_failed(current, exc, retryable=True)
+                send_error = exc
+
+            # The catalog may have changed while the send yielded control.
+            # Refresh both this delivery and the remaining jobs in this sweep.
+            jobs = self._store.load()
+            latest = jobs.get(job_id)
+            if (
+                latest is None
+                or latest.delivery.key != current.delivery.key
+                or latest.delivery.status is not DeliveryStatus.SENDING
+                or latest.delivery.updated_at != current.delivery.updated_at
+            ):
+                continue
+            current = latest
+            if send_error is not None:
+                self._mark_delivery_failed(current, send_error, retryable=True)
                 changed += 1
                 continue
-
             if receipt is None:
                 # Compatibility for pre-receipt injected senders used by
                 # embedders and older tests. Production adapters always return

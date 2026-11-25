@@ -37,13 +37,12 @@ logger = logging.getLogger(__name__)
 
 _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
 
-# Project interval -> Yahoo chart interval. Daily is the only granularity this
-# loader exposes for equities; anything else falls back to lowercasing so an
-# explicit ``5m``/``1h`` still reaches Yahoo unchanged.
+# Project interval -> Yahoo chart interval. Unmapped intervals fall back to
+# lowercasing so an explicit ``5m``/``1h`` still reaches Yahoo unchanged.
 _INTERVAL_MAP = {
     "1D": "1d",
     "1H": "1h",
-    # Yahoo chart has no 4h bar; match yfinance's 4H → 1h approximation.
+    # Yahoo chart has no 4h bar; fetch hourly bars and aggregate like yfinance.
     "4H": "1h",
     "1W": "1wk",
     "1M": "1mo",
@@ -53,7 +52,7 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India/Korea/Canada/Vietnam/UK equities plus Yahoo's own
+    Covers US/HK/India/Korea/Canada/Vietnam/UK/European equities plus Yahoo's own
     futures (``GC=F``), forex (``EURUSD=X``) and index (``^SPX``) symbol
     conventions, which the public chart endpoint serves verbatim (the code is
     used as-is in the request URL, no conversion) (#718). Supported UK ``.L``
@@ -68,7 +67,8 @@ def _is_supported(code: str) -> bool:
     return upper.endswith(
         (
             ".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", ".BA",
-            ".SA", ".L", ".T", ".TW", ".TWO", "=F", "=X",
+            ".SA", ".L", ".T", ".TW", ".TWO", ".DE", ".PA", ".AS", ".MI",
+            ".SW", ".WA", "=F", "=X",
         )
     )
 
@@ -203,6 +203,7 @@ class DataLoader:
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
         "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share", "taiwan_equity",
+        "europe_equity",
     }
     # Yahoo chart volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00
@@ -263,7 +264,24 @@ class DataLoader:
                     ),
                 )
                 if df is not None and not df.empty:
-                    result[code] = df
+                    # Aggregate after cache retrieval so older cached hourly
+                    # bars also honor 4H requests. Match yfinance's binning.
+                    if str(interval).strip().upper() == "4H":
+                        attrs = dict(df.attrs)
+                        df = df.resample("4h").agg(
+                            {
+                                "open": "first",
+                                "high": "max",
+                                "low": "min",
+                                "close": "last",
+                                "volume": "sum",
+                            }
+                        )
+                        df = df.dropna(subset=["open", "high", "low", "close"])
+                        df.index.name = "trade_date"
+                        df.attrs = attrs
+                    if not df.empty:
+                        result[code] = df
             except Exception as exc:
                 self.fetch_errors[code] = acquisition_error_kind(exc)
                 logger.warning("yahoo failed for %s: %s", code, exc)
