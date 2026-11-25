@@ -6,9 +6,10 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 81 tools: skills, research goals, strategy discovery,
+Surfaces 85 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
-analysis, deterministic paper-trading matching (paper_trade_step), market data, fundamentals & capital-flow & news & discovery
+analysis, deterministic paper-trading matching (paper_trade_step, single-market
+default or pt-v2.0 cross-market portfolio), market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_southbound_flow /
 get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
@@ -881,105 +882,197 @@ def backtest(run_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3, VD-12 hand-written wrapper)
+# Paper-trading step tool (pt-v1.1..pt-v1.3 legacy + pt-v2.0 portfolio)
+#
+# The tool publishes ``PaperTradeStepTool.parameters`` — one ``oneOf`` with a
+# legacy single-market branch and the packaged portfolio branch — so the MCP
+# catalogue cannot drift from the agent-side schema. ``paper_trade_step``
+# stays the Python callable name for compatibility; registration happens in
+# ``_register_paper_trade_tool`` below, next to the other schema-mirrored tools.
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool
-def paper_trade_step(
-    account_id: str,
-    market: str,
-    account_state: _lenient_dict_any,
-    from_date: str,
-    to_date: str,
-    orders: _lenient_dict_list_opt = None,
-    strategy_path: str | None = None,
-    fee_model: _lenient_dict_any_opt = None,
-    interval: str | None = None,
-    session: str | None = None,
-    path_model: str | None = None,
-    fill_model: str | None = None,
-    order_volume_ratio: float | None = None,
-) -> str:
-    """Run one step of the deterministic paper-trading matching engine; never places real orders.
-
-    Matches the injected ``orders`` (or, in Step 7, a ``strategy_path``'s
-    per-day orders) against bars under the market's frozen rules (T+1, price
-    limits, board lots, fees) and returns ONE in-band JSON document on
-    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3 success result, or an AM-5
-    error envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
-    non-retryable) on the SAME channel — never a transport error. Research-only:
-    it reads market data and the injected ledger, matches on paper, and writes
-    nothing; no broker or trading-connector order path exists here.
+def _paper_trade_branch(schema: dict[str, Any], raw_mode: Any) -> dict[str, Any] | None:
+    """Select the declared branch from the raw ``mode`` discriminator.
 
     Args:
-        account_id: Account identifier, echoed verbatim in the result.
-        market: One of ``cn_a`` / ``hk`` / ``us`` — selects the frozen rule set.
-        account_state: RM-injected ledger snapshot ``{cash, positions:[{symbol,
-            qty, avg_cost}]}``. Hashed raw for ``received_state_hash``.
-        from_date: Inclusive range start ``YYYY-MM-DD``. Orders mode requires
-            ``from_date == to_date`` (single day); multi-day ranges are
-            strategy_path mode only.
-        to_date: Inclusive range end ``YYYY-MM-DD`` (the target trading day).
-        orders: Orders mode — array of ``{symbol, side, qty, limit?}``. Exactly
-            one of ``orders`` / ``strategy_path`` must be given; an empty array
-            is the zero-order pure-valuation path.
-        strategy_path: Strategy mode — path to an AST-hardened strategy whose
-            per-day orders are matched. Exactly one of ``orders`` /
-            ``strategy_path``.
-        fee_model: Optional per-key fee overrides merged over the market
-            defaults (AM-4-3: RM always injects it explicitly).
-        interval: Optional pt-v1.2 bar interval — ``1d`` (default) or ``5m``;
-            ``5m`` is cn_a-only.
-        session: Optional pt-v1.2 session selector — ``auto`` (default) or
-            ``cn_a``; ``cn_a`` requires market ``cn_a``.
-        path_model: Optional pt-v1.2 reference-price model — ``bar_median``
-            (default) or ``bar_close``; ignored for ``1d``.
-        fill_model: Optional fill model — ``all_or_none`` (default) or
-            ``volume_share`` (pt-v1.3; requires ``interval='5m'`` and cn_a).
-        order_volume_ratio: Optional pt-v1.3 per-order share of available
-            volume, ``0 < r <= 1``; only with ``fill_model='volume_share'``.
-            Omitted means 1.0.
-    """
-    from src.tools.paper_trade.tool import run_paper_trade_step
+        schema: The tool's own ``parameters`` JSON Schema.
+        raw_mode: The raw ``mode`` value received from the MCP client.
 
-    payload: dict[str, Any] = {
-        "account_id": account_id,
-        "market": market,
-        "account_state": account_state,
-        "from_date": from_date,
-        "to_date": to_date,
-    }
-    if orders is not None:
-        payload["orders"] = orders
-    if strategy_path is not None:
-        payload["strategy_path"] = strategy_path
-    if fee_model is not None:
-        payload["fee_model"] = fee_model
-    if interval is not None:
-        payload["interval"] = interval
-    if session is not None:
-        payload["session"] = session
-    if path_model is not None:
-        payload["path_model"] = path_model
-    if fill_model is not None:
-        payload["fill_model"] = fill_model
-    if order_volume_ratio is not None:
-        payload["order_volume_ratio"] = order_volume_ratio
-    return run_paper_trade_step(payload)
+    Returns:
+        The matching branch, or None for an unknown mode (the core's pre-parse
+        gate owns the canonical in-band ``INVALID_REQUEST`` for that case).
+    """
+    wanted = "single" if raw_mode in (None, "single") else raw_mode
+    for branch in schema.get("oneOf") or ():
+        if not isinstance(branch, dict):
+            continue
+        mode_schema = (branch.get("properties") or {}).get("mode") or {}
+        if mode_schema.get("const") == wanted:
+            return branch
+    return None
+
+
+def _paper_trade_resolve_ref(schema: dict[str, Any], prop_schema: Any) -> Any:
+    """Resolve a local ``$ref`` within the published schema, if any.
+
+    The portfolio branch references the packaged request's ``$defs``; a
+    container declaration lives behind those refs, so decoding must follow
+    them rather than looking only at the branch-level property entry.
+
+    Args:
+        schema: The root published schema that owns the ``$defs``.
+        prop_schema: One property entry, possibly a local reference.
+
+    Returns:
+        The resolved schema node, or None when the reference cannot be
+        resolved or is cyclic.
+    """
+    seen: set[str] = set()
+    node = prop_schema
+    while isinstance(node, dict) and isinstance(node.get("$ref"), str):
+        ref = node["$ref"]
+        if not ref.startswith("#/") or ref in seen:
+            return None
+        seen.add(ref)
+        target: Any = schema
+        for token in ref.removeprefix("#/").split("/"):
+            token = token.replace("~1", "/").replace("~0", "~")
+            if isinstance(target, dict):
+                target = target.get(token)
+            elif isinstance(target, list):
+                try:
+                    target = target[int(token)]
+                except (ValueError, IndexError):
+                    return None
+            else:
+                return None
+        node = target
+    return node
+
+
+def _paper_trade_declares_container(schema: dict[str, Any], prop_schema: Any) -> bool:
+    """Return whether a branch property admits a JSON array or object.
+
+    Args:
+        schema: The root published schema (for local ``$ref`` resolution).
+        prop_schema: One entry from the gathered ``properties`` map.
+
+    Returns:
+        True for ``array``/``object`` declarations, including declarations
+        behind a local reference or inside an ``anyOf``/``oneOf`` union.
+    """
+    node = _paper_trade_resolve_ref(schema, prop_schema)
+    if not isinstance(node, dict):
+        return False
+    types = {node.get("type")}
+    for keyword in ("anyOf", "oneOf"):
+        for variant in node.get(keyword) or ():
+            resolved = _paper_trade_resolve_ref(schema, variant)
+            if isinstance(resolved, dict):
+                types.add(resolved.get("type"))
+    if "properties" in node or "additionalProperties" in node:
+        types.add("object")
+    if "items" in node:
+        types.add("array")
+    return bool(types & {"array", "object"})
+
+
+def _paper_trade_call_params(
+    schema: dict[str, Any], kwargs: dict[str, Any]
+) -> dict[str, Any]:
+    """Reduce raw MCP call arguments to the selected branch's declared payload.
+
+    The legacy/portfolio union is gathered across both ``oneOf`` branches, so a
+    key declared by either branch is forwarded for the core to accept or reject
+    on cross-branch grounds. Undeclared keys and missing branch-required
+    arguments fail deterministically; an unknown mode is forwarded untouched
+    (minus nulls) so the core returns its canonical in-band ``INVALID_REQUEST``.
+
+    Args:
+        schema: The tool's own ``parameters`` JSON Schema.
+        kwargs: Arguments as received from the MCP client.
+
+    Returns:
+        The filtered payload to forward to ``run_paper_trade_step``.
+
+    Raises:
+        ToolError: An argument is undeclared, or a branch-required argument is
+            absent.
+    """
+    branch = _paper_trade_branch(schema, kwargs.get("mode"))
+    if branch is None:
+        return {key: value for key, value in kwargs.items() if value is not None}
+
+    declared: dict[str, Any] = {}
+    for candidate in schema.get("oneOf") or ():
+        if isinstance(candidate, dict):
+            declared.update(candidate.get("properties") or {})
+    declared.update(schema.get("properties") or {})
+
+    undeclared = sorted(key for key in kwargs if key not in declared)
+    if undeclared:
+        raise ToolError(
+            "paper_trade_step: undeclared argument(s): " + ", ".join(undeclared)
+        )
+
+    missing = [key for key in branch.get("required") or () if kwargs.get(key) is None]
+    if missing:
+        branch_name = "portfolio" if kwargs.get("mode") == "portfolio" else "single"
+        raise ToolError(
+            f"paper_trade_step: missing required argument(s) for {branch_name} mode: "
+            + ", ".join(missing)
+        )
+
+    params: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        if value is None:
+            continue
+        if _paper_trade_declares_container(schema, declared.get(key)):
+            value = _coerce_json_string(value)
+        params[key] = value
+    return params
+
+
+def paper_trade_step(**kwargs: Any) -> str:
+    """Run one paper-trading step for the legacy or portfolio branch.
+
+    Registered on the MCP surface by :func:`_register_paper_trade_tool` with
+    ``PaperTradeStepTool.parameters``. Omitted/``mode='single'`` selects the
+    pt-v1.1-v1.3 single-market contract; ``mode='portfolio'`` with
+    ``schema_version='pt-v2.0'`` selects one cross-market daily step with
+    caller-declared buckets, sessions, direct-pair FX and exactly one of
+    ``orders`` / ``target_weights``. Valid payloads are forwarded unchanged to
+    ``run_paper_trade_step``, which emits the single in-band JSON document.
+    Matching is handled by a deterministic paper-trading matching engine; never places real orders, and never touches a broker or trading connector.
+    """
+    from src.tools.paper_trade.tool import PaperTradeStepTool, run_paper_trade_step
+
+    return run_paper_trade_step(
+        _paper_trade_call_params(PaperTradeStepTool.parameters, kwargs)
+    )
 
 
 @mcp.tool
 def paper_trade_reconcile(account_state: _lenient_dict_any, result: _lenient_dict_any) -> str:
-    """Independently reconcile a paper-trading result without market or broker access.
+    """Independently reconcile a paper-trading result.
 
-    Replays the supplied fills from the initial ledger and checks fees, cash,
-    positions, cn_a T+1 availability, end_state and NAV arithmetic. The report
-    distinguishes verified ledger facts from market-value and hash checks that
-    the result alone cannot establish. Research only; no orders are placed.
+    Accepts two ``account_state`` shapes with no signature change: the legacy
+    single-market ``{cash, positions}`` ledger and a pt-v2.0 portfolio's
+    opening ``{buckets:[...]}`` ``portfolio_state``. A result declaring
+    ``paper_trade_step`` + ``mode=portfolio`` + ``schema_version=pt-v2.0`` is
+    dispatched to the portfolio replay, which checks opening buckets,
+    conversions, plan order ids, fills, fees, cash, positions, NAV, exposures
+    and attribution, including duplicate fills. Legacy documents keep the
+    original ledger-only output byte for byte.
+
+    The report distinguishes verified document arithmetic from caller marks,
+    FX snapshots and hashes that were not re-fetched or recomputed. This is not
+    a broker audit; research only, and no orders are placed.
 
     Args:
-        account_state: Initial ``{cash, positions}`` ledger supplied to the step.
+        account_state: Legacy ``{cash, positions}`` ledger, or the portfolio
+            step's opening ``portfolio_state`` object.
         result: Successful ``paper_trade_step`` document to audit.
     """
     registry = _get_registry()
@@ -3021,6 +3114,47 @@ def _register_mirrored_tool(tool_cls: Any) -> bool:
         return False
     return True
 
+
+def _register_paper_trade_tool() -> bool:
+    """Register ``paper_trade_step`` with its branch-aware ``oneOf`` schema.
+
+    Specialized rather than routed through :func:`_register_mirrored_tool`
+    because this tool needs its own call-argument adapter
+    (:func:`_paper_trade_call_params`) instead of the generic mirrored one.
+
+    Returns:
+        True when the tool was registered; False when it was refused or this
+        fastmcp version rejected the registration.
+    """
+    try:
+        from fastmcp.tools import FunctionTool
+
+        from src.tools.paper_trade.tool import PaperTradeStepTool
+
+        if getattr(PaperTradeStepTool, "is_readonly", False) is not True:
+            logger.error(
+                "Refusing to expose non-read-only tool %r via MCP; only read-only tools are ever surfaced.",
+                PaperTradeStepTool.name,
+            )
+            return False
+
+        mcp.add_tool(
+            FunctionTool(
+                fn=paper_trade_step,
+                name=PaperTradeStepTool.name,
+                description=PaperTradeStepTool.description,
+                parameters=deepcopy(PaperTradeStepTool.parameters),
+                output_schema=_string_result_output_schema(),
+                return_type=str,
+            )
+        )
+    except Exception:  # noqa: BLE001 - never let one tool break server startup
+        logger.exception("Failed to expose paper_trade_step via MCP")
+        return False
+    return True
+
+
+_register_paper_trade_tool()
 
 for _mirrored_cls in _mirrored_tool_classes():
     _register_mirrored_tool(_mirrored_cls)

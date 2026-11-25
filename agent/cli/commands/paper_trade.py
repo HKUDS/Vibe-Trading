@@ -31,9 +31,16 @@ def add_parser(subparsers):
             )
             mode.add_argument("--strategy-path")
     step = commands.add_parser(
-        "step", help="Run a pure step from a caller-owned JSON payload"
+        "step",
+        help=(
+            "Run a pure step from a caller-owned JSON payload "
+            "(single-market default or pt-v2.0 portfolio)"
+        ),
     )
-    step.add_argument("payload")
+    step.add_argument(
+        "payload",
+        help="JSON payload: legacy single-market default or pt-v2.0 portfolio",
+    )
 
 
 def dispatch(args):

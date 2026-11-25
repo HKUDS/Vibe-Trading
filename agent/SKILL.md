@@ -147,8 +147,8 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `update_research_goal_status` | Update goal lifecycle status | None |
 | `research_lab` | Frozen-input cost scenarios, training-only parameter selection and OOS/holdout, factor contracts and offline task replay | None |
 | `backtest` | Run vectorized backtest engine | None* |
-| `paper_trade_step` | Deterministic paper-trading matching engine; never places real orders | None* |
-| `paper_trade_reconcile` | Independently replay paper fills, fees, positions and NAV continuity | None* |
+| `paper_trade_step` | Deterministic paper-trading matching engine (single-market default or pt-v2.0 cross-market portfolio; cn_a bands use the shared table-first limits/ST seam, with the frozen board heuristic as the offline fallback); never places real orders | None* |
+| `paper_trade_reconcile` | Independently replay single-market fills or pt-v2.0 portfolio buckets, conversions, NAV, exposures and attribution; no broker or market fetch | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
 | `alpha_zoo` | Browse bundled alpha metadata and registry health | None |
 | `alpha_bench` | Benchmark one alpha or a complete zoo | None* |

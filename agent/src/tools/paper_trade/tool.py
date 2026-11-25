@@ -29,6 +29,7 @@ T7 is in flight.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -37,11 +38,28 @@ from . import data, data_5m, engine, wire
 from .calendar import CN_A_MARKET, CalendarUnavailableError, snapshot_calendar
 from .data import ClickHouseBarsClient
 from .limits_cn_a import ClickHouseLimitsClient
+from .portfolio import run_portfolio_step
+from .portfolio.orchestrator import OrchestrationError
+from .portfolio.schema import PortfolioRequestError
+from .portfolio.sessions import PortfolioSessionError
 from .schema import (
     DateRange,
     ErrorEnvelope,
     PaperTradeSchemaError,
     parse_request,
+)
+from .tool_portfolio import (
+    _LEGACY_ONLY_FIELDS as _LEGACY_ONLY_FIELDS,
+    _LEGACY_PROPERTIES as _LEGACY_PROPERTIES,
+    _LEGACY_REQUIRED as _LEGACY_REQUIRED,
+    _ModeGateError as _ModeGateError,
+    _PORTFOLIO_MARKETS as _PORTFOLIO_MARKETS,
+    _PORTFOLIO_ONLY_FIELDS as _PORTFOLIO_ONLY_FIELDS,
+    _dumps_document as _dumps_document,
+    _portfolio_error_document as _portfolio_error_document,
+    _portfolio_markets as _portfolio_markets,
+    _preparse_mode as _preparse_mode,
+    _published_parameters as _published_parameters,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,15 +98,20 @@ _AUTO = data._AUTO
 #: REQUIREMENTS R1 / VD-12 frozen description phrase — both registration
 #: surfaces (BaseTool.description and the MCP wrapper docstring) carry it.
 _DESCRIPTION = (
-    "Run one deterministic paper-trading step for a single account: a "
-    "deterministic paper-trading matching engine; never places real orders. "
-    "Matches the injected orders (or a strategy_path's per-day orders, Step 7) "
-    "against bars under the market's frozen rules (T+1, price limits, "
-    "board lots, fees), and returns one in-band JSON document — the success "
-    "result or an AM-5 error envelope (PAPER_DATA_NOT_READY / INVALID_REQUEST) "
-    "on the same channel, never a transport error. Optional pt-v1.2 selectors "
-    "(interval/session/path_model/fill_model) default to the pt-v1.1 daily "
-    "behaviour; interval='5m' is cn_a-only. Research-only."
+    "Run one deterministic paper-trading step. The default (or mode='single') "
+    "is the single-market contract: a deterministic paper-trading matching "
+    "engine; never places real orders. It matches injected orders (or a "
+    "strategy_path's per-day orders, Step 7) against bars under the market's "
+    "frozen rules (T+1, price limits, board lots, fees). mode='portfolio' with "
+    "schema_version='pt-v2.0' runs one cross-market daily step over caller "
+    "buckets, direct-pair FX snapshots and caller-declared sessions, with "
+    "either orders or target_weights. Both branches return one in-band JSON "
+    "document — success or an INVALID_REQUEST / PAPER_DATA_NOT_READY envelope "
+    "on the same channel; those request/data errors are in-band, while INTERNAL "
+    "engine faults and unexpected exceptions propagate as transport errors. "
+    "Legacy interval/session/"
+    "path_model/fill_model selectors default to pt-v1.1 daily behaviour; "
+    "interval='5m' is cn_a-only. Research-only."
 )
 
 
@@ -128,6 +151,158 @@ def _error_document(
         received_state_hash=wire.received_state_hash_from_payload(raw_payload),
     )
     return wire.dumps_payload(wire.build_error_payload(envelope))
+
+
+def _portfolio_dependencies(
+    raw_payload: Any,
+    *,
+    loader: Any,
+    ch_client: Any,
+    calendar_client: Any,
+    limits_client: Any,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], Any]:
+    """Resolve the internal step's per-market loaders, limits and cn_a calendar.
+
+    ``loader``/``ch_client``/``limits_client`` accept either one shared injection
+    (legacy test seam) or a per-market mapping.  ``_AUTO`` resolves the existing
+    raw network loaders and ClickHouse helpers only; a missing source stays
+    ``None`` so the fetch reports data-not-ready instead of becoming an input
+    error.  Limits mirror the single-market ``_resolve_clients`` semantics:
+    cn_a gets ``ClickHouseLimitsClient`` over the SAME shared connector probe,
+    hk/us stay None (AM-6 zero-calendar design), and an unreachable connector
+    degrades to None (the frozen board heuristic).
+    """
+    markets = _portfolio_markets(raw_payload)
+    connector = None
+    if "cn_a" in markets and (
+        loader is _AUTO or ch_client is _AUTO or calendar_client is _AUTO or limits_client is _AUTO
+    ):
+        connector = _default_cn_a_connector()
+
+    if isinstance(loader, Mapping):
+        loaders = {market: loader.get(market) for market in markets}
+    elif loader is _AUTO:
+        loaders = {}
+        for market in markets:
+            try:
+                loaders[market] = data._resolve_network_loader(
+                    data.MARKET_LOADER_KEYS[market],
+                    exclude=frozenset({"clickhouse"}) if market == CN_A_MARKET else frozenset(),
+                )
+            except Exception as exc:  # noqa: BLE001 — unavailable source degrades to data-not-ready
+                logger.debug("paper_trade portfolio loader unavailable for %s: %s", market, exc)
+                loaders[market] = None
+    else:
+        loaders = {market: loader for market in markets}
+
+    if isinstance(ch_client, Mapping):
+        ch_clients = {market: ch_client.get(market) for market in markets}
+    elif ch_client is _AUTO:
+        ch_clients = {
+            market: (
+                ClickHouseBarsClient(connector)
+                if market == CN_A_MARKET and connector is not None
+                else None
+            )
+            for market in markets
+        }
+    elif ch_client is None:
+        ch_clients = {market: None for market in markets}
+    else:
+        ch_clients = {
+            market: ch_client if market == CN_A_MARKET else None
+            for market in markets
+        }
+
+    if isinstance(limits_client, Mapping):
+        limits_clients = {market: limits_client.get(market) for market in markets}
+    elif limits_client is _AUTO:
+        limits_clients = {
+            market: (
+                ClickHouseLimitsClient(connector)
+                if market == CN_A_MARKET and connector is not None
+                else None
+            )
+            for market in markets
+        }
+    elif limits_client is None:
+        limits_clients = {market: None for market in markets}
+    else:
+        limits_clients = {
+            market: limits_client if market == CN_A_MARKET else None
+            for market in markets
+        }
+
+    return (
+        loaders,
+        ch_clients,
+        limits_clients,
+        connector if calendar_client is _AUTO else calendar_client,
+    )
+
+
+def _execute_portfolio_step(
+    payload: Any,
+    *,
+    loader: Any,
+    ch_client: Any,
+    calendar_client: Any,
+    limits_client: Any,
+    hk_lot_sizes: Any,
+) -> str:
+    """Run the internal seam and return only its public document bytes."""
+    raw_payload = payload if isinstance(payload, dict) else {}
+    try:
+        loaders, ch_clients, limits_clients, cal = _portfolio_dependencies(
+            raw_payload,
+            loader=loader,
+            ch_client=ch_client,
+            calendar_client=calendar_client,
+            limits_client=limits_client,
+        )
+        result = run_portfolio_step(
+            payload,
+            loaders=loaders,
+            calendar_client=cal,
+            ch_clients=ch_clients,
+            limits_clients=limits_clients,
+            hk_lot_sizes=None if hk_lot_sizes is _AUTO else hk_lot_sizes,
+        )
+    except PortfolioRequestError as exc:
+        return _portfolio_error_document(
+            "INVALID_REQUEST",
+            raw_payload,
+            reason=exc.reason,
+            path=exc.path,
+            detail=exc.detail or str(exc),
+            bucket_id=exc.bucket_id,
+        )
+    except PortfolioSessionError as exc:
+        return _portfolio_error_document(
+            exc.code,
+            raw_payload,
+            reason=exc.reason,
+            path=exc.path,
+            detail=exc.detail or str(exc),
+            bucket_id=exc.bucket_id,
+        )
+    except OrchestrationError as exc:
+        if exc.code == "INTERNAL":
+            raise
+        return _portfolio_error_document(
+            exc.code,
+            raw_payload,
+            reason=exc.reason,
+            path=exc.path,
+            detail=exc.detail or str(exc),
+            bucket_id=exc.bucket_id,
+        )
+    document = result.document
+    if isinstance(document, str):
+        return document
+    if isinstance(document, dict):
+        return _dumps_document(document)
+    return _dumps_document(document.model_dump(mode="json", by_alias=True, exclude_none=True))
 
 
 def _default_cn_a_connector() -> Any | None:
@@ -211,7 +386,37 @@ def run_paper_trade_step(
     The returned :class:`PaperTradeDocument` is the wire string plus the
     fetched :class:`data.MarketDataResult` (``None`` on every error envelope),
     so an in-process caller can record the day's bars without a second fetch.
+
+    A raw ``mode``/``schema_version`` gate runs before the legacy parser:
+    omitted or ``single`` mode follows the existing pipeline unchanged, while
+    ``mode="portfolio"`` plus ``schema_version="pt-v2.0"`` dispatches only to
+    the internal portfolio seam.
     """
+    dispatch, error = _preparse_mode(payload)
+    if dispatch == "error":
+        assert error is not None
+        return PaperTradeDocument(
+            _portfolio_error_document(
+                "INVALID_REQUEST",
+                payload,
+                reason=error.reason,
+                path=error.path,
+                detail=error.detail,
+            ),
+            None,
+        )
+    if dispatch == "portfolio":
+        return PaperTradeDocument(
+            _execute_portfolio_step(
+                payload,
+                loader=loader,
+                ch_client=ch_client,
+                calendar_client=calendar_client,
+                limits_client=limits_client,
+                hk_lot_sizes=hk_lot_sizes,
+            ),
+            None,
+        )
     document, market_data = _execute_step(
         payload,
         loader=loader,
@@ -466,120 +671,15 @@ class PaperTradeStepTool(BaseTool):
 
     Read-only research tool (REQUIREMENTS R1): it reads market data and the
     injected ledger, matches on paper under the frozen market rules, and
-    returns one in-band JSON document.  It registers no broker / trading
-    connector path and writes nothing.
+    returns one in-band JSON document. The same name serves the default/explicit
+    single-market contract and the pt-v2.0 portfolio branch selected by
+    ``mode='portfolio'`` + ``schema_version='pt-v2.0'``. It registers no broker /
+    trading connector path and writes nothing.
     """
 
     name = "paper_trade_step"
     description = _DESCRIPTION
-    parameters = {
-        "type": "object",
-        "properties": {
-            "account_id": {
-                "type": "string",
-                "description": "Account identifier, echoed verbatim (R4).",
-            },
-            "market": {
-                "type": "string",
-                "enum": ["cn_a", "hk", "us"],
-                "description": "Market whose frozen rules govern matching.",
-            },
-            "account_state": {
-                "type": "object",
-                "description": (
-                    "RM-injected ledger snapshot {cash, positions:[{symbol, qty, "
-                    "avg_cost}]}. Hashed raw for received_state_hash (AM-4-1)."
-                ),
-                "properties": {
-                    "cash": {"type": "number"},
-                    "positions": {"type": "array", "items": {"type": "object"}},
-                },
-                "required": ["cash"],
-            },
-            "from_date": {
-                "type": "string",
-                "description": "Inclusive range start YYYY-MM-DD (orders mode: == to_date, AM-3).",
-            },
-            "to_date": {
-                "type": "string",
-                "description": "Inclusive range end YYYY-MM-DD (the target trading day).",
-            },
-            "orders": {
-                "type": "array",
-                "description": (
-                    "Orders mode: array of {symbol, side, qty, limit?}. XOR with "
-                    "strategy_path; an empty array is the pure-valuation path."
-                ),
-                "items": {"type": "object"},
-            },
-            "strategy_path": {
-                "type": "string",
-                "description": (
-                    "Strategy mode (Step 7): path to an AST-hardened strategy whose "
-                    "per-day orders are matched. XOR with orders."
-                ),
-            },
-            "fee_model": {
-                "type": "object",
-                "description": (
-                    "Optional per-key fee overrides merged over the market defaults "
-                    "(AM-4-3: RM always injects it explicitly)."
-                ),
-            },
-            "interval": {
-                "type": "string",
-                "enum": ["1d", "5m"],
-                "default": "1d",
-                "description": (
-                    "Optional pt-v1.2 bar interval. '1d' (default) keeps the pt-v1.1 "
-                    "daily close-price path; '5m' is cn_a-only and matches the whole "
-                    "continuous session as one bar (D1)."
-                ),
-            },
-            "session": {
-                "type": "string",
-                "enum": ["auto", "cn_a"],
-                "default": "auto",
-                "description": (
-                    "Optional pt-v1.2 session selector. 'auto' resolves to cn_a for "
-                    "market=cn_a and is inert for hk/us; 'cn_a' requires market=cn_a (D5)."
-                ),
-            },
-            "path_model": {
-                "type": "string",
-                "enum": ["bar_median", "bar_close"],
-                "default": "bar_median",
-                "description": (
-                    "Optional pt-v1.2 reference-price model for interval='5m': "
-                    "median(open, high, low, close) or the bar close (D1). Ignored for '1d'."
-                ),
-            },
-            "fill_model": {
-                "type": "string",
-                "enum": ["all_or_none", "volume_share"],
-                "default": "all_or_none",
-                "description": (
-                    "Optional fill model: 'all_or_none' (the default) fills every "
-                    "order whole or not at all. 'volume_share' opts into pt-v1.3 "
-                    "per-order partial fills capped by each order's own share of "
-                    "the matched volume; it requires interval='5m' and market='cn_a'."
-                ),
-            },
-            "order_volume_ratio": {
-                "type": "number",
-                "exclusiveMinimum": 0,
-                "maximum": 1,
-                "default": 1.0,
-                "description": (
-                    "Optional pt-v1.3 per-order share of available volume, 0 < r <= 1. "
-                    "Accepted only together with fill_model='volume_share' (a ratio "
-                    "without it is INVALID_REQUEST); omitted or null means 1.0, which "
-                    "does not reduce fills. Each order is capped independently."
-                ),
-            },
-        },
-        "required": ["account_id", "market", "account_state", "from_date", "to_date"],
-    }
+    parameters = _published_parameters()
     repeatable = True
     is_readonly = True
     # Not `deterministic`: the result depends on served market data, which

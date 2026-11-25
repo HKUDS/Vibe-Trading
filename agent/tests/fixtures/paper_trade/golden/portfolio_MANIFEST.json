@@ -1,0 +1,35 @@
+{
+  "schema": "paper_trade.portfolio_golden_manifest/v1",
+  "generator": "the attribution regeneration from test_paper_trade_portfolio_golden.py scenarios; adds the one-day NAV contribution identity, explicit FX/fee/rounding effects and the weight-gap tie-out",
+  "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. The attribution regeneration adds the optional one-day attribution document with symbol/market/currency contribution, conversion and fee effects, the execution-notional rounding residual and target/planned/realized weight gaps; regeneration still requires a human-verified diff naming the reason.",
+  "goldens": [
+    {
+      "file": "portfolio_explicit_cn_hk_us.json",
+      "sha256": "9b81b69091ae0cbc89141b58c163ccf85b57e74722912b0d2e52607ac86ae507",
+      "bytes": 26775,
+      "document_hash": "3d34d4840f77b271e52408ac9215435978085198eea1e5107faca40cd5ef47a4",
+      "scenario": "explicit cn_a+hk+us buys on 2026-11-13: cn 600519.SH 100, hk 00700.HK 100, us AAPL.US 10; cn cash 200000.00 CNY, hk fee override commission_rate 0.0003 / commission_min 20.00, no FX conversions"
+    },
+    {
+      "file": "portfolio_target_weights_conversion.json",
+      "sha256": "6cd7ef3235387e259fc02475c024aa100c26cadad50a8aec2d2595e280f3a6b9",
+      "bytes": 27225,
+      "document_hash": "c4887571fb68bbd0e40f854b9f4b9b1211d1746e2b8779a7d1c7567eff0bff27",
+      "scenario": "target weights on 2026-11-13 (cn 0.00, hk 0.16, us 0.20) with one caller-declared pre-fill CNY->USD conversion of 1000.00 at 0.14"
+    },
+    {
+      "file": "portfolio_cn_open_hk_closed_us_open.json",
+      "sha256": "ad0fa461de1ce88d3ad870ab5c2180c954cfa83a1c94068e17410f7ba33a43ae",
+      "bytes": 25663,
+      "document_hash": "721009bb25a0efd0b27bb2f4db362314e3f996db734790fdc3dc56190d5f4bd6",
+      "scenario": "CN-open/HK-closed/US-open on 2026-11-13: cn buy 100 and us buy 10; closed HK holdings carried at the 2026-11-12 prior mark 410.00 with no matcher run"
+    },
+    {
+      "file": "portfolio_per_order_rejection.json",
+      "sha256": "945ee7e0b9bd44b358368ff2bfd2ca8021604e7b5a6c447dd05a9ef96669e155",
+      "bytes": 22657,
+      "document_hash": "aaee91ec2ddac852fbeb2c0ad6a3fe70ad5595b58a7f11ebcf0df7008bd30fe6",
+      "scenario": "per-order rejection on 2026-11-13: cn sell 100 fills while the us buy 10 with limit 300.00 is rejected as limit_not_marketable and forces complete=false"
+    }
+  ]
+}

@@ -73,6 +73,26 @@ with `--host` / `--port`.
 
 **MCP tools exposed (85):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `update_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `compare_options_strategies`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `history_data`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`, `paper_trade_reconcile`, `research_lab`.
 
+`paper_trade_step` is one registered tool with two request branches. Omitted
+`mode` or `mode: "single"` keeps the legacy single-market payload;
+`mode: "portfolio"` with `schema_version: "pt-v2.0"` runs one stateless
+cross-market daily step with caller-declared buckets, sessions, direct-pair FX
+and exactly one of `orders` / `target_weights`. No separate portfolio tool is
+registered. `paper_trade_reconcile` keeps one name and one `account_state`
+argument: a legacy single-market document takes its `{cash, positions}` ledger,
+while a document declaring `mode: "portfolio"` and `schema_version: "pt-v2.0"`
+takes the step's opening `portfolio_state` object and is replayed across
+buckets, conversions, plan order ids, fills, NAV, exposures and attribution.
+Neither branch fetches a market price, verifies a broker fill or recomputes
+hashes without their raw inputs; those limits are published in `not_verified`.
+
+For cn_a buckets, price limits use the same connector-conditional seam as
+single-market steps: with the shared ClickHouse connector available, `stk_limit`
+rows are authoritative and `stk_st_daily` narrows a main-board ST name to ±5% on
+the heuristic fallback; without it, the frozen board-ratio heuristic applies
+with no ST detection. Limit provenance stays engine-internal and is not part of
+the pt-v2.0 document.
+
 `web_search` tries its existing Sogou and Bing China fallbacks when ddgs returns
 no results or fails. Set `VIBE_TRADING_SEARCH_BING_FALLBACK=0` to disable both.
 This chain returns an empty result only when its enabled sources finish without
