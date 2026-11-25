@@ -126,6 +126,7 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.
 - `GET /api/research-lab/jobs/{id}/report?format=oos_equity_csv`: the exact per-bar `return` and compounded `equity` produced by a completed walk-forward job. This is validation OOS only and excludes the separately reported holdout. Other job kinds return 422 instead of a generic file download. The Web report offers the same artifact as **OOS CSV** alongside the unchanged JSON download.
+- `GET /api/research-lab/jobs/{id}/report?format=folds_csv`: a fold-level audit table generated from the same completed JSON report, so existing completed jobs do not need to rerun. Each validation or holdout row pairs the selected candidate and parameters with its training and test boundaries, plan, selection, strategy and input-manifest hashes, and available test metrics. The `phase` column keeps holdout separate from validation OOS. Missing optional metrics remain empty; non-finite values or mismatched plan hashes are rejected. The Web report exposes this as **Folds CSV** without changing either the JSON or OOS equity export.
 
 All routes use application authentication; submission uses settings-write
 protection. The API admits two simultaneous workers. Saved jobs live under the
