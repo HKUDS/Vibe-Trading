@@ -528,10 +528,19 @@ def test_tool_is_registered_readonly_and_available() -> None:
     assert tool.name == "paper_trade_step"
     assert tool.is_readonly is True
     assert tool.check_available() is True
-    assert tool.parameters["required"] == [
+    parameters = tool.parameters
+    assert parameters["type"] == "object"
+    assert "anyOf" not in parameters
+    legacy = next(
+        branch
+        for branch in parameters["oneOf"]
+        if branch["properties"]["mode"]["const"] == "single"
+    )
+    assert legacy["required"] == [
         "account_id", "market", "account_state", "from_date", "to_date",
     ]
-    assert set(tool.parameters["properties"]["market"]["enum"]) == set(MARKETS)
+    assert set(legacy["properties"]["market"]["enum"]) == set(MARKETS)
+    assert legacy["properties"]["mode"]["type"] == "string"
 
 
 def test_execute_delegates_the_kwargs_payload_to_the_core(monkeypatch: pytest.MonkeyPatch) -> None:
