@@ -191,3 +191,49 @@ class TestSentimentTool:
         tool = SentimentTool()
         result = json.loads(tool.execute(mode=999))
         assert result["ok"] is False
+
+
+class TestTokenizeTypographic:
+    """Issue #2361: sentiment words next to curly quotes / em dashes."""
+
+    def test_curly_quotes_scored(self):
+        tokens = _tokenize("Analysts turn “bullish” on chipmakers")
+        assert "bullish" in tokens
+
+    def test_em_dash_splits_words(self):
+        tokens = _tokenize("Shares surge—analysts upgrade the stock")
+        assert "surge" in tokens
+        assert "analysts" in tokens
+        assert "upgrade" in tokens
+
+    def test_en_dash_splits_words(self):
+        tokens = _tokenize("profit–growth story")
+        assert "profit" in tokens
+        assert "growth" in tokens
+
+    def test_single_curly_quotes(self):
+        tokens = _tokenize("analysts call it ‘undervalued’")
+        assert "undervalued" in tokens
+
+    def test_ellipsis_edge(self):
+        tokens = _tokenize("momentum… bullish")
+        assert "bullish" in tokens
+
+    def test_ascii_hyphen_compound_still_skipped(self):
+        """short-term must NOT be scored as 'short' (ASCII hyphen kept)."""
+        tokens = _tokenize("short-term profit-taking continues")
+        assert "short" not in tokens
+        assert "profit" not in tokens
+
+    def test_headline_scores_bullish_now(self):
+        r = _score_text("Analysts turn “bullish” on chipmakers")
+        assert r["score"] > 0
+        assert r["positive"] == 1
+
+    def test_em_dash_headline_counts_both(self):
+        r = _score_text("Shares surge—analysts upgrade the stock")
+        assert r["positive"] == 2
+
+    def test_guillemets(self):
+        tokens = _tokenize("«bullish» revision")
+        assert "bullish" in tokens

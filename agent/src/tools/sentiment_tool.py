@@ -50,9 +50,33 @@ _NEGATIVE: frozenset[str] = frozenset({
 })
 
 
+# Punctuation stripped from token edges. Beyond the ASCII set this covers
+# typographic quotes ‘ ’ “ ” (U+2018..U+201D), guillemets « » and the
+# ellipsis …, all common in news headlines around sentiment words.
+_STRIP_CHARS = (
+    ".,;:!?\"'()[]{}"
+    "“”‘’«»…"
+)
+
+
 def _tokenize(text: str) -> list[str]:
-    """Lowercase, split, and strip common punctuation from each token."""
-    stripped = [tok.strip(".,;:!?\"'()[]{}") for tok in text.split()]
+    """Lowercase, split, and strip punctuation from each token.
+
+    Token edges are stripped of ASCII punctuation plus typographic quotes,
+    guillemets, dashes and the ellipsis character — news headlines routinely
+    wrap lexicon words in curly quotes (``“bullish”``) or attach an em dash
+    (``surge—analysts``), and those tokens were previously dropped whole by
+    the ``isalpha()`` check. Em/en dashes also act as word separators, so
+    ``surge—analysts`` tokenizes into two words. The ASCII hyphen is NOT a
+    separator: compounds like ``short-term`` or ``profit-taking`` must keep
+    being skipped rather than scoring as ``short`` or ``profit``.
+    """
+    # Em dash \u2014 and en dash \u2013 separate words; the ASCII hyphen is
+    # deliberately NOT a separator (see docstring).
+    stripped = [
+        tok.strip(_STRIP_CHARS)
+        for tok in text.replace("\u2014", " ").replace("\u2013", " ").split()
+    ]
     return [tok.lower() for tok in stripped if tok and tok.isalpha()]
 
 
