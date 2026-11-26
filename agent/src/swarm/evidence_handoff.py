@@ -44,7 +44,15 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
                 )
 
 
-def _observations(source: Path, task_id: str, errors: list[str], thread_path: Path | None = None) -> list[tuple[dict, str]]:
+def _in_workspace(recorded: str, agent_id: str, task_id: str) -> str | None:
+    """Return a recorded absolute path relative to the producer workspace, whichever run directory it names."""
+    marker = f"/artifacts/{agent_id}/{task_id}/"
+    posix = Path(recorded).as_posix()
+    return posix[posix.rindex(marker) + len(marker):] if marker in posix else None
+
+
+def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
+                  thread_path: Path | None = None) -> list[tuple[dict, str]]:
     """Read recorded observations, retaining their original producing role."""
     found = []
     inherited = safe_path("upstream/index.json", source)
@@ -95,8 +103,9 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
             continue
         if "_result_file" in result:
             ref = result["_result_file"]
-            # Resumed logs can still name the old workspace. Resolve by content
-            # hash inside the copied source task, never by trusting that path.
+            # Resumed logs can still name the old workspace. Resolve inside the copied
+            # source task, at the tool's own run_dir (a workspace subdirectory) when the
+            # receipt names one, and accept only the content hash it recorded.
             try:
                 if not isinstance(ref, dict):
                     raise ValueError("Invalid observation receipt")
@@ -106,6 +115,9 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
                 ):
                     raise ValueError("Invalid observation digest")
                 relative = f"tool-results/{digest}/result.json"
+                recorded = _in_workspace(str(ref.get("path") or ""), agent_id, task_id)
+                if recorded is not None and Path(recorded).parts[-3:] == ("tool-results", digest, "result.json"):
+                    relative = recorded
                 path = safe_path(relative, source)
                 if canonical and not path.is_file():
                     path = safe_path(f"workspace/{relative}", source)
@@ -128,7 +140,6 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
 def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str,
                     errors: list[str]) -> dict[str, tuple[str, str]]:
     """Map each workspace file a node's successful write or shell call produced to that call."""
-    marker = f"/artifacts/{agent_id}/{task_id}/"
     produced: dict[str, tuple[str, str]] = {}
     for call, call_id, name, raw, _ in _recorded_results(source, thread_path):
         tool = call.get("name", name)
@@ -145,9 +156,9 @@ def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str
         else:
             # Recorded paths are absolute and may name the run directory a resumed run came from.
             written = str(result.get("path") or "")
-            posix = Path(written).as_posix()
-            if marker in posix:
-                paths = [posix[posix.rindex(marker) + len(marker):]]
+            relative = _in_workspace(written, agent_id, task_id)
+            if relative is not None:
+                paths = [relative]
             elif written and not Path(written).is_absolute():
                 paths = [written]
             else:
@@ -241,7 +252,7 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
                     files.append({"source_task": task_id, "tool": tool, "call_id": call_id,
                                   "original_path": relative, "path": str(path.relative_to(root)),
                                   "sha256": digest, "size": len(content), "redacted": content != original})
-            observations = _observations(source, task_id, errors, thread if thread.is_file() else None)
+            observations = _observations(source, source_task.agent_id, task_id, errors, thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()

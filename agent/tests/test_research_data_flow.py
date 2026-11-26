@@ -244,3 +244,29 @@ def test_bad_inherited_index_keeps_the_producers_own_observations(tmp_path, brok
     assert [entry["call_id"] for entry in index["observations"]] == ["own"]
     [reason] = index["unavailable"]
     assert reason.startswith("p inherited")
+
+
+def test_a_receipt_naming_a_path_outside_the_producer_workspace_is_not_read(tmp_path):
+    store = TaskStore(tmp_path)
+    producer = SwarmTask(id="p", agent_id="data", prompt_template="Collect")
+    consumer = SwarmTask(id="c", agent_id="editor", prompt_template="Edit", input_from={"d": "p"})
+    for task in (producer, consumer):
+        store.save_task(task)
+    source = agent_artifact_dir(tmp_path, "data", "p")
+    source.mkdir(parents=True)
+    raw = json.dumps({"SIBLING.US": [{"close": 9.0}]})
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    sibling = agent_artifact_dir(tmp_path, "other", "x") / "tool-results" / digest / "result.json"
+    sibling.parent.mkdir(parents=True)
+    sibling.write_text(raw)
+    forged = f"{source}/../../other/x/tool-results/{digest}/result.json"
+    thread = ThreadLog(node_thread(tmp_path, "data", "p"))
+    thread.append("assistant", "t1", content="", tool_calls=[
+        {"id": "q", "type": "function", "function": {"name": "get_market_data", "arguments": "{}"}}])
+    thread.append("tool_result", "t1", tool_call_id="q", name="get_market_data", status="ok",
+                  content=json.dumps({"_result_file": {"path": forged, "sha256": digest}}))
+    destination = agent_artifact_dir(tmp_path, "editor", "c")
+    prepare_handoff(tmp_path, consumer, destination)
+    index = json.loads((destination / "upstream/index.json").read_text())
+    assert index["observations"] == []
+    assert [reason.split(":")[0] for reason in index["unavailable"]] == ["p/q observation unavailable"]

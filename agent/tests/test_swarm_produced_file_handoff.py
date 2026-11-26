@@ -40,14 +40,14 @@ def _policy():
     return ToolPolicy.from_config(get_env_config())
 
 
-def _produce(root: Path, monkeypatch, *calls, agent="analyst", task="p"):
+def _produce(root: Path, monkeypatch, *calls, agent="analyst", task="p", tools=("write_file", "edit_file", "bash")):
     """Run a real producer node whose model issues the given tool calls, then answers."""
     answer = LLMResponse(content="Analysis delivered; outputs are in the workspace files.", finish_reason="stop")
     monkeypatch.setattr(node, "ChatLLM", lambda **kw: _Script(*calls, answer))
     producer = SwarmTask(id=task, agent_id=agent, prompt_template="Compute the statistics.")
     TaskStore(root).save_task(producer)
     result = node.run_node(
-        SwarmAgentSpec(id=agent, role="Analyst", system_prompt="Compute.", tools=["write_file", "edit_file", "bash"]),
+        SwarmAgentSpec(id=agent, role="Analyst", system_prompt="Compute.", tools=list(tools)),
         producer, {}, {}, root, include_shell_tools=True, policy=_policy(),
     )
     assert result.status == "completed", result
@@ -200,3 +200,24 @@ def test_consumer_node_is_told_where_the_files_are(tmp_path, monkeypatch):
                   {"stats": "Upstream summary."}, {}, tmp_path, policy=_policy())
     data = seen[0][1]["content"]
     assert "1 files" in data and "upstream/index.json" in data
+
+
+def test_observation_saved_under_a_nested_run_dir_reaches_the_consumer(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    original = tmp_path / "first"
+    source = _produce(
+        original, monkeypatch,
+        _call("b1", "bash", command="mkdir -p data"),
+        _call("q1", "quantlib_call", action="call", module="risk", function="historical_var",
+              kwargs={"returns": [-.03, .01, -.01, .02, -.02], "confidence": .95}, run_dir="data"),
+        tools=("bash", "quantlib_call"),
+    )
+    assert list((source / "data" / "tool-results").glob("*/result.json"))
+    # A resumed run is a copy; its receipts still name the first run's workspace.
+    moved = tmp_path / "second"
+    shutil.copytree(original, moved)
+    shutil.rmtree(original)
+    destination, _, index = _consume(moved, {"risk": "p"})
+    assert not any("q1" in reason for reason in index["unavailable"]), index["unavailable"]
+    [entry] = [entry for entry in index["observations"] if entry["call_id"] == "q1"]
+    assert json.loads((destination / entry["path"]).read_text())["result"] == pytest.approx(.03)
