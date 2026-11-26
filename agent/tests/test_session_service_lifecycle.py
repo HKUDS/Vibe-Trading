@@ -502,3 +502,134 @@ def test_attempt_records_and_round_trips_its_wall_clock_start():
     legacy = attempt.to_dict()
     del legacy["started_at"]
     assert Attempt.from_dict(legacy).started_at is None
+
+
+def _finish(service: SessionService, session_id: str) -> tuple:
+    """Run one stubbed turn and return its stored reply and terminal event data."""
+
+    async def scenario():
+        events: list = []
+        service.event_bus.add_listener(events.append)
+        await service.send_message(session_id, "Analyze")
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if session_id not in service._inflight:
+                break
+        terminal = [e for e in events if e.event_type in {"run.completed", "run.failed", "run.cancelled"}][-1]
+        return service.store.get_messages(session_id)[-1], terminal.data
+
+    return asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("result,kept", [
+    # A truncated answer is retained by the loop with a failed status.
+    ({"status": "failed", "content": "Observed findings",
+      "reason": "provider output truncated (length); partial answer retained api_key=sk-private"},
+     "Observed findings"),
+    # An answer released past a goal budget or a pending write is degraded.
+    ({"status": "success", "content": "Observed findings", "degraded": True,
+      "reason": "run ended without writing the task target file(s): report.md"},
+     "Observed findings"),
+])
+def test_partial_delivery_and_reason_survive_store_and_sse(tmp_path, monkeypatch, result, kept):
+    """The retained answer and the run's degraded/reason reach the stored reply and the stream."""
+    service = _service(tmp_path, monkeypatch)
+    session = service.create_session(title="partial")
+    _stub_agent(service, monkeypatch, result)
+
+    reply, terminal = _finish(service, session.session_id)
+
+    assert kept in reply.content
+    assert terminal["summary"] == reply.content
+    reason = reply.metadata["reason"]
+    assert "sk-private" not in reason and reason.startswith(result["reason"].split(" api_key")[0])
+    assert terminal["display"]["reason"] == reason
+    if result["status"] == "failed":
+        assert reply.content.endswith(f"Execution failed: {reason}")
+        assert "degraded" not in reply.metadata
+    else:
+        assert reply.content == kept
+        assert reply.metadata["degraded"] is True
+        assert terminal["display"]["degraded"] is True
+
+
+def test_failure_reason_that_quotes_the_answer_is_not_repeated(tmp_path, monkeypatch):
+    """A no-progress stop carries its recovery answer inside the reason already."""
+    service = _service(tmp_path, monkeypatch)
+    session = service.create_session(title="no-progress")
+    answer = "I stopped because 8 tool rounds in a row produced no new information."
+    result = {"status": "failed", "content": answer, "reason": "no_progress: " + answer}
+    _stub_agent(service, monkeypatch, result)
+
+    reply, terminal = _finish(service, session.session_id)
+
+    assert reply.content == f"Execution failed: no_progress: {answer}"
+    assert terminal["summary"] == reply.content
+
+
+def test_session_task_cancellation_keeps_provider_until_executor_finishes(tmp_path, monkeypatch):
+    """Cancelling the session task must not close the client the agent thread still uses."""
+    import threading
+    from src.agent.tools import ToolRegistry
+
+    entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+    used_after_close: list[bool] = []
+
+    class _Client:
+        runtime_snapshot = None
+
+        async def aclose(self) -> None:
+            closed.set()
+
+    class _Agent:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+            self.cancelled = threading.Event()
+
+        def cancel(self) -> None:
+            self.cancelled.set()
+
+        def run(self, **kwargs) -> dict:
+            del kwargs
+            entered.set()
+            release.wait(5)
+            used_after_close.append(closed.is_set())
+            return {"status": "cancelled", "content": "", "reason": "cancelled by user"}
+
+    class _NoMemory:
+        pass
+
+    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda config, **kwargs: _Client())
+    monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _Agent)
+    monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
+    monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
+    monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
+    service = _service(tmp_path, monkeypatch)
+
+    async def scenario() -> None:
+        session = service.create_session(title="cancel")
+        await service.send_message(session.session_id, "Analyze")
+        task = service._active_tasks[session.session_id]
+        try:
+            for _ in range(300):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert entered.is_set()
+            agent = service._active_loops[session.session_id]
+            task.cancel()
+            await asyncio.sleep(0.05)
+            assert agent.cancelled.is_set()
+            assert not task.done()
+            assert not closed.is_set()
+            assert session.session_id in service._active_loops
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert closed.is_set()
+        assert used_after_close == [False]
+        assert session.session_id not in service._active_tasks
+
+    asyncio.run(scenario())

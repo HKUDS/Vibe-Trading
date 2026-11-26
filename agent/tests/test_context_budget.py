@@ -127,6 +127,17 @@ def test_a_window_smaller_than_the_static_prompt_still_has_a_floor() -> None:
     assert budget.conversation == cb.MIN_CONVERSATION_TOKENS
 
 
+@pytest.mark.parametrize("window,max_tokens,static_tokens", [
+    (128_000, 4_000, 1_000),     # a small cost ceiling: the floor put every layer above it
+    (12_000, 200_000, 5_000),    # a small window: the summary line sat above the window itself
+    (32_000, 200_000, STATIC_TOKENS),  # the static prompt alone exceeds the budget
+])
+def test_small_cost_ceiling_triggers_compaction_before_refusing_request(window, max_tokens, static_tokens) -> None:
+    """The conversation floor must not lift a layer past the prompt the run may grow to."""
+    budget = CompactionBudget(window=window, source="t", max_tokens=max_tokens, static_tokens=static_tokens)
+    assert budget.micro_at <= budget.collapse_at <= budget.compact_at <= budget.total
+
+
 # --------------------------------------------------------------------------
 # Measuring the prompt
 # --------------------------------------------------------------------------
