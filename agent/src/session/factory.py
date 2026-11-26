@@ -199,17 +199,19 @@ class SessionAgentFactory:
             )
             self.active_loops[session_id] = agent
 
+            work = _AGENT_EXECUTOR.submit(
+                agent.run,
+                user_message=attempt.prompt,
+                history=recorder.history or None,
+                session_id=session_id,
+            )
             try:
-                result = await loop.run_in_executor(
-                    _AGENT_EXECUTOR,
-                    lambda: agent.run(
-                        user_message=attempt.prompt,
-                        history=recorder.history or None,
-                        session_id=session_id,
-                    ),
-                )
+                result = await asyncio.wrap_future(work)
             except asyncio.CancelledError:
                 agent.cancel()
+                # The thread keeps using the provider client and the loop
+                # registration until it returns; release them only after it does.
+                await _wait_for_thread(work, agent)
                 raise
             finally:
                 self.active_loops.pop(session_id, None)
@@ -233,6 +235,22 @@ class SessionAgentFactory:
             return result
         finally:
             await llm.aclose()
+
+
+async def _wait_for_thread(work: concurrent.futures.Future, agent: Any) -> None:
+    """Wait for cancelled agent work to leave its thread, whatever else is cancelled meanwhile.
+
+    Args:
+        work: Executor future running the agent.
+        agent: Agent to cancel again if the waiting task is cancelled once more.
+    """
+    while not work.done():
+        try:
+            await asyncio.shield(asyncio.wrap_future(work))
+        except asyncio.CancelledError:
+            agent.cancel()
+        except Exception:  # noqa: BLE001 - the caller re-raises its cancellation instead
+            return
 
 
 def load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:

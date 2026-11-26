@@ -566,3 +566,70 @@ def test_failure_reason_that_quotes_the_answer_is_not_repeated(tmp_path, monkeyp
     assert reply.content == f"Execution failed: no_progress: {answer}"
     assert terminal["summary"] == reply.content
 
+
+def test_session_task_cancellation_keeps_provider_until_executor_finishes(tmp_path, monkeypatch):
+    """Cancelling the session task must not close the client the agent thread still uses."""
+    import threading
+    from src.agent.tools import ToolRegistry
+
+    entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+    used_after_close: list[bool] = []
+
+    class _Client:
+        runtime_snapshot = None
+
+        async def aclose(self) -> None:
+            closed.set()
+
+    class _Agent:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+            self.cancelled = threading.Event()
+
+        def cancel(self) -> None:
+            self.cancelled.set()
+
+        def run(self, **kwargs) -> dict:
+            del kwargs
+            entered.set()
+            release.wait(5)
+            used_after_close.append(closed.is_set())
+            return {"status": "cancelled", "content": "", "reason": "cancelled by user"}
+
+    class _NoMemory:
+        pass
+
+    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda config, **kwargs: _Client())
+    monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _Agent)
+    monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
+    monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
+    monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
+    service = _service(tmp_path, monkeypatch)
+
+    async def scenario() -> None:
+        session = service.create_session(title="cancel")
+        await service.send_message(session.session_id, "Analyze")
+        task = service._active_tasks[session.session_id]
+        try:
+            for _ in range(300):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert entered.is_set()
+            agent = service._active_loops[session.session_id]
+            task.cancel()
+            await asyncio.sleep(0.05)
+            assert agent.cancelled.is_set()
+            assert not task.done()
+            assert not closed.is_set()
+            assert session.session_id in service._active_loops
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert closed.is_set()
+        assert used_after_close == [False]
+        assert session.session_id not in service._active_tasks
+
+    asyncio.run(scenario())
