@@ -27,6 +27,28 @@ from dataclasses import dataclass
 
 from src.config.env_schema import APIConfig
 
+# Runtime records and copied evidence inside a run workspace: never a task output.
+RUNTIME_DIRS = frozenset({"upstream", "tool-results", "context-results", "__pycache__"})
+RUNTIME_FILES = frozenset({
+    "req.json", "state.json", "llm_usage.json", "run_manifest.json", "thread.jsonl",
+    "artifacts/identity_evidence.json",
+})
+
+
+def is_runtime_path(relative: str) -> bool:
+    """Check whether a workspace-relative path is runtime state or hidden.
+
+    Args:
+        relative: POSIX path relative to a run workspace.
+
+    Returns:
+        True for a runtime record, a path under a runtime directory, or any dot-named part.
+    """
+    return relative in RUNTIME_FILES or any(
+        part in RUNTIME_DIRS or part.startswith(".") for part in relative.split("/")
+    )
+
+
 _ALLOWED_FILE_ROOTS_ENV = "VIBE_TRADING_ALLOWED_FILE_ROOTS"
 _ALLOWED_RUN_ROOTS_ENV = "VIBE_TRADING_ALLOWED_RUN_ROOTS"
 _ALLOWED_WRITE_ROOTS_ENV = "VIBE_TRADING_ALLOWED_WRITE_ROOTS"
