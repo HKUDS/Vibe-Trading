@@ -76,6 +76,10 @@ _ADAPTERS: dict[str, AvailabilityAdapter] = {
         "us_equity",
         MarketContext("equity", "XNYS+XNAS", "USD", "America/New_York", "NYSE/NASDAQ"),
     ),
+    "hsi": _BuiltinAdapter(
+        "hk_equity",
+        MarketContext("equity", "XHKG", "HKD", "Asia/Hong_Kong", "XHKG"),
+    ),
     "btc-usdt": _BuiltinAdapter(
         "crypto",
         MarketContext("crypto", "global", "USDT", "UTC", "24/7"),

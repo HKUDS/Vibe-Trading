@@ -1873,6 +1873,7 @@
     "universeOption": {
       "csi300": "CSI 300 (China A)",
       "sp500": "S&P 500 (AS)",
+      "hsi": "Indeks Hang Seng (Hong Kong)",
       "btc-usdt": "BTC-USDT (Crypto)",
       "equity_cn": "A-Share China",
       "equity_us": "Saham AS",

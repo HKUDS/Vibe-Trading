@@ -80,6 +80,7 @@ _PERIOD_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})$")
 _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
+    "hsi": "equity_hk",
 }
 
 
@@ -114,7 +115,7 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500``. ``btc-usdt`` is single-asset and
+        universe: ``csi300`` | ``sp500`` | ``hsi``. ``btc-usdt`` is single-asset and
             rejected before cache or data access.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
@@ -137,7 +138,14 @@ def _load_universe_panel(
     start, end = _parse_period(period)
 
     cache_dir = get_runtime_root() / "cache"
-    cache_path = cache_dir / f"{universe}_{start}_{end}.pkl"
+    cache_universe = universe
+    hsi_roster = None
+    if universe == "hsi":
+        from src.tools.hsi_universe import cache_identity
+        # Revalidate current membership even on a price-cache hit.
+        hsi_roster = _fetch_hsi_constituents()
+        cache_universe = f"hsi_v4_{cache_identity(hsi_roster)}"
+    cache_path = cache_dir / f"{cache_universe}_{start}_{end}.pkl"
     if use_cache and cache_path.is_file():
         cached = _read_pickle_cache(cache_path)
         if cached is not None:
@@ -148,6 +156,8 @@ def _load_universe_panel(
         panel = _load_csi300_panel(start, end)
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
+    elif universe == "hsi":
+        panel = _load_hsi_panel(start, end, constituents=hsi_roster)
     else:  # pragma: no cover — guarded above
         raise ValueError(f"unhandled universe {universe!r}")
 
@@ -473,6 +483,20 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
         "sector_coverage": 0.0,
     }
     return panel
+
+
+def _fetch_hsi_constituents() -> tuple[list[str], dict[str, str], dict]:
+    """Fetch the strict revision-dated HSI benchmark roster without fallback."""
+    from src.tools.hsi_universe import fetch_benchmark_constituents
+    return fetch_benchmark_constituents()
+
+
+def _load_hsi_panel(start: str, end: str, *, constituents=None) -> dict:
+    """Use existing HK data loaders without changing market/execution engines."""
+    from src.tools.hsi_panel import load_hsi_panel
+    return load_hsi_panel(start,end,
+        constituents_loader=(lambda:constituents) if constituents is not None else _fetch_hsi_constituents,
+        wide_builder=_wide_from_fetched,retry=_retry,min_sector_coverage=_SP500_MIN_SECTOR_COVERAGE)
 
 
 def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
@@ -1465,7 +1489,7 @@ class AlphaBenchTool(BaseTool):
             "universe": {
                 "type": "string",
                 "description": (
-                    "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+                    "csi300 | sp500 | hsi. btc-usdt is single-asset and is rejected before "
                     "data loading. Alphas requiring fund:* SEC filings need sp500; "
                     "elsewhere they are excluded."
                 ),

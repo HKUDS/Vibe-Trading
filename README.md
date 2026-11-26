@@ -199,6 +199,16 @@ Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trad
 
 In backtests with `allow_nonpositive_prices: true`, a separately loaded benchmark uses the same price policy as the strategy. Local benchmark data still comes only from the configured local source.
 
+### Hong Kong alpha universe
+
+Alpha Bench/Compare accepts `hsi` in the Web UI, API and CLI. The revision-dated
+Wikipedia list must match both the count and members of the dated official
+reference; mismatches stop before prices or cached panels are used. The latest
+real-data smoke observed 85 Wikipedia names versus the 95-name reference, so
+successful real HSI benchmarks are not currently claimed. A separate explicit
+95-name price diagnostic had full price coverage; it does not validate the
+rejected universe. See [HSI policy and dated evidence](wiki/docs/hsi-universe-policy.md).
+
 ### Portfolio drawdown periods
 
 In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.

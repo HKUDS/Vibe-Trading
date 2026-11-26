@@ -91,7 +91,7 @@ def _load_cli_env() -> None:
         pass
 
 # Cross-sectional benchmark universes with a panel loader.
-_UNIVERSE_CHOICES = ["csi300", "sp500"]
+_UNIVERSE_CHOICES = ["csi300", "sp500", "hsi"]
 
 # Per-row fields that only ``bench_runner_strict`` produces. They are the
 # statistics ``categorise_strict`` actually gates on, so a strict run that
@@ -119,6 +119,7 @@ _LIST_UNIVERSE_CHOICES = [
 _LIST_UNIVERSE_ALIASES = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
+    "hsi": "equity_hk",
     "btc-usdt": "crypto",
 }
 

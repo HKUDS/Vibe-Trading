@@ -79,6 +79,7 @@ const ZOO_CARDS: ZooCard[] = [
 const UNIVERSE_OPTIONS = [
   { value: "csi300" },
   { value: "sp500" },
+  { value: "hsi" },
   { value: "btc-usdt" },
 ];
 
@@ -87,6 +88,7 @@ const UNIVERSE_OPTIONS = [
 const BENCH_UNIVERSE_FOR_METADATA: Record<string, string> = {
   equity_cn: "csi300",
   equity_us: "sp500",
+  equity_hk: "hsi",
   crypto: "btc-usdt",
 };
 
@@ -332,7 +334,7 @@ function BrowseView() {
           {selected.size >= 2 ? ` (${selected.size})` : ""}
         </Link>
         <Link
-          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(alphas.find((a) => a.id === [...selected][0])?.zoo ?? "alpha101")}&universe=${alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_us") ? "sp500" : "csi300"}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
+          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(alphas.find((a) => a.id === [...selected][0])?.zoo ?? "alpha101")}&universe=${alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_us") ? "sp500" : alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_hk") ? "hsi" : "csi300"}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
         >
           <Play className="h-3.5 w-3.5" aria-hidden="true" /> {selected.size ? i18n.t("analysis.evaluateSelected", { count: selected.size }) : i18n.t("alphaZoo.runBenchmark")}
@@ -511,7 +513,7 @@ function DetailView({ alphaId }: DetailProps) {
   const formulaLatex = (meta["formula_latex"] as string | undefined) || "";
   const nickname = (meta["nickname"] as string | undefined) || "";
   // An alpha's metadata universes (equity_us, equity_kr, ...) are not bench
-  // universes; only the three names with panel loaders are. Translate, and drop
+  // universes; only names with panel loaders are. Translate, and drop
   // the prefill when the alpha's markets have no benchmark panel (Korea, India)
   // rather than handing BenchView a value its selector cannot hold.
   const benchUniverse = (((meta["universe"] as string[] | undefined) || [])
