@@ -18,6 +18,8 @@ from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_
 
 _OUTPUT_LIMIT = 50_000
 _DEFAULT_TIMEOUT = 120
+#: Recorded on every result of a swarm node command that ran without the sandbox it asked for.
+_UNCONFINED_NOTICE = {"sandbox": "unavailable"}
 
 
 def _sandbox_workspace(cwd: Any, sandbox: SandboxSettings) -> Path:
@@ -151,7 +153,8 @@ class BashTool(BaseTool):
 
         Returns:
             JSON string with stdout, stderr, and exit_code. In a run workspace it also lists the
-            task files the command created or changed under ``artifacts``.
+            task files the command created or changed under ``artifacts``. A swarm node command
+            that ran without its sandbox carries ``"sandbox": "unavailable"``.
         """
         command = kwargs["command"]
         cwd = kwargs.get("run_dir")
@@ -186,8 +189,10 @@ class BashTool(BaseTool):
         profile: Path | None = None
         argv: str | list[str] = command
         shell = True
+        if sandbox.workspace is not None:
+            cwd = str(sandbox.workspace)
         if sandbox.enabled:
-            workspace = _sandbox_workspace(cwd, sandbox)
+            workspace = sandbox.workspace or _sandbox_workspace(cwd, sandbox)
             workspace.mkdir(parents=True, exist_ok=True)
             try:
                 argv, profile = sandbox_command(command, workspace, sandbox)
@@ -252,6 +257,7 @@ class BashTool(BaseTool):
                 "error": f"Command timed out after {_DEFAULT_TIMEOUT}s",
                 "stdout": stdout,
                 "stderr": stderr,
+                **(_UNCONFINED_NOTICE if sandbox.unconfined_fallback else {}),
             }, ensure_ascii=False)
             if profile is not None:
                 try:
@@ -271,6 +277,8 @@ class BashTool(BaseTool):
         if before_files is not None:
             # A downstream handoff reads this receipt to find the command's outputs.
             outcome["artifacts"] = _changed_files(cwd, before_files)
+        if sandbox.unconfined_fallback:
+            outcome.update(_UNCONFINED_NOTICE)
         result = json.dumps(outcome, ensure_ascii=False)
         if profile is not None:
             try:

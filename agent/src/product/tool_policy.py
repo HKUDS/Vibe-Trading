@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 
-from src.config.accessor import get_env_value
 from src.config.env_schema import EnvConfig, LLMConfig
 if TYPE_CHECKING:
     from src.tools.path_utils import FileRoots
@@ -70,14 +69,9 @@ class ToolPolicy:
             return tuple(p.strip() for p in deny.split(",") if p.strip()), deny_source, bash.strip().lower(), bash_source
 
         file_roots = FileRoots.from_config(config.api)
-        sandbox_root = file_roots.home / ".vibe-trading"
         return cls(
             *settings(False), *settings(True),
-            SandboxSettings.from_config(
-                config.api,
-                runtime_root=sandbox_root,
-                credential_root=Path(get_env_value("VIBE_TRADING_HOME", str(sandbox_root))),
-            ),
+            SandboxSettings.from_config(config.api, runtime_root=file_roots.runtime_root),
             config.api.vibe_trading_enable_shell_tools,
             file_roots,
         )

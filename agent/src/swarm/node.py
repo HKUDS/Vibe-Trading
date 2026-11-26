@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple, Protocol
@@ -871,8 +872,10 @@ def run_node(
     background = get_background_manager().for_scope(BackgroundScope(
         owner_id=f"swarm:{Path(run_dir).resolve()}:{agent_spec.id}:{task.id}", attempt_id=task.id,
     ))
+    # Shell commands stay in this node's workspace (VIBE_TRADING_SWARM_SHELL_SANDBOX).
+    shell_policy = replace(policy, sandbox=policy.sandbox.for_workspace(workspace))
     registry = build_swarm_registry(
-        agent_spec.tools, policy=policy, agent_config=agent_config,
+        agent_spec.tools, policy=shell_policy, agent_config=agent_config,
         include_shell_tools=include_shell_tools, skill_allowlist=agent_spec.skills or None,
         background_manager=background, background_scope=background.scope,
     )

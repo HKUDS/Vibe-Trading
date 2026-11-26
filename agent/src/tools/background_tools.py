@@ -54,11 +54,11 @@ class BackgroundScope:
 def _start_process(command: str, *, sandbox: SandboxSettings | None = None) -> subprocess.Popen[str]:
     """Start a shell command in a process group that can be stopped as a unit."""
     profile: Path | None = None
-    cwd = WORKDIR
+    cwd = WORKDIR if sandbox is None or sandbox.workspace is None else sandbox.workspace
     argv: str | list[str] = command
     shell = True
     if sandbox is not None and sandbox.enabled:
-        cwd = sandbox.runtime_root / "workspace"
+        cwd = sandbox.workspace or sandbox.runtime_root / "workspace"
         cwd.mkdir(parents=True, exist_ok=True)
         argv, profile = sandbox_command(command, cwd, sandbox)
         shell = False
@@ -287,7 +287,8 @@ class BackgroundManager:
             command: Shell command to execute.
 
         Returns:
-            JSON string containing status and task_id.
+            JSON string containing status and task_id; a swarm node command that runs
+            without its sandbox also carries ``"sandbox": "unavailable"``.
         """
         safety_error = broad_python_kill_error(command)
         if safety_error:
@@ -328,7 +329,10 @@ class BackgroundManager:
                 _LIVE_TASK_IDS.add(task_id)
         self._persist(task_id)
         threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
-        return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command_preview[:80]}"})
+        started = {"status": "ok", "task_id": task_id, "message": f"Started: {command_preview[:80]}"}
+        if self._sandbox is not None and self._sandbox.unconfined_fallback:
+            started["sandbox"] = "unavailable"
+        return json.dumps(started)
 
     def _execute(self, task_id: str, command: str) -> None:
         exit_code: int | None = None
@@ -340,9 +344,10 @@ class BackgroundManager:
                 task = self.tasks.get(task_id)
                 skip_spawn = task is None or bool(task.get("cancel_requested"))
             if not skip_spawn:
+                sandbox = self._sandbox
                 process = (
-                    _start_process(command, sandbox=self._sandbox)
-                    if self._sandbox is not None and self._sandbox.enabled
+                    _start_process(command, sandbox=sandbox)
+                    if sandbox is not None and (sandbox.enabled or sandbox.workspace is not None)
                     else _start_process(command)
                 )
                 with self._lock:
