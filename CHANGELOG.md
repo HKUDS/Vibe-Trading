@@ -21,6 +21,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The MetaTrader 5 backtest loader honors a configured `symbol_suffix` when
+  several same-base broker symbols match (Exness `XAUUSDm` and `XAUUSD247m`),
+  picking the exact base-plus-suffix symbol instead of refusing. The sandbox
+  copy of `mt5.json` now carries a validated `symbol_suffix` alongside
+  `terminal_path` and `timeout`; credentials are still never copied. Without
+  a suffix or an exact match, the request is still refused as ambiguous.
 - Memory search uses trigger-safe updates and repairs legacy FTS indexes once
   on upgrade, preventing stale terms from matching unrelated memories (#2234).
 - Anthropic temperature recovery recognizes the reported field-validation
