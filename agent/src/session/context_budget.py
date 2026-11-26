@@ -27,6 +27,8 @@ MICRO_FRACTION = 0.8
 COLLAPSE_FRACTION = 0.9
 #: Floor for the conversation budget when the static prompt nearly fills the
 #: window, so a tiny window still compacts instead of computing a negative.
+#: Every layer's line is still capped at ``CompactionBudget.total``: the floor
+#: must not lift a line past the prompt the run may grow to.
 MIN_CONVERSATION_TOKENS = 8_000
 
 _LIMIT_RE = re.compile(
@@ -164,27 +166,29 @@ class CompactionBudget:
         """Return the prompt size that triggers microcompaction.
 
         Returns:
-            The static tokens plus the microcompaction fraction of the conversation budget.
+            The static tokens plus the microcompaction fraction of the conversation budget, capped
+            at the total budget.
         """
-        return self.static_tokens + int(self.conversation * MICRO_FRACTION)
+        return min(self.static_tokens + int(self.conversation * MICRO_FRACTION), self.total)
 
     @property
     def collapse_at(self) -> int:
         """Return the prompt size that triggers conversation collapse.
 
         Returns:
-            The static tokens plus the collapse fraction of the conversation budget.
+            The static tokens plus the collapse fraction of the conversation budget, capped at the
+            total budget.
         """
-        return self.static_tokens + int(self.conversation * COLLAPSE_FRACTION)
+        return min(self.static_tokens + int(self.conversation * COLLAPSE_FRACTION), self.total)
 
     @property
     def compact_at(self) -> int:
         """Return the prompt size that triggers summarization.
 
         Returns:
-            The static tokens plus the full conversation budget.
+            The static tokens plus the full conversation budget, capped at the total budget.
         """
-        return self.static_tokens + self.conversation
+        return min(self.static_tokens + self.conversation, self.total)
 
 
 class ContextMeter:
