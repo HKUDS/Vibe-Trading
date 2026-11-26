@@ -84,7 +84,7 @@ class SessionService:
         # Use the run directory's runtime root to isolate stores.
         from src.tools.background_tools import init_background_store
 
-        self._background_store = init_background_store(Path(runs_dir).parent)
+        init_background_store(Path(runs_dir).parent)
         self.pending_inputs = PendingInputQueue(
             lambda session_id: store.thread_path(session_id).parent / PENDING_INPUTS_FILENAME
         )

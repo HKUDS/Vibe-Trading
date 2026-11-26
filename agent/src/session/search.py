@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import sqlite3
@@ -345,67 +344,6 @@ class SessionSearchIndex:
                 break
 
         return list(seen.values())
-
-    def reindex_from_store(self, store_base_dir: Path) -> int:
-        """Rebuild the entire index from the file-based session store.
-
-        Args:
-            store_base_dir: Root directory containing the stored session subdirectories.
-
-        Returns:
-            Number of projected messages processed, or zero if the store is missing.
-        """
-        if not store_base_dir.exists():
-            return 0
-
-        # Only SQLite work is serialized; source-file reads remain outside.
-        with self._operation_lock:
-            conn = self._get_conn()
-            conn.execute("DELETE FROM messages")
-            conn.execute("DELETE FROM sessions")
-            try:
-                conn.execute(
-                    "INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')"
-                )
-            except sqlite3.OperationalError:
-                pass
-            conn.commit()
-
-        count = 0
-        for session_dir in store_base_dir.iterdir():
-            if not session_dir.is_dir():
-                continue
-
-            session_file = session_dir / "session.json"
-
-            if not session_file.exists():
-                continue
-
-            try:
-                session_data = json.loads(session_file.read_text(encoding="utf-8"))
-                sid = session_data.get("session_id", session_dir.name)
-                title = session_data.get("title", "")
-
-                try:
-                    ts = datetime.fromisoformat(
-                        session_data.get("created_at", "")
-                    ).timestamp()
-                except (ValueError, TypeError):
-                    ts = time.time()
-
-                self.index_session(sid, title, ts=ts)
-
-                from src.session.store import SessionStore
-
-                for message in SessionStore(store_base_dir).get_messages(sid, limit=None):
-                    if message.content:
-                        self.index_message(sid, message.role, message.content)
-                        count += 1
-            # One corrupt session must not abort the remaining reindex.
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to index session %s: %s", session_dir.name, exc)
-
-        return count
 
     @staticmethod
     def _format_time(epoch: float) -> str:

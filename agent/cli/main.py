@@ -10,7 +10,6 @@ import cli.commands.dispatch as _cmd_dispatch
 import importlib
 import logging
 import sys
-import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -346,21 +345,6 @@ def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
 # Async preflight
 
 
-def _start_preflight_async() -> threading.Thread:
-    """Run ``src.preflight.run_preflight`` in a daemon thread."""
-    def _worker() -> None:
-        try:
-            from src.preflight import run_preflight
-
-            run_preflight(get_console())
-        except Exception:  # noqa: BLE001
-            pass
-
-    thread = threading.Thread(target=_worker, daemon=True, name="vibe-preflight")
-    thread.start()
-    return thread
-
-
 # Slash dispatch
 
 
@@ -439,19 +423,6 @@ def _dispatch_slash(line: str, ctx: InteractiveContext) -> int:
 
 
 # Interactive loop
-
-
-def _summarise_tool_result(tool: str, status: str, preview: str) -> str:
-    """Short suffix to render after a finished tool event."""
-    if status != "ok":
-        return preview[:48].replace("\n", " ")
-    try:
-        from cli.commands.execution import _format_tool_result_preview
-        from cli.commands.execution import _strip_rich_tags
-
-        return _strip_rich_tags(_format_tool_result_preview(tool, status, preview))[:48]
-    except Exception:  # noqa: BLE001
-        return ""
 
 
 def _print_debug_summary(
@@ -594,13 +565,6 @@ def _print_recap_if_needed(console: Any, ctx: InteractiveContext) -> None:
         console.print()
         console.print(recap)
     ctx.last_recap_len = len(ctx.transcript)
-
-
-def _print_input_hint(console: Any, hint: str) -> None:
-    """Render the bottom hint bar in muted style."""
-    from cli.components.hint_bar import render_hint_bar
-
-    console.print(render_hint_bar(left=hint, right="Ctrl+D · /quit to exit"))
 
 
 # Handle the kill switch and mandate picks before the model (SPEC.md Consent §2, §4).

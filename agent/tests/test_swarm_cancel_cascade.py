@@ -26,6 +26,13 @@ from src.swarm.models import (
 from src.tools.swarm_tool import SwarmTool
 
 
+
+def _indexed_run_ids(rt, session_id: str) -> list[str]:
+    """Read the in-process cancel index that ``cancel_indexed_run`` consults."""
+    with rt._ACTIVE_RUNS_LOCK:
+        return [rid for rid, (sid, _) in rt._ACTIVE_RUNS.items() if sid == session_id]
+
+
 def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat()
 
@@ -112,7 +119,7 @@ def test_execute_returns_cancelled_without_waiting_for_the_poll(tmp_path, monkey
     # to that means the flag was not being watched.
     assert elapsed < 1.0, f"cancel took {elapsed:.2f}s"
     # A cancelled run is terminal, so it must not linger in the index.
-    assert rt.active_run_ids("sess-1") == []
+    assert _indexed_run_ids(rt, "sess-1") == []
 
 
 @pytest.mark.parametrize("finish_before_wait", [False, True])
@@ -152,7 +159,7 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
         payload = json.loads(tool.execute(prompt="test local run"))
         assert payload["status"] == ("completed" if finish_before_wait else "running")
         assert payload["wait_budget_exhausted"] is True
-        assert rt.active_run_ids("sess-2") == ([] if finish_before_wait else [run.id])
+        assert _indexed_run_ids(rt, "sess-2") == ([] if finish_before_wait else [run.id])
     finally:
         finish_layer.set()
         for thread in threads:
@@ -162,7 +169,7 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
     saved_run = store_mod.SwarmStore(base_dir=tmp_path).load_run(run.id)
     assert saved_run is not None
     assert saved_run.status == RunStatus.completed
-    assert rt.active_run_ids("sess-2") == []
+    assert _indexed_run_ids(rt, "sess-2") == []
 
 
 # ---------------------------------------------------------------------------

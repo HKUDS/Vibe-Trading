@@ -20,7 +20,6 @@ from src.product.resources.memory import WorkspaceMemory
 from src.product.resources.skills import (
     SkillsLoader,
     ancestor_titles,
-    find_section,
     find_sections,
     qualified_path,
     split_sections,
@@ -884,9 +883,6 @@ class TestHeadingScannerIgnoresCodeComments:
 
         assert document[sections["B"].start : sections["B"].end] == "## B\n\nb text\n\n### C\n\nc text\n\n"
         assert sections["A"].end == len(document)
-
-    def test_find_section_returns_none_for_an_absent_title(self) -> None:
-        assert find_section(split_sections("# A\n\ntext\n"), "Z") is None
 
 
 _REPEATED_TITLE_SKILL = (

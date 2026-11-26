@@ -21,7 +21,6 @@ def _is_finite(value: float) -> bool:
 # Keep the recent price window small enough for worker prompts.
 DEFAULT_WINDOW_DAYS = 30
 DEFAULT_MAX_SYMBOLS = 8
-MAX_SYMBOLS_ENV = "SWARM_GROUNDING_MAX_SYMBOLS"
 
 # Limit displayed bars while using the full window for extrema.
 PROMPT_TABLE_TAIL = 5

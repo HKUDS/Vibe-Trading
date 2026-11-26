@@ -238,7 +238,7 @@ def test_a_torn_last_line_does_not_swallow_the_next_record(tmp_path: Path) -> No
     assert [(i.type, i.seq) for i in log.read()] == [("turn_start", 1), ("turn_end", 2)]
 
 
-def test_queries_items_after_last_compaction_and_open_turns(tmp_path: Path) -> None:
+def test_queries_last_compaction_and_open_turns(tmp_path: Path) -> None:
     log = ThreadLog(tmp_path / "thread.jsonl")
     _write_full_turn(log, "t1")
     log.append("compaction", "t2", summary="first", replaces_through_seq=2)
@@ -246,7 +246,6 @@ def test_queries_items_after_last_compaction_and_open_turns(tmp_path: Path) -> N
     log.append("compaction", "t2", summary="second", replaces_through_seq=7)
     log.append("turn_start", "t3", prompt="r")
 
-    assert [item.seq for item in log.items_after(9)] == [10, 11]
     assert log.last_compaction().get("summary") == "second"
     assert log.open_turns() == ["t2", "t3"]
     assert open_turns(log.read()) == ["t2", "t3"]

@@ -293,15 +293,3 @@ def find_sections(sections: List[SkillSection], wanted: str) -> List[SkillSectio
     return []
 
 
-def find_section(sections: List[SkillSection], wanted: str) -> Optional[SkillSection]:
-    """Locate a single section by heading address.
-
-    Args:
-        sections: Sections in the document order produced by split_sections.
-        wanted: Section address as the caller typed it.
-
-    Returns:
-        The first matching section, or None if there are no matches.
-    """
-    matches = find_sections(sections, wanted)
-    return matches[0] if matches else None

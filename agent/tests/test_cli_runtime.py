@@ -20,7 +20,6 @@ The API client is stubbed (``httpx``) and the liveness module is injected into
 
 from __future__ import annotations
 
-import cli.commands.common as _cmd_common
 
 import importlib
 import sys
@@ -287,39 +286,6 @@ class TestRunnerControlEndpoints:
         with patch("httpx.post", side_effect=_boom) as post:
             assert cmd_live_start("robinhood") == EXIT_RUN_FAILED
         post.assert_called_once()
-
-    def test_run_foreground_starts_then_stops(
-        self, fake_liveness: Dict[str, Any], spending_preview: list[str]
-    ) -> None:
-        """`live run` relays a foreground start, tails liveness, then stops."""
-        from cli.commands.common import EXIT_SUCCESS
-        from cli.commands.live import cmd_live_run
-
-        calls: List[str] = []
-
-        def _post(
-            url: str,
-            json: Dict[str, Any],  # noqa: A002
-            headers: Dict[str, str],
-            timeout: float,
-        ) -> _FakeResp:
-            assert len(spending_preview) == 1
-            calls.append(url)
-            if url.endswith("/live/runner/start"):
-                assert json["foreground"] is True
-                # Make the tail loop exit immediately: runner reports stopped.
-                fake_liveness["alive"] = False
-            return _FakeResp({"runner_id": "live-robinhood", "status": "ok"})
-
-
-        # _legacy uses its own ``time`` import; patch that one so the tail loop
-        # does not actually sleep.
-        with patch("httpx.post", _post), patch.object(_cmd_common.time, "sleep", lambda *_: None):
-            assert cmd_live_run("robinhood") == EXIT_SUCCESS
-
-        assert any(u.endswith("/live/runner/start") for u in calls)
-        assert any(u.endswith("/live/runner/stop") for u in calls)
-
 
 # ---------------------------------------------------------------------------
 # live status surfaces runner liveness

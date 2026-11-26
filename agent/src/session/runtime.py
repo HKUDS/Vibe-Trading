@@ -15,8 +15,6 @@ from src.session.thread_schema import ThreadItem, ThreadItemError
 
 logger = logging.getLogger(__name__)
 
-TOOL_RESULTS_DIRNAME = "tool-results"
-
 class TurnRecorder:
     """Append turn items and reject late worker writes after closing.
 

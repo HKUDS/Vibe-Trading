@@ -106,19 +106,6 @@ def cancel_indexed_run(run_id: str) -> bool:
         return False
 
 
-def active_run_ids(session_id: str) -> list[str]:
-    """Return the run ids currently indexed for ``session_id``.
-
-    Args:
-        session_id: ID of the owning session.
-
-    Returns:
-        IDs of active runs indexed under the session.
-    """
-    with _ACTIVE_RUNS_LOCK:
-        return [rid for rid, (sid, _) in _ACTIVE_RUNS.items() if sid == session_id]
-
-
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
     """Return the capped exponential ceiling for a one-based retry number."""
     if retry_number < 1:

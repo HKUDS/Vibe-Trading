@@ -187,17 +187,6 @@ class ThreadLog:
                     )
         return items
 
-    def items_after(self, seq: int) -> List[ThreadItem]:
-        """Read the suffix of the thread after a sequence number.
-
-        Args:
-            seq: Exclusive lower sequence bound.
-
-        Returns:
-            Matching items in write order.
-        """
-        return [item for item in self.read() if item.seq > seq]
-
     def last_compaction(self) -> Optional[ThreadItem]:
         """Find the most recent summarizing compaction.
 

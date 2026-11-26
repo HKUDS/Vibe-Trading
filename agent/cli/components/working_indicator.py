@@ -89,16 +89,6 @@ class ThinkingSpinner:
         # the dim style so the live region is unobtrusive.
         return Spinner(self._spinner_name, text=Text(self._verb, style="dim"))
 
-    def update_verb(self, verb: str) -> None:
-        """Update the spinner's status verb.
-
-        Args:
-            verb: New text for the spinner label.
-        """
-        self._verb = verb
-        if self._live is not None:
-            self._live.update(self._renderable())
-
     def pause(self) -> "_SpinnerPause":
         """Temporarily hide the spinner while other output is printed.
 

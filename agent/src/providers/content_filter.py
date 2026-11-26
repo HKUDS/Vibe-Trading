@@ -5,9 +5,6 @@ from __future__ import annotations
 
 from src.config.accessor import get_env_config
 
-CONTENT_FILTER_WARNING_THRESHOLD_ENV = "CONTENT_FILTER_WARNING_THRESHOLD"
-DEFAULT_CONTENT_FILTER_THRESHOLD = 0.05
-
 # Stop repeated moderation blocks before they consume the iteration budget.
 MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS = 10
 

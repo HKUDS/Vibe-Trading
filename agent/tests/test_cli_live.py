@@ -110,7 +110,7 @@ class TestConnectorLiveDispatch:
         assert kwargs["body"]["daily_at"] == "10:00"
         assert kwargs["body"]["max_daily_turns"] == 1
 
-    @pytest.mark.parametrize("command", ["cmd_live_start", "cmd_live_run"])
+    @pytest.mark.parametrize("command", ["cmd_live_start"])
     def test_no_start_if_spending_preview_fails(self, command):
         pass
 
@@ -303,25 +303,6 @@ class TestLiveStatusMandate:
         _write_mandate(live_root, schema_version=999)
         cmd_live_status("robinhood")
         assert "unknown schema" in capsys.readouterr().out
-
-    def test_mandate_print_no_file(self, live_root: Path) -> None:
-        from cli.commands.common import EXIT_RUN_FAILED
-        from cli.commands.live import cmd_live_mandate
-
-        assert cmd_live_mandate("robinhood") == EXIT_RUN_FAILED
-
-    def test_mandate_print_renders_json(
-        self, live_root: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        from cli.commands.live import cmd_live_mandate
-
-        _write_mandate(live_root)
-        assert cmd_live_mandate("robinhood") == 0
-        out = capsys.readouterr().out
-        assert "max_order_notional_usd" in out
-        assert "equity" in out  # enum rendered as string value, not InstrumentType.EQUITY
-        assert "InstrumentType" not in out
-
 
 # ---------------------------------------------------------------------------
 # revoke

@@ -322,37 +322,6 @@ def cmd_live_status(broker: common.Optional[str] = None) -> int:
     return common.EXIT_SUCCESS
 
 
-def cmd_live_mandate(broker: common.Optional[str] = None) -> int:
-    """Print the committed mandate for a broker as JSON.
-
-    Args:
-        broker: Broker key. None uses the default broker.
-
-    Returns:
-        Success after printing the mandate, or EXIT_RUN_FAILED when none is on file.
-    """
-    from dataclasses import asdict
-
-    from src.live.mandate.store import load_mandate
-
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    mandate = load_mandate(key)
-    if mandate is None:
-        common.console.print(
-            f"[yellow]No committed mandate for '{key}'.[/yellow] "
-            "The channel is read-only until a mandate is committed via the consent flow."
-        )
-        return common.EXIT_RUN_FAILED
-
-    payload = asdict(mandate)
-    # asdict leaves enums as Enum members; render their string values.
-    caps = payload["hard_caps"]
-    caps["allowed_instruments"] = [i.value for i in mandate.hard_caps.allowed_instruments]
-    payload["universe"]["asset_classes"] = [a.value for a in mandate.universe.asset_classes]
-    common.console.print_json(data=payload)
-    return common.EXIT_SUCCESS
-
-
 def cmd_live_halt(broker: common.Optional[str] = None) -> int:
     """Trip the live trading kill switch.
 
@@ -507,74 +476,6 @@ def cmd_live_stop(broker: common.Optional[str] = None) -> int:
         return common.EXIT_RUN_FAILED
 
     common.console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
-    return common.EXIT_SUCCESS
-
-
-def cmd_live_run(broker: common.Optional[str] = None) -> int:
-    """Start and monitor a live runner in the foreground.
-
-    Args:
-        broker: Broker key, or None for the default broker.
-
-    Returns:
-        Failure if the spending preview does not pass or startup fails. Success after monitoring
-        ends and a stop is requested.
-    """
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    runner_id = _runner_id_for(key)
-
-    if not _preview_live_spending(key):
-        return common.EXIT_RUN_FAILED
-
-    result = _live_api_call(
-        "POST", "/live/runner/start", body={"broker": key, "foreground": True}
-    )
-    if result.get("status") == "error":
-        common.console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
-        common.console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
-        return common.EXIT_RUN_FAILED
-
-    common.console.print(
-        f"[green]Live runner running[/green] for {key} [dim]({runner_id})[/dim] — "
-        "press Ctrl+C to stop."
-    )
-
-    try:
-        from src.live.runtime.liveness import is_runner_alive, last_tick
-    except Exception:  # noqa: BLE001 — runtime lands concurrently; fall back to a wait
-        is_runner_alive = None  # type: ignore[assignment]
-        last_tick = None  # type: ignore[assignment]
-
-    def _panel() -> common.Panel:
-        alive = bool(is_runner_alive(runner_id)) if is_runner_alive else True
-        state = "[green]running[/green]" if alive else "[yellow]stopped[/yellow]"
-        lines = [f"Runner: {state}", f"Broker: {key}"]
-        if last_tick:
-            try:
-                tick = last_tick(runner_id)
-            except Exception:  # noqa: BLE001
-                tick = None
-            if tick is not None:
-                lines.append(f"Last tick: {_format_last_tick(tick)}")
-        return common.Panel("\n".join(lines), title=f"live run · {key}", box=common.box.ROUNDED)
-
-    try:
-        with common.Live(_panel(), console=common.console, refresh_per_second=2, transient=False) as live:
-            while True:
-                common.time.sleep(1.0)
-                live.update(_panel())
-                if is_runner_alive and not is_runner_alive(runner_id):
-                    break
-    except KeyboardInterrupt:
-        common.console.print("\n[dim]Stopping live runner…[/dim]")
-    finally:
-        stop = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
-        if stop.get("status") == "error":
-            common.console.print(f"[red]Failed to stop the runner cleanly:[/red] {stop.get('error')}")
-        else:
-            common.console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
     return common.EXIT_SUCCESS
 
 

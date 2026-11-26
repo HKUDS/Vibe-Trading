@@ -21,11 +21,6 @@ from src.channelsui.transcription_ws import webui_transcription_event
 from src.product.goals import goal_state_ws_blob
 from src.session.models import Message, Session
 from src.session.models import SessionBusyError
-from src.session.webui_turns import (
-    clear_websocket_turn_started,
-    mark_websocket_turn_started,
-    websocket_turn_wall_started_at,
-)
 from src.utils.media_decode import FileSizeExceeded, save_base64_data_url
 
 
@@ -283,14 +278,6 @@ def test_channel_manager_skips_enabled_adapter_when_lazy_sdk_missing(monkeypatch
     assert status["available"] is False
     assert status["loaded"] is False
     assert status["install_hint"] == "pip install 'vibe-trading-ai[discord]'"
-
-
-def test_websocket_turn_wall_accepts_optional_chat_id() -> None:
-    assert websocket_turn_wall_started_at("chat-1") is None
-    mark_websocket_turn_started("chat-1", 123.0)
-    assert websocket_turn_wall_started_at("chat-1") == 123.0
-    clear_websocket_turn_started("chat-1")
-    assert websocket_turn_wall_started_at("chat-1") is None
 
 
 def test_websocket_compatibility_helpers_have_structured_behavior() -> None:

@@ -145,14 +145,6 @@ class ThinkingSpinner:
                     pass
                 self._live = None
 
-    def set_extra(self, extra: str) -> None:
-        """Update the spinner's right-hand suffix.
-
-        Args:
-            extra: Additional status text, such as a token or cost preview.
-        """
-        self._state.extra = extra
-
     @contextmanager
     def pause(self) -> Iterator[None]:
         """Suspend rendering while the caller prints to the console.
@@ -285,31 +277,6 @@ class StreamRenderer:
                 self._spinner = None
             self._active_calls.clear()
 
-    def on_tool_start(self, name: str, args: dict | str | None) -> None:
-        """Track the start of a tool call for later rendering.
-
-        Args:
-            name: Raw tool name used to match the finish event.
-            args: Tool arguments to summarize in the completed row.
-        """
-        self._active_calls[name] = ToolCall(name=name, args=args)
-
-    def on_tool_end(self, name: str, *, summary: str = "") -> None:
-        """Mark a tool call finished and emit its static line.
-
-        Args:
-            name: Raw tool name used to locate the active call.
-            summary: Optional result summary to display with the call.
-        """
-        call = self._active_calls.pop(name, None)
-        if call is None:
-            call = ToolCall(name=name, args=None,
-                             finished_at=time.monotonic(), summary=summary)
-        else:
-            call.finished_at = time.monotonic()
-            call.summary = summary
-        self._print_tool_line(call)
-
     def _print_tool_line(self, call: ToolCall) -> None:
         line = Text()
         line.append("●", style=Theme.success)
@@ -339,57 +306,6 @@ class StreamRenderer:
                 self._console.print(renderable)
         else:
             self._console.print(renderable)
-
-    def print_answer(self, body: str) -> None:
-        """Print the final answer with the assistant marker.
-
-        Args:
-            body: Answer text to display. Additional lines are indented.
-        """
-        if self._spinner is not None:
-            self._spinner.stop()
-            self._spinner = None
-        lines = body.splitlines() or [""]
-        head = Text()
-        head.append("● ", style=Theme.primary)
-        head.append(lines[0])
-        self._console.print(head)
-        for line in lines[1:]:
-            self._console.print(Text("  " + line))
-        self._console.print()
-
-    def print_footer(self, *, run_id: str, tool_count: int,
-                      duration_ms: int | float | None,
-                      token_count: int | None, cost: float | None) -> None:
-        """Print the run reference and available turn metrics.
-
-        Args:
-            run_id: Run ID used in the show command hint.
-            tool_count: Number of tool calls to display.
-            duration_ms: Elapsed wall time in milliseconds, or None if unavailable.
-            token_count: Optional token count.
-            cost: Optional dollar cost.
-        """
-        from cli.utils.format import abbreviate_num, format_tokens
-
-        line = Text("  ")
-        line.append(f"/show {run_id}", style=Theme.info)
-        line.append("  ·  ", style=Theme.muted)
-        line.append(
-            f"{tool_count} tool call{'s' if tool_count != 1 else ''}",
-            style=Theme.muted,
-        )
-        line.append("  ·  ", style=Theme.muted)
-        line.append(format_duration(duration_ms), style=Theme.muted)
-        if token_count is not None:
-            line.append("  ·  ", style=Theme.muted)
-            line.append(format_tokens(token_count), style=Theme.muted)
-        if cost is not None:
-            line.append("  ·  ", style=Theme.muted)
-            line.append(abbreviate_num(cost, currency="$"), style=Theme.muted)
-        self._console.print(line)
-        self._console.print()
-
 
 __all__ = [
     "StreamRenderer",

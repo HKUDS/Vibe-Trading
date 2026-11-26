@@ -151,9 +151,6 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
     },
 }
 
-ITEM_TYPES = frozenset(_SCHEMA)
-
-
 class ThreadItemError(ValueError):
     """Raised when an item does not match the thread schema."""
 

@@ -98,16 +98,6 @@ def _gh_cli_token() -> str:
         return token
 
 
-def get_copilot_login_status() -> Optional[str]:
-    """Return an explicit token, or None when the SDK must resolve login.
-
-    Returns:
-        The resolved token when available, or None to let the SDK resolve login.
-    """
-    token, _source = resolve_copilot_token()
-    return token or None
-
-
 def _client_options(token: str | None = None) -> dict[str, Any]:
     """Return explicit SDK options without disabling stored CLI credentials."""
     if token is None:

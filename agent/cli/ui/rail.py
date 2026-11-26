@@ -307,7 +307,6 @@ class RailRunDashboard:
         self.live: Any = None
         self.steps: list[RailStep] = []
         self.latest_text = ""
-        self.thinking_active = True
         self.completion_summary: str | None = None
         self.status: str = "running"
         self.thinking_verb = pick_thinking_verb()
@@ -358,7 +357,6 @@ class RailRunDashboard:
             return
 
         if kind == "item.completed":
-            self.thinking_active = False
             self.refresh()
             return
 
@@ -375,7 +373,6 @@ class RailRunDashboard:
             return
 
         if kind == "tool.started":
-            self.thinking_active = False
             tool = str(data.get("tool") or "tool")
             args = data.get("arguments") or {}
             call_id = str(data.get("call_id") or "")
@@ -463,7 +460,6 @@ class RailRunDashboard:
             self.completion_summary = f"{self.status.title()}. {reason}"
         else:
             self.completion_summary = f"{self.status.title()}."
-        self.thinking_active = False
         self.refresh()
         self.close()
 
