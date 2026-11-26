@@ -269,6 +269,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | binance | ✓ | ✓ | ✓ |
 | dhan | ✓ | ✓ | — |
 | etoro | ✓ | ✓ | ✓ |
+| exness | ✓ | — | ✓ |
 | futu | ✓ | ✓ | ✓ |
 | ibkr | ✓ | — | — |
 | kis | ✓ | ✓ | — |

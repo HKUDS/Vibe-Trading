@@ -259,6 +259,7 @@ Lectura indica un perfil de solo lectura. Simulación usa el entorno de pruebas 
 | binance | ✓ | ✓ | ✓ |
 | dhan | ✓ | ✓ | — |
 | etoro | ✓ | ✓ | ✓ |
+| exness | ✓ | — | ✓ |
 | futu | ✓ | ✓ | ✓ |
 | ibkr | ✓ | — | — |
 | kis | ✓ | ✓ | — |
