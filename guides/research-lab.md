@@ -111,7 +111,10 @@ provider-usage budget and elapsed-time bound. Run those prompts through the
 normal Agent first, then evaluate the saved artifacts. The verifier itself
 never runs a model, fetches prices, or rewrites a prompt to fit a case.
 `bindings.json` is an array of `case_id`, `run_dir`, optional `trace_dir` objects;
-each task must have its own corresponding saved run. Web evaluates a selected
+each task must have its own corresponding saved run. The batch reports an
+`evaluation_status` alongside `passed` and the individual results. The CLI
+exits 0 when every case passes, 2 when coverage is incomplete but no case failed,
+and 1 if any case failed or has an invalid artifact. Web evaluates a selected
 saved run and task, displaying every verdict and coverage gap.
 
 Numeric expectations read bounded JSON fields or CSV rows. Missing
