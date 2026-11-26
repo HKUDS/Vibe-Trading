@@ -477,6 +477,7 @@ class SessionRuntime:
         model: Optional[str] = None,
         pending_inputs: Optional[list[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        display: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Close a turn once, recording the prompt if execution never opened it.
 
@@ -493,6 +494,7 @@ class SessionRuntime:
             model: Model used by the turn.
             pending_inputs: Client-facing snapshot of the pending input queue, when available.
             metadata: Derived reply metadata for transcript readers.
+            display: Client-facing turn facts carried on the terminal event, when any.
         """
         with self._lock:
             recorder = self._recorders.pop(turn_id, None)
@@ -508,7 +510,7 @@ class SessionRuntime:
                 "turn_end", turn_id, status=status, usage=usage, elapsed_ms=elapsed_ms,
                 summary=summary, error=error, run_dir=run_dir,
                 provider=provider, model=model, pending_inputs=pending_inputs,
-                metadata=metadata,
+                metadata=metadata, display=display,
             )
 
     def partial_response(self, turn_id: str) -> Optional[str]:

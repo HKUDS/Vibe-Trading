@@ -15,6 +15,7 @@ from src.session.runtime import SessionRuntime
 from src.session.search import SessionSearchIndex
 from src.session.store import SessionStore
 from src.session.replay import project_turn
+from src.tools.redaction import redact_text
 
 
 #: Shown after whatever a stopped turn had streamed, or alone if it streamed
@@ -113,7 +114,9 @@ class AttemptRunner:
             attempt.metrics = result["metrics"]
 
         reply_content = format_result_message(
-            attempt, streamed_text=result.get("streamed_text") or ""
+            attempt,
+            streamed_text=result.get("streamed_text") or "",
+            retained_answer=result.get("content") or "",
         )
         runtime_keys = (
             "provider",
@@ -134,6 +137,14 @@ class AttemptRunner:
             value = result.get(key)
             if value is not None:
                 reply_metadata[key] = value
+        # Why a run failed or was released degraded; shown with the reply and
+        # carried on the terminal event, redacted as the attempt error is.
+        display = {}
+        if result.get("degraded"):
+            display["degraded"] = True
+        if result.get("reason"):
+            display["reason"] = redact_text(result["reason"])
+        reply_metadata.update(display)
         # Project the recorded tool results once before closing the turn so
         # generated report links are included in the durable run summary.
         prefinish_projection = project_turn(
@@ -162,6 +173,7 @@ class AttemptRunner:
             pending_inputs=(self.list_pending_inputs(session_id)
                             if attempt.status == AttemptStatus.CANCELLED else None),
             metadata=reply_metadata,
+            display=display or None,
         )
         reply = Message(
             session_id=session_id, role="assistant",
@@ -176,12 +188,14 @@ class AttemptRunner:
         self.search_index.index_message(session_id, "assistant", reply.content)
 
 
-def format_result_message(attempt: Attempt, streamed_text: str = "") -> str:
+def format_result_message(attempt: Attempt, streamed_text: str = "", retained_answer: str = "") -> str:
     """Format the final execution result message.
 
     Args:
         attempt: The terminal attempt.
         streamed_text: Text the turn streamed to the user, retained when the turn stops.
+        retained_answer: Answer a failed run still released (for example a truncated one), kept
+            ahead of the failure line unless the failure reason already quotes it.
 
     Returns:
         The reply text shown in the transcript.
@@ -200,4 +214,6 @@ def format_result_message(attempt: Attempt, streamed_text: str = "") -> str:
         return f"{streamed}\n\n{STOPPED_MARKER}" if streamed else STOPPED_MARKER
     if attempt.status == AttemptStatus.WAITING_USER:
         return attempt.summary or "Please answer the question above."
-    return f"Execution failed: {attempt.error or 'unknown error'}"
+    failure = f"Execution failed: {attempt.error or 'unknown error'}"
+    answer = retained_answer.strip()
+    return f"{answer}\n\n{failure}" if answer and answer not in failure else failure
