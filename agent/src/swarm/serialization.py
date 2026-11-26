@@ -15,7 +15,8 @@ def serialize_task(task: Any) -> dict:
 
     Returns:
         Public task fields including status, summary, iteration count, redacted error, timestamps,
-        and dependency lists.
+        dependency lists, the task's tool narrowing (None inherits the agent's) and its input
+        bindings.
     """
     status = task.status.value if hasattr(task.status, "value") else str(task.status)
     return {
@@ -29,6 +30,8 @@ def serialize_task(task: Any) -> dict:
         "completed_at": getattr(task, "completed_at", None),
         "depends_on": list(getattr(task, "depends_on", []) or []),
         "blocked_by": list(getattr(task, "blocked_by", []) or []),
+        "tools": getattr(task, "tools", None),
+        "input_from": dict(getattr(task, "input_from", {}) or {}),
     }
 
 

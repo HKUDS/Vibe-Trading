@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -75,10 +76,18 @@ def _workspace_files(cwd: Any) -> dict[str, tuple[int, int]] | None:
 
 
 def _changed_files(cwd: Any, before: dict[str, tuple[int, int]]) -> list[dict[str, Any]]:
-    """List the task files a command created or rewrote; a read changes nothing."""
-    after = _workspace_files(cwd) or {}
-    return [{"path": relative, "bytes": stat[1]}
-            for relative, stat in sorted(after.items()) if before.get(relative) != stat]
+    """List and hash the task files a command created or rewrote; a read changes nothing."""
+    changed = []
+    for relative, stat in sorted((_workspace_files(cwd) or {}).items()):
+        if before.get(relative) == stat:
+            continue
+        try:
+            # The hash is what lets a consumer bind a file to the command that wrote it.
+            digest = hashlib.sha256(Path(str(cwd), relative).read_bytes()).hexdigest()
+        except OSError:
+            continue
+        changed.append({"path": relative, "bytes": stat[1], "sha256": digest})
+    return changed
 
 
 def _kill_process_tree(proc: subprocess.Popen) -> None:
@@ -153,7 +162,8 @@ class BashTool(BaseTool):
 
         Returns:
             JSON string with stdout, stderr, and exit_code. In a run workspace it also lists the
-            task files the command created or changed under ``artifacts``. A swarm node command
+            task files the command created or changed, with size and sha256, under ``artifacts``.
+            A swarm node command
             that ran without its sandbox carries ``"sandbox": "unavailable"``.
         """
         command = kwargs["command"]

@@ -33,7 +33,7 @@ from src.session.thread import ThreadLog
 from src.session.thread_schema import ThreadItemError
 from src.swarm.artifacts import agent_artifact_dir, collect_node_artifacts, node_thread
 from src.swarm.context import NodeContext
-from src.swarm.evidence_handoff import prepare_handoff
+from src.swarm.evidence_handoff import prepare_handoff, selected_inputs
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
@@ -235,17 +235,25 @@ def build_worker_prompt(
     return "\n\n".join(prompt_parts)
 
 
-def upstream_data_message(upstream_summaries: dict[str, str], note: str = "") -> dict | None:
+def upstream_data_message(upstream_summaries: dict[str, str], note: str = "",
+                          selected: dict | None = None) -> dict | None:
     """Quote upstream results and the evidence note as one user data message.
 
     Args:
         upstream_summaries: Mapping from context key to upstream task summary.
         note: Inherited-evidence note from the handoff, if any.
+        selected: Selected upstream values from ``selected_inputs``, quoted as JSON per alias with
+            any unavailable inputs; selected aliases carry no prose summary.
 
     Returns:
         A user message placed before the task prompt, or None when there is nothing to hand over.
     """
     sections = [f"### {key}\n{summary}" for key, summary in upstream_summaries.items()]
+    if selected is not None:
+        sections += [f"### {key}\n{json.dumps(values, ensure_ascii=False)}"
+                     for key, values in selected["inputs"].items()]
+        if selected["unavailable"]:
+            sections.append("### Unavailable inputs\n" + json.dumps(selected["unavailable"], ensure_ascii=False))
     if not sections and not note:
         return None
     parts = ["## Upstream Context (from previous agents)\n\n"
@@ -866,26 +874,41 @@ def run_node(
     ))
     # Shell commands stay in this node's workspace (VIBE_TRADING_SWARM_SHELL_SANDBOX).
     shell_policy = replace(policy, sandbox=policy.sandbox.for_workspace(workspace))
+    # A task's own tool list narrows its agent's whitelist (validated when the run was built).
+    tool_names = task.effective_tools(agent_spec)
     registry = build_swarm_registry(
-        agent_spec.tools, policy=shell_policy, agent_config=agent_config,
+        tool_names, policy=shell_policy, agent_config=agent_config,
         include_shell_tools=include_shell_tools, skill_allowlist=agent_spec.skills or None,
         background_manager=background, background_scope=background.scope,
     )
-    available = {name for name in agent_spec.tools if registry.get(name) is not None}
+    available = {name for name in tool_names if registry.get(name) is not None}
     for name in available:
         tool = registry.get(name)
         if isinstance(tool, BaseTool):
             registry.register(_WorkspaceTool(tool, workspace.resolve(), pin_undeclared=True))
+    skills = (_filter_skill_descriptions(SkillsLoader(), agent_spec.skills)
+              if registry.get("load_skill") is not None else "")
     system = build_worker_prompt(
-        agent_spec, upstream_summaries, _filter_skill_descriptions(SkillsLoader(), agent_spec.skills),
-        grounding_block=grounding_block, available_tools=available,
+        agent_spec, upstream_summaries, skills, grounding_block=grounding_block, available_tools=available,
     )
+    selecting = any(isinstance(binding, dict) for binding in task.input_from.values())
     try:
         note = prepare_handoff(run_dir, task, workspace)
+        selected = selected_inputs(workspace)
     except (OSError, ValueError, KeyError, TypeError):
+        if selecting:
+            # Selected evidence has no prose fallback: the task never sees what it did not select.
+            logger.warning("Selected upstream evidence could not be prepared", exc_info=True)
+            error = "Selected upstream evidence could not be prepared"
+            emit("worker_failed", {"error": error})
+            return WorkerResult(status="failed", summary="", error=error)
         logger.warning("Upstream evidence copy unavailable; retaining supplied reports", exc_info=True)
         note = "Upstream evidence files could not be copied. The supplied reports remain available; do not claim independent source verification from them."
-    data = upstream_data_message(upstream_summaries, note)
+        selected = None
+    # A selected alias delivers its chosen values, never the producer's report.
+    reports = {key: summary for key, summary in upstream_summaries.items()
+               if not isinstance(task.input_from.get(key), dict)}
+    data = upstream_data_message(reports, note, selected)
 
     resumed = _node_history(previous, run_dir)
     if resumed:

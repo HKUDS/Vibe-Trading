@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from src.config.accessor import get_env_config
+from src.config.limits import TOOL_RESULT_LIMIT
 from src.product.result_artifacts import _write_original, save_result_parts
 from src.session.thread import ThreadLog
 from src.swarm.artifacts import agent_artifact_dir, collect_artifacts, node_thread
@@ -52,6 +53,13 @@ def _in_workspace(recorded: str, agent_id: str, task_id: str) -> str | None:
     return posix[posix.rindex(marker) + len(marker):] if marker in posix else None
 
 
+#: Fields an observation entry carries from one handoff to the next; copy locations are
+#: rewritten per consumer, and selection tags belong to the consumer that chose them.
+_ENTRY_FIELDS = ("source_task", "tool", "call_id", "request", "turn_id")
+#: Tools whose recorded results are calculations rather than source observations.
+_CALCULATION_TOOLS = frozenset({"bash", "quantlib_call"})
+
+
 def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
                   thread_path: Path | None = None) -> list[tuple[dict, str]]:
     """Read recorded observations, retaining their original producing role."""
@@ -67,6 +75,13 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
             if not isinstance(gaps, list) or any(not isinstance(gap, str) for gap in gaps):
                 raise ValueError("invalid inherited limitations")
             listed = index.get("observations", [])
+            if "audit_file" in index:
+                # A selected handoff indexes only what its task chose; the audit keeps everything.
+                ref = index["audit_file"]
+                raw = safe_path(ref["path"], source).read_text()
+                if hashlib.sha256(raw.encode()).hexdigest() != ref["sha256"]:
+                    raise ValueError("Inherited audit index changed")
+                listed = json.loads(raw).get("observations", [])
             if not isinstance(listed, list):
                 raise ValueError("not an evidence index")
             # What an earlier role could not get is still missing for every later one.
@@ -80,7 +95,7 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
                 raw = path.read_text()
                 if hashlib.sha256(raw.encode()).hexdigest() != entry["sha256"]:
                     raise ValueError("Inherited evidence file changed")
-                found.append((entry, raw))
+                found.append(({key: entry[key] for key in _ENTRY_FIELDS if key in entry}, raw))
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 errors.append(f"{task_id} inherited observation unavailable: {exc}")
     thread_path = thread_path or safe_path("thread.jsonl", source)
@@ -221,33 +236,32 @@ def _write_bytes(path: Path, content: bytes, root: Path) -> None:
             raise ValueError("Existing copied file was modified")
 
 
-def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
-    """Copy upstream observations into this task's readable workspace.
+def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool) -> dict | None:
+    """Copy every observation and produced file of the given producers and index them.
 
     Args:
         run_dir: Current swarm run directory, including copied artifacts when resumed.
-        task: Consumer task whose input_from identifies the upstream producers.
-        destination: Consumer artifact directory.
+        task_ids: Upstream task ids, in binding order.
+        root: Resolved consumer workspace.
+        name: Index file stem under ``upstream/``: ``index`` or ``audit``.
+        tag: Record on each entry the direct producer (``input_task``) it arrived through.
 
     Returns:
-        Prompt note pointing to the paged provenance index, which lists the copied observations,
-        the files each upstream task produced (copied by content hash under ``upstream/files``)
-        and anything unavailable. Returns an empty string if there is nothing to report.
+        The written index (``observations``, ``files``, ``unavailable``) with its text and page
+        count, or None when there is nothing to record.
 
     Raises:
-        ValueError: If the index would escape the workspace or differs from one already written.
+        ValueError: If a copy would escape the workspace or differs from one already written.
         OSError: If the index or its parts cannot be written.
     """
     from src.swarm.task_store import TaskStore
 
-    if not task.input_from:
-        return ""
-    root = destination.resolve()
     folder = safe_path("upstream", root)
     entries, files, errors, seen = [], [], [], set()
     cap = budget = get_env_config().swarm.swarm_handoff_max_file_bytes
     store = TaskStore(run_dir)
-    for task_id in dict.fromkeys(task.input_from.values()):
+    for task_id in dict.fromkeys(task_ids):
+        tagged = {"input_task": task_id} if tag else {}
         try:
             source_task = store.load_task(task_id)
             source = agent_artifact_dir(run_dir, source_task.agent_id, task_id)
@@ -271,14 +285,18 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
                                       f"({budget} of {cap} bytes left, SWARM_HANDOFF_MAX_FILE_BYTES)")
                         continue
                     budget -= len(content)
-                    files.append({"source_task": task_id, "tool": tool, "call_id": call_id,
-                                  "original_path": relative, "path": str(path.relative_to(root)),
-                                  "sha256": digest, "size": len(content), "redacted": content != original})
+                    entry = {"source_task": task_id, "tool": tool, "call_id": call_id,
+                             "original_path": relative, "path": str(path.relative_to(root)),
+                             "sha256": digest, "size": len(content), "redacted": content != original}
+                    if content != original:
+                        # An execution record names the bytes it wrote, before redaction.
+                        entry["source_sha256"] = hashlib.sha256(original).hexdigest()
+                    files.append({**entry, **tagged})
             observations = _observations(source, source_task.agent_id, task_id, errors, thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()
-                identity = (entry["source_task"], entry.get("turn_id"), entry["call_id"], digest)
+                identity = (entry["source_task"], entry.get("turn_id"), entry["call_id"], digest, task_id if tag else None)
                 if identity in seen:
                     continue
                 seen.add(identity)
@@ -287,22 +305,56 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
                 parts = save_result_parts(raw, folder / digest / "parts", root)
                 entries.append({**entry, "path": str(path.relative_to(root)), "sha256": digest,
                                 "parts_dir": str((folder / digest / "parts").relative_to(root)),
-                                "part_count": len(parts)})
+                                "part_count": len(parts), **tagged})
         except (OSError, ValueError, KeyError, TypeError) as exc:
             errors.append(f"{task_id}: {type(exc).__name__}: {exc}")
     if not entries and not files and not errors:
-        return ""
-    content = json.dumps({"observations": entries, "files": files, "unavailable": errors}, ensure_ascii=False)
+        return None
+    index = {"observations": entries, "files": files, "unavailable": errors}
+    content = json.dumps(index, ensure_ascii=False)
     # Same dependencies yield identical bytes on retry/continuation. No report
     # text is rewritten and no source status is promoted by copying its files.
-    index = folder / "index.json"
-    _write_original(index, content, root)
-    parts = save_result_parts(content, folder / "index-parts", root)
+    _write_original(folder / f"{name}.json", content, root)
+    parts = save_result_parts(content, folder / f"{name}-parts", root)
+    return {**index, "content": content, "pages": len(parts)}
+
+
+def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
+    """Copy upstream observations into this task's readable workspace.
+
+    A plain ``input_from`` binding hands over everything its producer recorded behind a paged
+    index. When any binding is a selection, only the selected evidence is indexed and supplied
+    as task data (see ``selected_inputs``); the complete copy stays in ``upstream/audit.json``.
+
+    Args:
+        run_dir: Current swarm run directory, including copied artifacts when resumed.
+        task: Consumer task whose input_from identifies the upstream producers.
+        destination: Consumer artifact directory.
+
+    Returns:
+        Prompt note pointing to the provenance index, which lists the copied observations,
+        the files each upstream task produced (copied by content hash under ``upstream/files``)
+        and anything unavailable. Returns an empty string if there is nothing to report.
+
+    Raises:
+        ValueError: If the index would escape the workspace, differs from one already written,
+            or a selected copy would overwrite a changed consumer file.
+        OSError: If the index or its parts cannot be written.
+    """
+    if not task.input_from:
+        return ""
+    root = destination.resolve()
+    if any(isinstance(binding, dict) for binding in task.input_from.values()):
+        return _prepare_selected(run_dir, task, root)
+    copied = _copy_upstream(run_dir, task.input_tasks().values(), root, "index", tag=False)
+    if copied is None:
+        return ""
+    entries, files, pages = copied["observations"], copied["files"], copied["pages"]
     tools = ", ".join(sorted({entry["tool"] for entry in entries})) or "none recorded"
     return (
         "## Inherited evidence\n"
         f"{len(entries)} recorded observations ({tools}). Read upstream/index.json; "
-        f"For paged reading, use upstream/index-parts/1.txt through upstream/index-parts/{len(parts)}.txt. "
+        f"For paged reading, use upstream/index-parts/1.txt through upstream/index-parts/{pages}.txt. "
         "Each entry identifies its producing task/tool and a local JSON path usable "
         "by quantlib_call __data_ref__. These are inherited observations, not fresh "
         "fetches by you. Independent analysis can reuse them; describe what you "
@@ -313,3 +365,217 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         "\"files\" entries in upstream/index.json give each one's source task, original path, "
         "sha256 and size, and the writing tool call when one recorded it."
     )
+
+
+def _kind(entry: dict) -> str:
+    """Classify an audit entry as a produced file, a calculation or an observation."""
+    if "original_path" in entry:
+        return "analysis"
+    return "calculation" if entry.get("tool") in _CALCULATION_TOOLS else "observation"
+
+
+def _verified_bytes(ref: dict, root: Path, changed: str) -> bytes:
+    """Read a ``{path, sha256}`` copy inside ``root``, refusing changed bytes."""
+    raw = safe_path(ref["path"], root).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != ref["sha256"]:
+        raise ValueError(changed)
+    return raw
+
+
+def _records_output(raw: bytes, path: str, digest: str) -> bool:
+    """Whether a calculation result succeeded and recorded writing ``path`` with ``digest``."""
+    try:
+        result = json.loads(raw)
+    except ValueError:
+        return False
+    return isinstance(result, dict) and result.get("status") == "ok" and any(
+        isinstance(ref, dict) and ref.get("path") == path and ref.get("sha256") == digest
+        for ref in result.get("artifacts") or []
+    )
+
+
+def _prepare_selected(run_dir: Path, task, root: Path) -> str:
+    """Index only the selected evidence and keep the complete copy as an audit file.
+
+    Args:
+        run_dir: Swarm run containing the producing tasks.
+        task: Consumer with at least one selection binding.
+        root: Resolved consumer workspace.
+
+    Returns:
+        Prompt note naming the selected index and the audit file.
+
+    Raises:
+        ValueError: If a copy differs from one already written, or ``copy_to`` would overwrite a
+            consumer file that changed since it was copied.
+        OSError: If a copy or index cannot be written.
+    """
+    from src.swarm.task_store import TaskStore
+
+    copied = _copy_upstream(run_dir, task.input_tasks().values(), root, "audit", tag=True)
+    if copied is None:
+        copied = {"observations": [], "files": [], "unavailable": []}
+        copied["content"] = json.dumps(copied)
+        _write_original(safe_path("upstream/audit.json", root), copied["content"], root)
+    audit = [*copied["observations"], *copied["files"]]
+    errors, inputs = list(copied["unavailable"]), {}
+    store = TaskStore(run_dir)
+    for alias, binding in task.input_from.items():
+        upstream = binding if isinstance(binding, str) else binding["task"]
+        # A plain binding beside selections still receives everything its producer recorded.
+        kinds = sorted(_SELECTABLE) if isinstance(binding, str) else binding.get("kinds", [])
+        try:
+            status = store.load_task(upstream).status.value
+        except (OSError, ValueError) as exc:
+            status = f"unreadable ({type(exc).__name__})"
+        if status != "completed":
+            errors.append(f"{upstream}: selected input producer is {status}")
+        candidates = [entry for entry in audit if entry["input_task"] == upstream]
+        # Transitive observations travel with a producer; its upstream's calculations and
+        # files do not, so a role never passes off another role's work as its own.
+        chosen = [entry for entry in candidates if _kind(entry) in kinds
+                  and (entry["source_task"] == upstream or _kind(entry) == "observation")]
+        if not isinstance(binding, str):
+            for kind in kinds:
+                if not any(_kind(entry) == kind for entry in chosen):
+                    errors.append(f"{upstream}: requested input kind {kind} unavailable")
+        for item in [] if isinstance(binding, str) else binding.get("files", []):
+            item = {"path": item} if isinstance(item, str) else item
+            name = item["path"]
+            matches = [entry for entry in candidates
+                       if _kind(entry) == "analysis" and entry["original_path"] == name]
+            if len(matches) != 1:
+                errors.append(f"{upstream}: requested input file {name} unavailable")
+                continue
+            entry = dict(matches[0])
+            content = _verified_bytes(entry, root, "Selected input copy changed")
+            if item.get("copy_to"):
+                if status != "completed":
+                    errors.append(f"{upstream}: {name} not copied to {item['copy_to']}: producer is {status}")
+                else:
+                    _write_bytes(safe_path(item["copy_to"], root), content, root)
+                    entry["copy_to"] = item["copy_to"]
+            if item.get("execution"):
+                # Only a successful calculation that recorded these exact bytes as its output is
+                # the file's producer. A missing record is a gap, never a rerun.
+                digest = entry.get("source_sha256", entry["sha256"])
+                record = next((
+                    record for record in candidates
+                    if _kind(record) == "calculation" and record["source_task"] == upstream
+                    and _records_output(_verified_bytes(record, root, "Execution record changed"), name, digest)
+                ), None)
+                if record is None:
+                    errors.append(f"{upstream}: no successful execution recorded for {name} at its current hash")
+                else:
+                    entry["execution"] = {key: record[key] for key in
+                                          ("path", "sha256", "tool", "call_id", "request") if key in record}
+            # A named file replaces the same file chosen by kind, carrying its transfer details.
+            chosen = [other for other in chosen if other is not matches[0]] + [entry]
+        inputs[alias] = chosen
+    selected = []
+    for item in (item for chosen in inputs.values() for item in chosen):
+        if item not in selected:
+            selected.append(item)
+    content = json.dumps({
+        "observations": [item for item in selected if _kind(item) != "analysis"],
+        "files": [item for item in selected if _kind(item) == "analysis"],
+        "unavailable": errors, "inputs": inputs,
+        "audit_file": {"path": "upstream/audit.json",
+                       "sha256": hashlib.sha256(copied["content"].encode()).hexdigest()},
+    }, ensure_ascii=False)
+    index = safe_path("upstream/index.json", root)
+    _write_original(index, content, root)
+    save_result_parts(content, safe_path("upstream/index-parts", root), root)
+    return (
+        "## Inherited evidence\n"
+        f"Selected input index SHA256: {hashlib.sha256(content.encode()).hexdigest()}. "
+        "The selected upstream values are supplied in the upstream data message. "
+        "upstream/index.json records their paths, hashes and missing inputs; "
+        "upstream/audit.json keeps every upstream observation, calculation and produced file "
+        "for tracing a specific gap. These are inherited results, not fresh retrievals by you."
+    )
+
+
+#: Every selectable kind; a plain binding next to selections receives all of them.
+_SELECTABLE = ("analysis", "calculation", "observation")
+#: Source metadata a selected observation carries inline; its rows stay in the file at path.
+_OBSERVATION_METADATA = ("ok", "status", "error", "error_code", "truncated", "source_truncated",
+                         "total_chars", "_provenance", "_unresolved", "_diagnostics", "input_sources",
+                         "source", "coverage", "metadata")
+#: Result fields a selected calculation carries inline; shell stdout stays in the record.
+_CALCULATION_FIELDS = ("status", "exit_code", "artifacts", "stderr", "result", "error", "input_sources")
+
+
+def selected_inputs(destination: Path) -> dict | None:
+    """Read a consumer's selected upstream values, bounded by the tool-result budget.
+
+    Args:
+        destination: Consumer workspace whose handoff has already been prepared.
+
+    Returns:
+        ``{"inputs": {alias: [value, ...]}, "unavailable": [...]}`` for a selected handoff, or
+        None for a plain one. Each value names its source task, kind and copied path; a file
+        carries its content (parsed JSON when it is JSON), an observation its source metadata
+        and request, a calculation its request and result fields. A value that would push the
+        whole payload past the tool-result budget keeps only its file reference.
+
+    Raises:
+        ValueError: If the index, the audit file, a selected copy or a transferred file changed.
+        OSError: If a selected file cannot be read.
+    """
+    path = safe_path("upstream/index.json", destination)
+    if not path.is_file():
+        return None
+    index = json.loads(path.read_text())
+    if not isinstance(index, dict) or "audit_file" not in index:
+        return None
+    root = destination.resolve()
+    _verified_bytes(index["audit_file"], root, "Upstream audit index changed")
+    result = {"inputs": {}, "unavailable": index["unavailable"]}
+
+    def oversized() -> bool:
+        return len(json.dumps(result, ensure_ascii=False)) > TOOL_RESULT_LIMIT
+
+    for alias, entries in index["inputs"].items():
+        values = result["inputs"][alias] = []
+        for entry in entries:
+            kind = _kind(entry)
+            item = {"source_task": entry["source_task"], "kind": kind, "path": entry["path"]}
+            values.append(item)
+            raw = _verified_bytes(entry, root, "Selected input changed")
+            if kind == "analysis":
+                item["file"] = entry["original_path"]
+                if "copy_to" in entry:
+                    item["copy_to"] = entry["copy_to"]
+                    if safe_path(entry["copy_to"], root).read_bytes() != raw:
+                        raise ValueError("Transferred output changed")
+                try:
+                    text = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    item["content_omitted"] = "Binary file; read it at path."
+                else:
+                    try:
+                        item["content"] = json.loads(text)
+                    except ValueError:
+                        item["content"] = text
+                record = entry.get("execution")
+                if record:
+                    executed = json.loads(_verified_bytes(record, root, "Execution record changed"))
+                    item["execution"] = {"path": record["path"], "tool": record["tool"],
+                                         "request": record.get("request", {}),
+                                         "result": {key: executed[key] for key in _CALCULATION_FIELDS
+                                                    if key in executed}}
+                    if oversized():
+                        item["execution"] = {"path": record["path"], "tool": record["tool"],
+                                             "content_omitted": "Read the execution record at path."}
+            else:
+                payload = json.loads(raw)
+                fields = _OBSERVATION_METADATA if kind == "observation" else _CALCULATION_FIELDS
+                item.update(tool=entry["tool"], request=entry.get("request", {}),
+                            content={key: payload[key] for key in fields
+                                     if isinstance(payload, dict) and key in payload})
+            if oversized():
+                item.pop("content", None)
+                item.pop("request", None)
+                item["content_omitted"] = "Read the selected value at path; it exceeds the inline input budget."
+    return result

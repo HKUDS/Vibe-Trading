@@ -244,7 +244,7 @@ def test_layer_deadline_stops_worker_without_cancelling_the_run(tmp_path, monkey
     assert store.read_events(run.id) == before
 
     resumed = run.model_copy(update={"id": "r-resume", "status": RunStatus.pending})
-    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: resumed)
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_, **__: resumed)
     monkeypatch.setattr(threading.Thread, "start", lambda _: None)
     with pytest.raises(ValueError, match="outcome is unknown"):
         runtime.start_run(run.preset_name, {}, resume_from=persisted)
@@ -257,7 +257,7 @@ def test_cli_cancels_active_run_owned_by_another_process(tmp_path, monkeypatch):
     import sys
 
     store, runtime, run = _make_run(tmp_path)
-    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: run)
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_, **__: run)
     entered = threading.Event()
     exited = threading.Event()
     real_execute_run = runtime._execute_run
@@ -394,7 +394,7 @@ def test_layer_deadline_retains_partial_research_and_blocks_overlapping_resume(t
     assert "PARTIAL_RESEARCH" in saved.final_report
 
     resumed = run.model_copy(update={"id": "r-resume-partial", "status": RunStatus.pending})
-    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: resumed)
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_, **__: resumed)
     monkeypatch.setattr(threading.Thread, "start", lambda _: None)
     with pytest.raises(ValueError, match="outcome is unknown"):
         runtime.start_run(run.preset_name, {}, resume_from=saved)

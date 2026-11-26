@@ -174,7 +174,7 @@ def inspect_preset(name: str) -> dict:
     for task in run.tasks:
         if task.agent_id not in agent_id_set:
             errors.append(f"Task '{task.id}' references unknown agent '{task.agent_id}'")
-        for _, upstream_task_id in task.input_from.items():
+        for upstream_task_id in task.input_tasks().values():
             if upstream_task_id not in task_id_set:
                 errors.append(
                     f"Task '{task.id}' input_from references unknown task '{upstream_task_id}'"
@@ -212,6 +212,7 @@ def inspect_preset(name: str) -> dict:
         "name": data.get("name", name),
         "title": data.get("title", ""),
         "description": data.get("description", ""),
+        "prefetch_grounding": run.prefetch_grounding,
         "valid": not errors,
         "errors": errors,
         "warnings": warnings,
@@ -227,6 +228,7 @@ def inspect_preset(name: str) -> dict:
                 "agent_id": task.agent_id,
                 "depends_on": task.depends_on,
                 "input_from": task.input_from,
+                "tools": task.tools,
             }
             for task in run.tasks
         ],
@@ -237,18 +239,45 @@ def inspect_preset(name: str) -> dict:
     }
 
 
-def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmRun:
+def missing_required_variables(data: dict, user_vars: dict[str, str]) -> list[str]:
+    """Name the preset's required variables that the caller left absent or blank.
+
+    Args:
+        data: Parsed preset YAML.
+        user_vars: Variables supplied for the run.
+
+    Returns:
+        Required variable names, in declaration order, without a non-blank string value.
+    """
+    return [item["name"] for item in data.get("variables", [])
+            if isinstance(item, dict) and item.get("required") and item.get("name")
+            and not (isinstance(user_vars.get(item["name"]), str) and user_vars[item["name"]].strip())]
+
+
+def build_run_from_preset(
+    preset_name: str, user_vars: dict[str, str], *, validate_variables: bool = False,
+) -> SwarmRun:
     """Create a pending swarm run from a preset and user variables.
 
     Args:
         preset_name: Name of the preset to load.
         user_vars: User-provided variables saved for prompt template rendering.
+        validate_variables: Refuse a run whose required variables are missing. Inspection builds
+            an unfilled plan without it; execution always sets it.
 
     Returns:
         New run with a generated ID, agent specifications, and tasks initialized as pending or
         blocked by dependencies.
+
+    Raises:
+        ValueError: If a required variable is missing (with validate_variables), a task's tools
+            exceed its agent's whitelist, or an input selection is malformed.
     """
     data = load_preset(preset_name)
+    if validate_variables:
+        missing = missing_required_variables(data, user_vars)
+        if missing:
+            raise ValueError("Missing required preset variables: " + ", ".join(missing))
 
     agents: list[SwarmAgentSpec] = []
     for agent_data in data.get("agents", []):
@@ -275,8 +304,14 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             depends_on=depends_on,
             blocked_by=list(depends_on),
             input_from=task_data.get("input_from", {}),
+            tools=task_data.get("tools"),
             status=status,
         ))
+
+    agent_map = {agent.id: agent for agent in agents}
+    for task in tasks:
+        if task.agent_id in agent_map:
+            task.effective_tools(agent_map[task.agent_id])
 
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y%m%d-%H%M%S")
@@ -288,6 +323,7 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
         preset_name=preset_name,
         status=RunStatus.pending,
         user_vars=user_vars,
+        prefetch_grounding=data.get("prefetch_grounding", True),
         agents=agents,
         tasks=tasks,
         created_at=now.isoformat(),

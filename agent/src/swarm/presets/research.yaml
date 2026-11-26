@@ -1,0 +1,59 @@
+name: research
+title: "Research"
+description: "Collect source observations, compute requested results once, then write the report from results and methods."
+prefetch_grounding: false
+
+agents:
+  - id: data
+    role: Data Collector
+    system_prompt: "Retrieve the assigned source observations and identify their coverage and source metadata."
+    tools: [get_market_data, read_url, read_file, write_file, load_skill]
+    skills: [data-routing]
+  - id: analyst
+    role: Analyst
+    system_prompt: "Compute the assigned results from the supplied observations and record the executed method."
+    tools: [bash, quantlib_call, read_file, write_file, load_skill]
+    skills: [quant-statistics]
+  - id: editor
+    role: Research Editor
+    system_prompt: "Present the supplied results and executed methods for the requested audience."
+    tools: [read_file, write_file]
+    skills: []
+
+tasks:
+  - id: collect
+    agent_id: data
+    tools: [get_market_data, read_url, read_file, load_skill]
+    prompt_template: "{data_request}"
+  - id: analyze
+    agent_id: analyst
+    prompt_template: "{analysis_request}\nDeliver metrics.json and the compute.py used to produce it."
+    depends_on: [collect]
+    input_from:
+      data:
+        task: collect
+        kinds: [observation]
+  - id: publish
+    agent_id: editor
+    tools: [read_file, write_file]
+    prompt_template: "{report_request}\nDeliver research.md."
+    depends_on: [analyze]
+    input_from:
+      results:
+        task: analyze
+        kinds: [observation]
+        files:
+          - {path: metrics.json, copy_to: metrics.json, execution: true}
+          - compute.py
+
+
+variables:
+  - name: data_request
+    description: "Sources, instruments or documents, dates, and required data coverage"
+    required: true
+  - name: analysis_request
+    description: "Requested calculations and their definitions"
+    required: true
+  - name: report_request
+    description: "Report question, audience, language and format"
+    required: true

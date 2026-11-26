@@ -2127,6 +2127,7 @@
     "presets": {
       "investment_committee": "Yatırım komitesi incelemesi",
       "quant_strategy_desk": "Nicel strateji masası",
+      "research": "Araştırma",
       "value_investing_committee": "Değer yatırımı komitesi"
     }
   },

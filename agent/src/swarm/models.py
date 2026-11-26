@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import re
 from enum import Enum
+from pathlib import PurePosixPath
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from src.tools.path_utils import is_runtime_path
 from src.tools.redaction import redact_text
 from src.providers.registry import provider_names
 
@@ -162,15 +165,53 @@ class SwarmAgentSpec(BaseModel):
     max_retries: int = 2
 
 
+#: Kinds of upstream evidence a task may select: tool observations, recorded shell or
+#: quantlib calculations, and files the producer wrote.
+INPUT_KINDS = frozenset({"observation", "calculation", "analysis"})
+
+
+def _workspace_file(name: Any) -> bool:
+    """Return whether ``name`` is a normalized relative POSIX path inside a workspace."""
+    if not isinstance(name, str) or not name:
+        return False
+    path = PurePosixPath(name)
+    return not (path.is_absolute() or ".." in path.parts or "\\" in name or str(path) != name or name == ".")
+
+
+def _validate_file_selection(item: Any) -> None:
+    """Check one ``input_from`` file selection: a path, or a path with copy_to and/or execution."""
+    if isinstance(item, dict):
+        if "path" not in item or set(item) - {"path", "copy_to", "execution"} or len(item) < 2:
+            raise ValueError("A selected file object needs path plus copy_to and/or execution")
+        if "execution" in item and not isinstance(item["execution"], bool):
+            raise ValueError("input_from file execution must be a boolean")
+        if "copy_to" in item:
+            target = item["copy_to"]
+            # A copy may not replace the consumer's runtime state or its copied evidence.
+            if not _workspace_file(target) or is_runtime_path(target):
+                raise ValueError("copy_to must name a deliverable path inside the consumer workspace")
+        item = item["path"]
+    if not _workspace_file(item):
+        raise ValueError("input_from files must be relative paths inside the producer workspace")
+
+
 class SwarmTask(BaseModel):
-    """A task node in the Swarm DAG."""
+    """A task node in the Swarm DAG.
+
+    ``input_from`` maps an alias to an upstream task id (its report and full evidence index), or
+    to a selection ``{task, kinds, files}`` that hands over only the chosen evidence: ``kinds``
+    from observation / calculation / analysis, and ``files`` as producer-workspace paths or
+    ``{path, copy_to, execution}`` objects. ``tools`` narrows the agent's whitelist for this
+    task: None inherits it, an empty list allows no tools.
+    """
 
     id: str
     agent_id: str
     prompt_template: str
     depends_on: list[str] = Field(default_factory=list)
     blocked_by: list[str] = Field(default_factory=list)
-    input_from: dict[str, str] = Field(default_factory=dict)
+    input_from: dict[str, str | dict[str, Any]] = Field(default_factory=dict)
+    tools: list[str] | None = None
     status: TaskStatus = TaskStatus.pending
     summary: str | None = None
     artifacts: list[str] = Field(default_factory=list)
@@ -178,6 +219,73 @@ class SwarmTask(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     worker_iterations: int = 0
+
+    @field_validator("input_from")
+    @classmethod
+    def _validate_inputs(cls, inputs: dict) -> dict:
+        """Refuse malformed evidence selections before any task is dispatched.
+
+        Args:
+            inputs: Alias to upstream task id or selection object.
+
+        Returns:
+            The unchanged bindings.
+
+        Raises:
+            ValueError: If a binding names no task, has an unknown key or kind, selects nothing,
+                or names a file outside the workspace or a copy over runtime state.
+        """
+        for binding in inputs.values():
+            if isinstance(binding, str):
+                if not binding:
+                    raise ValueError("input_from task must not be empty")
+                continue
+            if set(binding) - {"task", "kinds", "files"}:
+                raise ValueError("input_from selections support task, kinds and files only")
+            if not isinstance(binding.get("task"), str) or not binding["task"]:
+                raise ValueError("input_from selection requires a task")
+            kinds, files = binding.get("kinds", []), binding.get("files", [])
+            if not isinstance(kinds, list) or any(not isinstance(kind, str) for kind in kinds):
+                raise ValueError("input_from kinds must be a list of strings")
+            if set(kinds) - INPUT_KINDS:
+                raise ValueError("input_from kinds must be observation, calculation or analysis")
+            if not isinstance(files, list):
+                raise ValueError("input_from files must be a list")
+            if not kinds and not files:
+                raise ValueError("input_from selection requires kinds or files")
+            for item in files:
+                _validate_file_selection(item)
+        return inputs
+
+    def input_tasks(self) -> dict[str, str]:
+        """Map every input alias to its upstream task id, for plain and selected bindings.
+
+        Returns:
+            Alias to upstream task id.
+        """
+        return {alias: binding if isinstance(binding, str) else binding["task"]
+                for alias, binding in self.input_from.items()}
+
+    def effective_tools(self, agent: SwarmAgentSpec) -> list[str]:
+        """Narrow an agent's tool whitelist for this task; never widen it.
+
+        Args:
+            agent: Agent that executes this task.
+
+        Returns:
+            The agent's tools when the task inherits them, else the task's own list.
+
+        Raises:
+            ValueError: If the task names a tool the agent is not allowed.
+        """
+        if self.tools is None:
+            return agent.tools
+        extra = sorted(set(self.tools) - set(agent.tools))
+        if extra:
+            raise ValueError(
+                f"Task '{self.id}' tools must be a subset of agent '{agent.id}' tools; not allowed: {', '.join(extra)}"
+            )
+        return list(self.tools)
 
 
 class SwarmEvent(BaseModel):
@@ -212,6 +320,7 @@ class SwarmRun(BaseModel):
     model: str | None = None
     reasoning_effort: str | None = None
     use_responses_api: bool | None = None
+    prefetch_grounding: bool = True
     grounding_data: dict[str, list[dict]] | None = None
 
 

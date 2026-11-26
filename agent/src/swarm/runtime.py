@@ -327,6 +327,8 @@ def _task_definition_changed(
         or prev.prompt_template != new.prompt_template
         or prev.depends_on != new.depends_on
         or prev.input_from != new.input_from
+        or prev.tools != new.tools
+        or prev_run.prefetch_grounding != new_run.prefetch_grounding
     ):
         return True
     prev_agent = prev_agents.get(prev.agent_id)
@@ -397,8 +399,8 @@ class SwarmRuntime:
 
         Raises:
             FileNotFoundError: If the preset does not exist.
-            ValueError: If DAG validation fails or the prior run lacks supported node threads or
-                contains an unknown tool outcome.
+            ValueError: If a required preset variable is missing, DAG or task validation fails,
+                or the prior run lacks supported node threads or contains an unknown tool outcome.
             RuntimeError: If the background thread cannot be started.
         """
         if resume_from is not None:
@@ -427,7 +429,7 @@ class SwarmRuntime:
         except Exception:
             logger.warning("Stale-run reaper failed", exc_info=True)
 
-        run = build_run_from_preset(preset_name, user_vars)
+        run = build_run_from_preset(preset_name, user_vars, validate_variables=True)
         validate_dag(run.tasks)
 
         # Pin the provider settings used at launch for cost audits, including environment overrides.
@@ -573,7 +575,10 @@ class SwarmRuntime:
         self._store.update_run(run)
         self._emit_event(run_id, self._make_event("run_started"))
 
-        if resume_from is not None and run.user_vars == resume_from.user_vars:
+        if not run.prefetch_grounding:
+            # A preset that names its own sources gets no unrequested price snapshot.
+            run.grounding_data = None
+        elif resume_from is not None and run.user_vars == resume_from.user_vars:
             # Continue the same research snapshot, rather than mix fresh prices
             # with retained upstream reports and invalidate saved context.
             run.grounding_data = resume_from.grounding_data
@@ -958,7 +963,7 @@ class SwarmRuntime:
 
                 # Name missing inputs so the downstream model does not invent their results.
                 upstream: dict[str, str] = {}
-                for context_key, source_task_id in task.input_from.items():
+                for context_key, source_task_id in task.input_tasks().items():
                     source = task_store.load_task(source_task_id)
                     if source.status == TaskStatus.completed:
                         upstream[context_key] = source.summary or ""

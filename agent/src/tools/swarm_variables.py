@@ -460,6 +460,9 @@ def build_variables(preset_name: str, prompt: str) -> dict[str, str]:
 
     # Preset-specific variable sets (see agent/src/swarm/presets/*.yaml).
     builders: dict[str, dict[str, str]] = {
+        # Stage requests are supplied separately; copying the whole request into each stage
+        # would recreate the overlapping work the preset separates.
+        "research": {},
         "global_allocation_committee": {"goal": g, "risk_tolerance": risk},
         "equity_research_team": {"market": market, "goal": g},
         "quant_strategy_desk": {"market": market, "goal": g},
