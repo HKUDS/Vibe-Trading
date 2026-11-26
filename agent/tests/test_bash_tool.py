@@ -9,6 +9,7 @@ from src.config.accessor import get_env_config
 from tests.module_os_helpers import patch_module_os
 
 import json
+from pathlib import Path
 import subprocess
 from unittest.mock import MagicMock
 
@@ -160,3 +161,29 @@ def test_heredoc_allowed_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
     result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="cat <<EOF\nhello\nEOF"))
 
     assert result["status"] == "ok"
+
+
+@pytest.mark.skipif(bash_tool.os.name == "nt", reason="POSIX shell contract")
+def test_posix_description_names_the_shell_that_runs(tmp_path: Path) -> None:
+    """The POSIX description matches the shell that executes the heredoc.
+
+    Args:
+        tmp_path: Working directory for the shell command.
+    """
+    tool = BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox)
+
+    assert "cmd.exe" not in tool.description
+    assert "/bin/sh" in tool.description
+    assert "heredocs are supported" in tool.description
+    result = json.loads(tool.execute(command="cat <<'END'\nscript output\nEND", run_dir=str(tmp_path)))
+    assert result["status"] == "ok"
+    assert result["stdout"] == "script output\n"
+
+
+def test_windows_description_keeps_the_cmd_exe_heredoc_rule() -> None:
+    """The cmd.exe wording, and its heredoc refusal, remain for a Windows host."""
+    windows = bash_tool._shell_description("nt")
+
+    assert "cmd.exe" in windows and "Heredocs (<<) are not supported" in windows
+    assert "/bin/sh" not in windows
+    assert BashTool.description.startswith(bash_tool._shell_description(bash_tool.os.name))
