@@ -221,3 +221,26 @@ def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path)
     assert (tmp_path / ref["relative_path"]).read_text() == raw
     page = json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=ref["parts_relative_dir"] + "/1.txt", run_dir=str(tmp_path)))
     assert page["status"] == "ok"
+
+
+@pytest.mark.parametrize("broken", ["{not json", "[]", "null", '{"observations": 5}', '{"observations": [null]}'])
+def test_bad_inherited_index_keeps_the_producers_own_observations(tmp_path, broken):
+    store = TaskStore(tmp_path)
+    producer = SwarmTask(id="p", agent_id="data", prompt_template="Collect")
+    consumer = SwarmTask(id="c", agent_id="editor", prompt_template="Edit", input_from={"d": "p"})
+    for task in (producer, consumer):
+        store.save_task(task)
+    source = agent_artifact_dir(tmp_path, "data", "p")
+    (source / "upstream").mkdir(parents=True)
+    (source / "upstream/index.json").write_text(broken)
+    thread = ThreadLog(node_thread(tmp_path, "data", "p"))
+    thread.append("assistant", "t1", content="", tool_calls=[
+        {"id": "own", "type": "function", "function": {"name": "get_market_data", "arguments": "{}"}}])
+    thread.append("tool_result", "t1", tool_call_id="own", name="get_market_data",
+                  content=json.dumps({"status": "ok", "AAPL.US": [{"close": 1.0}]}), status="ok")
+    destination = agent_artifact_dir(tmp_path, "editor", "c")
+    prepare_handoff(tmp_path, consumer, destination)
+    index = json.loads((destination / "upstream/index.json").read_text())
+    assert [entry["call_id"] for entry in index["observations"]] == ["own"]
+    [reason] = index["unavailable"]
+    assert reason.startswith("p inherited")

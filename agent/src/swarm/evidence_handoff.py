@@ -49,7 +49,16 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
     found = []
     inherited = safe_path("upstream/index.json", source)
     if inherited.is_file():
-        for entry in json.loads(inherited.read_text()).get("observations", []):
+        # A bad inherited index costs only the inherited part, never this task's own observations.
+        try:
+            listed = json.loads(inherited.read_text())
+            listed = listed.get("observations", []) if isinstance(listed, dict) else None
+            if not isinstance(listed, list):
+                raise ValueError("not an evidence index")
+        except (OSError, ValueError) as exc:
+            errors.append(f"{task_id} inherited index unavailable: {exc}")
+            listed = []
+        for entry in listed:
             try:
                 path = safe_path(entry["path"], source)
                 raw = path.read_text()
