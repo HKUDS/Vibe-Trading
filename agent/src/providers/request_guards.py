@@ -7,6 +7,8 @@ from importlib import import_module
 from typing import Any
 from urllib.parse import urlparse
 
+from src.providers.stream_guard import _stream_retry_wait
+
 
 try:
     import httpx
@@ -63,6 +65,27 @@ def _guard_provider_redirects(sync_sdk: Any, async_sdk: Any) -> None:
         client = getattr(sdk, "_client", None)
         if client is not None and hook not in client.event_hooks["response"]:
             client.event_hooks["response"].append(hook)
+
+
+def _guard_openai_retry_wait(sdk: Any) -> None:
+    """Interrupt synchronous OpenAI SDK backoff when its stream is stopped."""
+    original_sleep = getattr(sdk, "_sleep_for_retry", None)
+    if original_sleep is None:
+        return
+
+    def sleep_for_retry(*, retries_taken, max_retries, options, response):
+        wait = _stream_retry_wait.get()
+        if wait is None:
+            return original_sleep(
+                retries_taken=retries_taken, max_retries=max_retries,
+                options=options, response=response,
+            )
+        delay = sdk._calculate_retry_timeout(
+            max_retries - retries_taken, options, response.headers if response is not None else None,
+        )
+        wait(delay)
+
+    sdk._sleep_for_retry = sleep_for_retry
 
 
 def unwrap_provider_error(error: Exception) -> Exception:

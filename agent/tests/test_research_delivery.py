@@ -103,8 +103,14 @@ def test_worker_actual_delivery_failure_is_not_success(tmp_path, monkeypatch, re
     assert result.summary == answer
 
 
-@pytest.mark.parametrize("reason", ["length", "max_tokens"])
+@pytest.mark.parametrize("reason", ["length", "max_tokens", "max_output_tokens"])
 def test_agent_preserves_truncated_text_without_success(tmp_path, reason):
+    """Keep partial text while reporting a failed delivery.
+
+    Args:
+        tmp_path: Scratch workspace for the turn.
+        reason: Provider finish reason indicating an output limit.
+    """
     llm = AnswerModel("The position should be", finish_reason=reason)
     agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm, max_iterations=3)
     agent.memory.run_dir = str(tmp_path / "run")
@@ -113,6 +119,55 @@ def test_agent_preserves_truncated_text_without_success(tmp_path, reason):
     assert result["content"] == llm.answer
     assert "truncated" in result["reason"]
     assert llm.calls == 1
+
+
+@pytest.mark.parametrize("status", ["completed", "incomplete"])
+def test_responses_terminal_event_controls_agent_delivery(tmp_path, status):
+    """Replay the terminal SSE event through the Responses SDK and main runtime.
+
+    Args:
+        tmp_path: Scratch workspace for the turn.
+        status: Terminal status carried by the Responses event.
+    """
+    import json
+
+    import httpx
+
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
+    from tests.provider_helpers import chat_with_adapter
+
+    answer = "The position should be"
+    response = {
+        "id": "resp_test", "object": "response", "created_at": 0, "model": "gpt-test",
+        "status": status, "output": [],
+    }
+    if status == "incomplete":
+        response["incomplete_details"] = {"reason": "max_output_tokens"}
+    events = [
+        {"type": "response.output_text.delta", "sequence_number": 0,
+         "item_id": "msg_test", "output_index": 0, "content_index": 0, "delta": answer},
+        {"type": f"response.{status}", "sequence_number": 1, "response": response},
+    ]
+
+    def respond(request):
+        assert request.url.path == "/v1/responses"
+        body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+        return httpx.Response(200, text=body, headers={"Content-Type": "text/event-stream"})
+
+    policy = ToolPolicy.from_config(get_env_config())
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        adapter = ChatOpenAIWithReasoning(
+            model="gpt-test", api_key="offline", base_url="https://example.invalid/v1",
+            http_client=client, use_responses_api=True, max_retries=0,
+        )
+        agent = AgentRuntime(registry=ToolRegistry(policy=policy), llm=chat_with_adapter(adapter))
+        agent.memory.run_dir = str(tmp_path / "run")
+        result = agent.run("Summarize the supplied research.")
+
+    assert result["status"] == ("failed" if status == "incomplete" else "success")
+    assert result["content"] == answer
+    if status == "incomplete":
+        assert "truncated (max_output_tokens)" in result["reason"]
 
 
 def test_worker_iteration_exhaustion_keeps_partial_output(tmp_path, monkeypatch):

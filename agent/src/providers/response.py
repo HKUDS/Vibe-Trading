@@ -254,28 +254,25 @@ def parse_response(ai_message: Any, *, cancelled: bool = False) -> contracts.LLM
     dsml_tool_calls = [] if native_tool_calls else _parse_dsml_tool_calls(content)
     tool_calls = native_tool_calls or dsml_tool_calls
 
-    raw_finish_reason = (
-        ai_message.response_metadata.get("finish_reason")
-        or ai_message.response_metadata.get("stop_reason")
+    raw_finish_reason = _dedupe_finish_reason(
+        response_metadata.get("finish_reason")
+        or response_metadata.get("stop_reason")
         or "stop"
     )
-    finish_reason = (
-        "tool_calls"
-        if dsml_tool_calls
-        else "tool_calls"
-        if raw_finish_reason == "tool_use"
-        else _dedupe_finish_reason(
-            raw_finish_reason
-        )
-    )
+    if response_metadata.get("status") == "incomplete":
+        details = response_metadata.get("incomplete_details") or {}
+        reason = details.get("reason")
+        if reason in contracts.PARTIAL_FINISH_REASONS or reason == "content_filter":
+            raw_finish_reason = reason
+        elif raw_finish_reason not in contracts.PARTIAL_FINISH_REASONS and not is_content_filter_triggered(raw_finish_reason):
+            raw_finish_reason = "incomplete"
+    finish_reason = "tool_calls" if dsml_tool_calls or raw_finish_reason == "tool_use" else raw_finish_reason
     if not cancelled and tool_calls and (
-        _dedupe_finish_reason(raw_finish_reason) in {"length", "max_tokens"}
+        raw_finish_reason in contracts.PARTIAL_FINISH_REASONS
         or response_metadata.get("status") in {"incomplete", "failed"}
     ):
         raise ValueError("Provider truncated a tool call; no tools were executed")
-    content_filter_triggered = is_content_filter_triggered(
-        raw_finish_reason
-    )
+    content_filter_triggered = is_content_filter_triggered(raw_finish_reason)
 
     return contracts.LLMResponse(
         content="" if dsml_tool_calls else content,

@@ -3,6 +3,19 @@ from __future__ import annotations
 from src.providers.openai_codex import CodexAIMessage, _message_chunks_from_events
 
 
+def test_codex_incomplete_terminal_event_keeps_truncation():
+    """The Codex SSE parser must propagate an incomplete answer to the kernel."""
+    from src.providers.response import parse_response
+
+    text, terminal = _message_chunks_from_events([
+        {"type": "response.output_text.delta", "delta": "Partial text"},
+        {"type": "response.incomplete", "response": {"status": "incomplete"}},
+    ])
+    response = parse_response(text + terminal)
+    assert response.content == "Partial text"
+    assert response.finish_reason == "length"
+
+
 def test_completed_event_exposes_codex_token_usage() -> None:
     [chunk] = list(
         _message_chunks_from_events(
