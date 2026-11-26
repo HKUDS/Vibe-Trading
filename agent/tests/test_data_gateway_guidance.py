@@ -41,7 +41,7 @@ def test_workers_receive_same_policy_even_without_bar_tool():
 def test_shell_descriptions_direct_scripts_to_existing_artifacts():
     assert SHELL_DATA_GUIDANCE in BashTool.description
     assert SHELL_DATA_GUIDANCE in BackgroundRunTool.description
-    assert "Heredocs" in BashTool.description
+    assert "heredoc" in BashTool.description.lower()  # stated for the host shell (POSIX: supported; cmd.exe: not)
     assert "cancel_background" in BackgroundRunTool.description
 
 
