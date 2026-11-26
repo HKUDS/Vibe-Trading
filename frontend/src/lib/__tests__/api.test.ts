@@ -95,6 +95,22 @@ describe("api request helper", () => {
     vi.resetModules();
   });
 
+  it("edits a durable message through an encoded PATCH endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message_id: "message/one",
+      attempt_id: "attempt-two",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await loadApiModule();
+
+    await expect(api.editMessageAndRegenerate("session/one", "message/one", "Edited prompt"))
+      .resolves.toEqual({ message_id: "message/one", attempt_id: "attempt-two" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/sessions/session%2Fone/messages/message%2Fone",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ content: "Edited prompt" }) }),
+    );
+  });
+
   it("rejects non-JSON responses with a descriptive error", async () => {
     vi.stubGlobal(
       "fetch",

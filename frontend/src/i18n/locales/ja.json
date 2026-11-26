@@ -1244,6 +1244,7 @@
     "uploadFailed": "アップロードに失敗しました: {{error}}",
     "messageTooLong": "添付情報とチーム指示を含むメッセージが {{limit}} 文字を超えています。短くしてから送信してください。",
     "failedToSend": "メッセージ送信に失敗しました。再試行してください。",
+    "failedToEditPrompt": "プロンプトの更新に失敗しました。再試行してください。",
     "failedToContinue": "目標の続行に失敗しました。再試行してください。",
     "runtimeBadge": "取引モニター",
     "activeResearchGoal": "アクティブなリサーチ目標",
@@ -2063,6 +2064,12 @@
     "timeoutHint": "タイムアウトしました。戦略を簡略化するか、銘柄数を減らしてください。",
     "apiFailedHint": "API リクエストに失敗しました。しばらくしてから再試行してください。",
     "executionFailedHint": "実行に失敗しました。もう一度お試しください。",
+    "editPrompt": "プロンプトを編集",
+    "editPromptDisabled": "現在の実行が終わるまで編集できません。",
+    "editHint": "保存すると後続のチャットが置き換えられ、このプロンプトから再生成されます。添付ファイルと研究成果は保持されます。",
+    "saveAndRegenerate": "保存して再生成",
+    "savingEdit": "保存中…",
+    "editFailed": "プロンプトを更新できませんでした。下書きは保持されています。",
     "retry": "再試行"
   },
   "pineViewer": {

@@ -1209,6 +1209,7 @@
     "removeAttachment": "{{filename}} dosyasını kaldır",
     "uploadFailed": "Yükleme başarısız: {{error}}",
     "failedToSend": "Mesaj gönderilemedi, yeniden deneyin.",
+    "failedToEditPrompt": "İstek güncellenemedi, yeniden deneyin.",
     "failedToContinue": "Hedefe devam edilemedi, yeniden deneyin.",
     "runtimeBadge": "ÇALIŞMA ORTAMI",
     "activeResearchGoal": "Etkin araştırma hedefi",
@@ -2029,6 +2030,12 @@
     "timeoutHint": "Zaman aşımı. Stratejiyi sadeleştirin veya daha az varlık kullanın.",
     "apiFailedHint": "API isteği başarısız. Kısa süre sonra yeniden deneyin.",
     "executionFailedHint": "Çalıştırma başarısız. Yeniden deneyin.",
+    "editPrompt": "İsteği düzenle",
+    "editPromptDisabled": "Düzenlemeden önce mevcut çalışmanın bitmesini bekleyin.",
+    "editHint": "Kaydetmek sonraki sohbet mesajlarını değiştirir ve bu istekten yeniden üretir. Ekler ve araştırma çıktıları korunur.",
+    "saveAndRegenerate": "Kaydet ve yeniden üret",
+    "savingEdit": "Kaydediliyor…",
+    "editFailed": "İstek güncellenemedi. Taslağınız korunuyor.",
     "retry": "Yeniden dene"
   },
   "pineViewer": {

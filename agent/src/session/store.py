@@ -166,6 +166,36 @@ class SessionStore:
             f.flush()
             os.fsync(f.fileno())
 
+    def replace_messages(self, session_id: str, messages: List[Message]) -> None:
+        """Atomically replace a session transcript with a retained prefix.
+
+        Args:
+            session_id: Session whose transcript should be replaced.
+            messages: Complete retained messages in chronological order.
+        """
+        path = self._messages_file(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        encoded = "".join(
+            json.dumps(message.to_dict(), ensure_ascii=False) + "\n"
+            for message in messages
+        ).encode("utf-8")
+        mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+        fd, temporary_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(fd, "wb") as temporary_file:
+                temporary_file.write(encoded)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            os.chmod(temporary_path, mode)
+            os.replace(temporary_path, path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
     ) -> List[Message]:
@@ -232,6 +262,17 @@ class SessionStore:
             attempt.to_dict(),
         )
         return attempt
+
+    def delete_attempt(self, session_id: str, attempt_id: str) -> None:
+        """Delete an attempt that was never handed off to the runtime.
+
+        Args:
+            session_id: Session owning the attempt.
+            attempt_id: Attempt directory to remove.
+        """
+        import shutil
+
+        shutil.rmtree(self._attempt_dir(session_id, attempt_id), ignore_errors=True)
 
     def get_attempt(self, session_id: str, attempt_id: str) -> Optional[Attempt]:
         """Read an execution attempt.

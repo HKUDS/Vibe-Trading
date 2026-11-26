@@ -111,6 +111,11 @@ class SendMessageRequest(BaseModel):
     content: str = Field(..., description="Research prompt", min_length=1, max_length=MAX_MESSAGE_CHARS)
 
 
+class EditMessageRequest(BaseModel):
+    """Replace a stored user prompt and regenerate from that point."""
+    content: str = Field(..., description="Complete research prompt", min_length=1, max_length=MAX_MESSAGE_CHARS)
+
+
 class MessageResponse(BaseModel):
     """Stored chat message."""
     message_id: str
@@ -839,6 +844,49 @@ def register_sessions_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    @app.patch("/sessions/{session_id}/messages/{message_id}", dependencies=[Depends(require_auth)])
+    async def edit_message(
+        session_id: str,
+        message_id: str,
+        payload: EditMessageRequest,
+        http_request: Request,
+    ) -> Dict[str, str]:
+        """Edit a user prompt, truncate later chat messages, and regenerate.
+
+        Args:
+            session_id: Session containing the persisted prompt.
+            message_id: Durable ID of the user message to replace.
+            payload: Complete raw prompt, including transport wrappers.
+            http_request: Request used to resolve shell-tool permissions.
+
+        Returns:
+            The edited message ID and newly created attempt ID.
+
+        Raises:
+            HTTPException: If the runtime is unavailable, the session is busy,
+                or the session, message, or prompt is invalid.
+        """
+        _host_validate_path_param(session_id, "session_id")
+        _host_validate_path_param(message_id, "message_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        if not svc.get_session(session_id):
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        try:
+            return await svc.edit_message_and_regenerate(
+                session_id=session_id,
+                message_id=message_id,
+                content=payload.content,
+                include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+            )
+        except SessionBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth)])
     async def cancel_session(session_id: str):
         """Cancel the in-flight agent loop for this session."""
@@ -852,13 +900,17 @@ def register_sessions_routes(app: FastAPI) -> None:
         return {"status": "cancelled"}
 
     @app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
-    async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
+    async def get_messages(
+        session_id: str,
+        limit: int = Query(100, ge=1, le=1000),
+        all_messages: bool = Query(False),
+    ):
         """List messages for a session."""
         _host_validate_path_param(session_id, "session_id")
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        messages = svc.get_messages(session_id, limit=limit)
+        messages = svc.get_messages(session_id, limit=None if all_messages else limit)
         return [
             MessageResponse(
                 message_id=m.message_id,

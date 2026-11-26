@@ -12,13 +12,23 @@ import {
 import { useSessionsStore } from "@/stores/sessions";
 import { useSSE } from "@/hooks/useSSE";
 import { useLlmUsageCounter } from "@/hooks/useLlmUsageCounter";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type RunPreview } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type MessageItem, type RunPreview } from "@/lib/api";
 import {
   extractUploadedAttachments,
 } from "@/lib/attachments";
 import { hasStoredMetrics, runCardFields } from "@/lib/runCards";
-import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
-import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
+import {
+  buildChatPrompt,
+  GOAL_CONTINUE_PREFIX,
+  GOAL_KICKOFF_PREFIX,
+  isPersistedMessageId,
+  MAX_GOAL_CHARS,
+  MAX_MESSAGE_CHARS,
+  promptExceedsLimit,
+  replacePromptText,
+  SWARM_PROMPT_PREFIX,
+} from "@/lib/chatPrompt";
+import type { SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { MarkdownContent, MessageBubble } from "@/components/chat/MessageBubble";
@@ -119,18 +129,6 @@ function toolProgressKey(callId: string | undefined, tool: string): string {
 
 const STREAM_FLUSH_INTERVAL_MS = 80;
 const TIMELINE_WINDOW_SIZE = 160;
-const GOAL_KICKOFF_PREFIX = [
-  "Start working on this research goal now.",
-  "Keep it research-only, use available tools when evidence is needed, add concrete evidence to the goal ledger, and keep going until the goal is complete, blocked, waiting for user input, or budget-limited.",
-  "",
-  "Goal: ",
-].join("\n");
-const GOAL_CONTINUE_PREFIX = [
-  "Continue the active research goal.",
-  "Use real available tools as needed, add evidence to the goal ledger, and only stop when the goal is complete, blocked, waiting for user input, or budget-limited.",
-  "",
-  "Goal: ",
-].join("\n");
 
 function toDisplayPrompt(content: string): {
   content: string;
@@ -164,6 +162,14 @@ function toDisplayPrompt(content: string): {
     content: display,
     meta,
   };
+}
+
+function findCompletedAttemptId(messages: MessageItem[], messageId: string): string | undefined {
+  const targetIndex = messages.findIndex((message) => message.message_id === messageId);
+  if (targetIndex < 0) return undefined;
+  return messages.slice(targetIndex + 1).reverse().find(
+    (message) => message.role === "assistant" && message.linked_attempt_id,
+  )?.linked_attempt_id;
 }
 
 /* ---------- Connector runtime channel ----------
@@ -250,6 +256,8 @@ export function Agent() {
   const swarmRafRef = useRef(0);
   const toolCallSeqRef = useRef(0);
   const replayAttemptSeenRef = useRef(false);
+  const pendingEditAttemptRef = useRef<string | null>(null);
+  const pendingEditMessageRef = useRef<string | null>(null);
   const replayCheckTimerRef = useRef(0);
   const smoothScrollingRef = useRef(false);
   const smoothScrollTimerRef = useRef(0);
@@ -616,21 +624,34 @@ export function Agent() {
             meta: displayPrompt.meta,
             timestamp: ts,
           });
-        } else if (runId) {
-          // Show text answer first (if non-empty), then chart card
-          if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
-          }
-          if (hasStoredMetrics(metrics)) {
-            agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
-          } else {
-            const card = runCardFields((await previews.get(runId)) ?? null);
-            if (card) {
-              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
-            }
-          }
         } else {
-          agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+          const editedMessageId = typeof meta?.edited_message_id === "string"
+            ? meta.edited_message_id
+            : null;
+          if (meta?.status === "failed" && editedMessageId) {
+            agentMsgs.push({
+              id: m.message_id,
+              type: "error",
+              content: m.content,
+              meta: { editRetryMessageId: editedMessageId },
+              timestamp: assistantTs,
+            });
+          } else if (runId) {
+            // Show text answer first (if non-empty), then chart card
+            if (m.content && m.content !== "Strategy execution completed.") {
+              agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+            }
+            if (hasStoredMetrics(metrics)) {
+              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
+            } else {
+              const card = runCardFields((await previews.get(runId)) ?? null);
+              if (card) {
+                agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
+              }
+            }
+          } else {
+            agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+          }
         }
       }
       if (genRef.current !== gen) return;
@@ -901,6 +922,23 @@ export function Agent() {
         scrollToBottom();
       },
 
+      "message.edited": (d) => {
+        touch();
+        if (act().sessionId !== sid) return;
+        const targetId = String(d.message_id || "");
+        const target = act().messages.find((message) => message.id === targetId);
+        if (target) act().discardSwarmAfter(target.timestamp);
+        const attemptId = String(d.attempt_id || "");
+        if (attemptId) {
+          pendingEditAttemptRef.current = attemptId;
+          pendingEditMessageRef.current = targetId;
+          if (act().activity?.attemptId.startsWith("pending-")) {
+            act().setActivityAttemptId(attemptId);
+          }
+        }
+        void refreshSessionMessages(sid);
+      },
+
       "attempt.created": (d) => {
         touch();
         replayAttemptSeenRef.current = true;
@@ -926,6 +964,10 @@ export function Agent() {
         if (act().sessionId !== sid) {
           act().clearStreamingSession(sid);
           return;
+        }
+        if (pendingEditAttemptRef.current === attemptId) {
+          pendingEditAttemptRef.current = null;
+          pendingEditMessageRef.current = null;
         }
         if (attemptId && act().messages.some(
           (message) => (
@@ -1049,6 +1091,13 @@ export function Agent() {
       "attempt.failed": (d) => {
         touch();
         const attemptId = String(d.attempt_id || "");
+        const editRetryMessageId = attemptId && pendingEditAttemptRef.current === attemptId
+          ? pendingEditMessageRef.current
+          : null;
+        if (editRetryMessageId) {
+          pendingEditAttemptRef.current = null;
+          pendingEditMessageRef.current = null;
+        }
         if (act().sessionId !== sid) {
           act().clearStreamingSession(sid);
           return;
@@ -1079,7 +1128,13 @@ export function Agent() {
           archiveActivity("failed");
         }
         clearStreamingView();
-        act().addMessage({ id: "", type: "error", content: String(d.error || "Execution failed"), timestamp: Date.now() });
+        act().addMessage({
+          id: "",
+          type: "error",
+          content: String(d.error || "Execution failed"),
+          timestamp: Date.now(),
+          meta: editRetryMessageId ? { editRetryMessageId } : undefined,
+        });
         act().setStatus("idle");
         scrollToBottom();
       },
@@ -1090,6 +1145,10 @@ export function Agent() {
       "attempt.cancelled": (d) => {
         touch();
         const attemptId = String(d.attempt_id || "");
+        if (pendingEditAttemptRef.current === attemptId) {
+          pendingEditAttemptRef.current = null;
+          pendingEditMessageRef.current = null;
+        }
         if (act().sessionId !== sid) {
           act().clearStreamingSession(sid);
           return;
@@ -1260,6 +1319,7 @@ export function Agent() {
     markBackgroundCompletion,
     queueStreamUpdate,
     recordLlmUsage,
+    refreshSessionMessages,
     scrollToBottom,
   ]);
 
@@ -1413,6 +1473,8 @@ export function Agent() {
       return;
     }
     clearStreamingView();
+    pendingEditAttemptRef.current = null;
+    pendingEditMessageRef.current = null;
 
     if (goalComposerActive) {
       try {
@@ -1516,6 +1578,138 @@ export function Agent() {
     composerRef.current?.submit(prompt);
   }, []);
 
+  const handleEditPrompt = useCallback(async (
+    message: StoredAgentMessage,
+    editedPrompt: string,
+  ) => {
+    if (!sessionId || !isPersistedMessageId(message.id)) {
+      throw new Error(t("agent.failedToEditPrompt"));
+    }
+    if (status === "streaming") {
+      throw new Error(t("messageBubble.editPromptDisabled"));
+    }
+    const beforeMessages = await api.getSessionMessages(sessionId);
+    if (act().sessionId !== sessionId) return;
+    const beforeTarget = beforeMessages.find((stored) => stored.message_id === message.id);
+    if (!beforeTarget) {
+      throw new Error(t("agent.failedToEditPrompt"));
+    }
+    const content = replacePromptText(beforeTarget.content, editedPrompt);
+    if (promptExceedsLimit(content, MAX_MESSAGE_CHARS)) {
+      throw new Error(t("agent.messageTooLong", { limit: MAX_MESSAGE_CHARS.toLocaleString() }));
+    }
+
+    clearStreamingView();
+    pendingEditAttemptRef.current = null;
+    pendingEditMessageRef.current = message.id;
+    act().startActivity(`pending-${Date.now()}`);
+    act().setStatus("streaming");
+    forceScrollToBottom();
+
+    let sent: { attempt_id: string };
+    try {
+      setupSSE(sessionId);
+      sent = await api.editMessageAndRegenerate(sessionId, message.id, content);
+    } catch (error) {
+      const transportError = error instanceof ApiError
+        && ["request_timeout", "network_error"].includes(error.code || "");
+      if (transportError) {
+        let storedMessages: Awaited<ReturnType<typeof api.getSessionMessages>> | null = null;
+        try {
+          storedMessages = await api.getSessionMessages(sessionId);
+        } catch {
+          // SSE may still confirm acceptance; otherwise keep the run state intact.
+        }
+        const storedTarget = storedMessages?.find((stored) => stored.message_id === message.id);
+        const editPersisted = Boolean(
+          storedMessages
+          && storedTarget
+          && storedTarget.content === content
+          && (storedTarget.content !== beforeTarget.content || storedMessages.length < beforeMessages.length),
+        );
+        let attemptId: string | null = pendingEditAttemptRef.current;
+        if (editPersisted && storedMessages && storedTarget) {
+          const completedAttemptId = findCompletedAttemptId(storedMessages, message.id);
+          if (completedAttemptId) {
+            attemptId = completedAttemptId;
+            pendingEditAttemptRef.current = completedAttemptId;
+            if (act().activity?.attemptId.startsWith("pending-")) {
+              act().setActivityAttemptId(completedAttemptId);
+            }
+          }
+        }
+        const accepted = Boolean(attemptId) || editPersisted;
+        if (act().sessionId !== sessionId) return;
+        if (accepted) {
+          act().discardSwarmAfter(message.timestamp);
+          if (attemptId && act().activity?.attemptId.startsWith("pending-")) {
+            act().setActivityAttemptId(attemptId);
+          }
+          await refreshSessionMessages(sessionId);
+          if (!attemptId) {
+            try {
+              const latestMessages = await api.getSessionMessages(sessionId);
+              const completedAttemptId = findCompletedAttemptId(latestMessages, message.id);
+              if (completedAttemptId) {
+                attemptId = completedAttemptId;
+                pendingEditAttemptRef.current = completedAttemptId;
+                if (act().activity?.attemptId.startsWith("pending-")) {
+                  act().setActivityAttemptId(completedAttemptId);
+                }
+              }
+            } catch {
+              // SSE can still reconcile the accepted edit.
+            }
+          }
+          if (attemptId) void syncCompletedAttempt(sessionId, attemptId);
+          return;
+        }
+        if (storedMessages && (
+          content !== beforeTarget.content || storedMessages.length < beforeMessages.length
+        )) {
+          if (act().sessionId === sessionId) {
+            act().clearStreaming();
+            act().clearActivity();
+            pendingEditAttemptRef.current = null;
+            pendingEditMessageRef.current = null;
+            act().setStatus("idle");
+          }
+        }
+      } else if (act().sessionId === sessionId) {
+        act().clearStreaming();
+        act().clearActivity();
+        pendingEditAttemptRef.current = null;
+        pendingEditMessageRef.current = null;
+        act().setStatus("idle");
+      }
+      const messageText = isAuthRequiredError(error)
+        ? AUTH_REQUIRED_MESSAGE
+        : error instanceof ApiError
+          ? error.message
+          : t("agent.failedToEditPrompt");
+      throw new Error(messageText);
+    }
+
+    if (act().sessionId !== sessionId) return;
+    pendingEditAttemptRef.current = sent.attempt_id;
+    pendingEditMessageRef.current = message.id;
+    act().discardSwarmAfter(message.timestamp);
+    if (act().activity?.attemptId.startsWith("pending-")) {
+      act().setActivityAttemptId(sent.attempt_id);
+    }
+    await refreshSessionMessages(sessionId);
+    void syncCompletedAttempt(sessionId, sent.attempt_id);
+  }, [
+    clearStreamingView,
+    forceScrollToBottom,
+    refreshSessionMessages,
+    sessionId,
+    setupSSE,
+    status,
+    syncCompletedAttempt,
+    t,
+  ]);
+
   const handleCancel = useCallback(async () => {
     if (!sessionId) {
       flushPendingStreamUpdate();
@@ -1576,6 +1770,8 @@ export function Agent() {
 
   const handleContinueGoal = useCallback(async () => {
     if (!sessionId || !goalSnapshot || status === "streaming") return;
+    pendingEditAttemptRef.current = null;
+    pendingEditMessageRef.current = null;
     const prompt = goalContinuePrompt(goalSnapshot);
     act().addMessage({
       id: "",
@@ -1604,22 +1800,34 @@ export function Agent() {
     }
   }, [archiveActivity, forceScrollToBottom, goalSnapshot, sessionId, setupSSE, status, syncCompletedAttempt, t]);
 
-  const handleRetry = useCallback((errorMsg: AgentMessage) => {
+  const handleRetry = useCallback((errorMsg: StoredAgentMessage) => {
     if (status === "streaming") return;
     const msgs = act().messages;
     const errorIdx = msgs.findIndex(m => m.id === errorMsg.id);
     if (errorIdx === -1) return;
+    const editRetryMessageId = errorMsg.meta?.editRetryMessageId;
+    if (editRetryMessageId) {
+      const editTarget = msgs.find(
+        (message) => message.id === editRetryMessageId && message.type === "user",
+      );
+      if (editTarget) {
+        void handleEditPrompt(editTarget, editTarget.content).catch((error: unknown) => {
+          toast.error(error instanceof Error ? error.message : t("agent.failedToEditPrompt"));
+        });
+        return;
+      }
+    }
     // Find the most recent user message before this error
-    let userContent: string | null = null;
+    let target: StoredAgentMessage | null = null;
     for (let i = errorIdx - 1; i >= 0; i--) {
       if (msgs[i].type === "user") {
-        userContent = msgs[i].meta?.requestText || msgs[i].content;
+        target = msgs[i];
         break;
       }
     }
-    if (!userContent) return;
-    submitComposerPrompt(userContent);
-  }, [status, submitComposerPrompt]);
+    if (!target) return;
+    submitComposerPrompt(target.meta?.requestText || target.content);
+  }, [handleEditPrompt, status, submitComposerPrompt, t]);
 
   const handleContinueActivity = useCallback(() => {
     submitComposerPrompt(t("agent.continuePrompt" as never));
@@ -1898,7 +2106,12 @@ export function Agent() {
                 data-msg-idx={g.msgIdx}
                 className={shouldAnimate ? "msg-enter" : undefined}
               >
-                <MessageBubble msg={g.msg} onRetry={g.msg.type === "error" ? handleRetry : undefined} />
+                <MessageBubble
+                  msg={g.msg}
+                  onRetry={g.msg.type === "error" ? handleRetry : undefined}
+                  onEdit={g.msg.type === "user" ? handleEditPrompt : undefined}
+                  editDisabled={status === "streaming" || !sessionId}
+                />
               </div>
             );
           })}

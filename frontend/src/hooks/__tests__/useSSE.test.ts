@@ -171,6 +171,17 @@ describe("useSSE — event handling", () => {
     expect(resetEvents).toEqual([{ reason: "provider_stream_retry" }]);
   });
 
+  it("dispatches historical prompt edits to connected clients", () => {
+    const edited = vi.fn();
+    const { result } = renderHook(() => useSSE());
+
+    act(() => result.current.connect("http://test/events", { "message.edited": edited }));
+    const payload = { message_id: "message-one", truncated_count: 3, attempt_id: "attempt-two" };
+    act(() => MockEventSource.latest.emit("message.edited", payload, "evt-edited"));
+
+    expect(edited).toHaveBeenCalledExactlyOnceWith(payload);
+  });
+
   it("falls back to message handler for known event types without specific handler", () => {
     const messages: unknown[] = [];
     const { result } = renderHook(() => useSSE());

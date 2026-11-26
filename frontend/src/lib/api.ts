@@ -772,8 +772,13 @@ export const api = {
       { method: "POST" },
     ),
   sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  editMessageAndRegenerate: (sid: string, messageId: string, content: string) =>
+    request<{ message_id: string; attempt_id: string }>(
+      `/sessions/${encodeURIComponent(sid)}/messages/${encodeURIComponent(messageId)}`,
+      { method: "PATCH", body: JSON.stringify({ content }) },
+    ),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
-  getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
+  getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${encodeURIComponent(sid)}/messages?all_messages=true`),
   createGoal: (sid: string, body: CreateGoalRequest) =>
     request<GoalSnapshot>(`/sessions/${sid}/goal`, {
       method: "POST",

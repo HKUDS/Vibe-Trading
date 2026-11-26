@@ -352,6 +352,8 @@ docker compose up --build
 
 The PyPI package includes the CLI, API and MCP server. For a frontend development setup or a local model, see the [installation guide](guides/installation.md).
 
+In Web chat, hover over any saved user prompt and choose **Edit prompt**. Saving replaces the later chat messages and regenerates the answer from that point; attachments and independent research artifacts stay intact. Editing is unavailable while a run is active.
+
 ## 🖥 CLI Reference
 
 Start `vibe-trading` for the interactive terminal. Type `/help` at the prompt to browse commands or use these shortcuts during research.
@@ -383,6 +385,7 @@ Start a local server with `vibe-trading serve --port 8899`. In a second terminal
 |---|---|
 | Create the conversation | `POST /sessions` |
 | Send the research question | `POST /sessions/{id}/messages` |
+| Edit a saved prompt and regenerate | `PATCH /sessions/{id}/messages/{message_id}` |
 | Follow progress as it happens | `GET /sessions/{id}/events` |
 
 Open `http://localhost:8899/docs` to try the endpoints interactively. [Authenticated clients](guides/cli-and-api.md#security-defaults) send the API key in the `Authorization: Bearer` header.

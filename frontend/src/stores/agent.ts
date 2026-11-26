@@ -51,6 +51,7 @@ export interface AgentMessageMeta {
   requestText?: string;
   activity?: AgentActivity;
   partialAttemptId?: string;
+  editRetryMessageId?: string;
 }
 
 export type StoredAgentMessage = AgentMessage & { meta?: AgentMessageMeta };
@@ -97,6 +98,7 @@ interface AgentState {
   clearActivity: () => void;
   upsertSwarmStatus: (status: SwarmRunStatus) => void;
   updateSwarmStatus: (runId: string, updater: (status: SwarmRunStatus) => SwarmRunStatus) => void;
+  discardSwarmAfter: (timestamp: number) => void;
 
   cacheSession: (sid: string, msgs: StoredAgentMessage[]) => void;
   getCachedSession: (sid: string) => StoredAgentMessage[] | undefined;
@@ -277,6 +279,23 @@ export const useAgentStore = create<AgentState>((set) => ({
       if (!current) return {};
       return {
         swarmRuns: { ...s.swarmRuns, [runId]: updater(current) },
+      };
+    }),
+
+  discardSwarmAfter: (timestamp) =>
+    set((s) => {
+      const discardedRunIds = new Set(
+        s.messages
+          .filter((message) => message.type === "swarm_status" && message.timestamp > timestamp)
+          .flatMap((message) => message.swarmRunId ? [message.swarmRunId] : []),
+      );
+      return {
+        messages: s.messages.filter(
+          (message) => message.type !== "swarm_status" || message.timestamp <= timestamp,
+        ),
+        swarmRuns: Object.fromEntries(
+          Object.entries(s.swarmRuns).filter(([runId]) => !discardedRunIds.has(runId)),
+        ),
       };
     }),
 

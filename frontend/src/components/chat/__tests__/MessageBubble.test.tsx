@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { MessageBubble } from "../MessageBubble";
@@ -21,7 +21,7 @@ vi.mock("../RunCompleteCard", () => ({
 
 function makeMsg(overrides: Partial<StoredAgentMessage> = {}): StoredAgentMessage {
   return {
-    id: "msg-1",
+    id: "a1b2c3d4e5f6",
     type: "answer",
     content: "test",
     timestamp: new Date(2024, 0, 1, 14, 30).getTime(),
@@ -53,7 +53,7 @@ describe("MessageBubble", () => {
       );
       expect(bubble).not.toHaveClass("rounded-tr-sm");
       expect(screen.queryByText("14:30")).not.toBeInTheDocument();
-      expect(container.querySelector("svg")).toBeNull();
+      expect(bubble.querySelector("svg")).toBeNull();
     });
 
     it("renders safe request metadata without exposing an attachment path", () => {
@@ -95,6 +95,79 @@ describe("MessageBubble", () => {
       );
       expect(screen.getByText("report.pdf")).toBeInTheDocument();
       expect(screen.getByText("chart.png")).toBeInTheDocument();
+    });
+  });
+
+  describe("historical prompt editing", () => {
+    it("opens an inline editor and cancels without changing the message", async () => {
+      const user = userEvent.setup();
+      render(<MessageBubble msg={makeMsg({ type: "user", content: "Original prompt" })} onEdit={vi.fn()} />);
+
+      await user.click(screen.getByRole("button", { name: "Edit prompt" }));
+      const editor = screen.getByRole("textbox", { name: "Edit prompt" });
+      expect(editor).toHaveValue("Original prompt");
+      expect(editor).toHaveFocus();
+      await user.clear(editor);
+      await user.type(editor, "Discard this draft");
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.getByText("Original prompt")).toBeInTheDocument();
+    });
+
+    it("saves the edited prompt and keeps attachment metadata visible", async () => {
+      const user = userEvent.setup();
+      const onEdit = vi.fn().mockResolvedValue(undefined);
+      render(
+        <MessageBubble
+          msg={makeMsg({
+            type: "user",
+            content: "Analyze this",
+            meta: { attachment: { filename: "trades.csv" }, requestText: "wrapped" },
+          })}
+          onEdit={onEdit}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Edit prompt" }));
+      const editor = screen.getByRole("textbox", { name: "Edit prompt" });
+      await user.clear(editor);
+      await user.type(editor, "Analyze drawdowns instead");
+      expect(screen.getByText("trades.csv")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Save and regenerate" }));
+
+      await waitFor(() => expect(onEdit).toHaveBeenCalledWith(
+        expect.objectContaining({ content: "Analyze this" }),
+        "Analyze drawdowns instead",
+      ));
+      await waitFor(() => expect(screen.queryByRole("textbox")).not.toBeInTheDocument());
+    });
+
+    it("retains the draft and shows a recoverable error when saving fails", async () => {
+      const user = userEvent.setup();
+      const onEdit = vi.fn().mockRejectedValue(new Error("Session is busy"));
+      render(<MessageBubble msg={makeMsg({ type: "user", content: "Original" })} onEdit={onEdit} />);
+
+      await user.click(screen.getByRole("button", { name: "Edit prompt" }));
+      const editor = screen.getByRole("textbox", { name: "Edit prompt" });
+      await user.clear(editor);
+      await user.type(editor, "Keep my draft");
+      await user.click(screen.getByRole("button", { name: "Save and regenerate" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Session is busy");
+      expect(screen.getByRole("textbox", { name: "Edit prompt" })).toHaveValue("Keep my draft");
+    });
+
+    it("disables editing while a run is active", () => {
+      render(
+        <MessageBubble
+          msg={makeMsg({ type: "user", content: "Wait for this run" })}
+          onEdit={vi.fn()}
+          editDisabled
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Edit prompt" })).toBeDisabled();
     });
   });
 

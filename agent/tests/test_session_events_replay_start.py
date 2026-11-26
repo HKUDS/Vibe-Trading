@@ -29,6 +29,9 @@ class _DummyIndex:
     def index_message(self, session_id: str, role: str, content: str) -> None:
         del session_id, role, content
 
+    def replace_session_messages(self, session_id: str, title: str, messages: list[tuple[str, str]], *, started_at: float) -> None:
+        del session_id, title, messages, started_at
+
 
 def _service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionService:
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
