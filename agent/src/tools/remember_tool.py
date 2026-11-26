@@ -25,6 +25,10 @@ class RememberTool(BaseTool):
         "reinforce: provide quality feedback on a memory."
     )
     is_readonly = False
+    # Mutates ~/.vibe-trading/memory/, not the workspace/run_dir a readonly
+    # tool's cached result might describe -- an interleaved remember() call
+    # must not force unrelated readonly results to be re-fetched.
+    invalidates_readonly_cache = False
     parameters = {
         "type": "object",
         "properties": {

@@ -300,7 +300,7 @@ def test_training_selection_precedes_frozen_oos_and_holdout(saved_run, tmp_path)
     assert (tmp_path / "wf-study/selection-1.json").is_file()
 
 
-def test_walk_forward_api_exports_the_actual_oos_equity_csv(saved_run, tmp_path, monkeypatch):
+def test_walk_forward_api_exports_oos_equity_and_fold_audit_csv(saved_run, tmp_path, monkeypatch):
     import csv
     import io
 
@@ -341,6 +341,10 @@ def test_walk_forward_api_exports_the_actual_oos_equity_csv(saved_run, tmp_path,
         assert response.headers["content-type"].startswith("text/csv")
         assert "attachment" in response.headers["content-disposition"]
         assert response.content == expected
+        fold_response = client.get(path, params={"format": "folds_csv"})
+        assert fold_response.status_code == 200
+        assert fold_response.headers["content-type"].startswith("text/csv")
+        assert "attachment" in fold_response.headers["content-disposition"]
         assert client.get(path, params={"format": "unknown"}).status_code == 422
 
     rows = list(csv.DictReader(io.StringIO(expected.decode())))
@@ -348,6 +352,45 @@ def test_walk_forward_api_exports_the_actual_oos_equity_csv(saved_run, tmp_path,
     assert float(rows[-1]["equity"]) == pytest.approx(
         10000 * (1 + result["oos_total_return"])
     )
+    fold_rows = list(csv.DictReader(io.StringIO(fold_response.content.decode())))
+    assert list(fold_rows[0]) == [
+        "phase",
+        "fold",
+        "selected_candidate",
+        "parameters_json",
+        "training_start",
+        "training_end",
+        "test_start",
+        "test_end",
+        "plan_sha256",
+        "selection_sha256",
+        "strategy_sha256",
+        "input_manifest_sha256",
+        "final_value",
+        "total_return",
+        "annual_return",
+        "max_drawdown",
+        "sharpe",
+        "trade_count",
+        "total_turnover",
+    ]
+    assert [row["phase"] for row in fold_rows] == ["validation", "holdout"]
+    for row, fold in zip(fold_rows, [result["folds"][0], result["holdout"]], strict=True):
+        assert int(row["fold"]) == fold["fold"]
+        assert row["selected_candidate"] == fold["name"]
+        assert json.loads(row["parameters_json"]) == fold["parameters"]
+        for key in (
+            "training_start",
+            "training_end",
+            "test_start",
+            "test_end",
+            "plan_sha256",
+            "selection_sha256",
+        ):
+            assert row[key] == fold[key]
+        assert row["strategy_sha256"] == result["strategy_sha256"]
+        assert row["input_manifest_sha256"] == result["input_manifest_sha256"]
+        assert float(row["total_return"]) == pytest.approx(fold["test"]["metrics"]["total_return"])
 
 
 def test_csv_export_rejects_a_completed_non_walk_forward_job(tmp_path, monkeypatch):
@@ -371,6 +414,63 @@ def test_csv_export_rejects_a_completed_non_walk_forward_job(tmp_path, monkeypat
             params={"format": "oos_equity_csv"},
         )
     assert response.status_code == 422
+
+
+def test_fold_csv_preserves_text_and_rejects_invalid_report_values(tmp_path, monkeypatch):
+    import csv
+    import io
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.api.research_lab_routes import register_research_lab_routes
+    from src.research_lab import service
+
+    monkeypatch.setattr(service, "get_runs_dir", lambda: tmp_path)
+    state = service.create_job("factor_audit", {})
+    result = {
+        "kind": "walk_forward",
+        "plan_sha256": "plan-hash",
+        "strategy_sha256": "strategy-hash",
+        "input_manifest_sha256": "manifest-hash",
+        "folds": [
+            {
+                "fold": 1,
+                "name": "\t=SUM(1,1)",
+                "parameters": {"direction": 1, "note": "line one\nline two"},
+                "training_start": "2026-01-01",
+                "training_end": "2026-01-15",
+                "test_start": "2026-01-16",
+                "test_end": "2026-01-20",
+                "plan_sha256": "plan-hash",
+                "selection_sha256": "selection-hash",
+                "test": {"metrics": {"total_return": 0.125, "sharpe": 1.5}},
+            }
+        ],
+        "holdout": None,
+    }
+    state.update(action="walk_forward", status="completed", result=result)
+    service._write(service.job_root(state["id"]) / "study.json", state)
+    app = FastAPI()
+    register_research_lab_routes(app, lambda: None, lambda: None)
+    with TestClient(app) as client:
+        path = f"/api/research-lab/jobs/{state['id']}/report?format=folds_csv"
+        response = client.get(path)
+        assert response.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(response.content.decode())))
+        assert rows[0]["selected_candidate"] == "'\t=SUM(1,1)"
+        assert json.loads(rows[0]["parameters_json"]) == result["folds"][0]["parameters"]
+        assert rows[0]["final_value"] == ""
+        assert float(rows[0]["total_return"]) == 0.125
+
+        result["folds"][0]["test"]["metrics"]["sharpe"] = float("nan")
+        (service.job_root(state["id"]) / "study.json").write_text(json.dumps(state))
+        assert client.get(path).status_code == 422
+
+        result["folds"][0]["test"]["metrics"]["sharpe"] = 1.5
+        result["folds"][0]["plan_sha256"] = "different-plan"
+        (service.job_root(state["id"]) / "study.json").write_text(json.dumps(state))
+        assert client.get(path).status_code == 422
 
 
 def test_walk_forward_rejects_a_candidate_scored_on_a_different_calendar(

@@ -2790,6 +2790,7 @@
     "report": "研究报告",
     "download": "下载 JSON",
     "downloadOosCsv": "样本外权益 CSV",
+    "downloadFoldsCsv": "折次审计 CSV",
     "scenario": "情景",
     "return": "收益率",
     "drawdown": "回撤",

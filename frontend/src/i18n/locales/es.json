@@ -2790,6 +2790,7 @@
     "report": "Informe de investigación",
     "download": "Descargar JSON",
     "downloadOosCsv": "CSV de patrimonio fuera de muestra",
+    "downloadFoldsCsv": "CSV de auditoría de pliegues",
     "scenario": "Escenario",
     "return": "Rentabilidad",
     "drawdown": "Caída máxima",
