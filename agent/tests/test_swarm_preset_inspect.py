@@ -63,3 +63,41 @@ variables:
     assert "Task 'task-a' depends on unknown task 'missing_task'" in report["errors"]
     assert "Prompt templates use undeclared variables: target" in report["warnings"]
     assert "Declared variables are not used by task prompt templates: market" in report["warnings"]
+
+
+def test_all_thirty_bundled_presets_pass_runtime_dag_validation() -> None:
+    from src.swarm.task_store import validate_dag
+
+    names = [entry["name"] for entry in presets.list_presets()]
+    assert len(names) == 30
+    for name in names:
+        validate_dag(presets.build_run_from_preset(name, {}).tasks)
+        assert presets.inspect_preset(name)["valid"], name
+
+
+def test_inspect_reports_an_unscheduled_data_binding_as_an_error(tmp_path: Path, monkeypatch) -> None:
+    preset_dir = tmp_path / "presets"
+    preset_dir.mkdir()
+    (preset_dir / "unscheduled.yaml").write_text(
+        """
+name: unscheduled
+agents:
+  - id: analyst
+    role: Analyst
+    system_prompt: ""
+tasks:
+  - id: producer
+    agent_id: analyst
+    prompt_template: "Collect"
+  - id: consumer
+    agent_id: analyst
+    prompt_template: "Summarize"
+    input_from:
+      data: producer
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(presets, "PRESETS_DIR", preset_dir)
+    report = presets.inspect_preset("unscheduled")
+    assert not report["valid"]
+    assert any("not upstream in the DAG" in error for error in report["errors"])

@@ -7,11 +7,12 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
+from src.config.accessor import get_env_config
 from src.product.result_artifacts import _write_original, save_result_parts
 from src.session.thread import ThreadLog
 from src.swarm.artifacts import agent_artifact_dir, node_thread
-from src.tools.path_utils import safe_path
-from src.tools.redaction import redact_tool_result
+from src.tools.path_utils import is_runtime_path, safe_path
+from src.tools.redaction import redact_text, redact_tool_result
 
 
 def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str, str | None]]:
@@ -115,6 +116,69 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
     return found
 
 
+def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str,
+                    errors: list[str]) -> dict[str, tuple[str, str]]:
+    """Map each workspace file a node's successful write or shell call produced to that call."""
+    marker = f"/artifacts/{agent_id}/{task_id}/"
+    produced: dict[str, tuple[str, str]] = {}
+    for call, call_id, name, raw, _ in _recorded_results(source, thread_path):
+        tool = call.get("name", name)
+        if tool not in {"write_file", "edit_file", "bash"}:
+            continue
+        try:
+            result = json.loads(raw) if isinstance(raw, str) else None
+        except ValueError:
+            continue
+        if not isinstance(result, dict) or result.get("status") != "ok":
+            continue
+        if tool == "bash":
+            paths = [ref.get("path") for ref in result.get("artifacts") or [] if isinstance(ref, dict)]
+        else:
+            # Recorded paths are absolute and may name the run directory a resumed run came from.
+            written = str(result.get("path") or "")
+            posix = Path(written).as_posix()
+            if marker in posix:
+                paths = [posix[posix.rindex(marker) + len(marker):]]
+            elif written and not Path(written).is_absolute():
+                paths = [written]
+            else:
+                errors.append(f"{task_id}/{call_id}: {tool} output is outside the producer workspace")
+                continue
+        for relative in paths:
+            if isinstance(relative, str) and relative and not is_runtime_path(relative):
+                produced[relative] = (tool, call_id)
+    return produced
+
+
+def _read_produced(source: Path, relative: str, budget: int) -> bytes:
+    """Read one produced file within the budget, refusing escapes, symlinks and non-files."""
+    path = safe_path(relative, source)
+    current = source
+    for part in Path(relative).parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError("is a symlink")
+    if not path.is_file():
+        raise ValueError("is no longer a regular file")
+    size = path.stat().st_size
+    if size > budget:
+        raise ValueError(f"{size} bytes exceed the remaining file copy budget")
+    return path.read_bytes()
+
+
+def _write_bytes(path: Path, content: bytes, root: Path) -> None:
+    """Save an immutable copy inside the workspace, or refuse a changed one."""
+    if not path.resolve().is_relative_to(root):
+        raise ValueError("Copied file escapes workspace")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as stream:
+            stream.write(content)
+    except FileExistsError:
+        if path.read_bytes() != content:
+            raise ValueError("Existing copied file was modified")
+
+
 def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
     """Copy upstream observations into this task's readable workspace.
 
@@ -124,8 +188,13 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         destination: Consumer artifact directory.
 
     Returns:
-        Prompt note pointing to the paged provenance index. The index records unavailable evidence.
-        Returns an empty string if there are no observations or errors to report.
+        Prompt note pointing to the paged provenance index, which lists the copied observations,
+        the files each upstream task produced (copied by content hash under ``upstream/files``)
+        and anything unavailable. Returns an empty string if there is nothing to report.
+
+    Raises:
+        ValueError: If the index would escape the workspace or differs from one already written.
+        OSError: If the index or its parts cannot be written.
     """
     from src.swarm.task_store import TaskStore
 
@@ -133,13 +202,36 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         return ""
     root = destination.resolve()
     folder = safe_path("upstream", root)
-    entries, errors, seen = [], [], set()
+    entries, files, errors, seen = [], [], [], set()
+    cap = budget = get_env_config().swarm.swarm_handoff_max_file_bytes
     store = TaskStore(run_dir)
     for task_id in dict.fromkeys(task.input_from.values()):
         try:
             source_task = store.load_task(task_id)
             source = agent_artifact_dir(run_dir, source_task.agent_id, task_id)
             thread = node_thread(run_dir, source_task.agent_id, task_id)
+            if thread.is_file():
+                produced = _produced_files(source, thread, source_task.agent_id, task_id, errors)
+                for relative, (tool, call_id) in produced.items():
+                    try:
+                        original = _read_produced(source.resolve(), relative, budget)
+                        try:
+                            content = redact_text(original.decode("utf-8")).encode("utf-8")
+                        except UnicodeDecodeError:
+                            content = original
+                        if len(content) > budget:
+                            raise ValueError(f"{len(content)} bytes exceed the remaining file copy budget")
+                        digest = hashlib.sha256(content).hexdigest()
+                        path = folder / "files" / digest / Path(relative).name
+                        _write_bytes(path, content, root)
+                    except (OSError, ValueError) as exc:
+                        errors.append(f"{task_id}/{relative}: produced file not copied: {exc} "
+                                      f"({budget} of {cap} bytes left, SWARM_HANDOFF_MAX_FILE_BYTES)")
+                        continue
+                    budget -= len(content)
+                    files.append({"source_task": task_id, "tool": tool, "call_id": call_id,
+                                  "original_path": relative, "path": str(path.relative_to(root)),
+                                  "sha256": digest, "size": len(content), "redacted": content != original})
             observations = _observations(source, task_id, errors, thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
@@ -156,9 +248,9 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
                                 "part_count": len(parts)})
         except (OSError, ValueError, KeyError, TypeError) as exc:
             errors.append(f"{task_id}: {type(exc).__name__}: {exc}")
-    if not entries and not errors:
+    if not entries and not files and not errors:
         return ""
-    content = json.dumps({"observations": entries, "unavailable": errors}, ensure_ascii=False)
+    content = json.dumps({"observations": entries, "files": files, "unavailable": errors}, ensure_ascii=False)
     # Same dependencies yield identical bytes on retry/continuation. No report
     # text is rewritten and no source status is promoted by copying its files.
     index = folder / "index.json"
@@ -173,5 +265,8 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         "by quantlib_call __data_ref__. These are inherited observations, not fresh "
         "fetches by you. Independent analysis can reuse them; describe what you "
         "actually recalculated or newly retrieved. Original dates and assumptions "
-        "still apply. Missing evidence does not invalidate the available report."
+        "still apply. Missing evidence does not invalidate the available report.\n"
+        f"{len(files)} files produced by upstream tasks are copied under upstream/files/; the "
+        "\"files\" entries in upstream/index.json give each one's source task, original path, "
+        "sha256 and size."
     )

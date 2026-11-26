@@ -346,3 +346,55 @@ def test_cancel_by_id_rejects_an_unreadable_run_record(tmp_path, monkeypatch, ca
     assert swarm_runtime.cmd_swarm_cancel(run.id) == 1
     assert "Invalid swarm run record" in capsys.readouterr().out
     assert not (run_dir / "cancel.request").exists()
+
+
+def test_layer_deadline_retains_partial_research_and_blocks_overlapping_resume(tmp_path, monkeypatch):
+    from src.session.thread import ThreadLog
+    from src.swarm.artifacts import node_thread
+
+    store, runtime, run = _make_run(tmp_path)
+    root = store.run_dir(run.id)
+    partial = "PARTIAL_RESEARCH: revenue grew 12% year over year; margins are still being checked. " * 2
+    entered, release = threading.Event(), threading.Event()
+    real_as_completed = rt.as_completed
+    pending = []
+
+    def worker(agent_spec, task, *, cancel_event, **kwargs):
+        log = ThreadLog(node_thread(root, agent_spec.id, task.id))
+        log.append("user", "turn-1", content="do x", llm_content="do x")
+        log.append("assistant", "turn-1", content=partial, phase="commentary")
+        entered.set()
+        release.wait(5)
+        return WorkerResult(status="cancelled", summary="settled late")
+
+    def expire(futures, timeout=None):
+        assert entered.wait(5)
+        pending.extend(futures)
+        raise FuturesTimeoutError
+        yield  # pragma: no cover - makes this a generator like as_completed
+
+    monkeypatch.setattr(rt, "run_node", worker)
+    monkeypatch.setattr(rt, "as_completed", expire)
+    monkeypatch.setattr(runtime, "_prefetch_grounding_data", lambda run: None)
+    try:
+        runtime._execute_run(run, threading.Event())
+    finally:
+        release.set()
+        for future in pending:
+            future.result(timeout=5)
+        monkeypatch.setattr(rt, "as_completed", real_as_completed)
+
+    saved = store.load_run(run.id)
+    task = saved.tasks[0]
+    assert saved.status == RunStatus.failed
+    assert task.status == TaskStatus.failed
+    assert "exceeded layer deadline" in task.error and "outcome is unknown" in task.error
+    assert task.summary == partial
+    assert saved.report_is_partial
+    assert "PARTIAL_RESEARCH" in saved.final_report
+
+    resumed = run.model_copy(update={"id": "r-resume-partial", "status": RunStatus.pending})
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: resumed)
+    monkeypatch.setattr(threading.Thread, "start", lambda _: None)
+    with pytest.raises(ValueError, match="outcome is unknown"):
+        runtime.start_run(run.preset_name, {}, resume_from=saved)

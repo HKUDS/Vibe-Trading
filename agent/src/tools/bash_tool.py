@@ -13,6 +13,7 @@ from typing import Any
 from src.agent.tools import BaseTool
 from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
+from src.tools.path_utils import is_runtime_path
 from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
 
 _OUTPUT_LIMIT = 50_000
@@ -33,6 +34,49 @@ def _sandbox_workspace(cwd: Any, sandbox: SandboxSettings) -> Path:
 # How long to wait for output to drain after killing a timed-out process
 # tree before giving up (the pipes are held by grandchildren).
 _DRAIN_TIMEOUT = 5
+
+
+def _workspace_files(cwd: Any) -> dict[str, tuple[int, int]] | None:
+    """Stat a run workspace's task files so a command's outputs can be told apart.
+
+    Args:
+        cwd: Command working directory. Only a run workspace (holding the runtime's req.json) is
+            walked.
+
+    Returns:
+        Modification time and size per POSIX relative path, without runtime records, hidden paths
+        or symlinks; None when cwd is not a run workspace.
+    """
+    if not cwd or not Path(str(cwd), "req.json").is_file():
+        return None
+    found: dict[str, tuple[int, int]] = {}
+    pending = [("", os.fspath(cwd))]
+    while pending:
+        prefix, folder = pending.pop()
+        try:
+            entries = list(os.scandir(folder))
+        except OSError:
+            continue
+        for entry in entries:
+            relative = prefix + entry.name
+            try:
+                if entry.is_symlink() or is_runtime_path(relative):
+                    continue
+                if entry.is_dir():
+                    pending.append((relative + "/", entry.path))
+                else:
+                    stat = entry.stat()
+                    found[relative] = (stat.st_mtime_ns, stat.st_size)
+            except OSError:
+                continue
+    return found
+
+
+def _changed_files(cwd: Any, before: dict[str, tuple[int, int]]) -> list[dict[str, Any]]:
+    """List the task files a command created or rewrote; a read changes nothing."""
+    after = _workspace_files(cwd) or {}
+    return [{"path": relative, "bytes": stat[1]}
+            for relative, stat in sorted(after.items()) if before.get(relative) != stat]
 
 
 def _kill_process_tree(proc: subprocess.Popen) -> None:
@@ -106,7 +150,8 @@ class BashTool(BaseTool):
             **kwargs: Must include command. Optional run_dir used as cwd.
 
         Returns:
-            JSON string with stdout, stderr, and exit_code.
+            JSON string with stdout, stderr, and exit_code. In a run workspace it also lists the
+            task files the command created or changed under ``artifacts``.
         """
         command = kwargs["command"]
         cwd = kwargs.get("run_dir")
@@ -153,6 +198,8 @@ class BashTool(BaseTool):
                 )
             cwd = str(workspace)
             shell = False
+
+        before_files = _workspace_files(cwd)
 
         # Spawn with a dedicated process group so a timeout can kill the
         # WHOLE tree, not just cmd.exe. Without this, grandchildren that
@@ -215,12 +262,16 @@ class BashTool(BaseTool):
 
         stdout = stdout[:_OUTPUT_LIMIT] if len(stdout) > _OUTPUT_LIMIT else stdout
         stderr = stderr[:_OUTPUT_LIMIT] if len(stderr) > _OUTPUT_LIMIT else stderr
-        result = json.dumps({
+        outcome: dict[str, Any] = {
             "status": "ok" if proc.returncode == 0 else "error",
             "exit_code": proc.returncode,
             "stdout": stdout,
             "stderr": stderr,
-        }, ensure_ascii=False)
+        }
+        if before_files is not None:
+            # A downstream handoff reads this receipt to find the command's outputs.
+            outcome["artifacts"] = _changed_files(cwd, before_files)
+        result = json.dumps(outcome, ensure_ascii=False)
         if profile is not None:
             try:
                 profile.unlink()

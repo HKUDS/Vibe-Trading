@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 
 from src.swarm.models import SwarmTask, TaskStatus
@@ -130,17 +130,21 @@ def resolve_dependencies(tasks_dir: Path, completed_task_id: str) -> list[str]:
 
 
 def validate_dag(tasks: list[SwarmTask]) -> None:
-    """Validate references and check the task graph for cycles.
+    """Validate task IDs, dependency references, cycles and upstream data bindings.
 
     Args:
         tasks: Tasks and their declared dependencies.
 
     Raises:
-        ValueError: If a dependency is unknown or a cycle is detected. Cycle errors include the
-            cycle path.
+        ValueError: If a task ID repeats, a dependency is unknown, a cycle is detected (the
+            message includes the cycle path), or an input_from source is not an ancestor through
+            depends_on.
     """
     graph: dict[str, list[str]] = {t.id: list(t.depends_on) for t in tasks}
     all_ids = {t.id for t in tasks}
+    if len(all_ids) != len(tasks):
+        duplicates = sorted(tid for tid, count in Counter(t.id for t in tasks).items() if count > 1)
+        raise ValueError(f"Duplicate task ID(s) in DAG: {', '.join(duplicates)}")
 
     for task in tasks:
         for dep in task.depends_on:
@@ -174,6 +178,23 @@ def validate_dag(tasks: list[SwarmTask]) -> None:
     for tid in all_ids:
         if color[tid] == WHITE:
             dfs(tid)
+
+    # Scheduling and resume invalidation follow depends_on, so a data source must be an ancestor
+    # there; otherwise its result is read while it runs or kept after it re-executes.
+    for task in tasks:
+        ancestors: set[str] = set()
+        pending = list(task.depends_on)
+        while pending:
+            source = pending.pop()
+            if source not in ancestors:
+                ancestors.add(source)
+                pending.extend(graph[source])
+        for key, source in task.input_from.items():
+            if source not in ancestors:
+                raise ValueError(
+                    f"Task '{task.id}' input_from '{key}' references '{source}', "
+                    "which is not upstream in the DAG; declare its depends_on path"
+                )
 
 
 def topological_layers(tasks: list[SwarmTask]) -> list[list[str]]:

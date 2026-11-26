@@ -437,7 +437,8 @@ class SwarmConfig(_EnvBase):
     """Multi-agent swarm execution parameters.
 
     Sources: ``src/swarm/node.py``, ``src/tools/swarm_tool.py``,
-    ``src/swarm/runtime.py``, ``src/swarm/grounding.py``.
+    ``src/swarm/runtime.py``, ``src/swarm/grounding.py``,
+    ``src/swarm/evidence_handoff.py``.
     """
 
     swarm_worker_timeout: int = Field(alias="SWARM_WORKER_TIMEOUT", default=300)
@@ -456,6 +457,10 @@ class SwarmConfig(_EnvBase):
         alias="SWARM_WORKER_RETRY_MAX_DELAY_S", default=30.0, ge=0
     )
     swarm_grounding_max_symbols: int = Field(alias="SWARM_GROUNDING_MAX_SYMBOLS", default=8)
+    # Total bytes of upstream-produced files copied into one consumer's workspace.
+    swarm_handoff_max_file_bytes: int = Field(
+        alias="SWARM_HANDOFF_MAX_FILE_BYTES", default=64 * 1024 * 1024, ge=0
+    )
 
     @model_validator(mode="after")
     def _validate_retry_delays(self) -> SwarmConfig:

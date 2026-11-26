@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Formatter
@@ -186,33 +186,6 @@ def inspect_preset(name: str) -> dict:
         layers = topological_layers(run.tasks)
     except ValueError as exc:
         errors.append(str(exc))
-
-    dependents: dict[str, list[str]] = defaultdict(list)
-    for task in run.tasks:
-        for dep in task.depends_on:
-            dependents[dep].append(task.id)
-
-    def is_upstream(candidate: str, task_id: str) -> bool:
-        """Return whether candidate can reach task_id through dependency edges."""
-        seen: set[str] = set()
-        stack = [candidate]
-        while stack:
-            current = stack.pop()
-            if current == task_id:
-                return True
-            if current in seen:
-                continue
-            seen.add(current)
-            stack.extend(dependents.get(current, []))
-        return False
-
-    for task in run.tasks:
-        for key, upstream_task_id in task.input_from.items():
-            if upstream_task_id in task_id_set and not is_upstream(upstream_task_id, task.id):
-                warnings.append(
-                    f"Task '{task.id}' input_from '{key}' references '{upstream_task_id}', "
-                    "which is not upstream in the DAG"
-                )
 
     declared_variables = _declared_variable_names(data.get("variables", []))
     used_variables: set[str] = set()
