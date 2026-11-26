@@ -14,7 +14,8 @@ them. No model, live broker or price-provider call is part of a study.
 
 Run a backtest first, then select its saved run. Its run-card manifest must
 still match the strategy and every exported OHLCV snapshot. A changed or
-missing file is refused; rerun that backtest to create a new baseline.
+missing file is refused; rerun that backtest to create a new baseline. Replays
+preserve the precision of saved prices, including in narrower trial windows.
 
 Market-engine backtests also save the opening and closing prices of the external
 benchmark they used. Research Lab replays those prices separately from the
