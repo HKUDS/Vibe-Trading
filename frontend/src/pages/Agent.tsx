@@ -21,6 +21,7 @@ import {
   contentText,
   discardLiveAssistant,
   endedTurns,
+  historyReply,
   mergeThreadPage,
   removeQueuedInput,
   reuseRows,
@@ -563,7 +564,7 @@ export function Agent() {
       for (const item of thread.items) {
         if (item.type !== "turn_end") continue;
         const runId = item.display?.run_id || runIdFromDir(item.run_dir);
-        const turnMeta: TurnMeta = { content: item.summary || undefined };
+        const turnMeta: TurnMeta = historyReply(item);
         if (runId) {
           turnMeta.runId = runId;
           turnMeta.card = hasStoredMetrics(item.display?.metrics)

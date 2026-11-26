@@ -87,6 +87,11 @@ export interface TurnMeta {
   stopRequested?: boolean;
 }
 
+/** Reply text and failure reason a recorded `turn_end` carries, as the per-turn meta of a loaded history. */
+export function historyReply(end: Pick<ThreadDisplayItem, "summary" | "error">): Pick<TurnMeta, "content" | "error"> {
+  return { content: end.summary || undefined, error: end.error || undefined };
+}
+
 export function emptyThreadView(): ThreadView {
   return { loaded: false, cursor: 0, entries: [], liveAssistant: null, queued: [] };
 }

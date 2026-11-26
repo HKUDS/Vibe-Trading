@@ -91,7 +91,7 @@ class NodeContext:
             saved paths, and original character count. Empty when no result was replaced.
         """
         budget = self.budget(messages, tools)
-        target = min(budget.micro_at, budget.total)
+        target = budget.micro_at
         if not self.can_read_files or self.tokens(messages, tools) <= target:
             return []
         receipts = []
