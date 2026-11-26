@@ -193,10 +193,10 @@ function ForkButton({ forking, onClick }: { forking: boolean; onClick: () => voi
   );
 }
 
-function AnswerActions({ text, onFork, forking }: { text: string; onFork?: () => void; forking: boolean }) {
+function MessageActions({ text, onFork, forking }: { text?: string; onFork?: () => void; forking: boolean }) {
   return (
     <div className="absolute top-2 end-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-      <CopyButton text={text} />
+      {text && <CopyButton text={text} />}
       {onFork && <ForkButton forking={forking} onClick={onFork} />}
     </div>
   );
@@ -274,7 +274,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry, onFork,
       <div className="flex gap-3 group relative">
         <AgentAvatar />
         <div className="flex-1 min-w-0 space-y-1.5">
-          <AnswerActions
+          <MessageActions
             text={msg.content}
             onFork={onFork ? () => onFork(msg) : undefined}
             forking={forking}
@@ -293,8 +293,18 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry, onFork,
     );
   }
 
-  if (msg.type === "run_complete" && msg.runId) {
-    return <RunCompleteCard msg={msg} />;
+  if (msg.type === "run_complete") {
+    return (
+      <div className="group relative">
+        <RunCompleteCard msg={msg} />
+        {onFork && (
+          <MessageActions
+            onFork={() => onFork(msg)}
+            forking={forking}
+          />
+        )}
+      </div>
+    );
   }
 
   if (msg.type === "error") {

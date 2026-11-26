@@ -206,6 +206,22 @@ describe("MessageBubble", () => {
       expect(screen.getByTestId("run-complete-card")).toBeInTheDocument();
       expect(screen.getByText("Run: run-42")).toBeInTheDocument();
     });
+
+    it("offers Fork without an empty Copy action for run-only cards", async () => {
+      const onFork = vi.fn();
+      const msg = makeMsg({
+        type: "run_complete",
+        runId: "run-42",
+        sourceMessageId: "stored-run-answer",
+        canFork: true,
+      });
+      const { container } = render(<MessageBubble msg={msg} onFork={onFork} />);
+
+      expect(container.firstElementChild).not.toHaveClass("flex");
+      expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+      await userEvent.setup().click(screen.getByRole("button", { name: "Fork" }));
+      expect(onFork).toHaveBeenCalledWith(msg);
+    });
   });
 
   describe("fallback", () => {

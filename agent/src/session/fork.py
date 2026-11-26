@@ -99,6 +99,30 @@ _FORBIDDEN_CONFIG_KEYS = frozenset(
 _FORBIDDEN_CONFIG_KEYS_NORMALIZED = frozenset(
     re.sub(r"[^a-z0-9]", "", key.lower()) for key in _FORBIDDEN_CONFIG_KEYS
 )
+_FORBIDDEN_ARTIFACT_RUNTIME_KEYS = frozenset(
+    re.sub(r"[^a-z0-9]", "", key.lower())
+    for key in (
+        "partial_response",
+        "active_loop",
+        "active_task",
+        "background_handles",
+        "compaction_summary",
+        "temporary_compaction_summary",
+        "live_loops",
+        "active_loops",
+        "active_tasks",
+        "swarm_state",
+        "runtime_state",
+        "channel_mapping",
+        "live_loop",
+        "background_handle",
+        "task_handle",
+        "sse_state",
+        "loop_state",
+        "task_state",
+        "sse",
+    )
+)
 
 
 class ForkSourceNotFound(LookupError):
@@ -141,10 +165,8 @@ def _fresh_id(used: set[str]) -> str:
             return value
 
 
-def _is_secret_key(key: str) -> bool:
+def _is_secret_material_key(key: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]", "", key.lower())
-    if normalized in _FORBIDDEN_CONFIG_KEYS_NORMALIZED:
-        return True
     if any(
         part in normalized
         for part in (
@@ -169,6 +191,11 @@ def _is_secret_key(key: str) -> bool:
     return True
 
 
+def _is_secret_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+    return normalized in _FORBIDDEN_CONFIG_KEYS_NORMALIZED or _is_secret_material_key(key)
+
+
 def sanitize_fork_config(value: Any) -> Any:
     """Deep-copy ordinary settings while dropping runtime state and secrets."""
     if isinstance(value, dict):
@@ -179,6 +206,21 @@ def sanitize_fork_config(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [sanitize_fork_config(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def sanitize_fork_artifact(value: Any) -> Any:
+    """Drop secret material and live handles without discarding ordinary artifact fields."""
+    if isinstance(value, dict):
+        return {
+            key: sanitize_fork_artifact(item)
+            for key, item in value.items()
+            if isinstance(key, str)
+            and not _is_secret_material_key(key)
+            and re.sub(r"[^a-z0-9]", "", key.lower()) not in _FORBIDDEN_ARTIFACT_RUNTIME_KEYS
+        }
+    if isinstance(value, list):
+        return [sanitize_fork_artifact(item) for item in value]
     return copy.deepcopy(value)
 
 
@@ -216,20 +258,22 @@ def _safe_run_dir(runs_dir: Path, run_dir: str) -> Path | None:
 
 
 def _run_id_from_path(value: str, runs_dir: Path) -> str | None:
-    """Extract a run id from an absolute or ``runs/{id}/...`` artifact path."""
+    """Extract a run id only from a local run path."""
     if "://" in value:
         return None
-    path = Path(value)
-    try:
-        relative = path.relative_to(runs_dir)
-    except ValueError:
-        parts = path.parts
+    path = Path(value).expanduser()
+    if path.is_absolute():
         try:
-            index = len(parts) - 1 - parts[::-1].index(runs_dir.name)
-        except ValueError:
+            relative = path.resolve().relative_to(runs_dir.resolve())
+        except (OSError, ValueError):
             return None
-        relative = Path(*parts[index + 1 :])
-    return relative.parts[0] if relative.parts else None
+    else:
+        parts = path.parts
+        if len(parts) < 2 or parts[0] != "runs":
+            return None
+        relative = Path(*parts[1:])
+    run_id = relative.parts[0] if relative.parts else None
+    return run_id if run_id and _SAFE_ID_RE.fullmatch(run_id) else None
 
 
 def _eligible_assistant(
@@ -264,18 +308,23 @@ def _eligible_assistant(
     return None
 
 
-def _run_references(value: Any) -> set[str]:
-    """Find run ids and run-directory basenames in nested render metadata."""
+def _run_references(value: Any, runs_dir: Path) -> set[str]:
+    """Find local run ids and run-directory paths in nested render metadata."""
     references: set[str] = set()
     if isinstance(value, dict):
         for key, item in value.items():
             normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-            if normalized in {"runid", "rundir"} and isinstance(item, str) and item:
-                references.add(Path(item).name)
-            references.update(_run_references(item))
+            if isinstance(item, str) and item:
+                if normalized == "runid" and _SAFE_ID_RE.fullmatch(item):
+                    references.add(item)
+                elif normalized == "rundir":
+                    run_id = _run_id_from_path(item, runs_dir)
+                    if run_id:
+                        references.add(run_id)
+            references.update(_run_references(item, runs_dir))
     elif isinstance(value, list):
         for item in value:
-            references.update(_run_references(item))
+            references.update(_run_references(item, runs_dir))
     return references
 
 
@@ -306,10 +355,10 @@ def _attempt_snapshot(
     run_ids: set[str] = set()
     for message in messages:
         metadata = message.metadata if isinstance(message.metadata, dict) else {}
-        run_ids.update(_run_references(metadata))
-        run_ids.update(_run_references(message.tool_trail))
+        run_ids.update(_run_references(metadata, runs_dir))
+        run_ids.update(_run_references(message.tool_trail, runs_dir))
     for attempt in attempts.values():
-        run_ids.update(_run_references(attempt.metrics))
+        run_ids.update(_run_references(attempt.metrics, runs_dir))
         if attempt.run_dir:
             path = _safe_run_dir(runs_dir, attempt.run_dir)
             if path is None:
@@ -382,12 +431,12 @@ def _copy_run(
         if path.suffix.lower() == ".json":
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
+                sanitizer = sanitize_fork_config if relative.as_posix() == "req.json" else sanitize_fork_artifact
+                payload = sanitizer(payload)
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 # Unparseable metadata cannot be rendered safely; do not copy
                 # opaque bytes that might contain credentials or raw traces.
                 continue
-            if relative.as_posix() == "req.json" and isinstance(payload, dict):
-                payload = sanitize_fork_config(payload)
             _write_json(destination, _remap(payload, replacements))
         elif path.suffix.lower() in {".md", ".py", ".pine", ".html"}:
             try:
@@ -573,8 +622,7 @@ def fork_session(
                 referenced_run = _run_id_from_path(value, service.runs_dir)
                 if referenced_run:
                     return _remap_text(value, [(referenced_run, ensure_goal_run(referenced_run))])
-                dynamic = sorted(run_ids.items(), key=lambda pair: len(pair[0]), reverse=True)
-                return _remap_text(value, dynamic)
+                return value
 
             goal_store.clone_current_goal(
                 source_id,

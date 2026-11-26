@@ -116,8 +116,8 @@ class SessionService:
         self._user_cancel_requests: set[str] = set()
         self._inflight: set[str] = set()
         self._inflight_lock = threading.Lock()
-        # Fork publication/duplicate detection is serialized independently of
-        # execution claims: a busy source must remain usable and untouched.
+        # Fork publication is serialized independently of execution claims:
+        # repeated branches are allowed and a busy source remains untouched.
         self._fork_lock = threading.RLock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}

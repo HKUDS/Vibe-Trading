@@ -50,7 +50,13 @@ def _run_files(service: SessionService, run_id: str, *, session_id: str) -> Path
     (run_dir / "artifacts").mkdir()
     (run_dir / "req.json").write_text(json.dumps({"prompt": "research", "context": {"session_id": session_id}, "api_key": "do-not-copy"}))
     (run_dir / "state.json").write_text(json.dumps({"status": "success"}))
-    (run_dir / "planner_output.json").write_text(json.dumps({"run_id": run_id, "session_id": session_id}))
+    (run_dir / "planner_output.json").write_text(json.dumps({
+        "run_id": run_id,
+        "session_id": session_id,
+        "credentials": {"api_key": "do-not-copy"},
+        "safe": "kept",
+        "task": "keep ordinary artifact fields",
+    }))
     (run_dir / "run_card.json").write_text(
         json.dumps(
             {
@@ -85,6 +91,11 @@ def _run_files(service: SessionService, run_id: str, *, session_id: str) -> Path
     (run_dir / "artifacts" / "strategy.pine").write_text(f"// {run_id}\n")
     (run_dir / "artifacts" / "agent_trace.json").write_text('{"secret":"do-not-copy"}')
     (run_dir / "artifacts" / "credentials.json").write_text('{"api_key":"do-not-copy"}')
+    (run_dir / "artifacts" / "provider_response.json").write_text(json.dumps({
+        "api_key": "do-not-copy",
+        "nested": {"access_token": "do-not-copy"},
+        "safe": 3,
+    }))
     return run_dir
 
 
@@ -332,6 +343,26 @@ def test_legacy_tool_trail_run_reference_is_cloned_and_remapped(runtime):
     assert child.last_attempt_id is None
 
 
+def test_external_run_paths_in_render_metadata_remain_shared(runtime):
+    service, goals, _, source = _source(runtime)
+    external_path = "https://shared.example/runs/external-run"
+    message = Message(
+        session_id=source.session_id,
+        role="assistant",
+        content="answer with an external report",
+        metadata={"status": "completed", "render": {"run_dir": external_path}},
+        tool_trail=[{"tool": "report", "run_dir": external_path}],
+    )
+    service.store.append_message(message)
+
+    child = service.fork_session(source.session_id, message.message_id, owner=ALICE, goal_store=goals)
+    copied = service.store.get_messages(child.session_id)[0]
+
+    assert copied.metadata["render"]["run_dir"] == external_path
+    assert copied.tool_trail[0]["run_dir"] == external_path
+    assert not (service.runs_dir / "external-run").exists()
+
+
 def test_artifacts_survive_source_deletion_and_sensitive_files_are_not_copied(runtime):
     service, goals, _, source = _source(runtime)
     _, selected, _ = _turn(service, source.session_id, "selected", run_id="render-run")
@@ -354,6 +385,12 @@ def test_artifacts_survive_source_deletion_and_sensitive_files_are_not_copied(ru
     for forbidden in ("logs", "config.json", "artifacts/agent_trace.json", "artifacts/credentials.json", "artifacts/linked.csv"):
         assert not (copied_run / forbidden).exists()
     assert "do-not-copy" not in json.dumps(card)
+    planner = json.loads((copied_run / "planner_output.json").read_text())
+    assert planner["safe"] == "kept"
+    assert planner["task"] == "keep ordinary artifact fields"
+    assert "credentials" not in planner
+    provider_response = json.loads((copied_run / "artifacts" / "provider_response.json").read_text())
+    assert provider_response == {"nested": {}, "safe": 3}
     assert service.store.delete_session(source.session_id)
     assert (copied_run / "artifacts" / "metrics.csv").is_file()
     assert service.store.get_session(child.session_id) is not None
@@ -431,6 +468,28 @@ def test_current_goal_snapshot_has_new_ids_and_cannot_auto_continue(runtime):
     assert (service.runs_dir / evidence["run_id"] / "artifacts" / "metrics.csv").is_file()
     assert goals.get_goal_snapshot(source_goal.goal_id, evidence_limit=None) == source_before
     assert goals.get_current_goal(source.session_id).status is GoalStatus.ACTIVE
+
+
+def test_goal_paths_outside_the_run_root_remain_shared(runtime, tmp_path):
+    service, goals, _, source = _source(runtime)
+    _, selected, _ = _turn(service, source.session_id, "selected", run_id="local-run")
+    shared_file = tmp_path / "shared" / "runs" / "local-run" / "report.csv"
+    shared_file.parent.mkdir(parents=True)
+    shared_file.write_text("shared report\n")
+    goal = goals.replace_goal(session_id=source.session_id, objective="Keep shared reports shared.", criteria=["Check"])
+    goals.append_evidence(
+        session_id=source.session_id,
+        goal_id=goal.goal_id,
+        expected_goal_id=goal.goal_id,
+        evidence=EvidenceInput(text="Shared report evidence.", artifact_path=str(shared_file)),
+    )
+
+    child = service.fork_session(source.session_id, selected.message_id, owner=ALICE, goal_store=goals)
+    snapshot = goals.get_current_snapshot(child.session_id)
+    evidence = next(item for item in snapshot["evidence"] if item["text"] == "Shared report evidence.")
+
+    assert evidence["artifact_path"] == str(shared_file)
+    assert len([path for path in service.runs_dir.iterdir() if path.is_dir()]) == 2
 
 
 def test_search_index_is_rebuilt_only_for_child(runtime):

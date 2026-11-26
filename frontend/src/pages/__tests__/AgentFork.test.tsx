@@ -12,6 +12,7 @@ const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
   getRunPreview: vi.fn(),
+  getRunPine: vi.fn(),
   getSessionMessages: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
   uploadFile: vi.fn(),
@@ -93,6 +94,7 @@ describe("Agent conversation Fork", () => {
     apiMock.getGoal.mockResolvedValue(null);
     apiMock.getLLMSettings.mockResolvedValue({ sse_timeout_seconds: 90, providers: [] });
     apiMock.getRunPreview.mockReset().mockResolvedValue(null);
+    apiMock.getRunPine.mockReset().mockResolvedValue({ exists: false });
     apiMock.getSessionMessages.mockReset().mockImplementation(async () => sourceMessages());
     apiMock.uploadFile.mockReset().mockResolvedValue({
       status: "ok",
@@ -161,12 +163,28 @@ describe("Agent conversation Fork", () => {
     fireEvent.drop(form!, {
       dataTransfer: { files: [new File(["data"], "source.csv", { type: "text/csv" })], types: ["Files"] },
     });
-    await waitFor(() => expect(apiMock.uploadFile).toHaveBeenCalledTimes(1));
-    await userEvent.setup().click(screen.getByRole("button", { name: "Fork" }));
+    expect(apiMock.uploadFile).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Fork" }));
 
     expect(toastMock.warning).toHaveBeenCalledWith("Wait for attachments to finish uploading before forking.");
     expect(apiMock.forkSession).not.toHaveBeenCalled();
   });
+
+  it.each(["", "Strategy execution completed."])(
+    "offers Fork on a completed run-only answer with content %j",
+    async (content) => {
+      const messages = sourceMessages();
+      messages[1].content = content;
+      (messages[1].metadata as Record<string, unknown>).run_id = "run-1";
+      apiMock.getSessionMessages.mockResolvedValue(messages);
+      renderAgent();
+
+      await waitFor(() => {
+        fireEvent.click(screen.getByRole("button", { name: "Fork" }));
+        expect(apiMock.forkSession).toHaveBeenCalledWith("source", "answer-1");
+      });
+    },
+  );
 
   it("keeps the source active and navigates after a successful Fork", async () => {
     const router = renderAgent();

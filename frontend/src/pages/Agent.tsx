@@ -572,6 +572,7 @@ export function Agent() {
           );
         const metrics = meta?.metrics as Record<string, number> | undefined;
         const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
+        const hasTextAnswer = Boolean(m.content && m.content !== "Strategy execution completed.");
         if (
           m.role === "assistant"
           && (
@@ -630,7 +631,7 @@ export function Agent() {
           });
         } else if (runId) {
           // Show text answer first (if non-empty), then chart card
-          if (m.content && m.content !== "Strategy execution completed.") {
+          if (hasTextAnswer) {
             agentMsgs.push({
               id: m.message_id + "_ans",
               type: "answer",
@@ -642,11 +643,29 @@ export function Agent() {
             });
           }
           if (hasStoredMetrics(metrics)) {
-            agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
+            agentMsgs.push({
+              id: m.message_id,
+              type: "run_complete",
+              content: "",
+              runId,
+              metrics,
+              timestamp: assistantTs + 1,
+              sourceMessageId: hasTextAnswer ? undefined : m.message_id,
+              canFork: hasTextAnswer ? false : canFork,
+            });
           } else {
             const card = runCardFields((await previews.get(runId)) ?? null);
-            if (card) {
-              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
+            if (card || !hasTextAnswer) {
+              agentMsgs.push({
+                id: m.message_id,
+                type: "run_complete",
+                content: "",
+                runId,
+                ...(card ?? {}),
+                timestamp: assistantTs + 1,
+                sourceMessageId: hasTextAnswer ? undefined : m.message_id,
+                canFork: hasTextAnswer ? false : canFork,
+              });
             }
           }
         } else {
@@ -1968,7 +1987,7 @@ export function Agent() {
                 <MessageBubble
                   msg={g.msg}
                   onRetry={g.msg.type === "error" ? handleRetry : undefined}
-                  onFork={g.msg.type === "answer" && g.msg.canFork ? handleFork : undefined}
+                  onFork={(g.msg.type === "answer" || g.msg.type === "run_complete") && g.msg.canFork ? handleFork : undefined}
                   forking={g.msg.sourceMessageId === forkingMessageId}
                 />
               </div>
