@@ -132,7 +132,7 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
     monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: ({}, None))
 
     run = _running_run("r-timeout")
-    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: run)
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_, **__: run)
     layer_started = threading.Event()
     finish_layer = threading.Event()
     threads = []

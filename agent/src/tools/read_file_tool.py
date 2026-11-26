@@ -80,10 +80,13 @@ def _skill_relative_matches(file_path: str, skills_dir: Path) -> list[tuple[str,
 
 
 class ReadFileTool(FileBoundTool, BaseTool):
-    """Read file contents with optional line limit."""
+    """Read file contents or one selected JSON value, with an optional line limit."""
 
     name = "read_file"
-    description = "Read a file from the workspace. Returns file contents with optional line limit."
+    description = (
+        "Read a file from the workspace. Returns file contents, or the JSON value an RFC 6901 "
+        "pointer selects, with an optional line limit."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -94,6 +97,14 @@ class ReadFileTool(FileBoundTool, BaseTool):
                     "The skills/ prefix always resolves to the bundled skills. "
                     "A references/ or scripts/ path copied out of a SKILL.md "
                     "resolves against the skill that owns it."
+                ),
+            },
+            "pointer": {
+                "type": "string",
+                "description": (
+                    "Optional RFC 6901 JSON pointer into a JSON file, e.g. /_provenance or /data/0. "
+                    "Selects that value before the line limit applies; an empty string selects "
+                    "the whole document. A pointer that names no value is an error."
                 ),
             },
             "limit": {
@@ -109,14 +120,18 @@ class ReadFileTool(FileBoundTool, BaseTool):
         """Read a file.
 
         Args:
-            **kwargs: Must include path. Optional limit and run_dir.
+            **kwargs: Must include path. Optional pointer (RFC 6901 selection inside a JSON
+                file), limit (lines) and run_dir.
 
         Returns:
-            JSON string containing content or an error. A partial read carries
-            ``truncated``, ``returned_chars`` (source characters from the file's
-            start held in content), ``total_chars``, a ``message`` naming the
-            unchanged original file and, for a line window, ``total_lines`` and
-            ``returned_lines``.
+            JSON string containing content or an error. A pointer read carries ``pointer``,
+            ``source_chars`` (characters in the whole file) and ``source_truncated`` when the
+            selected value or an ancestor declares sampled data; its content is the selected
+            value as indented JSON. A partial read carries ``truncated``, ``returned_chars``
+            (characters from the start of the file or selection held in content),
+            ``total_chars``, a ``message`` naming the unchanged original file and, for a line
+            window, ``total_lines`` and ``returned_lines``. A malformed or absent pointer, or a
+            pointer into a non-JSON file or a directory, is an error without content.
         """
         file_path = kwargs["path"]
         limit = kwargs.get("limit")
@@ -226,8 +241,14 @@ class ReadFileTool(FileBoundTool, BaseTool):
                 ensure_ascii=False,
             )
 
+        pointer = kwargs.get("pointer")
         try:
             if resolved.is_dir():
+                if pointer is not None:
+                    return json.dumps({
+                        "status": "error", "error_code": "not_a_file",
+                        "error": "A JSON pointer selects inside a JSON file, not a directory. Omit pointer to list it.",
+                    }, ensure_ascii=False)
                 # A directory is a question about what is in it.
                 entries = sorted(
                     child.name + ("/" if child.is_dir() else "")
@@ -246,8 +267,28 @@ class ReadFileTool(FileBoundTool, BaseTool):
                 )
 
             original = resolved.read_text(encoding="utf-8")
-            text = original
             body: dict = {"status": "ok", "path": str(resolved)}
+            if pointer is not None:
+                from src.tools.data_refs import resolve_json_pointer
+
+                try:
+                    document = json.loads(original)
+                except json.JSONDecodeError:
+                    return json.dumps({
+                        "status": "error", "error_code": "invalid_json",
+                        "error": "A JSON pointer needs a JSON file. Omit pointer to read this file as text.",
+                    }, ensure_ascii=False)
+                try:
+                    value, sampled = resolve_json_pointer(document, pointer)
+                except ValueError as exc:
+                    return json.dumps({"status": "error", "error_code": "invalid_pointer", "error": str(exc)},
+                                      ensure_ascii=False)
+                body.update(pointer=pointer, source_chars=len(original))
+                if sampled:
+                    body["source_truncated"] = True
+                # The selection is what the limits below apply to.
+                original = json.dumps(value, ensure_ascii=False, indent=2)
+            text = original
             if limit and limit > 0:
                 lines = original.splitlines(keepends=True)
                 if len(lines) > limit:

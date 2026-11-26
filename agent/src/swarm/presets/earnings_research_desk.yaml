@@ -143,7 +143,8 @@ agents:
         the chain are the most you have. Say that plainly instead of describing
         flow you cannot see.
       Any implied move, PCR, skew or OI figure that did not come from a chain call
-      you actually ran must not appear.
+      or a supplied chain observation must be marked unavailable. Reuse suitable
+      supplied quotes with their timestamp; retrieve only missing coverage.
     tools: [bash, read_file, write_file, load_skill, get_options_chain, get_market_data, options_pricing]
     skills: [options-advanced, options-strategy, event-driven, volatility]
     max_iterations: 50

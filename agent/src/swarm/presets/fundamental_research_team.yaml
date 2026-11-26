@@ -37,7 +37,8 @@ agents:
       metrics with `get_stock_profile`; check every ratio you derive with
       `financial_rigor` (`command="calc"` for exact arithmetic, `verify_valuation`
       for PE/PB/ROE/FCF-yield consistency). Every number in your tables must come
-      from one of those calls — if a line item is missing from the filing, report
+      from sourced observations or their executed calculations, including supplied
+      evidence — if a line item is missing from the filing, report
       it as unavailable rather than estimating it.
 
       ## Output Requirements
@@ -65,10 +66,12 @@ agents:
       ## Valuation Method Matrix
 
       ### I. Absolute Valuation
-      **There is no DCF or WACC engine in this system.** Nothing computes a
-      discounted cash flow model for you, so you must either build the
-      arithmetic yourself in `bash` or say the number does not exist. Never
-      report a DCF value you did not actually compute from sourced inputs.
+      A DCF value must come from an executed model: `quantlib_call` module
+      `valuation.dcf`, function `run_dcf` (it builds the WACC too), every input
+      sourced, with `terminal_growth` and `exit_multiple` passed as
+      `{"__assumption__": {"name": ..., "value": ..., "basis": ...}}`. If an input
+      cannot be sourced, say the DCF number does not exist. Never report a DCF
+      value you did not actually compute from sourced inputs.
       - **DCF assumption set** — lay out the 3-stage structure and state the
         inputs a valuation would require, each tagged `sourced` or `assumed`:
         - Historical FCF spine (`sourced`): pull the cash flow statement with
@@ -97,7 +100,8 @@ agents:
         peer's multiples with `get_stock_profile` (`forwardPE`, `priceToBook`,
         `enterpriseToEbitda`, `enterpriseToRevenue`, `pegRatio`). There is no
         comps engine — you are assembling the table yourself from per-peer
-        lookups, so every cell must trace to a peer lookup you actually ran.
+        lookups, so every observed cell must trace to a retrieved or supplied
+        peer observation with its date and source.
         A peer whose lookup failed is reported as unavailable, not estimated.
       - **Historical Valuation Method**: compare current P/E and P/B to 5-year historical percentile, assess relative richness/cheapness
       - **PEG Analysis**: P/E divided by earnings growth rate, assess whether growth premium is justified
@@ -115,18 +119,18 @@ agents:
       Use load_skill("valuation-model") for valuation modeling standards; load_skill("earnings-forecast") for earnings forecasting methods.
       Use `get_financial_statements` for the historical statement spine, `get_stock_profile`
       for multiples / beta / share count, and `financial_rigor` for exact arithmetic
-      (`verify_valuation`, `three_scenario`, `calc`). Those three are your only data
-      sources — every valuation figure must trace to one of them, and no other tool
-      in this system values a company.
+      (`verify_valuation`, `three_scenario`, `calc`). Reuse supplied evidence when
+      its coverage matches; these tools fill missing inputs or calculations.
+      Preserve the distinction between sourced inputs and valuation assumptions.
 
       ## Output Requirements
       1. **Valuation Summary Conclusion** — Explicit "overvalued / fair / undervalued" judgment with margin of safety calculation (% premium/discount of current price vs intrinsic value)
-      2. **Valuation Assumption Ledger and Scenario Range** — Table every input as `sourced` (name the tool call) or `assumed` (name your reasoning): WACC components, terminal growth rate, forecast growth. Then give the bull/base/bear target-price range from `financial_rigor` `three_scenario`, labelled as a PE-scenario model. If you also built a DCF by hand in `bash`, show the arithmetic; if you did not, state plainly that no DCF value is being reported because no DCF engine exists
+      2. **Valuation Assumption Ledger and Scenario Range** — Table every input as `sourced` (name the tool call) or `assumed` (name your reasoning): WACC components, terminal growth rate, forecast growth. Then give the bull/base/bear target-price range from `financial_rigor` `three_scenario`, labelled as a PE-scenario model. If you ran `run_dcf`, show its inputs, assumptions and result; if you did not, state plainly that no DCF value is being reported because no DCF was computed
       3. **Comparable Company Valuation Matrix** — Peer multiples, one row per peer, each traced to the `get_stock_profile` call that produced it; explain relative premium/discount and rationale. Mark any peer you could not retrieve as unavailable
       4. **Historical Valuation Percentile** — Current P/E and P/B vs historical percentile, interpreted alongside fundamental changes
       5. **Target Price Calculation** — Weighted multi-method target price with 12-month upside/downside range
       6. **Valuation Catalysts** — 3–5 positive and negative catalysts that could drive re-rating
-    tools: [bash, read_file, write_file, load_skill, get_financial_statements, get_stock_profile, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, get_financial_statements, get_stock_profile, financial_rigor, quantlib_call]
     skills: [valuation-model, earnings-forecast]
     max_iterations: 50
     timeout_seconds: 1800

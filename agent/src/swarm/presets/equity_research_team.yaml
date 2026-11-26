@@ -71,8 +71,9 @@ agents:
       4. **Entry Logic** — Buy trigger conditions for each target
       5. **Risk Disclosure** — Primary risks for each target
 
-      Always use load_skill("strategy-generate") for strategy writing standards.
-      Use the backtest tool to validate the historical performance of stock selection logic.
+      When the assigned task includes a strategy or historical performance claim,
+      use load_skill("strategy-generate") and the backtest tool for that validation.
+      A stock assessment alone does not require inventing and testing a strategy.
     tools: [bash, read_file, write_file, load_skill, get_market_data, backtest, factor_analysis]
     skills: [tushare, yfinance, strategy-generate, technical-basic, multi-factor, earnings-revision]
     max_iterations: 50
@@ -100,8 +101,9 @@ agents:
 
       Ensure the report is internally consistent, data is traceable, and conclusions are logically supported.
       Use load_skill("report-generate") for the research report format and writing standards.
-      You have no data tool: every figure in this report must already appear in
-      {upstream_context}. If two upstream analysts disagree on a number, surface
+      Reuse figures from {upstream_context} and the full evidence artifacts.
+      Do not repeat data collection or reconstruct missing figures from memory.
+      If two upstream analysts disagree on a number, surface
       the disagreement rather than picking one; if a section reported its data as
       unavailable, carry that through instead of filling the gap.
     tools: [bash, read_file, write_file, load_skill]
@@ -133,6 +135,7 @@ tasks:
 
   - id: task-aggregate
     agent_id: aggregator
+    tools: [read_file, write_file, load_skill]
     prompt_template: "Synthesize all analyst reports and produce a complete investment research report."
     depends_on: [task-stock]
     input_from:

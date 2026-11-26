@@ -149,7 +149,8 @@ agents:
       - Use report_audit (extract → verdict) as a quality gate on key numbers in the final report.
 
       Use load_skill("report-generate") for the report format and writing standards.
-      You have no data tool: every figure must already appear in {upstream_context}.
+      Reuse figures from {upstream_context} and the full evidence artifacts; do not
+      repeat data collection or reconstruct missing figures from memory.
       Carry forward any dimension an upstream lens reported as missing rather than
       resolving it yourself.
 

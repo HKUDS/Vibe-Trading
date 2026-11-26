@@ -189,7 +189,7 @@ def validate_dag(tasks: list[SwarmTask]) -> None:
             if source not in ancestors:
                 ancestors.add(source)
                 pending.extend(graph[source])
-        for key, source in task.input_from.items():
+        for key, source in task.input_tasks().items():
             if source not in ancestors:
                 raise ValueError(
                     f"Task '{task.id}' input_from '{key}' references '{source}', "

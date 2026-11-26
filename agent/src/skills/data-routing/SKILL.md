@@ -1,7 +1,7 @@
 ---
 name: data-routing
 category: data-source
-description: Map research needs to gateway-backed tools. The runtime gateway owns source routing, bounded acquisition and caching; preserve credentials and source provenance.
+description: Choose a gateway-backed data tool when the required coverage, authentication or routing is unknown. The runtime gateway owns source routing, bounded acquisition and caching; preserve credentials and source provenance. Reuse supplied data and known tool contracts; loading this router is not a prerequisite for every research task.
 ---
 # Data Routing (Router)
 
@@ -206,22 +206,28 @@ main and could retry a source the gateway has already cooled down.
 
 ## Data Verification Discipline
 
-When a number will drive a conclusion (valuation, screening, report), do not trust a
-single source. Cross-check it:
+Reuse supplied or inherited evidence with its source, date, units and limitations.
+A task restricted to a specified source or snapshot does not authorize another
+retrieval. State that independent source verification was not performed; a sourced
+observation is not an estimate merely because it has one source.
 
-- **Verify material figures across ≥2 independent sources** before citing them.
-  Prioritize original disclosures (company annual/quarterly reports, exchange filings)
-  over third-party aggregators.
-- **Flag any deviation >1%** between sources as a ⚠️ caliber mismatch — usually a
-  definition difference (GAAP vs Non-GAAP, consolidated vs parent-only, currency,
-  TTM vs annual). Do not silently pick one; state both and which you adopt.
-- **Use the `financial_rigor` tool's `cross_validate` command** to do this exactly:
-  pass `{source: value, ...}` and it returns the median consensus + per-source
-  deviation + an `all_consistent` flag at a configurable tolerance (default 2%).
-- **Mark unverified numbers** as "single-source" or "estimate" — never present an
+- Cross-check a material figure when the task requires independent verification
+  or a concrete discrepancy affects the conclusion and another source is allowed.
+  Prefer original disclosures over aggregators. Re-reading or copying the same
+  source is not independent corroboration.
+- Compare definitions before values: period, currency, consolidated versus parent,
+  and reported versus adjusted figures. Preserve unresolved differences and state
+  which basis the analysis uses; do not silently pick one.
+- For an authorized numerical cross-check, the `financial_rigor` tool's
+  `cross_validate` command accepts `{source: value, ...}` and a configurable tolerance (default 2%). Report
+  that actual tolerance and the deviations; agreement alone does not prove accuracy.
+- **Label a material figure that rests on a single source as "single-source"**
+  when you present it, and an estimate as "estimate" — never present an
   uncorroborated figure as established fact.
-
-This discipline is what separates analysis from aggregation.
+- Keep collection within its assigned scope. Hand off observations and unresolved
+  gaps; do not turn data verification into downstream metric calculation or a new
+  research report. A missing calendar or definition remains unknown, not a reason
+  to manufacture a defect from memory or run unrelated sensitivity analyses.
 
 ### Gildata research and OTC funds
 

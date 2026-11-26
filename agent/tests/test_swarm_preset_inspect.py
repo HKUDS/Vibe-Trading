@@ -65,11 +65,11 @@ variables:
     assert "Declared variables are not used by task prompt templates: market" in report["warnings"]
 
 
-def test_all_thirty_bundled_presets_pass_runtime_dag_validation() -> None:
+def test_all_thirty_one_bundled_presets_pass_runtime_dag_validation() -> None:
     from src.swarm.task_store import validate_dag
 
     names = [entry["name"] for entry in presets.list_presets()]
-    assert len(names) == 30
+    assert len(names) == 31
     for name in names:
         validate_dag(presets.build_run_from_preset(name, {}).tasks)
         assert presets.inspect_preset(name)["valid"], name

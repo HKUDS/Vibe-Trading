@@ -1,6 +1,8 @@
 """CLI swarm runtime commands and their helpers."""
 from __future__ import annotations
 
+import json
+
 from src.config.accessor import get_env_config
 
 from src.product.tool_policy import ToolPolicy
@@ -483,6 +485,7 @@ def cmd_swarm_inspect(preset: str) -> int:
         f"[bold]Agents:[/bold] {len(report['agents'])}",
         f"[bold]Tasks:[/bold] {len(report['tasks'])}",
         f"[bold]Variables:[/bold] {', '.join(report['variables']) or '-'}",
+        f"[bold]Recent-price prefetch:[/bold] {report['prefetch_grounding']}",
     ]
     if report.get("description"):
         lines.append(f"[bold]Description:[/bold] {report['description']}")
@@ -505,6 +508,8 @@ def cmd_swarm_inspect(preset: str) -> int:
     dag_table.add_column("Task", style="cyan")
     dag_table.add_column("Agent")
     dag_table.add_column("Depends On")
+    dag_table.add_column("Tools")
+    dag_table.add_column("Inputs")
     task_details = {task["id"]: task for task in report["tasks"]}
     for idx, layer in enumerate(report["layers"], start=1):
         for item in layer:
@@ -514,6 +519,8 @@ def cmd_swarm_inspect(preset: str) -> int:
                 item["task_id"],
                 item["agent_id"],
                 ", ".join(task.get("depends_on", [])) or "-",
+                "inherit" if task.get("tools") is None else ", ".join(task["tools"]) or "none",
+                json.dumps(task.get("input_from", {}), ensure_ascii=False) if task.get("input_from") else "-",
             )
     common.console.print(dag_table)
 
