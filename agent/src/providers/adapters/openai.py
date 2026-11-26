@@ -29,6 +29,7 @@ from src.providers.messages import _tool_call_thought_signature_maps
 from src.providers.registry import get_provider_capabilities
 from src.providers.request_guards import (
     _OPENCODE_SESSION_HEADER,
+    _guard_openai_retry_wait,
     _guard_provider_redirects,
     _openai_custom_header_names,
     _targets_opencode,
@@ -123,6 +124,7 @@ if ChatOpenAI is not None:
             )
             super().__init__(*args, **kwargs)
             _guard_provider_redirects(self.root_client, self.root_async_client)
+            _guard_openai_retry_wait(self.root_client)
             if vibe_environment is not None:
                 # Replace ambient SDK client overrides while retaining per-request headers (#1573).
                 for client in (self.root_client, self.root_async_client):

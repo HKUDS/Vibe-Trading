@@ -10,6 +10,9 @@ import time
 from typing import Any, Callable, Iterator, Optional, TypeVar
 
 _EXHAUSTED = object()
+_stream_retry_wait: contextvars.ContextVar[Callable[[float], None] | None] = contextvars.ContextVar(
+    "stream_retry_wait", default=None,
+)
 
 #: How long a close is given to take effect before it is left to the adapter.
 _CLOSE_JOIN_SECONDS = 2.0
@@ -35,10 +38,15 @@ class StreamInterrupted(Exception):
 class _Puller:
     """Move items off a blocking iterator one at a time onto a queue."""
 
-    def __init__(self, iterator: Iterator[Any], out: "queue.Queue[Any]") -> None:
+    def __init__(
+        self, iterator: Iterator[Any], out: "queue.Queue[Any]",
+        should_cancel: Callable[[], bool] | None, deadline: float | None,
+    ) -> None:
         self._iterator = iterator
         self._out = out
         self._stop = threading.Event()
+        self._should_cancel = should_cancel
+        self._deadline = deadline
         self._close_lock = threading.Lock()
         self._closed = False
         context = contextvars.copy_context()
@@ -47,7 +55,20 @@ class _Puller:
         )
         self._thread.start()
 
+    def _wait_for_retry(self, delay: float) -> None:
+        if self._should_cancel is not None and self._should_cancel():
+            raise StreamInterrupted("cancelled")
+        if self._deadline is not None:
+            delay = min(delay, max(0.0, self._deadline - time.monotonic()))
+        if self._stop.wait(delay):
+            raise StreamInterrupted("cancelled")
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise StreamInterrupted("total timeout")
+        if self._should_cancel is not None and self._should_cancel():
+            raise StreamInterrupted("cancelled")
+
     def _run(self) -> None:
+        token = _stream_retry_wait.set(self._wait_for_retry)
         try:
             while not self._stop.is_set():
                 try:
@@ -61,7 +82,10 @@ class _Puller:
                 self._put(item)
         finally:
             # Release a busy generator on the pull thread after next() returns.
-            self._close_once()
+            try:
+                self._close_once()
+            finally:
+                _stream_retry_wait.reset(token)
 
     def _close_once(self) -> None:
         with self._close_lock:
@@ -145,8 +169,9 @@ def supervised_pulls(
     out: "queue.Queue[Any]" = queue.Queue(maxsize=1)
     if should_cancel is not None and should_cancel():
         raise StreamInterrupted("cancelled")
-    puller = _Puller(iterator, out)
     started = time.monotonic()
+    deadline = None if total_timeout_s is None else started + total_timeout_s
+    puller = _Puller(iterator, out, should_cancel, deadline)
     last_chunk = started
     emitted = False
 
@@ -166,11 +191,11 @@ def supervised_pulls(
             remaining: Optional[float] = None
             if idle_timeout_s is not None:
                 remaining = max(0.0, idle_timeout_s - (now - last_chunk))
-            if total_timeout_s is not None:
-                budget = max(0.0, total_timeout_s - (now - started))
+            if deadline is not None:
+                budget = max(0.0, deadline - now)
                 remaining = budget if remaining is None else min(remaining, budget)
             if remaining is not None and remaining <= 0:
-                total_expired = total_timeout_s is not None and now - started >= total_timeout_s
+                total_expired = deadline is not None and now >= deadline
                 raise interrupt("total timeout" if total_expired else "idle timeout")
             wait = poll_interval_s if remaining is None else min(poll_interval_s, remaining)
             try:

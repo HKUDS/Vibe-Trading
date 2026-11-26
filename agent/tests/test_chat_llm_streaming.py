@@ -313,6 +313,121 @@ def test_only_explicit_provider_waiting_reaches_activity_callback():
     assert response.content == "final"
 
 
+@pytest.mark.parametrize("stop", ["node_deadline", "turn_cancel"])
+@pytest.mark.parametrize("status", [429, 500])
+def test_sdk_retry_wait_ends_with_supervised_stream(stop, status):
+    """Use SDK attempts on the wire to detect retries after the caller stops.
+
+    Args:
+        stop: Signal that stops the caller while the SDK is backing off.
+        status: HTTP response status that triggers the SDK retry.
+    """
+    import time
+
+    import httpx
+
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
+    from src.swarm.node import NodeModel, NodeStop
+
+    attempts = []
+    workers = []
+    first_attempt = threading.Event()
+    cancel = threading.Event()
+    retry_after = 0.5
+
+    def respond(request):
+        attempts.append(time.monotonic() - started)
+        workers.append(threading.current_thread())
+        first_attempt.set()
+        return httpx.Response(status, headers={"retry-after": str(retry_after)})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        adapter = ChatOpenAIWithReasoning(
+            model="gpt-test", api_key="offline", base_url="https://example.invalid/v1",
+            http_client=transport, max_retries=2,
+        )
+        client = _client(adapter)
+        messages = [{"role": "user", "content": "Hi"}]
+
+        def cancel_turn():
+            if first_attempt.wait(2):
+                time.sleep(0.05)
+                cancel.set()
+
+        started = time.monotonic()
+        if stop == "node_deadline":
+            node_stop = NodeStop(None, 0.2)
+            model = NodeModel(client, node_stop, lambda *args: None, None)
+            try:
+                model.stream_chat(messages, timeout=None, idle_timeout_s=None,
+                                  on_text_chunk=lambda _: None, should_cancel=node_stop.is_set)
+            except ProviderStreamError as error:
+                assert "timeout" in str(error)
+            assert node_stop.expired
+        else:
+            canceller = threading.Thread(target=cancel_turn)
+            canceller.start()
+            try:
+                assert not client.stream_chat(messages, should_cancel=cancel.is_set).content
+            finally:
+                canceller.join()
+        caller_elapsed = time.monotonic() - started
+        assert workers
+        workers[0].join(2)
+        worker_elapsed = time.monotonic() - started
+
+    print(f"{stop} HTTP {status}: caller={caller_elapsed:.3f}s worker={worker_elapsed:.3f}s "
+          f"attempts={[round(offset, 3) for offset in attempts]}")
+    assert caller_elapsed < retry_after
+    assert len(attempts) == 1
+    assert not workers[0].is_alive()
+    assert worker_elapsed < retry_after
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_sdk_retry_coverage_is_preserved(stream):
+    """Check two consecutive retries, including 409 and an explicit retry header.
+
+    Args:
+        stream: Whether the request uses the supervised stream or plain chat.
+    """
+    import json
+
+    import httpx
+
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(409, headers={"retry-after-ms": "1"})
+        if len(requests) == 2:
+            return httpx.Response(400, headers={"x-should-retry": "true", "retry-after-ms": "1"})
+        choice = {"index": 0, "finish_reason": "stop"}
+        packet = {"id": "offline", "created": 0, "model": "gpt-test", "choices": [choice]}
+        if stream:
+            choice["delta"] = {"content": "hello"}
+            packet["object"] = "chat.completion.chunk"
+            return httpx.Response(200, text=f"data: {json.dumps(packet)}\n\ndata: [DONE]\n\n",
+                                  headers={"content-type": "text/event-stream"})
+        choice["message"] = {"role": "assistant", "content": "hello"}
+        packet["object"] = "chat.completion"
+        return httpx.Response(200, json=packet)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        adapter = ChatOpenAIWithReasoning(
+            model="gpt-test", api_key="offline", base_url="https://example.invalid/v1",
+            http_client=transport, max_retries=2,
+        )
+        client = _client(adapter)
+        request = client.stream_chat if stream else client.chat
+        assert request([{"role": "user", "content": "Hi"}], timeout=2).content == "hello"
+
+    assert len(requests) == 3
+
+
 @pytest.mark.parametrize("adapter_kind", ["compatible", "native"])
 @pytest.mark.parametrize("terminal", [True, False])
 @pytest.mark.parametrize("tool_call", [True, False])
