@@ -209,6 +209,8 @@
     "missingLongbridgeVariables": "設定が不足しています。agent/.env に次の変数を設定し、サービスを再作成してください:",
     "missingEtoroVariables": "設定が不足しています。次の環境変数を設定するか ~/.vibe-trading/etoro.json を作成してください:",
     "missingEtoroFileHint": "例: {\"api_key\": \"YOUR_PUBLIC_API_KEY\", \"user_key\": \"YOUR_USER_KEY\", \"profile\": \"live-readonly\"}。プロファイル: etoro-paper-sdk、etoro-live-sdk-readonly、etoro-paper-trade、etoro-live-trade。",
+    "missingExnessVariables": "設定が不足しています。次の環境変数を設定するか ~/.vibe-trading/exness.json を作成してください:",
+    "missingExnessFileHint": "例: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}。プロファイル: exness-live-api-readonly, exness-live-api-trade。",
     "missingConnectorVariables": "設定が不足しています。~/.vibe-trading/ または agent/.env でコネクター認証情報を設定し、接続を検証してください。",
     "pathSeparatedKeyBound": "デモ/本番パス分離（共有キーペア）",
     "sdkConnectorProfile": "SDK 直接接続・読み取り専用プロファイル",

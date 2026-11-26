@@ -209,6 +209,8 @@
     "missingLongbridgeVariables": "설정이 누락되었습니다. agent/.env에 다음 변수를 설정하고 서비스를 다시 생성하세요:",
     "missingEtoroVariables": "설정이 누락되었습니다. 다음 환경 변수를 설정하거나 ~/.vibe-trading/etoro.json을 생성하세요:",
     "missingEtoroFileHint": "예: {\"api_key\": \"YOUR_PUBLIC_API_KEY\", \"user_key\": \"YOUR_USER_KEY\", \"profile\": \"live-readonly\"}. 프로필: etoro-paper-sdk, etoro-live-sdk-readonly, etoro-paper-trade, etoro-live-trade.",
+    "missingExnessVariables": "설정이 누락되었습니다. 다음 환경 변수를 설정하거나 ~/.vibe-trading/exness.json을 생성하세요:",
+    "missingExnessFileHint": "예: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}. 프로필: exness-live-api-readonly, exness-live-api-trade.",
     "missingConnectorVariables": "설정이 누락되었습니다. ~/.vibe-trading/ 또는 agent/.env에 커넥터 자격 증명을 구성한 후 연결을 검증하세요.",
     "pathSeparatedKeyBound": "데모/실계좌 경로 분리(공유 키 페어)",
     "sdkConnectorProfile": "SDK 직접 연결 · 읽기 전용 프로필",

@@ -215,6 +215,8 @@
     "missingLongbridgeVariables": "پیکربندی ناقص است. این متغیرها را در agent/.env تنظیم کنید و سرویس را دوباره بسازید:",
     "missingEtoroVariables": "پیکربندی ناقص است. این متغیرهای محیطی را تنظیم کنید یا فایل ~/.vibe-trading/etoro.json بسازید:",
     "missingEtoroFileHint": "فایل نمونه: {\"api_key\": \"کلید عمومی شما\", \"user_key\": \"کلید کاربری شما\", \"profile\": \"live-readonly\"}. پروفایل‌ها: etoro-paper-sdk، etoro-live-sdk-readonly، etoro-paper-trade، etoro-live-trade.",
+    "missingExnessVariables": "پیکربندی ناقص است. این متغیرهای محیطی را تنظیم کنید یا فایل ~/.vibe-trading/exness.json بسازید:",
+    "missingExnessFileHint": "فایل نمونه: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}. پروفایل‌ها: exness-live-api-readonly, exness-live-api-trade.",
     "missingConnectorVariables": "پیکربندی ناقص است. اعتبارنامه‌های کانکتور را در ~/.vibe-trading/ یا agent/.env تنظیم کنید و اتصال را راستی‌آزمایی کنید.",
     "pathSeparatedKeyBound": "مسیر جداشده دمو/واقعی (جفت‌کلید مشترک)",
     "sdkConnectorProfile": "کانکتور مستقیم SDK · پروفایل فقط‌خواندنی",
