@@ -194,7 +194,8 @@ def _persist_result_files(
     }
 
 
-_FILE_READ_FIELDS = ('path', 'truncated', 'returned_chars', 'total_chars', 'returned_lines', 'total_lines')
+_FILE_READ_FIELDS = ('path', 'pointer', 'source_chars', 'source_truncated', 'truncated', 'returned_chars',
+                     'total_chars', 'returned_lines', 'total_lines')
 
 
 def _file_read_receipt(payload, has_shell: bool) -> dict | None:
@@ -207,8 +208,10 @@ def _file_read_receipt(payload, has_shell: bool) -> dict | None:
     receipt = {key: payload[key] for key in _FILE_READ_FIELDS if key in payload}
     pages = ('_result_file holds this read_file response, not the source file; its pages are '
              'parts_relative_dir + /1.txt through part_count, fragments of the response JSON in order.')
+    selection = (f'the JSON value at pointer {payload["pointer"]!r} of the source file at path'
+                 if isinstance(payload.get('pointer'), str) else 'the source file at path')
     if not payload.get('truncated'):
-        receipt['_delivery'] = f'Its content is the complete text of the source file at path. {pages}'
+        receipt['_delivery'] = f'Its content is the complete text of {selection}. {pages}'
         return receipt
     shown, total = payload.get('returned_chars'), payload.get('total_chars')
     held = f'the first {shown} of {total} characters' if isinstance(shown, int) else f'part of the {total} characters'
@@ -217,7 +220,7 @@ def _file_read_receipt(payload, has_shell: bool) -> dict | None:
             else f'read_file always reads from the first line: a larger limit returns more lines, up to '
                  f'{_OUTPUT_LIMIT:,} characters, and it has no offset, so text past that is not reachable through read_file.')
     receipt['_delivery'] = (
-        f'Its content is a partial preview: only {held} of the source file at path, which is unchanged. '
+        f'Its content is a partial preview: only {held} of {selection}, which is unchanged. '
         f'{pages} Saving the response did not save the rest of the source. {rest}'
     )
     return receipt

@@ -1491,14 +1491,24 @@ def write_file(path: str, content: str) -> str:
 
 
 @mcp.tool
-def read_file(path: str) -> str:
-    """Read the contents of a file.
+def read_file(path: str, pointer: str | None = None, limit: int | None = None) -> str:
+    """Read the contents of a file, or one value of a JSON file.
 
     Args:
         path: File path to read.
+        pointer: Optional RFC 6901 JSON pointer selecting a field or array item of a JSON file;
+            a pointer that names no value is an error, never the whole file.
+        limit: Optional maximum number of returned lines, applied after selection.
+
+    Returns:
+        The read_file tool's JSON result.
     """
-    registry = _get_registry()
-    return registry.execute("read_file", {"path": path})
+    arguments: dict = {"path": path}
+    if pointer is not None:
+        arguments["pointer"] = pointer
+    if limit is not None:
+        arguments["limit"] = limit
+    return _get_registry().execute("read_file", arguments)
 
 
 @mcp.tool
