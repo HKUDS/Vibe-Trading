@@ -58,9 +58,12 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots
         'pointer (e.g. /NVDA.US), column=close, index=trade_date, transform=pct_change. '
         'Inspect the saved JSON before requesting more data. Only if rows are explicitly sampled/truncated and consecutive bars are needed, fetch max_rows=0 for the bounded window. Read parts/1.txt onward for prose inspection.'
     )}
-    metadata = ('ok', 'status', 'module', 'function', 'input_sources',
+    metadata = ('ok', 'status', 'module', 'function', 'input_sources', '_provenance',
                 '_csv_file', '_csv_error', '_data_layout', '_request_window')
     receipt.update((key, payload[key]) for key in metadata if key in payload)
+    if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT // 2 and '_provenance' in receipt:
+        receipt.pop('_provenance')
+        receipt['_metadata_location'] = 'Source metadata is in the complete result file.'
     if isinstance(payload.get('_summary'), dict):
         candidate = {**receipt, '_summary': payload['_summary'], '_delivery': (
             'Full bars saved at _result_file. _summary contains observed counts, endpoints, '
@@ -76,10 +79,52 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, roots
         if len(encoded) <= TOOL_RESULT_LIMIT:
             return encoded
         receipt['_summary_omitted'] = 'Summary exceeds the tool envelope; read the saved artifact.'
-    receipt['_preview'] = result[:1000] + '\n...\n' + result[-1000:]
+    receipt['_preview'] = _json_outline(payload, TOOL_RESULT_LIMIT // 4)
     if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT:
         receipt.pop('input_sources', None)
     return json.dumps(receipt, ensure_ascii=False)
+
+
+def _outline(value, depth: int, width: int):
+    if isinstance(value, dict):
+        if depth <= 0 or not value:
+            return {'type': 'object', 'keys': list(value)[:width]}
+        return {'type': 'object', 'fields': {
+            key: _outline(item, depth - 1, width) for key, item in list(value.items())[:width]}}
+    if isinstance(value, list):
+        outline = {'type': 'array', 'length': len(value)}
+        if value and depth > 0:
+            outline['items'] = _outline(value[0], depth - 1, width)
+        return outline
+    if isinstance(value, bool):
+        return {'type': 'boolean'}
+    if isinstance(value, (int, float)):
+        return {'type': 'number'}
+    return {'type': 'null' if value is None else 'string'}
+
+
+def _json_outline(value, limit: int) -> dict:
+    """Describe a JSON value's shape without any of its values.
+
+    A head+tail text excerpt of a large result splices unrelated records
+    (one symbol's first prices beside another's last) into what reads as one
+    series. An outline names keys, array lengths and value types only.
+
+    Args:
+        value: Parsed JSON value.
+        limit: Maximum encoded size of the outline in characters.
+
+    Returns:
+        The most detailed outline that fits ``limit``; an object or array is
+        described at least by its type and key list or length.
+    """
+    for depth, width in ((3, 40), (2, 40), (2, 10), (1, 10), (0, 10)):
+        outline = _outline(value, depth, width)
+        if len(json.dumps(outline, ensure_ascii=False)) <= limit:
+            break
+    if isinstance(value, dict) and len(value) > width:
+        outline['omitted_keys'] = len(value) - width
+    return outline
 
 
 def _write_original(path: Path, content: str, root: Path) -> None:
@@ -220,6 +265,12 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
             receipt.pop(key, None)
         receipt['_metadata_location'] = 'Source metadata is in the complete result file.'
     room = max(0, TOOL_RESULT_LIMIT // 4 - len(json.dumps(receipt, ensure_ascii=False)))
+    if is_json:
+        receipt['_preview'] = _json_outline(payload, room)
+        encoded = json.dumps(receipt, ensure_ascii=False)
+        if len(encoded) <= TOOL_RESULT_LIMIT:
+            return encoded
+        room = 0
     # A text preview inside JSON cannot break the surrounding JSON envelope.
     while room:
         receipt['_preview'] = result[:room // 2] + '\n... preview ...\n' + result[-room // 2:]

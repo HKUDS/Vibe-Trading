@@ -167,3 +167,63 @@ def test_worker_model_can_recover_complete_result(tmp_path, monkeypatch):
     assert result.status == 'completed'
     assert len(seen) == 2
     assert 'fixture-private-key' not in json.dumps(seen)
+
+
+def _two_symbol_prices():
+    return {
+        'FIRST': [{'close': 7.25, 'date': f'row-{i}'} for i in range(1000)],
+        'LAST': [{'close': 812.50, 'date': f'row-{i}'} for i in range(1000)],
+        '_provenance': {'FIRST': {'quote_currency': 'EUR'}, 'LAST': {'quote_currency': 'JPY'}},
+    }
+
+
+@pytest.mark.parametrize('delivery', ['calculation', 'generic'])
+def test_large_json_receipt_preserves_identity_without_spliced_prices(tmp_path, delivery):
+    from src.product.result_artifacts import persist_calculation_result
+    from src.tools.data_refs import resolve_data_refs
+
+    payload = _two_symbol_prices()
+    raw = json.dumps(payload)
+    roots = FileRoots.from_config(get_env_config().api)
+    if delivery == 'calculation':
+        response = persist_calculation_result(raw, tmp_path, roots=roots)
+    else:
+        response = deliver_tool_result(raw, tmp_path, registry_with_reader())
+    receipt = json.loads(response)
+    assert len(response) <= TOOL_RESULT_LIMIT
+    assert receipt['_provenance'] == payload['_provenance']
+    # A head+tail text splice shows FIRST's prices beside LAST's as one series.
+    assert '7.25' not in json.dumps(receipt.get('_preview'))
+    assert '812.5' not in json.dumps(receipt.get('_preview'))
+    outline = receipt['_preview']
+    assert outline['type'] == 'object'
+    assert outline['fields']['FIRST'] == {'type': 'array', 'length': 1000, 'items': {
+        'type': 'object', 'fields': {'close': {'type': 'number'}, 'date': {'type': 'string'}}}}
+    assert outline['fields']['LAST']['length'] == 1000
+    assert json.loads(Path(receipt['_result_file']['path']).read_text()) == payload
+    for name, expected in [('FIRST', 7.25), ('LAST', 812.50)]:
+        value = resolve_data_refs({'__data_ref__': {
+            'path': receipt['_result_file']['path'], 'pointer': f'/{name}',
+            'column': 'close', 'select': 'last',
+        }}, str(tmp_path), [], roots=roots)
+        assert value == expected
+
+
+def test_large_calculation_provenance_stays_bounded_without_losing_original(tmp_path):
+    from src.product.result_artifacts import persist_calculation_result
+
+    payload = {'_provenance': {'sources': ['A source entry' * 100] * 100}}
+    response = persist_calculation_result(json.dumps(payload), tmp_path,
+                                          roots=FileRoots.from_config(get_env_config().api))
+    receipt = json.loads(response)
+    assert len(response) <= TOOL_RESULT_LIMIT
+    assert '_provenance' not in receipt
+    assert '_metadata_location' in receipt
+    assert json.loads(Path(receipt['_result_file']['path']).read_text()) == payload
+
+
+def test_large_text_result_keeps_its_text_preview(tmp_path):
+    raw = 'head line\n' + 'x' * (TOOL_RESULT_LIMIT * 2) + '\ntail line'
+    receipt = json.loads(deliver_tool_result(raw, tmp_path, registry_with_reader()))
+    assert receipt['_preview'].startswith('head line')
+    assert receipt['_preview'].endswith('tail line')
