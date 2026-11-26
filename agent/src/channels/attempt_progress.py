@@ -87,9 +87,15 @@ class AttemptProgress:
             await self._send("", _reasoning_end=True)
             self.reasoning_started = False
 
-    async def close(self) -> None:
-        """Close transient cards on completion, timeout or cancellation."""
+    async def close(self, *, resuming: bool = False) -> None:
+        """Close transient cards on completion, timeout or cancellation.
+
+        `resuming=True` only when the wait was abandoned (timeout or
+        cancellation) and the attempt may still be producing output later;
+        consumers such as Feishu's OnIt->done_emoji reaction transition key
+        off this to tell "truly finished" apart from "we stopped waiting."
+        """
         await self._end_reasoning()
         if self.stream_started:
-            await self._send("", _stream_end=True, _resuming=True)
+            await self._send("", _stream_end=True, _resuming=resuming)
             self.stream_started = False

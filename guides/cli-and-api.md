@@ -80,6 +80,8 @@ vibe-trading --continue <run_id> "refine the strategy"
 vibe-trading --upload report.pdf
 ```
 
+A Swarm layer timeout fails overdue tasks without cancelling the whole run. Later runnable layers can use the work that finished. Workers stop starting new work at their next cancellation check; a call already in progress may still finish.
+
 ```bash
 vibe-trading alpha list --zoo gtja191 --limit 10
 vibe-trading alpha show gtja191_171

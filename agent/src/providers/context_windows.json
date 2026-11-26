@@ -23,6 +23,7 @@
     "too many tokens",
     "exceeds the context",
     "exceeded model token limit",
+    "exceeds the maximum number of tokens allowed",
     "reduce the length of the messages"
   ]
 }

@@ -86,7 +86,9 @@ def test_ensure_session_id_persists_a_session_record(sessions_dir) -> None:
     assert (sessions_dir / session_id / "session.json").exists()
 
 
-def test_ensure_session_id_survives_an_unwritable_store(sessions_dir, monkeypatch) -> None:
+def test_ensure_session_id_survives_an_unwritable_store(
+    sessions_dir, monkeypatch
+) -> None:
     """Persistence is best effort — a store failure must not restore the bug."""
 
     class _Boom:
@@ -136,7 +138,9 @@ def test_cmd_continue_reuses_one_session_across_continuations(
     assert seen[0] == "session-1"
 
 
-def test_cmd_continue_derives_an_id_for_a_plain_run(sessions_dir, tmp_path, monkeypatch) -> None:
+def test_cmd_continue_derives_an_id_for_a_plain_run(
+    sessions_dir, tmp_path, monkeypatch
+) -> None:
     runs_dir = tmp_path / "runs"
     trace_dir = runs_dir / "run-x"
     writer = TraceWriter(trace_dir)
@@ -171,3 +175,55 @@ def test_cmd_session_chat_passes_the_session_it_was_given(
     _legacy.cmd_session_chat(session.session_id, 5)
 
     assert seen == [session.session_id]
+
+
+def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -> None:
+    """A resumed chat must load prior JSONL records without slicing by None (#2246)."""
+    from src.session.models import Message, Session
+    from src.session.store import SessionStore
+
+    store = SessionStore(base_dir=sessions_dir)
+    session = Session(title="existing")
+    store.create_session(session)
+    store.append_message(
+        Message(session_id=session.session_id, role="user", content="earlier question")
+    )
+    store.append_message(
+        Message(
+            session_id=session.session_id,
+            role="assistant",
+            content="earlier answer",
+        )
+    )
+
+    seen = []
+
+    def fake_run_agent(prompt, history=None, **kwargs):
+        seen.append(
+            {
+                "prompt": prompt,
+                "history": list(history or []),
+                "session_id": kwargs.get("session_id"),
+            }
+        )
+        return {"status": "success", "run_id": "r1", "run_dir": "d"}
+
+    monkeypatch.setattr(_legacy, "_run_agent", fake_run_agent)
+    replies = iter(["next question", "q"])
+    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
+    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
+    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
+    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+
+    _legacy.cmd_session_chat(session.session_id, 5)
+
+    assert seen == [
+        {
+            "prompt": "next question",
+            "history": [
+                {"role": "user", "content": "earlier question"},
+                {"role": "assistant", "content": "earlier answer"},
+            ],
+            "session_id": session.session_id,
+        }
+    ]

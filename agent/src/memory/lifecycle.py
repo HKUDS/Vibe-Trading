@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from types import MappingProxyType
 
+from src.memory.compression import copy_to_archive
 from src.memory.persistent import (
     MemoryEntry,
     PersistentMemory,
@@ -282,20 +283,13 @@ class MemoryLifecycle:
     def _execute_gc_action(self, entry: MemoryEntry, action: str) -> None:
         """Execute a GC action (archive or delete) on an entry."""
         archive_dir = self.memory_dir / "archive"
-        archive_dir.mkdir(exist_ok=True)
 
         with memory_lock(self.memory_dir) as acquired:
             if not acquired:
                 return
             try:
-                if action == "archive":
-                    dest = archive_dir / entry.path.name
-                    entry.path.rename(dest)
-                elif action == "delete":
-                    dest = archive_dir / entry.path.name
-                    dest.write_text(
-                        entry.path.read_text(encoding="utf-8"), encoding="utf-8"
-                    )
+                if action in ("archive", "delete"):
+                    copy_to_archive(entry.path, archive_dir)
                     entry.path.unlink()
             except (OSError, IOError) as exc:
                 logger.warning("GC action(%s, %s) failed: %s", entry.title, action, exc)

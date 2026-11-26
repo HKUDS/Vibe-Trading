@@ -238,9 +238,10 @@ def _rows_to_frame(rows: List[dict]) -> Optional[pd.DataFrame]:
 
     frame = pd.DataFrame(parsed)
     # Tiingo stamps each bar with an ISO-8601 datetime (e.g.
-    # "2024-01-02T00:00:00.000Z"); normalize to a tz-naive midnight index.
+    # "2024-01-02T00:00:00.000Z"); fractional seconds may differ between
+    # valid rows. Parse each string independently before normalizing to midnight.
     index = pd.DatetimeIndex(
-        pd.to_datetime(frame["trade_date"], utc=True, errors="coerce")
+        pd.to_datetime(frame["trade_date"], format="mixed", utc=True, errors="coerce")
     )
     if getattr(index, "tz", None) is not None:
         index = index.tz_convert(None)

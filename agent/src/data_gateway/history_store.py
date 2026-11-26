@@ -15,6 +15,7 @@ import time
 import uuid
 
 from src.config.accessor import get_env_value
+from src.utils.process import pid_is_running
 
 from .config import number
 
@@ -83,14 +84,8 @@ class HistoryStore:
                 "SELECT id,state,owner FROM jobs WHERE state IN ('running','queued') OR reserved>0"
             ).fetchall():
                 try:
-                    if row["state"] == "queued" and row["owner"]:
-                        try:
-                            os.kill(row["owner"], 0)
-                            continue
-                        except ProcessLookupError:
-                            pass
-                        except PermissionError:
-                            continue
+                    if row["state"] == "queued" and row["owner"] and pid_is_running(row["owner"]):
+                        continue
                     with self.lease(row["id"]):
                         self._interrupted(db, row["id"])
                         directory = self.directory / row["id"]

@@ -105,7 +105,16 @@ export interface ScenarioGrid {
   pnl: number[][];
 }
 
+export type PayoffAlternativeResult = Partial<
+  Omit<OptionsPayoffResponse, "alternatives" | "comparisons" | "status">
+> & {
+  label: string;
+  status: "ok" | "error";
+  error?: string;
+};
+
 export interface OptionsPayoffResponse {
+  alternatives?: PayoffAlternativeResult[];
   comparisons?: PayoffComparison[];
   status: "ok";
   inputs: Record<string, unknown>;
@@ -114,6 +123,44 @@ export interface OptionsPayoffResponse {
   expiry_scenarios?: Array<{ spot: number; pnl: number; return_fraction: number | null; return_percent: number | null }>;
   expiry_curve: ExpiryCurve;
   scenario_grid: ScenarioGrid;
+  limitations: string[];
+}
+
+export interface OptionsStrategyDefinition {
+  name: string;
+  legs: OptionLeg[];
+}
+
+export interface OptionsStrategyCompareRequest {
+  strategies: OptionsStrategyDefinition[];
+  baseline_index?: number;
+  entry_spot: number;
+  expiry_days: number;
+  risk_free_rate?: number;
+  volatility?: number;
+  multiplier?: number;
+  commission_rate?: number;
+  spot_min?: number;
+  spot_max?: number;
+  spot_points?: number;
+  scenario_iv_values?: number[];
+}
+
+export interface OptionsStrategyCompareResponse {
+  status: "ok";
+  comparison: { baseline_index: number; baseline_name: string };
+  strategies: Array<{ name: string; summary: OptionsPayoffSummary }>;
+  expiry_curve: {
+    spot: number[];
+    pnl: Record<string, number[]>;
+    delta_to_baseline: Record<string, number[]>;
+  };
+  scenario_grid: {
+    iv_values: number[];
+    spot: number[];
+    pnl: Record<string, number[][]>;
+    delta_to_baseline: Record<string, number[][]>;
+  };
   limitations: string[];
 }
 

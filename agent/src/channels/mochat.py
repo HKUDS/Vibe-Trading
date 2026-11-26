@@ -693,11 +693,18 @@ class MochatChannel(BaseChannel):
             if target_kind == "session" and isinstance(pc, int) and pc >= 0:
                 self._mark_session_cursor(target_id, pc)
 
-            raw_events = payload.get("events")
-            if not isinstance(raw_events, list):
-                return
+            # A newly-subscribed session's first watch response is a catch-up
+            # backlog to discard, whatever shape it has -- including a bare
+            # timeout response with no "events" key at all. Clearing the cold
+            # flag only when events happens to already be a list left a
+            # session stuck "cold" across an eventless poll, so the NEXT
+            # response (carrying a real message) was wrongly discarded too.
             if target_kind == "session" and target_id in self._cold_sessions:
                 self._cold_sessions.discard(target_id)
+                return
+
+            raw_events = payload.get("events")
+            if not isinstance(raw_events, list):
                 return
 
             for event in raw_events:

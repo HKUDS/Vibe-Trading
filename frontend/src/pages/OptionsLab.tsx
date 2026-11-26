@@ -15,6 +15,7 @@ import {
 } from "@/lib/options";
 import { StrategyBuilder } from "@/components/options/StrategyBuilder";
 import { PayoffComparisons } from "@/components/options/PayoffComparisons";
+import { StrategyScenarioComparison } from "@/components/options/StrategyScenarioComparison";
 import { GreeksCards } from "@/components/options/GreeksCards";
 import { OptionsChainTable } from "@/components/options/OptionsChainTable";
 import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
@@ -89,6 +90,14 @@ export function OptionsLab() {
   const currentSignature = useRef(signature);
   currentSignature.current = signature;
   const fresh = signature !== null && signature === JSON.stringify(resultRequest);
+  const comparisonCurves = useMemo(
+    () => result?.alternatives?.flatMap((alternative) =>
+      alternative.status === "ok" && alternative.expiry_curve
+        ? [{ label: alternative.label, curve: alternative.expiry_curve }]
+        : [],
+    ) ?? [],
+    [result?.alternatives],
+  );
 
   useEffect(() => {
     const gen = ++generation.current;
@@ -127,7 +136,7 @@ export function OptionsLab() {
     if (!result || !resultRequest) return;
     try {
       const json = format === "json";
-      const content = json ? buildOptionsAnalysisJson(resultRequest, result) : buildOptionsScenarioCsv(result);
+      const content = json ? buildOptionsAnalysisJson(resultRequest, result) : buildOptionsScenarioCsv(result, resultRequest);
       const blob = new Blob([content], { type: json ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -256,6 +265,7 @@ export function OptionsLab() {
               curve={result?.expiry_curve ?? { spot: [], pnl: [] }}
               entrySpot={resultRequest?.entry_spot ?? params.entry_spot}
               breakevens={summary?.breakevens ?? []}
+              comparisonCurves={comparisonCurves}
             />
           </section>
         </div>
@@ -285,6 +295,7 @@ export function OptionsLab() {
         label={label} alternatives={alternatives} legs={legs} comparisons={result?.comparisons}
         onChange={(label, alternatives) => setDraft((d) => ({ ...d, label, alternatives }))}
       />
+      {resultRequest && <StrategyScenarioComparison request={resultRequest} />}
 
       {/* Portfolio Greeks */}
       {result && <GreeksCards greeks={result.greeks} />}

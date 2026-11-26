@@ -264,6 +264,7 @@ class DataLoader:
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
         "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "taiwan_equity", "crypto",
+        "europe_equity",
     }
     # yfinance volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00

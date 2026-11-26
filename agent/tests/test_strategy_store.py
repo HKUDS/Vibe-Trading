@@ -749,6 +749,41 @@ class TestSqliteStore:
         assert enabled.disabled_at is None
         assert enabled.disabled_reason is None
 
+    def test_concurrent_disable_without_reason_keeps_committed_reason(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+
+        from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+        aid = self.store.register_artifact(_make_artifact(status=ArtifactStatus.ACTIVE))
+        retry_store = SqliteStrategyStore(db_path=self.store.db_path)
+        retry_began = Event()
+
+        def trace_retry(sql):
+            if sql == "BEGIN IMMEDIATE":
+                retry_began.set()
+
+        retry_store._conn.set_trace_callback(trace_retry)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                with self.store._write_transaction():
+                    self.store._conn.execute(
+                        "UPDATE artifacts SET status = ?, disabled_reason = ? WHERE id = ?",
+                        (ArtifactStatus.DISABLED.value, "retired", aid),
+                    )
+                    retry = executor.submit(
+                        retry_store.update_status, aid, ArtifactStatus.DISABLED
+                    )
+                    # The retry must reach the writer lock before this commit.
+                    assert retry_began.wait(timeout=5)
+                result = retry.result(timeout=5)
+        finally:
+            retry_store._conn.close()
+
+        assert result is not None
+        assert result.disabled_reason == "retired"
+        assert self.store.get_artifact(aid) == result
+
     def test_update_status_not_found(self):
         """update_status returns None for unknown artifact."""
         result = self.store.update_status("nonexistent", ArtifactStatus.ACTIVE)

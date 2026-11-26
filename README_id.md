@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2611.24845"><b>📄 Baca laporan teknis</b>&nbsp; <img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
+</p>
+
+<p align="center">
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading&amp;type=trending" height="55" alt="Star History: GitHub Trending"/></a>
   <a href="https://trendshift.io/repositories/25527"><img src="https://trendshift.io/api/badge/trendshift/repositories/25527/daily" height="55" alt="Trendshift: daily ranking"/></a>
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading" height="55" alt="Star History: global star ranking"/></a>
@@ -62,6 +66,28 @@
 
 ## 📰 Berita
 
+- **2026-11-25** 🛠️ **Audit walk-forward dan pembatalan terjadwal dalam simulasi perdagangan** — Research Lab dapat mengekspor setiap jendela validasi walk-forward dan periode uji akhir opsional ke CSV, lengkap dengan parameter terpilih dan metrik pengujian. Dalam simulasi ulang perdagangan saham kelas A Tiongkok dengan bar 5 menit, sisa pesanan dapat dibatalkan pada waktu yang ditentukan, dengan transaksi dan biaya sebelumnya tetap tercatat. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  Saat Gemini mengembalikan galat batas token masukan, agen dapat meringkas konteks dan mencoba lagi. Menyimpan memori mempertahankan cache hasil baca yang tidak terkait. Analisis sentimen judul mengenali kata sentimen di dekat tanda kutip tipografis, tanda pisah panjang dan pendek, serta elipsis. **Sudah digabungkan ke `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
+
+- **2026-11-24** 🛠️ **Kompatibilitas Claude CLI dan akurasi backtest** — Penyedia Claude CLI membaca hasil akhir dari keluaran JSON dalam mode terperinci. Data per jam Yahoo Finance digabungkan menjadi bar empat jam, dan validasi OHLC menandai harga tak terhingga sebagai tidak valid. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray memakai pasangan aset yang korelasinya dapat diestimasi. Saat sebaran imbal hasil praktis nol, validasi bootstrap, walk-forward, dan Monte Carlo menggunakan angka 0 sesuai konvensi untuk menandai rasio Sharpe yang tidak terdefinisi. **Tersedia di `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
+
+- **2026-11-23** 🛠️ **Riset yang dapat diulang dan cakupan pasar yang lebih luas** — Research Lab menyimpan harga tolok ukur eksternal yang dipakai pada pengujian awal untuk pemutaran ulang berbasis data beku dan dapat mengekspor kurva ekuitas di luar sampel dari validasi walk-forward ke CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
+  Options Lab membandingkan dua strategi tersimpan pada kisi harga spot dan volatilitas tersirat yang sama. Pencarian simbol dan data harga kini mencakup saham dan ETF di enam pasar Eropa yang dilayani Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
+  OpenAlgo menyediakan akses hanya baca ke akun dan posisi. CLI dapat membatalkan Swarm yang berjalan di latar belakang dari proses lain. **Tersedia di `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
+
+<details>
+<summary>Berita sebelumnya</summary>
+
+- **2026-11-22** 🛠️ **Perbaikan akurasi backtest dan ekspor Options Lab** — Studi walk-forward di Research Lab hanya menilai tanggal evaluasi awal dan tetap memakai bar sebelumnya untuk pemanasan indikator. Kurva nilai tolok ukur eksternal sesuai dengan imbal hasil yang dilaporkan meski harganya sempat negatif. Pendanaan intrahari untuk kontrak perpetual kripto diselesaikan pukul 00:00, 08:00, dan 16:00 UTC. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
+  CSV Options Lab menyertakan alternatif tersimpan dan hasil perbandingan. Sumber data harian lokal dapat memakai `timestamp_basis: session_date` untuk mempertahankan tanggal perdagangan bursa. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
+  Pengiriman terjadwal mempertahankan status tugas terbaru dan Signal menyimpan lampiran bernama sama secara terpisah. Pemulihan tugas lulus uji native Windows x64 dan ARM64. **Sudah tersedia di `main` untuk rilis pip berikutnya.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
+
+- **2026-11-20** 📈 **Kelas saham AS dan riwayat harga Tencent** — Pencarian di Eastmoney dan Yahoo kini mengenali saham kelas B Berkshire sebagai `BRK-B.US`. Kode saham diperiksa sebelum harga diambil dari Eastmoney agar `BW-A.US` dan `BWA.US` tidak tertukar. Permintaan data harian Tencent dengan tanggal seperti `2023-1-5` kini mengambil semua halaman. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
+  Perbandingan strategi menilai drawdown −10% lebih baik daripada −30%. Backtest hanya menyertakan harga negatif jika `allow_nonpositive_prices: true` diaktifkan. Percakapan di CLI dapat dilanjutkan beserta riwayat pesannya. **Sudah tersedia di `main` untuk rilis pip berikutnya.**
+
+- **2026-11-19** 📄 **Laporan teknis diterbitkan** — Laporan ini menjelaskan cara Vibe-Trading menautkan hasil ke sumber data dan catatan eksekusi, menyimpan riwayat revisi riset, dan membatasi perdagangan riil pada lingkup yang diizinkan pengguna. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
+
 - **2026-11-18** 📈 **Backtest saham Taiwan dan perbaikan batas harga** — Backtest saham bursa Taiwan (`.TW`) dan Taipei (`.TWO`) dengan bar harian dari Yahoo Finance. Mesin backtest Korea, Taiwan, dan Vietnam memeriksa batas harga harian dengan harga eksekusi simulasi yang sudah memperhitungkan slippage tambahan. Permintaan backtest intrahari untuk pasar ini ditolak sebelum data diambil. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   Daftar di bilah samping tetap digunakan saat beralih antar sesi yang sudah tercantum. Skill AKShare bawaan mendukung nama endpoint lama dan baru. Uji regresi mencakup nama berkas lampiran, urutan pencarian konfigurasi, serta pratinjau dan penggabungan bagian data pasar MCP. **Sudah tersedia di `main` untuk rilis pip berikutnya.**
 
@@ -70,9 +96,6 @@
 
 - **2026-11-16** 🛠️ **Perbaikan laporan, pencarian memori, dan pesan** — Laporan Shadow Account menandai laba/rugi yang belum terukur sebagai tidak tersedia, bukan nol, termasuk dalam ekspor HTML/PDF yang tersimpan di cache. Pencarian memori memperbaiki indeks lama; kegagalan sebagian OCR PDF ditandai sebagai penurunan kualitas.
   Memperbaiki pemasangan Signal dan hilangnya teks Napcat akibat metadata gambar yang tidak valid. Percobaan ulang pengaturan suhu Anthropic dibatasi pada kesalahan validasi terkait, dan API historis AKShare versi baru maupun lama didukung. Lihat [CHANGELOG](CHANGELOG.md). **Tersedia di `main` untuk rilis pip berikutnya.**
-
-<details>
-<summary>Berita sebelumnya</summary>
 
 - **2026-11-15** 📡 **Gateway data pasar terpadu dan CSV siap pakai** — Bar historis dan snapshot opsi AS menggunakan satu [gateway data lokal](agent/src/data_gateway/README.md) dengan sumber cadangan, cache bersama, dan batas konkurensi. Respons mempertahankan sumber, mata uang, dan metode penyesuaian harga, serta menjelaskan cakupan dan keterkinian data.
   Pengambilan data pasar oleh Agent menyediakan CSV bersama JSON. Untuk permintaan yang didukung dengan instrumen dan satu rentang tanggal `YYYY-MM-DD` yang eksplisit, runtime membatasi tanggal sebelum pengambilan data. Data awal untuk perhitungan diminta secara terpisah; periode historis yang dibutuhkan indikator dan backtest yang ada tetap tersedia. **Tersedia di `main` untuk rilis pip berikutnya.**
@@ -239,6 +262,7 @@ Baca berarti profil khusus hanya baca. Simulasi memakai sandbox broker atau simu
 | mstock | ✓ | — | — |
 | mt5 | ✓ | ✓ | ✓ |
 | okx | ✓ | ✓ | ✓ |
+| openalgo | ✓ | — | — |
 | robinhood | ✓ | — | ✓ |
 | scalable | ✓ | — | — |
 | shoonya | ✓ | ✓ | — |
@@ -381,6 +405,22 @@ Vibe-Trading adalah bagian dari ekosistem agent **[HKUDS](https://github.com/HKU
 | Trading simulasi | Akun harian menyimpan kas, transaksi, dan nilai aset bersih lintas sesi. Simulasi terpisah memutar ulang sesi saham A per lima menit. | Pencocokan opsional berdasarkan porsi volume ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draf). |
 | Riset | Kartu eksekusi merekam metrik dan bukti backtest. Riset bertanggal menyimpan riwayat revisi dan dapat dicari. | Fakta keuangan terstruktur dalam artefak riset ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), sedang ditinjau). |
 | Lab opsi | Profil laba rugi multikaki, Greeks, dan skenario spot × IV. | Grid permukaan volatilitas interaktif di `/options`. |
+
+## Sitasi
+
+Jika Anda menggunakan Vibe-Trading dalam riset, harap kutip laporan teknis ini.
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## Cara berkontribusi
 

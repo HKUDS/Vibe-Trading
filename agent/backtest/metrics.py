@@ -13,6 +13,13 @@ import pandas as pd
 
 from backtest.models import FillRecord, TradeRecord
 
+# Return dispersion at or below this is float-error dust, not signal. It is the
+# same practical-zero threshold the options engine already uses to declare a
+# Sharpe ratio undefined; reusing it keeps the sentinel consistent across
+# surfaces and tells a constant-return path (std ~1e-16) from a genuinely
+# low-volatility one.
+_DEGENERATE_DISPERSION_ATOL = 1e-12
+
 # ─── Annualisation factor mapping ───
 
 # mootdx (A-share) and futu (HK + A-share) are equity sources, so they mirror
@@ -613,6 +620,65 @@ def period_returns(equity_curve: pd.Series, initial_cash: float) -> pd.Series:
     return ret
 
 
+def _tail_shape_metrics(
+    port_ret: pd.Series, *, returns_finite: bool, threshold: float = 0.0
+) -> Dict[str, Any]:
+    """Omega ratio, tail ratio and return-distribution moments.
+
+    Options and tail-sensitive research read the shape of the return
+    distribution, not just its mean and variance. The Omega ratio is the gain
+    mass above ``threshold`` over the loss mass below it; the tail ratio is the
+    right-tail magnitude over the left-tail magnitude. Skew and excess kurtosis
+    describe the asymmetry and tail weight that govern option-seller risk.
+
+    Ratios that need a positive denominator (Omega's loss mass, the tail
+    ratio's left tail) report ``None`` when that side is empty, matching the
+    profit-factor convention. The sample moments report ``0.0`` when the sample
+    is degenerate or too small, matching Sharpe/Sortino's non-finite handling.
+    """
+    if not returns_finite:
+        return {
+            "omega_ratio": None,
+            "tail_ratio": None,
+            "return_skew": 0.0,
+            "return_kurtosis": 0.0,
+        }
+
+    ret = port_ret.to_numpy(dtype=float, copy=False)
+    excess = ret - threshold
+    gain_mass = float(excess[excess > 0].sum())
+    loss_mass = float(-excess[excess < 0].sum())
+    omega = gain_mass / loss_mass if loss_mass > 1e-12 else None
+
+    if len(ret) >= 2:
+        right_tail = abs(float(np.percentile(ret, 95)))
+        left_tail = abs(float(np.percentile(ret, 5)))
+        tail_ratio = right_tail / left_tail if left_tail > 1e-12 else None
+    else:
+        tail_ratio = None
+
+    spread = float(np.std(ret))
+    if len(ret) >= 3 and spread > 0:
+        skew = float(pd.Series(ret).skew())
+    else:
+        skew = 0.0
+    if len(ret) >= 4 and spread > 0:
+        kurt = float(pd.Series(ret).kurt())
+    else:
+        kurt = 0.0
+    if not np.isfinite(skew):
+        skew = 0.0
+    if not np.isfinite(kurt):
+        kurt = 0.0
+
+    return {
+        "omega_ratio": omega,
+        "tail_ratio": tail_ratio,
+        "return_skew": skew,
+        "return_kurtosis": kurt,
+    }
+
+
 def calc_metrics(
     equity_curve: pd.Series,
     trades: List[TradeRecord],
@@ -675,10 +741,17 @@ def calc_metrics(
     # ``Series.std()`` uses ddof=1, so a single-observation return series
     # (e.g. a one-bar backtest) yields NaN and poisons the Sharpe ratio.
     # Guard the small sample before calculating volatility.
+    port_mean = float(port_ret.mean())
     vol = float(port_ret.std()) if len(port_ret) > 1 and returns_finite else 0.0
+    # A one-bar series (n<2) or a constant-return path has no dispersion to
+    # annualise; its std is zero, or float-error dust (~1e-16). Dividing by
+    # that with the old ``vol + 1e-10`` guard reported a ~1.6-billion Sharpe
+    # instead of the undefined sentinel. Only a denominator that is genuinely
+    # non-zero earns a ratio; degenerate dispersion reports 0.0.
+    dispersion_defined = vol > _DEGENERATE_DISPERSION_ATOL
     sharpe = (
-        float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
-        if returns_finite
+        float(port_mean / vol * np.sqrt(bpy))
+        if returns_finite and dispersion_defined
         else 0.0
     )
     if not np.isfinite(sharpe):
@@ -736,12 +809,16 @@ def calc_metrics(
         excess = total_ret - bench_return
         aligned_bench = bench_ret.reindex(port_ret.index).fillna(0.0)
         active_ret = port_ret - aligned_bench
+        active_mean = float(active_ret.mean())
         # Same ddof=1 small-sample guard as ``vol`` so the
         # information ratio stays finite for a single-observation series.
         active_std = float(active_ret.std()) if len(active_ret) > 1 and returns_finite else 0.0
+        # Mirror Sharpe's degenerate-dispersion sentinel: a constant active
+        # return path has nothing to annualise, so do not fabricate a ratio.
+        active_dispersion_defined = active_std > _DEGENERATE_DISPERSION_ATOL
         ir = (
-            float(active_ret.mean() / (active_std + 1e-10) * np.sqrt(bpy))
-            if returns_finite
+            float(active_mean / active_std * np.sqrt(bpy))
+            if returns_finite and active_dispersion_defined
             else 0.0
         )
         if not np.isfinite(ir):
@@ -758,6 +835,8 @@ def calc_metrics(
             bench_beta = covariance / bench_var
             if not np.isfinite(bench_beta):
                 bench_beta = 0.0
+
+    tail_shape = _tail_shape_metrics(port_ret, returns_finite=returns_finite)
 
     return {
         "final_value": float(equity_curve.iloc[-1]),
@@ -780,6 +859,10 @@ def calc_metrics(
         "benchmark_beta": round(float(bench_beta), 4),
         "avg_turnover": round(avg_turnover, 6),
         "total_turnover": round(total_turnover, 6),
+        "omega_ratio": tail_shape["omega_ratio"],
+        "tail_ratio": tail_shape["tail_ratio"],
+        "return_skew": tail_shape["return_skew"],
+        "return_kurtosis": tail_shape["return_kurtosis"],
     }
 
 
@@ -794,4 +877,6 @@ def _empty_metrics(initial_cash: float) -> Dict[str, Any]:
         "benchmark_return": 0, "excess_return": 0, "information_ratio": 0,
         "tracking_error": 0.0, "benchmark_beta": 0.0,
         "avg_turnover": 0.0, "total_turnover": 0.0,
+        "omega_ratio": 0, "tail_ratio": 0,
+        "return_skew": 0.0, "return_kurtosis": 0.0,
     }

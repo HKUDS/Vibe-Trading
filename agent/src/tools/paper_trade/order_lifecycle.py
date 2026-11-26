@@ -202,14 +202,15 @@ class OrderBook:
         state.cancel_reason = reason
         return state
 
-    def request_cancel(self, order_id: str) -> OrderState:
+    def request_cancel(self, order_id: str, *, reason: str | None = None) -> OrderState:
         """Ask to cancel by order id.
 
         A terminal order (``held``/``canceled``/``rejected``) cannot be
         canceled — the refusal is an error, not a silent no-op. A partially
         ``filled`` order is not terminal, so its residual can still be
         canceled. Asking twice is idempotent: the second call returns the
-        ``pending_cancel`` state unchanged.
+        ``pending_cancel`` state unchanged. The first request owns its reason;
+        a repeated request cannot relabel a cancel already in progress.
         """
         state = self._require(order_id)
         if state.status in _TERMINAL_STATUSES:
@@ -218,6 +219,7 @@ class OrderBook:
             )
         if state.status != STATUS_PENDING_CANCEL:
             state.status = STATUS_PENDING_CANCEL
+            state.cancel_reason = reason
         return state
 
     def fill(self, order_id: str, qty: Decimal, price: Decimal, *, volume_cap: Decimal | None = None) -> Fill:

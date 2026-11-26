@@ -268,9 +268,9 @@ run from a clone (`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Broker Connectors</b> <sub>19 brokers — read + paper, bounded-live where supported</sub></summary>
+<summary><b>Broker Connectors</b> <sub>20 brokers — read + paper, bounded-live where supported</sub></summary>
 
-Connector-first profiles. Most do read + paper-account order placement — IBKR is read-only, Robinhood is live-only (no paper account), Scalable Capital is read-only (no paper account exists at all), mStock (India) is read-only live over its Type B REST API (no paper account), and Trading 212 and Toss Securities refuse order placement entirely, paper included; live order placement is bounded by a user-defined mandate (symbol allowlist, order-size / exposure caps, daily trade cap, instant kill switch) and never holds funds — the broker executes. Order-placing tools stay off MCP (agent + CLI only). Research / backtest paths are structurally barred from any live endpoint.
+Connector-first profiles. Most do read + paper-account order placement — IBKR is read-only, Robinhood is live-only (no paper account), Scalable Capital is read-only (no paper account exists at all), mStock (India) is read-only live over its Type B REST API (no paper account), OpenAlgo (a self-hosted gateway to Indian brokers) is read-only and labels each book as analyzer sandbox or live, and Trading 212 and Toss Securities refuse order placement entirely, paper included; live order placement is bounded by a user-defined mandate (symbol allowlist, order-size / exposure caps, daily trade cap, instant kill switch) and never holds funds — the broker executes. Order-placing tools stay off MCP (agent + CLI only). Research / backtest paths are structurally barred from any live endpoint.
 
 | Broker | Markets | Capabilities |
 |--------|---------|--------------|
@@ -278,6 +278,7 @@ Connector-first profiles. Most do read + paper-account order placement — IBKR 
 | **Robinhood** | US | Agentic MCP (desktop OAuth) — equity read + bounded live; options order placement is not supported |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — fully read-only; no paper account exists |
 | **mStock** | India (NSE/BSE) | Separate holdings/net-position reads; no portfolio aggregation or orders |
+| **OpenAlgo** | India (NSE/BSE/NFO/MCX) | Self-hosted REST gateway — read-only funds, holdings, positions, orders, trades, quotes and history with analyzer/live provenance; no portfolio aggregation or orders |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |
 | **OKX** · **Binance** | crypto | read + paper + bounded live |
@@ -381,8 +382,13 @@ The turnover-aware optimizer measures allocation changes in signed position
 space: reversing a 50% long to a 50% short contributes 0.5 turnover, including
 both the close and the reopen. Its penalty and recorded allocation turnover
 include these reversals; execution-derived turnover remains a separate metric.
-Local data date ranges include the entire UTC end day, including subsecond
-timestamps; bars at the following midnight are excluded before aggregation.
+Local data date ranges include the entire end day. The default
+`timestamp_basis: utc` uses UTC timestamps, including subsecond timestamps.
+For a source with one bar per exchange session and dates written in the
+exchange timezone, set `timestamp_basis: session_date` on that source in
+`~/.vibe-trading/data-bridge/config.yaml`. For example, a daily bar labeled
+`2024-03-11 00:00:00+08:00` belongs to March 11 in this mode. Use a local date
+column when the database already returns timestamps converted to UTC.
 
 The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
 `BNB/USD`, `SOL/USD`, `ADA/USD`, and `DOGE/USD` as crypto. Fiat pairs such as
