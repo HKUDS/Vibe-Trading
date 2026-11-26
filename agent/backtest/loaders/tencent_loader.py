@@ -23,7 +23,13 @@ import pandas as pd
 
 from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import (
+    RAW_CACHE_FIELDS,
+    cached_loader_fetch,
+    stamp_raw,
+    validate_date_range,
+    wants_raw,
+)
 from backtest.loaders.registry import register
 from backtest.loaders.acquisition import remaining_timeout, source_deadline
 
@@ -72,6 +78,8 @@ class DataLoader:
     # reports single shares. Empirically verified 2026-08-11 against
     # 600519.SH (55,128 lots) and 00700.HK (31,100,240 shares).
     volume_units = {"a_share": "lots", "hk_equity": "shares"}
+    # ``fetch(..., adjustment="raw")`` serves the kline/kline "day" series.
+    raw_markets = frozenset({"a_share"})
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -89,9 +97,29 @@ class DataLoader:
         *,
         interval: str = "1D",
         fields: Optional[List[str]] = None,
+        adjustment: Optional[str] = None,
     ) -> Dict[str, pd.DataFrame]:
+        """Fetch daily bars, forward-adjusted by default.
+
+        Args:
+            codes: A-share (``600519.SH``) or HK (``00700.HK``) symbols.
+            start_date: Inclusive ``YYYY-MM-DD`` start.
+            end_date: Inclusive ``YYYY-MM-DD`` end.
+            interval: Daily only; any other interval returns ``{}``.
+            fields: Ignored.
+            adjustment: ``"raw"`` serves the unadjusted kline/kline series for
+                A-shares (stamped ``raw``) and refuses any other symbol;
+                ``None`` keeps the qfq series and its #1541 conversion.
+
+        Returns:
+            Mapping symbol -> OHLCV DataFrame.
+
+        Raises:
+            ValueError: Malformed dates or an unsupported ``adjustment``.
+        """
         validate_date_range(start_date, end_date)
         del fields
+        raw = wants_raw(adjustment)
 
         if interval.strip().lower() not in {"1d", "d", "day", "daily"}:
             logger.warning(
@@ -107,7 +135,27 @@ class DataLoader:
             if until is not None and time.monotonic() >= until:
                 self.fetch_errors[code] = "request_deadline"
                 continue
+            if raw and not _is_a_share(code):
+                self.fetch_errors[code] = "adjustment_unsupported"
+                continue
             try:
+                if raw:
+                    # The same entry the #1541 companion below reads and writes.
+                    unadjusted = stamp_raw(cached_loader_fetch(
+                        source=self.name,
+                        symbol=code,
+                        timeframe=interval,
+                        start_date=start_date,
+                        end_date=end_date,
+                        fields=list(RAW_CACHE_FIELDS),
+                        source_revision=_CACHE_REVISION,
+                        fetch=lambda code=code: self._fetch_one(
+                            code, start_date, end_date, forward_adjusted=False
+                        ),
+                    ))
+                    if unadjusted is not None:
+                        result[code] = unadjusted
+                    continue
                 df = cached_loader_fetch(
                     source=self.name,
                     symbol=code,

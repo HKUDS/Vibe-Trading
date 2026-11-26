@@ -23,7 +23,13 @@ import pandas as pd
 from backtest.loaders import eastmoney_client
 from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import (
+    RAW_CACHE_FIELDS,
+    cached_loader_fetch,
+    stamp_raw,
+    validate_date_range,
+    wants_raw,
+)
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
@@ -62,6 +68,8 @@ class DataLoader:
     # 00700.HK ratio 1.00 vs tencent/yfinance). us_equity stays undeclared
     # until empirically verified.
     volume_units = {"a_share": "lots", "hk_equity": "shares"}
+    # ``fetch(..., adjustment="raw")`` requests fqt=0 (unadjusted).
+    raw_markets = frozenset({"a_share"})
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -76,6 +84,7 @@ class DataLoader:
         *,
         interval: str = "1D",
         fields: Optional[List[str]] = None,
+        adjustment: Optional[str] = None,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch OHLCV for each symbol; a single failure never aborts the batch.
 
@@ -85,6 +94,9 @@ class DataLoader:
             end_date: Inclusive end date (``YYYY-MM-DD``).
             interval: Bar interval label (e.g. ``"1D"``, ``"1H"``, ``"5m"``).
             fields: Accepted for protocol parity; the OHLCV columns are fixed.
+            adjustment: ``"raw"`` requests fqt=0 for A-shares (stamped
+                ``raw``) and refuses any other symbol; ``None`` keeps fqt=1
+                and its #1541 conversion.
 
         Returns:
             Mapping ``{symbol: DataFrame}`` for every symbol that yielded bars.
@@ -93,9 +105,11 @@ class DataLoader:
             data are omitted.
 
         Raises:
-            ValueError: ``start_date``/``end_date`` are malformed or inverted.
+            ValueError: ``start_date``/``end_date`` are malformed or inverted,
+                or ``adjustment`` is unsupported.
         """
         validate_date_range(start_date, end_date)
+        raw = wants_raw(adjustment)
 
         self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
@@ -107,7 +121,26 @@ class DataLoader:
             if until is not None and time.monotonic() >= until:
                 self.fetch_errors[code] = "request_deadline"
                 continue
+            if raw and not _is_a_share(code):
+                self.fetch_errors[code] = "adjustment_unsupported"
+                continue
             try:
+                if raw:
+                    # The same entry the #1541 companion below reads and writes.
+                    unadjusted = stamp_raw(cached_loader_fetch(
+                        source=self.name,
+                        symbol=code,
+                        timeframe=interval,
+                        start_date=start_date,
+                        end_date=end_date,
+                        fields=list(RAW_CACHE_FIELDS),
+                        fetch=lambda code=code: self._fetch_one(
+                            code, start_date, end_date, interval, fqt=0
+                        ),
+                    ))
+                    if unadjusted is not None:
+                        result[code] = unadjusted
+                    continue
                 df = cached_loader_fetch(
                     source=self.name,
                     symbol=code,
@@ -171,6 +204,7 @@ class DataLoader:
             start_date: Inclusive start date (``YYYY-MM-DD``).
             end_date: Inclusive end date (``YYYY-MM-DD``).
             interval: Bar interval label.
+            fqt: Eastmoney adjustment mode (1 forward-adjusted, 0 raw).
 
         Returns:
             An OHLCV DataFrame, or ``None`` when the symbol/interval is

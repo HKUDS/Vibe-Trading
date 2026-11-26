@@ -21,7 +21,13 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import (
+    RAW_CACHE_FIELDS,
+    cached_loader_fetch,
+    stamp_raw,
+    validate_date_range,
+    wants_raw,
+)
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
@@ -237,6 +243,8 @@ class DataLoader:
     # to board lots — the A-share canonical unit shared by tencent/eastmoney/
     # akshare/mootdx/tushare (HKUDS/Vibe-Trading#1062).
     volume_units = {"a_share": "lots"}
+    # ``fetch(..., adjustment="raw")`` requests adjustflag="3" (不复权).
+    raw_markets = frozenset({"a_share"})
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -259,6 +267,7 @@ class DataLoader:
         *,
         interval: str = "1D",
         fields: Optional[List[str]] = None,
+        adjustment: Optional[str] = None,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch OHLCV data via BaoStock.
 
@@ -268,11 +277,17 @@ class DataLoader:
             end_date: YYYY-MM-DD.
             interval: Bar size (only 1D supported).
             fields: Ignored.
+            adjustment: ``"raw"`` requests adjustflag="3" (unadjusted,
+                stamped ``raw``); ``None`` keeps adjustflag="2" (前复权).
 
         Returns:
             Mapping symbol -> OHLCV DataFrame.
+
+        Raises:
+            ValueError: Malformed dates or an unsupported ``adjustment``.
         """
         validate_date_range(start_date, end_date)
+        raw = wants_raw(adjustment)
 
         # Daily-only API; do not silently return day bars for runner ``1H``/``4H``.
         if str(interval).strip().lower() not in {"1d", "d", "day", "daily"}:
@@ -304,9 +319,13 @@ class DataLoader:
                             timeframe=interval,
                             start_date=start_date,
                             end_date=end_date,
-                            fields=None,
-                            fetch=lambda code=code: self._fetch_one(bs, code, start_date, end_date),
+                            fields=list(RAW_CACHE_FIELDS) if raw else None,
+                            fetch=lambda code=code: self._fetch_one(
+                                bs, code, start_date, end_date, adjustflag="3" if raw else "2"
+                            ),
                         )
+                        if raw:
+                            df = stamp_raw(df)
                         if df is not None and not df.empty:
                             result[code] = df
                     except Exception as exc:
@@ -322,8 +341,20 @@ class DataLoader:
         code: str,
         start_date: str,
         end_date: str,
+        adjustflag: str = "2",
     ) -> Optional[pd.DataFrame]:
-        """Fetch a single A-share symbol."""
+        """Fetch a single A-share symbol.
+
+        Args:
+            bs: The logged-in ``baostock`` module.
+            code: ``601398.SH`` or ``sh.601398``.
+            start_date: YYYY-MM-DD.
+            end_date: YYYY-MM-DD.
+            adjustflag: BaoStock adjustment flag, "2" 前复权 or "3" 不复权.
+
+        Returns:
+            An OHLCV frame in board lots, or ``None`` when nothing was served.
+        """
         if not _is_a_share(code):
             return None
 
@@ -349,7 +380,7 @@ class DataLoader:
             start_date=start_date,
             end_date=end_date,
             frequency="d",
-            adjustflag="2",  # 前复权
+            adjustflag=adjustflag,
         )
 
         if rs.error_code != "0":
