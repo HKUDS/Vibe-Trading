@@ -66,6 +66,9 @@
 
 ## 📰 ニュース
 
+- **2026-11-25** 🛠️ **ウォークフォワード検証の監査とペーパートレードの取消予約** — 研究ラボでは、ウォークフォワード検証の各フォールドと任意のホールドアウト期間を、選択したパラメーターとテスト指標を含む CSV に出力できます。中国 A 株の 5 分足ペーパートレードの再生では、指定した時刻に注文の未約定分を取り消し、それ以前の約定と手数料を保持します。 [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  Gemini で入力トークンの上限エラーが発生すると、エージェントはコンテキストを圧縮して再試行できます。メモリを保存しても、無関係な読み取り結果はキャッシュに残ります。見出しのセンチメント分析では、曲線型の引用符、長短のダッシュ、省略記号に隣接する感情語も認識します。 **`main` にマージ済みです。** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
+
 - **2026-11-24** 🛠️ **Claude CLI の互換性とバックテストの精度向上** — Claude CLI プロバイダーは詳細モードの JSON 出力から最終結果を読み取れるようになりました。Yahoo Finance の 1 時間足を 4 時間足に集約し、OHLC の検証では無限大の価格を無効と判定します。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray は相関係数を推定できる組み合わせだけを集計します。リターンのばらつきが実質的にゼロの場合、ブートストラップ、ウォークフォワード、モンテカルロの各検証で、未定義のシャープレシオを既存の規約に従って 0 と表示します。**`main` に反映済み。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
@@ -73,12 +76,12 @@
   オプションラボでは、保存済みの二つの戦略を、原資産価格とインプライド・ボラティリティの共通グリッドで比較できます。Yahoo Finance が扱う欧州六市場の株式と ETF で、銘柄検索と価格データの取得に対応しました。 [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo では口座と保有ポジションを読み取り専用で照会できます。CLI から別プロセスで動作中のバックグラウンド Swarm を取り消せます。**`main` に反映済みです。** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
 
+<details>
+<summary>過去のニュース</summary>
+
 - **2026-11-22** 🛠️ **バックテストの精度向上とオプション分析のエクスポート拡充** — 研究ラボのウォークフォワード分析では、元の評価日だけを採点し、それ以前の足は指標のウォームアップに使えます。外部ベンチマークの価格が負になっても、資産曲線と報告収益率は一致します。暗号資産の無期限先物では、日中足の資金調達料を UTC の 00:00、08:00、16:00 に計上します。 [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   オプション分析の CSV に、保存した代替戦略と比較結果が含まれます。ローカルの日足データでは `timestamp_basis: session_date` を指定して取引所の日付を保持できます。 [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   定期配信は新しいジョブ状態を保持し、Signal の同名添付ファイルは個別に保存します。ジョブの復旧処理は Windows x64 と ARM64 のネイティブテストに合格しました。 **`main` に反映済みで、次回の pip リリースに含まれます。** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
-
-<details>
-<summary>過去のニュース</summary>
 
 - **2026-11-20** 📈 **米国株の株式クラスと騰訊の日足履歴** — 東方財富と Yahoo のどちらでもバークシャーのクラス B 株を `BRK-B.US` として検索できます。東方財富から株価を取得する前に銘柄コードを照合し、`BW-A.US` と `BWA.US` を区別します。騰訊の日足は `2023-1-5` のような日付でも全ページを取得します。 [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   戦略比較ではドローダウン −10% を −30% より上に評価します。バックテストで負の価格を使うには `allow_nonpositive_prices: true` を指定します。CLI では履歴を引き継いでチャットを再開できます。 **`main` に統合済み。次回の pip リリースに含まれます。**

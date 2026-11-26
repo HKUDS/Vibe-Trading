@@ -66,6 +66,9 @@
 
 ## 📰 Noticias
 
+- **2026-11-25** 🛠️ **Auditoría walk-forward y cancelaciones programadas en simulación** — Research Lab permite exportar a CSV cada ventana de validación walk-forward y el período de prueba reservado opcional, con los parámetros seleccionados y las métricas de prueba. En la simulación de acciones A chinas con velas de 5 minutos, una cancelación programada retira la cantidad pendiente y conserva las ejecuciones y comisiones anteriores. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  Cuando Gemini devuelve un error de límite de tokens de entrada, el agente puede compactar el contexto y reintentar. Guardar una memoria conserva en caché las lecturas ajenas al cambio. El análisis de sentimiento detecta las palabras junto a comillas tipográficas, rayas, semirrayas y puntos suspensivos. **Integrado en `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
+
 - **2026-11-24** 🛠️ **Compatibilidad con Claude CLI y mayor precisión en los backtests** — El proveedor de Claude CLI lee el resultado final de la salida JSON en modo detallado. Yahoo Finance agrupa datos horarios en velas de cuatro horas y la validación de OHLC marca los precios infinitos como no válidos. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray utiliza los pares para los que se puede estimar la correlación. Cuando la dispersión de los rendimientos es prácticamente nula, la validación por bootstrap, walk-forward y Monte Carlo usa el 0 convencional para indicar que el ratio de Sharpe no está definido. **Disponible en `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
@@ -73,12 +76,12 @@
   Options Lab compara dos estrategias guardadas en una misma cuadrícula de precio al contado y volatilidad implícita. La búsqueda de símbolos y las consultas de cotizaciones ya incluyen acciones y ETF de seis mercados europeos cubiertos por Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo permite consultar cuentas y posiciones en modo de solo lectura. Desde la CLI se puede cancelar una ejecución de Swarm en segundo plano desde otro proceso. **Disponible en `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
 
+<details>
+<summary>Noticias anteriores</summary>
+
 - **2026-11-22** 🛠️ **Correcciones de backtesting y exportaciones más completas en Options Lab** — Los estudios walk-forward de Research Lab puntúan solo las fechas de evaluación originales y conservan los datos anteriores para inicializar los indicadores. La curva de valor del índice de referencia externo coincide con el rendimiento informado incluso si hay precios negativos. La financiación intradía de los perpetuos de criptomonedas se liquida a las 00:00, 08:00 y 16:00 UTC. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   Los CSV de Options Lab incluyen las alternativas guardadas y sus comparaciones. Las fuentes diarias locales pueden usar `timestamp_basis: session_date` para conservar la fecha de negociación de la bolsa. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   Las entregas programadas respetan el estado más reciente de cada trabajo y Signal guarda por separado los archivos adjuntos con el mismo nombre. La recuperación de trabajos superó las pruebas nativas en Windows x64 y ARM64. **En `main`, para la próxima versión de pip.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-11-20** 📈 **Clases de acciones estadounidenses e histórico de Tencent** — Eastmoney y Yahoo identifican las acciones de clase B de Berkshire como `BRK-B.US`. Antes de cargar los precios de Eastmoney se comprueba el símbolo para distinguir valores como `BW-A.US` y `BWA.US`. Las consultas diarias a Tencent con fechas como `2023-1-5` recuperan todas las páginas. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   La comparación de estrategias valora mejor una caída máxima del −10% que una del −30%. Los backtests conservan precios negativos solo con `allow_nonpositive_prices: true`. La CLI permite retomar un chat con su historial. **Disponible en `main` para la próxima versión de pip.**

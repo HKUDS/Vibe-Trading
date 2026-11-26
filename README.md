@@ -73,6 +73,9 @@
 
 ## 📰 News
 
+- **2026-11-25** 🛠️ **Walk-forward audits and scheduled paper-trade cancellations** — Research Lab can export each walk-forward validation fold and the optional holdout to CSV with the selected parameters and test metrics. In the 5-minute China A-share paper replay, a scheduled cancellation stops the remaining quantity from matching while preserving earlier fills and fees. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  When Gemini reports an input token limit error, the agent can compact its context and retry. Saving a memory preserves unrelated cached reads. Headline scoring recognizes sentiment words next to typographic quotes, em and en dashes, and ellipses. **Merged into `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
+
 - **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
@@ -80,12 +83,12 @@
   Options Lab compares two saved strategies on the same spot-price and implied-volatility grid. Symbol search and market data now cover equities and ETFs from six European exchanges via Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo provides read-only access to account and position data. The CLI can cancel a background Swarm run from a separate process. **On `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
 
+<details>
+<summary>Earlier news</summary>
+
 - **2026-11-22** 🛠️ **Backtest accuracy and richer Options Lab exports** — Research Lab walk-forward studies keep earlier bars for indicators and score only the original evaluation dates. External benchmark equity matches the reported return across negative prices, and intraday crypto funding follows the 00:00, 08:00 and 16:00 UTC settlements. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   Options Lab CSVs include saved alternatives and comparison results. Local daily data can use `timestamp_basis: session_date` to preserve exchange dates. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
   Scheduled deliveries preserve newer job state, Signal keeps same-named attachments separate, and job recovery passed native Windows x64 and ARM64 checks. **On `main`, for the next pip release.** [#2321](https://github.com/HKUDS/Vibe-Trading/pull/2321) · [#2307](https://github.com/HKUDS/Vibe-Trading/pull/2307) · [CI](https://github.com/HKUDS/Vibe-Trading/actions/runs/45023867566)
-
-<details>
-<summary>Earlier news</summary>
 
 - **2026-11-21** 🛠️ **Research replay, backtest routing and channel reliability** — Frozen Research Lab studies now replay saved fundamental and event columns without refetching providers ([#2296](https://github.com/HKUDS/Vibe-Trading/pull/2296)), and backtests retry symbols whose returned bars fail validation while benchmarks inherit the run's signed-price policy ([#2294](https://github.com/HKUDS/Vibe-Trading/pull/2294), [#2292](https://github.com/HKUDS/Vibe-Trading/pull/2292)). Swarm deadlines stop overdue workers and clean completed run handles ([#2285](https://github.com/HKUDS/Vibe-Trading/pull/2285), [#2279](https://github.com/HKUDS/Vibe-Trading/pull/2279)); Research Lab reports recover after worker exit, backtests expose return-distribution shape metrics, and Options Lab overlays alternative payoff curves ([#2260](https://github.com/HKUDS/Vibe-Trading/pull/2260), [#2264](https://github.com/HKUDS/Vibe-Trading/pull/2264), [#2242](https://github.com/HKUDS/Vibe-Trading/pull/2242)). Session cancellation, Mochat delivery, Feishu completion reactions and DingTalk image downloads now handle their edge cases safely ([#2284](https://github.com/HKUDS/Vibe-Trading/pull/2284), [#2283](https://github.com/HKUDS/Vibe-Trading/pull/2283), [#2251](https://github.com/HKUDS/Vibe-Trading/pull/2251), [#2250](https://github.com/HKUDS/Vibe-Trading/pull/2250)). Strategy adaptation documentation now states its required inputs and scoped evidence refresh contract ([#2299](https://github.com/HKUDS/Vibe-Trading/pull/2299)). **On `main`, for the next pip release.**
 
@@ -255,7 +258,7 @@ Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JS
 | Feature | What you can do |
 |---|---|
 | Portfolio | Bring read-only broker holdings into one snapshot or import an extraETF export. Enter target weights to preview the value change for each holding. |
-| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
+| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. A separate five-minute A-share research step supports caller order IDs and a deterministic cancel schedule, with partial fills preserved. [Cancellation timing and limits](agent/src/tools/paper_trade/README.md#caller-cancellation-pt-v14) are explicit; this is not a live order session. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
 | Shadow Account | Import your broker’s trade journal, inspect fees and trading habits, then compare the actual trades with a rule-based replay. |
 | Broker connections | Set up a connection in the CLI or Web and test it with a read. For supported live profiles, set symbol, order and exposure limits before enabling trading. The kill switch halts live activity. |
 
