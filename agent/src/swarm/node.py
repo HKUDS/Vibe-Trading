@@ -206,7 +206,9 @@ def build_worker_prompt(
         "Using an upstream report is not a new independent retrieval of its facts. "
         "Attribute inherited facts and separate your calculations from new data fetches; "
         "refetch only when needed, without imposing a citation format. "
-        "Respond in the task's language."
+        "Write your final response and any report in the language of the user's own request "
+        "(the goal and other values filled into this task), even when the task template "
+        "around them is written in another language."
     )
     if "bash" not in enabled_tools:
         prompt_parts.append(

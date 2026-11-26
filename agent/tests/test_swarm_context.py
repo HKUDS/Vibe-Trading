@@ -183,3 +183,10 @@ def test_prompt_names_actual_iteration_budget(tools):
     prompt = worker.build_worker_prompt(spec, {}, '')
     assert 'at most 7 model iterations' in prompt
     assert 'HARD LIMIT of 20 tool calls' not in prompt
+
+
+def test_prompt_asks_for_the_language_of_the_users_request_not_the_template():
+    spec = SwarmAgentSpec(id='a', role='Analyst', system_prompt='Analyze.', tools=['write_file'], max_iterations=3)
+    prompt = worker.build_worker_prompt(spec, {}, '')
+    assert "language of the user's own request" in prompt
+    assert "task's language" not in prompt
