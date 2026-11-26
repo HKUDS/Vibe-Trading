@@ -128,18 +128,34 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
                 pass
 
 
+def _shell_description(os_name: str) -> str:
+    """Describe the bash tool for the shell this host actually runs.
+
+    Args:
+        os_name: ``os.name`` of the host; ``"nt"`` runs cmd.exe, anything else ``/bin/sh``.
+
+    Returns:
+        The tool description without the shared data guidance.
+    """
+    if os_name == "nt":
+        shell = (
+            "This host uses cmd.exe, not PowerShell. Heredocs (<<) are not supported; "
+            "write your script to a file with write_file first, then run it (e.g. python script.py). "
+        )
+    else:
+        shell = "This host uses /bin/sh (POSIX). Use POSIX shell syntax; heredocs are supported. "
+    return (
+        f"Execute a shell command in the working directory. {shell}"
+        "Use for installing packages, running scripts, or inspecting files. "
+        "Never kill Python processes by name; stop a background_run task with cancel_background."
+    )
+
+
 class BashTool(BaseTool):
     """Execute shell commands in the working directory."""
 
     name = "bash"
-    description = (
-        "Execute a shell command in the working directory. On Windows the "
-        "shell is cmd.exe, not PowerShell. Use for installing packages, "
-        "running scripts, or inspecting files. Never kill Python processes "
-        "by name; stop a background_run task with cancel_background. "
-        "Heredocs (<<) are NOT supported on cmd.exe - write your script to "
-        "a file with write_file first, then run it (e.g. python script.py)."
-    ) + SHELL_DATA_GUIDANCE
+    description = _shell_description(os.name) + SHELL_DATA_GUIDANCE
     parameters = {
         "type": "object",
         "properties": {

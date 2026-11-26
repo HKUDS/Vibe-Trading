@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from src.tools.path_utils import FileRoots
-
 import json
 import logging
 from pathlib import Path
 from typing import Any, Mapping
 
 from src.product.tool_results import _TARGET_ACTION_RE, _named_target_paths
+from src.tools._arguments import normalize_tool_run_dir
+from src.tools.path_utils import FileRoots
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +27,10 @@ def record_written_target(
     """Remember a file written by write_file or edit_file for completion checks.
 
     Args:
-        arguments: Tool arguments containing path or file_path.
+        arguments: Tool arguments containing path or file_path and optionally a run_dir.
         roots: Authorized file roots used to validate a separate adaptation run.
         written_files: Set to update with the case-folded target path.
-        run_dir: Current run directory for resolving relative paths and model provenance.
+        run_dir: Active directory used as the default for tool calls and for model provenance.
         llm_runtime: Runtime snapshot supplying the provider for strategy provenance.
         active_model_id: Model identifier to record for this write, if available.
         active_model_source: Label for the source of the recorded model identifier.
@@ -39,8 +39,10 @@ def record_written_target(
     if not raw:
         return
     p = Path(str(raw))
-    if not p.is_absolute() and run_dir:
-        p = Path(run_dir) / p
+    if not p.is_absolute():
+        call_dir = normalize_tool_run_dir(dict(arguments), run_dir).get("run_dir")
+        if call_dir:
+            p = Path(str(call_dir)).expanduser() / p
     try:
         resolved = p.resolve()
         written_files.add(str(resolved).casefold())

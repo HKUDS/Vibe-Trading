@@ -195,13 +195,12 @@ def _persist_result_files(
 
 
 _FILE_READ_FIELDS = ('path', 'pointer', 'source_chars', 'source_truncated', 'truncated', 'returned_chars',
-                     'total_chars', 'returned_lines', 'total_lines')
+                     'total_chars', 'returned_lines', 'total_lines', 'offset', 'char_offset',
+                     'next_offset', 'next_char_offset')
 
 
-def _file_read_receipt(payload, has_shell: bool) -> dict | None:
+def _file_read_receipt(payload) -> dict | None:
     """Say what a saved read_file response holds instead of claiming a complete result."""
-    from src.tools.read_file_tool import _OUTPUT_LIMIT
-
     if not (isinstance(payload, dict) and payload.get('status') == 'ok'
             and isinstance(payload.get('path'), str) and isinstance(payload.get('content'), str)):
         return None
@@ -210,18 +209,32 @@ def _file_read_receipt(payload, has_shell: bool) -> dict | None:
              'parts_relative_dir + /1.txt through part_count, fragments of the response JSON in order.')
     selection = (f'the JSON value at pointer {payload["pointer"]!r} of the source file at path'
                  if isinstance(payload.get('pointer'), str) else 'the source file at path')
+    structure = payload.get('_structure')
+    navigation = ''
+    if isinstance(structure, dict) and structure.get('path') == payload['path']:
+        receipt['_structure'] = structure
+        navigation = ' Use the JSON pointers in _structure with read_file on the source path.'
     if not payload.get('truncated'):
-        receipt['_delivery'] = f'Its content is the complete text of {selection}. {pages}'
+        receipt['_delivery'] = f'Its content is the complete text of {selection}. {pages}{navigation}'
         return receipt
     shown, total = payload.get('returned_chars'), payload.get('total_chars')
-    held = f'the first {shown} of {total} characters' if isinstance(shown, int) else f'part of the {total} characters'
-    rest = (f'Use bash on path to read the source from character {shown} onward.' if has_shell and isinstance(shown, int)
-            else 'Use bash on path to read the rest of the source.' if has_shell
-            else f'read_file always reads from the first line: a larger limit returns more lines, up to '
-                 f'{_OUTPUT_LIMIT:,} characters, and it has no offset, so text past that is not reachable through read_file.')
+    if payload.get('offset') or payload.get('char_offset'):
+        held = f'{shown} of {total} characters starting at line offset {payload.get("offset", 0)}'
+        if payload.get('char_offset'):
+            held += f', character offset {payload["char_offset"]}'
+    else:
+        held = f'the first {shown} of {total} characters' if isinstance(shown, int) else f'part of the {total} characters'
+    continuation = ''
+    if isinstance(payload.get('next_offset'), int):
+        continuation = f' Continue with read_file on path using offset={payload["next_offset"]}'
+        if isinstance(payload.get('next_char_offset'), int):
+            continuation += f', char_offset={payload["next_char_offset"]}'
+        if 'pointer' in receipt:
+            continuation += ' and the same pointer'
+        continuation += '.'
     receipt['_delivery'] = (
         f'Its content is a partial preview: only {held} of {selection}, which is unchanged. '
-        f'{pages} Saving the response did not save the rest of the source. {rest}'
+        f'{pages} Saving the response did not save the rest of the source.{continuation}{navigation}'
     )
     return receipt
 
@@ -250,12 +263,12 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry, *, to
     try:
         shell = registry.get('bash')
         reader = registry.get('read_file')
-        readable = has_shell = isinstance(getattr(shell, "_tool", shell), BashTool)
+        readable = isinstance(getattr(shell, "_tool", shell), BashTool)
         if not readable and isinstance(getattr(reader, "_tool", reader), ReadFileTool):
             safe_run_dir(str(run_dir), roots=registry.policy.file_roots)
             readable = True
     except (AttributeError, KeyError, ValueError):
-        readable = has_shell = False
+        readable = False
     if not readable:
         return truncate_tool_result(result)
     try:
@@ -284,7 +297,7 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry, *, to
             'original result coverage before calculating; saving does not fill missing rows.'
         ),
     }
-    file_read = _file_read_receipt(payload, has_shell) if tool_name == 'read_file' else None
+    file_read = _file_read_receipt(payload) if tool_name == 'read_file' else None
     if file_read:
         receipt.update(file_read)
     if isinstance(payload, dict):

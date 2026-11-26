@@ -1480,7 +1480,13 @@ def write_file(path: str, content: str) -> str:
 
 
 @mcp.tool
-def read_file(path: str, pointer: str | None = None, limit: int | None = None) -> str:
+def read_file(
+    path: str,
+    pointer: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+    char_offset: int | None = None,
+) -> str:
     """Read the contents of a file, or one value of a JSON file.
 
     Args:
@@ -1488,6 +1494,8 @@ def read_file(path: str, pointer: str | None = None, limit: int | None = None) -
         pointer: Optional RFC 6901 JSON pointer selecting a field or array item of a JSON file;
             a pointer that names no value is an error, never the whole file.
         limit: Optional maximum number of returned lines, applied after selection.
+        offset: Zero-based first line of the file or JSON selection. Use next_offset to continue.
+        char_offset: Optional position within the first line. Use next_char_offset when returned.
 
     Returns:
         The read_file tool's JSON result.
@@ -1497,6 +1505,10 @@ def read_file(path: str, pointer: str | None = None, limit: int | None = None) -
         arguments["pointer"] = pointer
     if limit is not None:
         arguments["limit"] = limit
+    if offset is not None:
+        arguments["offset"] = offset
+    if char_offset is not None:
+        arguments["char_offset"] = char_offset
     return _get_registry().execute("read_file", arguments)
 
 

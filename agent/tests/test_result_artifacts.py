@@ -281,3 +281,116 @@ def test_other_tool_envelope_is_not_described_as_a_file_read(tmp_path):
     receipt = json.loads(deliver_tool_result(raw, tmp_path, registry_with_reader(), tool_name='other_tool'))
     assert 'path' not in receipt
     assert 'source file' not in receipt['_delivery']
+
+
+def _registry(with_shell: bool):
+    registry = registry_with_reader()
+    if with_shell:
+        from src.tools.bash_tool import BashTool
+
+        registry.register(BashTool(sandbox=registry.policy.sandbox))
+    return registry
+
+
+@pytest.mark.parametrize('with_shell', [False, True], ids=['reader_only', 'with_shell'])
+@pytest.mark.parametrize('arguments', [{}, {'limit': 300}], ids=['size_cap', 'line_limit'])
+def test_offloaded_partial_read_file_receipt_continues_with_offset(tmp_path, arguments, with_shell):
+    """The receipt names the read_file call that returns the next unread line.
+
+    Args:
+        tmp_path: Allowed directory containing the test file and result artifacts.
+        arguments: Optional line limit for the read.
+        with_shell: Whether the registry also offers a shell.
+    """
+    source = _numbered_source(tmp_path)
+    lines = source.read_text().splitlines(keepends=True)
+    agent = AgentRuntime(registry=_registry(with_shell), llm=SimpleNamespace(), max_iterations=3)
+    agent.memory.run_dir = str(tmp_path)
+    messages, _ = _drive(agent, 'read_file', tmp_path, [{'path': 'source.txt', **arguments}])
+    receipt = json.loads(messages[-1]['content'])
+    following = receipt['next_offset']
+    assert following == receipt['returned_lines']
+    assert f'offset={following}' in receipt['_delivery']
+    assert 'no offset' not in receipt['_delivery']
+    assert 'bash' not in receipt['_delivery']
+    nxt, _ = _drive(agent, 'read_file', tmp_path, [{'path': 'source.txt', 'offset': following, **arguments}])
+    body = json.loads(nxt[-1]['content'])
+    if '_result_file' in body:
+        body = json.loads(Path(body['_result_file']['path']).read_text())
+    assert body['content'].startswith(lines[following])
+
+
+def test_offloaded_json_read_carries_the_source_structure(tmp_path):
+    """An offloaded JSON read supplies pointers into the original file.
+
+    Args:
+        tmp_path: Allowed directory containing the source and result artifacts.
+    """
+    source = tmp_path / 'records.json'
+    rows = [{'id': i, 'value': i + .5} for i in range(2500)]
+    payload = {
+        'records/spot~': rows,
+        'meta': {'source': 'fixture'},
+        'notes': [{'body': 'x' * 500}, {'account_number': 'fixture-private-account'}],
+    }
+    source.write_text(json.dumps(payload))
+    agent = AgentRuntime(registry=registry_with_reader(), llm=SimpleNamespace(), max_iterations=3)
+    agent.memory.run_dir = str(tmp_path)
+    messages, _ = _drive(agent, 'read_file', tmp_path, [{'path': 'records.json'}])
+    delivered = messages[-1]['content']
+    assert len(delivered) <= TOOL_RESULT_LIMIT
+    receipt = json.loads(delivered)
+    shape = receipt['_structure']
+    assert shape['path'] == str(source.resolve()) == receipt['path']
+    records, meta, notes = shape['fields']
+    pointer = '/records~1spot~0'
+    assert (records['pointer'], records['type'], records['length']) == (pointer, 'array', 2500)
+    assert records['first_item_fields'] == ['id', 'value']
+    assert records['boundary_samples'] == [
+        {'pointer': f'{pointer}/0', 'value': rows[0]},
+        {'pointer': f'{pointer}/2499', 'value': rows[2499]},
+    ]
+    assert meta == {'pointer': '/meta', 'type': 'object', 'length': 1}
+    assert notes['boundary_samples'] == [
+        {'pointer': '/notes/0'},
+        {'pointer': '/notes/1', 'value': {'account_number': '[redacted]'}},
+    ]
+    assert 'fixture-private-account' not in delivered
+    assert 'pointer' in receipt['_delivery'] and '_structure' in receipt['_delivery']
+    selected, _ = _drive(agent, 'read_file', tmp_path, [{'path': shape['path'], 'pointer': f'{pointer}/2499'}])
+    assert json.loads(json.loads(selected[-1]['content'])['content']) == rows[2499]
+
+
+def test_small_or_text_read_carries_no_structure(tmp_path):
+    """An inline JSON read and a text preview omit JSON navigation metadata.
+
+    Args:
+        tmp_path: Allowed directory for both source files.
+    """
+    source = tmp_path / 'small.json'
+    source.write_text(json.dumps({'a': [1, 2]}))
+    text = _numbered_source(tmp_path)
+    tool = ReadFileTool(roots=FileRoots.from_config(get_env_config().api))
+    assert '_structure' not in json.loads(tool.execute(path=str(source), run_dir=str(tmp_path)))
+    assert '_structure' not in json.loads(tool.execute(path=str(text), run_dir=str(tmp_path)))
+
+
+def test_offloaded_long_line_receipt_keeps_the_character_cursor(tmp_path):
+    """An offloaded partial line advertises the character needed to resume it.
+
+    Args:
+        tmp_path: Allowed directory containing the source and result artifacts.
+    """
+    source = tmp_path / 'line.txt'
+    source.write_text('x' * 50_010, encoding='utf-8')
+    registry = registry_with_reader()
+    arguments = {'path': source.name, 'run_dir': str(tmp_path)}
+    raw = registry.execute('read_file', arguments)
+    receipt = json.loads(deliver_tool_result(raw, tmp_path, registry, tool_name='read_file'))
+    assert receipt['next_offset'] == 0
+    assert receipt['next_char_offset'] == receipt['returned_chars']
+    assert f'char_offset={receipt["next_char_offset"]}' in receipt['_delivery']
+    last = json.loads(registry.execute('read_file', {
+        **arguments, 'offset': receipt['next_offset'], 'char_offset': receipt['next_char_offset'],
+    }))
+    assert last['content'] == source.read_text(encoding='utf-8')[receipt['returned_chars']:]

@@ -7,13 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from src.agent.tools import BaseTool, FileBoundTool
+from src.config.limits import TOOL_RESULT_LIMIT
 from src.tools.path_utils import safe_path as _safe_path
 from src.tools.path_utils import safe_run_dir as _safe_run_dir
 from src.tools.path_utils import session_workspace_for_run
 from src.tools.path_utils import allowed_file_roots
-from src.tools.redaction import redact_internal_paths
+from src.tools.redaction import RESULT_SINK, is_sensitive_arg, redact_internal_paths, redact_payload
 
 _OUTPUT_LIMIT = 50_000
+_STRUCTURE_SAMPLE_LIMIT = 400
+_JSON_TYPES = {dict: "object", list: "array", str: "string", bool: "boolean",
+               int: "number", float: "number", type(None): "null"}
 
 # Subdirectories a SKILL.md links into. A link inside a skill document is
 # written relative to that document — `references/foo.md` — because that is the
@@ -38,6 +42,92 @@ _READABLE = (
     "contracts and options are documented in the skills: load_skill(name) lists "
     "a skill's sections, and load_skill(name, section=...) returns one."
 )
+
+
+def _line_window(original: str, offset: int, limit: int | None, char_offset: int) -> dict:
+    """Build a bounded window of complete lines or a fragment of an oversized line."""
+    if not (offset or char_offset or limit) and len(original) <= _OUTPUT_LIMIT:
+        return {"content": original}
+
+    lines = original.splitlines(keepends=True)
+    total_lines = len(lines)
+    if offset >= max(1, total_lines) or (char_offset and (
+        not lines or char_offset >= len(lines[offset])
+    )):
+        return {
+            "status": "error",
+            "error_code": "invalid_offset",
+            "error": "offset and char_offset must identify a character inside the selected text.",
+        }
+    end = min(total_lines, offset + limit) if limit and limit > 0 else total_lines
+    remaining = _OUTPUT_LIMIT
+    complete_lines = []
+    for index in range(offset, end):
+        line = lines[index]
+        if index == offset:
+            line = line[char_offset:]
+        if len(line) > remaining:
+            break
+        complete_lines.append(line)
+        remaining -= len(line)
+
+    returned_lines = len(complete_lines)
+    following = offset + returned_lines
+    capped = following < end
+    text = "".join(complete_lines)
+    if capped and not complete_lines:
+        # The next page must resume this line before advancing to a new one.
+        text = lines[offset][char_offset:char_offset + _OUTPUT_LIMIT]
+    page = {"content": text + "\n... (truncated)" if capped else text}
+    if offset or char_offset or following < total_lines:
+        page.update(
+            truncated=True,
+            offset=offset,
+            returned_chars=len(text),
+            total_chars=len(original),
+            returned_lines=returned_lines,
+            total_lines=total_lines,
+            message="Partial preview: content holds only part of the original file, which is unchanged at path.",
+        )
+        if char_offset:
+            page["char_offset"] = char_offset
+        if following < total_lines:
+            page["next_offset"] = following
+            if not returned_lines:
+                page["next_char_offset"] = char_offset + len(text)
+    return page
+
+
+def _source_structure(document: Any, path: str) -> dict:
+    """Describe top-level source values and label array boundaries by exact pointer."""
+    fields = []
+    shape = {"path": path, "fields": fields, "truncated": False}
+    items = document.items() if isinstance(document, dict) else ((None, document),)
+    for key, value in items:
+        pointer = "" if key is None else "/" + key.replace("~", "~0").replace("/", "~1")
+        field = {"pointer": pointer, "type": _JSON_TYPES[type(value)]}
+        if isinstance(value, (dict, list)):
+            field["length"] = len(value)
+        if isinstance(value, list) and value:
+            if isinstance(value[0], dict):
+                field["first_item_fields"] = list(value[0])
+            field["boundary_samples"] = []
+            sensitive = key is not None and is_sensitive_arg(key, sink=RESULT_SINK, value=value)
+            for index in dict.fromkeys((0, len(value) - 1)):
+                sample = {"pointer": f"{pointer}/{index}"}
+                if not sensitive:
+                    try:
+                        if len(json.dumps(value[index], ensure_ascii=False)) <= _STRUCTURE_SAMPLE_LIMIT:
+                            sample["value"] = redact_payload(value[index], sink=RESULT_SINK)
+                    except RecursionError:
+                        pass
+                field["boundary_samples"].append(sample)
+        fields.append(field)
+        if len(json.dumps(shape, ensure_ascii=False)) > TOOL_RESULT_LIMIT // 4:
+            fields.pop()
+            shape["truncated"] = True
+            break
+    return shape
 
 
 def _bundled_skills_dir() -> Path:
@@ -80,12 +170,13 @@ def _skill_relative_matches(file_path: str, skills_dir: Path) -> list[tuple[str,
 
 
 class ReadFileTool(FileBoundTool, BaseTool):
-    """Read file contents or one selected JSON value, with an optional line limit."""
+    """Read file contents or one selected JSON value, with optional paging."""
 
     name = "read_file"
     description = (
         "Read a file from the workspace. Returns file contents, or the JSON value an RFC 6901 "
-        "pointer selects, with an optional line limit."
+        "pointer selects. Use offset and limit for line windows. Continue with next_offset "
+        "and, when returned, next_char_offset as char_offset."
     )
     parameters = {
         "type": "object",
@@ -103,13 +194,24 @@ class ReadFileTool(FileBoundTool, BaseTool):
                 "type": "string",
                 "description": (
                     "Optional RFC 6901 JSON pointer into a JSON file, e.g. /_provenance or /data/0. "
-                    "Selects that value before the line limit applies; an empty string selects "
+                    "Selects that value before paging applies; an empty string selects "
                     "the whole document. A pointer that names no value is an error."
                 ),
             },
             "limit": {
                 "type": "integer",
                 "description": "Max number of lines to return (default: all)",
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Zero-based first line of the file or JSON selection (default: 0)",
+            },
+            "char_offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Character position within the first line (default: 0). "
+                               "Use next_char_offset when the first line is longer than a page.",
             },
         },
         "required": ["path"],
@@ -121,21 +223,29 @@ class ReadFileTool(FileBoundTool, BaseTool):
 
         Args:
             **kwargs: Must include path. Optional pointer (RFC 6901 selection inside a JSON
-                file), limit (lines) and run_dir.
+                file), offset (first line), limit (lines), char_offset (offset within the
+                first line), and run_dir.
 
         Returns:
             JSON string containing content or an error. A pointer read carries ``pointer``,
             ``source_chars`` (characters in the whole file) and ``source_truncated`` when the
             selected value or an ancestor declares sampled data; its content is the selected
-            value as indented JSON. A partial read carries ``truncated``, ``returned_chars``
-            (characters from the start of the file or selection held in content),
-            ``total_chars``, a ``message`` naming the unchanged original file and, for a line
-            window, ``total_lines`` and ``returned_lines``. A malformed or absent pointer, or a
-            pointer into a non-JSON file or a directory, is an error without content.
+            value as indented JSON. A partial read carries ``truncated``, ``returned_chars``,
+            ``total_chars``, ``returned_lines`` (lines through their end), ``total_lines`` and its
+            starting offset. If more text follows, continue with ``next_offset`` and the optional
+            ``next_char_offset``. Invalid pointers and offsets return an error without content.
         """
         file_path = kwargs["path"]
         limit = kwargs.get("limit")
         run_dir = kwargs.get("run_dir")
+        offset = kwargs.get("offset", 0)
+        char_offset = kwargs.get("char_offset", 0)
+        if type(offset) is not int or offset < 0 or type(char_offset) is not int or char_offset < 0:
+            return json.dumps({
+                "status": "error",
+                "error_code": "invalid_offset",
+                "error": "offset and char_offset must be non-negative integers.",
+            })
 
         allowed_roots = []
         if run_dir:
@@ -249,6 +359,11 @@ class ReadFileTool(FileBoundTool, BaseTool):
                         "status": "error", "error_code": "not_a_file",
                         "error": "A JSON pointer selects inside a JSON file, not a directory. Omit pointer to list it.",
                     }, ensure_ascii=False)
+                if offset or char_offset:
+                    return json.dumps({
+                        "status": "error", "error_code": "not_a_file",
+                        "error": "Line and character offsets apply to files. Omit them to list the directory.",
+                    }, ensure_ascii=False)
                 # A directory is a question about what is in it.
                 entries = sorted(
                     child.name + ("/" if child.is_dir() else "")
@@ -266,7 +381,7 @@ class ReadFileTool(FileBoundTool, BaseTool):
                     ensure_ascii=False,
                 )
 
-            original = resolved.read_text(encoding="utf-8")
+            source_text = original = resolved.read_text(encoding="utf-8")
             body: dict = {"status": "ok", "path": str(resolved)}
             if pointer is not None:
                 from src.tools.data_refs import resolve_json_pointer
@@ -288,27 +403,19 @@ class ReadFileTool(FileBoundTool, BaseTool):
                     body["source_truncated"] = True
                 # The selection is what the limits below apply to.
                 original = json.dumps(value, ensure_ascii=False, indent=2)
-            text = original
-            if limit and limit > 0:
-                lines = original.splitlines(keepends=True)
-                if len(lines) > limit:
-                    text = "".join(lines[:limit])
-                    body.update(total_lines=len(lines), returned_lines=limit)
-            if len(text) > _OUTPUT_LIMIT:
-                text = text[:_OUTPUT_LIMIT]
-                body["content"] = text + "\n... (truncated)"
-            else:
-                body["content"] = text
-            if text != original:
-                body.update(
-                    truncated=True,
-                    returned_chars=len(text),
-                    total_chars=len(original),
-                    message=(
-                        "Partial preview: content holds only part of the original file, "
-                        "which is unchanged at path."
-                    ),
-                )
+            page = _line_window(original, offset, limit, char_offset)
+            if page.get("status") == "error":
+                return json.dumps(page, ensure_ascii=False)
+            body.update(page)
+            encoded = json.dumps(body, ensure_ascii=False)
+            if len(encoded) <= TOOL_RESULT_LIMIT:
+                return encoded
+            if pointer is None:
+                try:
+                    document = json.loads(source_text)
+                except (ValueError, RecursionError):
+                    return encoded
+            body["_structure"] = _source_structure(document, body["path"])
             return json.dumps(body, ensure_ascii=False)
         except Exception as exc:
             return json.dumps(
