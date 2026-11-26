@@ -47,10 +47,11 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import TYPE_CHECKING, Any
 
 from . import state_hash
+from .cancellation import CALLER_CANCEL_REASON, parse_cancel_schedule, schedule_payload
 from .schema import (
     CANCELED_REASON_CODE,
     DEFAULT_FILL_MODEL,
@@ -66,6 +67,7 @@ from .schema import (
     SCHEMA_VERSIONS,
     SCHEMA_VERSION_V1_2,
     SCHEMA_VERSION_V1_3,
+    SCHEMA_VERSION_V1_4,
     SESSION_EVENT_TYPES,
     SESSIONS,
     DateRange,
@@ -146,6 +148,18 @@ def _payload_choices(payload: dict[str, Any]) -> dict[str, Any] | None:
             )
         except PaperTradeSchemaError:
             return None
+    try:
+        schedule = parse_cancel_schedule(
+            payload.get("cancel_schedule"), day=payload.get("to_date")
+        )
+    except ValueError:
+        return None
+    has_ids = isinstance(payload.get("orders"), list) and any(
+        isinstance(order, dict) and order.get("order_id") is not None
+        for order in payload["orders"]
+    )
+    if schedule is not None or has_ids:
+        choices["cancel_schedule"] = schedule_payload(schedule or ())
     return choices
 
 
@@ -286,6 +300,11 @@ def assemble_result(
         path_model=request.path_model,
         fill_model=request.fill_model,
         order_volume_ratio=request.order_volume_ratio,
+        cancel_schedule=(
+            schedule_payload(request.cancel_schedule or ())
+            if request.uses_v1_4
+            else None
+        ),
     )
     version = request.schema_version
     if request.uses_v1_2:
@@ -296,6 +315,11 @@ def assemble_result(
                 path_model=request.path_model,
                 fill_model=request.fill_model,
                 order_volume_ratio=request.order_volume_ratio,
+                cancel_schedule=(
+                    schedule_payload(request.cancel_schedule or ())
+                    if request.uses_v1_4
+                    else None
+                ),
             )
         canceled_orders = tuple(getattr(outcome, "canceled_orders", ()))
         events = tuple(getattr(outcome, "events", ()))
@@ -303,7 +327,7 @@ def assemble_result(
         fingerprint, canceled_orders, events = "", (), ()
     order_states = (
         _order_states_from_outcome(request, getattr(outcome, "order_states", ()))
-        if request.uses_v1_3
+        if request.uses_v1_3 or request.uses_v1_4
         else ()
     )
     return PaperTradeStepResult(
@@ -326,6 +350,9 @@ def assemble_result(
         canceled_orders=canceled_orders,
         events=events,
         order_states=order_states,
+        cancel_results=(
+            tuple(getattr(outcome, "cancel_results", ())) if request.uses_v1_4 else ()
+        ),
     )
 
 
@@ -350,7 +377,10 @@ _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _canceled_payload(
-    orders: tuple[Any, ...], *, allow_volume_cap: bool = False
+    orders: tuple[Any, ...],
+    *,
+    allow_volume_cap: bool = False,
+    allow_caller_cancel: bool = False,
 ) -> list[dict[str, Any]]:
     """Serialize ``canceled_orders``, failing closed on an unknown token.
 
@@ -363,6 +393,8 @@ def _canceled_payload(
         if allow_volume_cap
         else (CANCELED_REASON_CODE,)
     )
+    if allow_caller_cancel:
+        allowed = (*allowed, CALLER_CANCEL_REASON)
     rows: list[dict[str, Any]] = []
     for row in orders:
         if row.reason_code not in allowed:
@@ -504,7 +536,7 @@ def build_success_payload(result: PaperTradeStepResult) -> dict[str, Any]:
         payload["engine_fingerprint"] = result.engine_fingerprint
         payload["canceled_orders"] = _canceled_payload(result.canceled_orders)
         payload["events"] = _events_payload(result.events)
-    elif result.schema_version == SCHEMA_VERSION_V1_3:
+    elif result.schema_version in (SCHEMA_VERSION_V1_3, SCHEMA_VERSION_V1_4):
         if not _FINGERPRINT_RE.match(result.engine_fingerprint):
             raise ValueError(
                 "a pt-v1.3 result requires a 64-character lowercase hex "
@@ -512,10 +544,28 @@ def build_success_payload(result: PaperTradeStepResult) -> dict[str, Any]:
             )
         payload["engine_fingerprint"] = result.engine_fingerprint
         payload["canceled_orders"] = _canceled_payload(
-            result.canceled_orders, allow_volume_cap=True
+            result.canceled_orders,
+            allow_volume_cap=True,
+            allow_caller_cancel=result.schema_version == SCHEMA_VERSION_V1_4,
         )
         payload["events"] = _events_payload(result.events)
         payload["order_states"] = _order_states_payload(result.order_states)
+    if result.schema_version == SCHEMA_VERSION_V1_4:
+        for key, rows in (
+            ("fills", result.fills),
+            ("rejected_orders", result.rejected_orders),
+            ("canceled_orders", result.canceled_orders),
+        ):
+            for row, source in zip(payload[key], rows, strict=True):
+                if not isinstance(source.order_id, str) or not source.order_id:
+                    raise ValueError(f"a pt-v1.4 {key} row requires order_id")
+                row["order_id"] = source.order_id
+        if any(
+            row.status not in ("pending_cancel", "rejected")
+            for row in result.cancel_results
+        ):
+            raise ValueError("a pt-v1.4 cancel result has an unknown status")
+        payload["cancel_results"] = [asdict(row) for row in result.cancel_results]
     return payload
 
 

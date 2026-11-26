@@ -2790,6 +2790,7 @@
     "report": "Forschungsbericht",
     "download": "JSON herunterladen",
     "downloadOosCsv": "CSV zur Kapitalentwicklung außerhalb der Stichprobe",
+    "downloadFoldsCsv": "CSV zur Fold-Prüfung",
     "scenario": "Szenario",
     "return": "Rendite",
     "drawdown": "Drawdown",

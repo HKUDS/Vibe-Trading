@@ -620,7 +620,9 @@ def test_replay_does_not_keep_run_level_model_change(tmp_path, workers_succeed):
     assert by_id["t-a"].summary == "fresh-t-a", (
         "run-level model change must invalidate kept results produced under the old default"
     )
-    assert [tid for tid, _ in workers_succeed.calls] == ["t-a", "t-b", "t-c"]
+    calls = workers_succeed.calls
+    assert sorted(tid for tid, _ in calls[:-1]) == ["t-a", "t-b"]
+    assert calls[-1] == ("t-c", {"a": "fresh-t-a", "b": "fresh-t-b"})
 
 
 def test_replay_seeds_none_summary_key_for_downstream(tmp_path, workers_succeed):

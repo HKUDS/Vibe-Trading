@@ -327,6 +327,17 @@ def _run_cli(
         raise RuntimeError(
             f"claude -p produced no JSON (exit {proc.returncode}): {(result.get('err') or '')[:300]}"
         ) from None
+    if isinstance(payload, list):
+        payload = next(
+            (
+                message
+                for message in reversed(payload)
+                if isinstance(message, dict) and message.get("type") == "result"
+            ),
+            None,
+        )
+    if not isinstance(payload, dict):
+        raise RuntimeError("claude -p returned no result message")
     if payload.get("is_error"):
         raise RuntimeError(
             f"claude -p failed: {payload.get('subtype')} {str(payload.get('result'))[:300]}"

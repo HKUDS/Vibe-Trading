@@ -2790,6 +2790,7 @@
     "report": "Research report",
     "download": "Download JSON",
     "downloadOosCsv": "OOS CSV",
+    "downloadFoldsCsv": "Folds CSV",
     "scenario": "Scenario",
     "return": "Return",
     "drawdown": "Drawdown",

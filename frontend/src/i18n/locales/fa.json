@@ -2790,6 +2790,7 @@
     "report": "گزارش پژوهش",
     "download": "دریافت JSON",
     "downloadOosCsv": "CSV ارزش پرتفوی خارج از نمونه",
+    "downloadFoldsCsv": "CSV حسابرسی فولدها",
     "scenario": "سناریو",
     "return": "بازده",
     "drawdown": "افت سرمایه",

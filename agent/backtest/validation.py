@@ -9,7 +9,8 @@ Usage: called automatically by BaseEngine.run_backtest when config[\"validation\
 is present, or invoked directly on backtest outputs.
 
 Percentage-based validation requires positive, finite observed equity.
-An undefined calculation returns only an error, never a numeric placeholder.
+Undefined equity returns produce an error. Undefined Sharpe dispersion uses
+the same zero sentinel as the backtest metrics.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
-from backtest.metrics import effective_bars_per_year, period_returns
+from backtest.metrics import _DEGENERATE_DISPERSION_ATOL, effective_bars_per_year, period_returns
 from backtest.models import TradeRecord
 
 
@@ -138,8 +139,7 @@ def _path_metrics(
         returns = np.where(prev != 0, diff / np.where(prev != 0, prev, 1.0), 0.0)
     else:
         returns = np.array([0.0])
-    std = returns.std()
-    sharpe = float(returns.mean() / (std + 1e-10) * np.sqrt(bars_per_year))
+    sharpe = _sharpe(returns, bars_per_year)
     peak = np.maximum.accumulate(equity)
     dd = (equity - peak) / np.where(peak > 0, peak, 1.0)
     max_dd = float(dd.min())
@@ -237,7 +237,9 @@ def bootstrap_sharpe_ci(
 
 def _sharpe(returns: np.ndarray, bars_per_year: int = 252) -> float:
     std = returns.std()
-    return float(returns.mean() / (std + 1e-10) * np.sqrt(bars_per_year))
+    if std <= _DEGENERATE_DISPERSION_ATOL:
+        return 0.0
+    return float(returns.mean() / std * np.sqrt(bars_per_year))
 
 
 # ─── Walk-Forward Analysis ───
