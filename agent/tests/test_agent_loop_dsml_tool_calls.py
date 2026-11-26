@@ -401,3 +401,64 @@ def test_protocol_retry_delivers_answer_without_numeric_gate(tmp_path: Path) -> 
     assert not result.get("degraded")
     assert result["content"] == "AAPL is trading at $999.00."
     assert llm.offered_tools == [None, None]
+
+
+# Native tool-call tokens a provider can leave unparsed in the text channel.
+_DEEPSEEK_NATIVE_CALL = (
+    "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>echo_probe\n"
+    '```json\n{"marker": "ready"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>'
+)
+_NATIVE_TOOL_CALL_MARKUP = [
+    "Report follows.<tool_calls_begin>echo_probe",
+    "<tool_call_begin>echo_probe",
+    'echo_probe<tool_sep>{"marker": "ready"}',
+    _DEEPSEEK_NATIVE_CALL,
+    "function tool▁sep echo_probe",
+    '<|tool_calls_section_begin|><|tool_call_begin|>functions.echo_probe:0<|tool_call_argument_begin|>{"marker": "ready"}<|tool_call_end|><|tool_calls_section_end|>',
+]
+
+
+@pytest.mark.parametrize("markup", _NATIVE_TOOL_CALL_MARKUP)
+def test_native_tool_call_tokens_are_tool_call_syntax(markup: str) -> None:
+    from src.product.tool_results import _looks_like_tool_call_syntax
+
+    assert _looks_like_tool_call_syntax(markup)
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "The provider emits tool_calls_begin tokens when parsing fails.",
+        "Use `tool_call` records; a tool_sep is a separator.",
+        "| 标的 | 权重 |\n|---|---|\n| 000001.SZ | 38.97% |",
+    ],
+)
+def test_prose_naming_tool_tokens_is_not_tool_call_syntax(prose: str) -> None:
+    from src.product.tool_results import _looks_like_tool_call_syntax
+
+    assert not _looks_like_tool_call_syntax(prose)
+
+
+@pytest.mark.parametrize("markup", _NATIVE_TOOL_CALL_MARKUP)
+def test_native_tool_call_tokens_are_never_released_as_the_answer(
+    tmp_path: Path, markup: str
+) -> None:
+    """Unparsed DeepSeek/Kimi call tokens get the text-only retry, not release."""
+    responses = [markup, "The report is ready."]
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(_EchoProbeTool())
+    events: list[tuple[str, dict[str, Any]]] = []
+    agent = AgentRuntime(
+        registry=registry,
+        llm=_chat_llm(_ScriptedStreamingLLM(responses)),
+        event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
+        max_iterations=2,
+        persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
+    )
+    agent.memory.run_dir = str(tmp_path / "run")
+
+    result = agent.run("use the probe and report")
+
+    assert result["status"] == "success"
+    assert result["content"] == "The report is ready."
+    assert not responses

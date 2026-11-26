@@ -60,6 +60,18 @@ def test_actual_delivery_errors():
     assert _delivery_error("<tool_call_begin>broken")
 
 
+@pytest.mark.parametrize("markup", [
+    "<\uff5ctool\u2581calls\u2581begin\uff5c>", "<tool_calls_begin>", "<tool_sep>", "a tool\u2581sep b",
+    '<invoke name="echo">', "</\uff5c\uff5cDSML\uff5c\uff5cinvoke>", "<|tool_call_begin|>",
+])
+def test_swarm_and_main_agent_share_one_tool_markup_recognizer(markup):
+    from src.product.tool_results import _looks_like_tool_call_syntax
+
+    assert not hasattr(worker_mod, "_UNPARSED_TOOL_MARKERS")
+    assert _looks_like_tool_call_syntax(markup)
+    assert _delivery_error(markup) == "unparsed tool-call markup (provider did not parse tool calls)"
+
+
 # ---- runtime integrity ----------------------------------------------------
 def _run(tmp_path: Path, worker_result: WorkerResult) -> SwarmRun:
     store = SwarmStore(base_dir=tmp_path)
