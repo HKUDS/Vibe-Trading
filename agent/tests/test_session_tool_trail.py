@@ -93,6 +93,7 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
             "content": "AAPL is trading near 195.",
             "created_at": stored.created_at,
             "linked_attempt_id": attempt.attempt_id,
+            "can_fork": True,
             "tool_trail": expected_trail,
         }
     ]

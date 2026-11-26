@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ArrowDown, GitFork } from "lucide-react";
 import { toast } from "sonner";
@@ -281,6 +281,28 @@ export function Agent() {
   const swarmRuns = useAgentStore(s => s.swarmRuns);
   const sessionLoading = useAgentStore(s => s.sessionLoading);
   const previousStatusRef = useRef(status);
+  const composerModesRef = useRef(new Map<string, {
+    goalComposerActive: boolean;
+    swarmPreset: { name: string; title: string } | null;
+  }>());
+  const composerModeSessionRef = useRef<string | null>(sessionId);
+
+  useLayoutEffect(() => {
+    const previousSessionId = composerModeSessionRef.current;
+    if (previousSessionId !== sessionId) {
+      if (previousSessionId) {
+        composerModesRef.current.set(previousSessionId, { goalComposerActive, swarmPreset });
+      }
+      const mode = sessionId ? composerModesRef.current.get(sessionId) : undefined;
+      setGoalComposerActive(mode?.goalComposerActive ?? false);
+      setSwarmPreset(mode?.swarmPreset ?? null);
+      composerModeSessionRef.current = sessionId;
+      return;
+    }
+    if (sessionId) {
+      composerModesRef.current.set(sessionId, { goalComposerActive, swarmPreset });
+    }
+  }, [goalComposerActive, sessionId, swarmPreset]);
 
   const { connect, disconnect, onStatusChange } = useSSE();
 
@@ -566,10 +588,7 @@ export function Agent() {
       for (const m of msgs) {
         const meta = m.metadata as Record<string, unknown> | undefined;
         const runId = meta?.run_id as string | undefined;
-        const canFork = (meta?.status === undefined || meta.status === "completed")
-          && !["streaming", "partial", "in_progress", "failed", "cancelled", "interrupted"].some(
-            (key) => Boolean(meta?.[key]),
-          );
+        const canFork = m.can_fork === true;
         const metrics = meta?.metrics as Record<string, number> | undefined;
         const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
         const hasTextAnswer = Boolean(m.content && m.content !== "Strategy execution completed.");

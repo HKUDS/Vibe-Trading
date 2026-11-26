@@ -28,6 +28,7 @@ from src.session.store import SessionStore
 
 if TYPE_CHECKING:
     from src.agent.loop import AgentLoop
+    from src.goal.store import GoalStore
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
@@ -312,7 +313,7 @@ class SessionService:
         message_id: str,
         *,
         owner: Optional[Principal] = None,
-        goal_store=None,
+        goal_store: Optional[GoalStore] = None,
     ) -> Session:
         """Create an idle child from a committed assistant-message prefix.
 

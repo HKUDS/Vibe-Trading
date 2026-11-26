@@ -20,6 +20,8 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from src.session.events import SSEEvent
+from src.session.fork import is_fork_eligible
+from src.session.models import Principal
 from src.session.service import SessionBusyError
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,7 @@ class MessageResponse(BaseModel):
     content: str
     created_at: str
     linked_attempt_id: Optional[str] = None
+    can_fork: bool = False
     metadata: Optional[Dict[str, Any]] = None
     tool_trail: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -530,8 +533,8 @@ def register_sessions_routes(app: FastAPI) -> None:
     async def fork_session(
         source_id: str,
         payload: ForkSessionRequest,
-        principal=Depends(require_auth),
-    ):
+        principal: Principal = Depends(require_auth),
+    ) -> SessionResponse:
         """Fork the committed prefix ending at a completed assistant turn."""
         _host_validate_path_param(source_id, "session_id")
         svc = _host_get_session_service()
@@ -928,6 +931,7 @@ def register_sessions_routes(app: FastAPI) -> None:
                 content=m.content,
                 created_at=m.created_at,
                 linked_attempt_id=m.linked_attempt_id,
+                can_fork=is_fork_eligible(m, session_id, svc.store),
                 metadata=m.metadata if m.metadata else None,
                 tool_trail=m.tool_trail,
             )

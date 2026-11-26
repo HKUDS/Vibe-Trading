@@ -2396,6 +2396,7 @@ export interface MessageItem {
   content: string;
   created_at: string;
   linked_attempt_id?: string;
+  can_fork?: boolean;
   metadata?: Record<string, unknown>;
   tool_trail?: ToolTrailItem[];
 }

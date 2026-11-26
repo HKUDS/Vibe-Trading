@@ -13,7 +13,7 @@ import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from src.session.models import Attempt, AttemptStatus, Message, Principal, Session, SessionStatus
 from src.session.store import SessionStore
@@ -123,6 +123,21 @@ _FORBIDDEN_ARTIFACT_RUNTIME_KEYS = frozenset(
         "sse",
     )
 )
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(\b(?=[A-Z0-9_-]*(?:API[_-]?KEY|SECRET|PASSWORD|PASSWD|TOKEN|CREDENTIAL|COOKIE|"
+    r"AUTHORIZATION|PRIVATE[_-]?KEY|ACCESS[_-]?KEY))[A-Z][A-Z0-9_-]*\b\s*[:=]\s*)"
+    r"(\"[^\"]*\"|'[^']*'|Bearer\s+[A-Za-z0-9._~+/=-]+|[^\s,;]+)",
+    re.IGNORECASE,
+)
+_BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+    re.DOTALL,
+)
+_TOKEN_VALUE_RE = re.compile(
+    r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b"
+)
+_URL_CREDENTIAL_RE = re.compile(r"(https?://[^/\s:@]+:)[^@/\s]+(@)", re.IGNORECASE)
 
 
 class ForkSourceNotFound(LookupError):
@@ -138,14 +153,33 @@ class ForkAuthorizationError(PermissionError):
 
 
 def validate_fork_id(value: str, kind: str) -> str:
-    """Reject empty, oversized, or path-like identifiers before storage access."""
+    """Validate an identifier before using it for storage access.
+
+    Args:
+        value: Identifier to validate.
+        kind: Human-readable identifier kind for error messages.
+
+    Returns:
+        The validated identifier.
+
+    Raises:
+        ForkSelectionError: If the identifier is empty, oversized, or path-like.
+    """
     if not isinstance(value, str) or not _SAFE_ID_RE.fullmatch(value):
         raise ForkSelectionError(f"invalid {kind}")
     return value
 
 
 def enforce_owner(source: Session, principal: Principal | None) -> None:
-    """Enforce identity equality only when both owners are attributable."""
+    """Enforce identity equality only when both owners are attributable.
+
+    Args:
+        source: Source session that must not be accessed by another owner.
+        principal: Requesting principal, if available.
+
+    Raises:
+        ForkAuthorizationError: If attributable owners do not match.
+    """
     if (
         principal is not None
         and source.owner is not None
@@ -196,32 +230,65 @@ def _is_secret_key(key: str) -> bool:
     return normalized in _FORBIDDEN_CONFIG_KEYS_NORMALIZED or _is_secret_material_key(key)
 
 
-def sanitize_fork_config(value: Any) -> Any:
-    """Deep-copy ordinary settings while dropping runtime state and secrets."""
+def _redact_secret_assignment(match: re.Match[str]) -> str:
+    prefix, raw_value = match.groups()
+    key = re.match(r"[A-Za-z][A-Za-z0-9_-]*", prefix)
+    if key is None or not _is_secret_material_key(key.group(0)):
+        return match.group(0)
+    if raw_value.lower().startswith("bearer "):
+        return f"{prefix}Bearer <REDACTED>"
+    quote = raw_value[0] if raw_value[:1] in {"\"", "'"} else ""
+    return f"{prefix}{quote}<REDACTED>{quote}"
+
+
+def _redact_secrets(value: str) -> str:
+    value = _PRIVATE_KEY_RE.sub("<REDACTED>", value)
+    value = _URL_CREDENTIAL_RE.sub(r"\1<REDACTED>\2", value)
+    value = _SECRET_ASSIGNMENT_RE.sub(_redact_secret_assignment, value)
+    value = _BEARER_RE.sub("Bearer <REDACTED>", value)
+    return _TOKEN_VALUE_RE.sub("<REDACTED>", value)
+
+
+def _sanitize_fork_value(value: Any, key_filter: Callable[[str], bool]) -> Any:
     if isinstance(value, dict):
         return {
-            key: sanitize_fork_config(item)
+            key: _sanitize_fork_value(item, key_filter)
             for key, item in value.items()
-            if isinstance(key, str) and not _is_secret_key(key)
+            if isinstance(key, str) and not key_filter(key)
         }
     if isinstance(value, list):
-        return [sanitize_fork_config(item) for item in value]
+        return [_sanitize_fork_value(item, key_filter) for item in value]
+    if isinstance(value, str):
+        return _redact_secrets(value)
     return copy.deepcopy(value)
+
+
+def sanitize_fork_config(value: Any) -> Any:
+    """Deep-copy settings while dropping runtime state and redacting secrets.
+
+    Args:
+        value: Session configuration to sanitize.
+
+    Returns:
+        A detached configuration value safe to persist in the child.
+    """
+    return _sanitize_fork_value(value, _is_secret_key)
 
 
 def sanitize_fork_artifact(value: Any) -> Any:
-    """Drop secret material and live handles without discarding ordinary artifact fields."""
-    if isinstance(value, dict):
-        return {
-            key: sanitize_fork_artifact(item)
-            for key, item in value.items()
-            if isinstance(key, str)
-            and not _is_secret_material_key(key)
-            and re.sub(r"[^a-z0-9]", "", key.lower()) not in _FORBIDDEN_ARTIFACT_RUNTIME_KEYS
-        }
-    if isinstance(value, list):
-        return [sanitize_fork_artifact(item) for item in value]
-    return copy.deepcopy(value)
+    """Drop secret material and live handles while preserving ordinary fields.
+
+    Args:
+        value: Historical run artifact to sanitize.
+
+    Returns:
+        A detached artifact value with credentials and runtime handles removed.
+    """
+    return _sanitize_fork_value(
+        value,
+        lambda key: _is_secret_material_key(key)
+        or re.sub(r"[^a-z0-9]", "", key.lower()) in _FORBIDDEN_ARTIFACT_RUNTIME_KEYS,
+    )
 
 
 def _remap_text(value: str, replacements: list[tuple[str, str]]) -> str:
@@ -306,6 +373,24 @@ def _eligible_assistant(
         raise ForkSelectionError("a run-backed assistant message must link its completed attempt")
     # Older terminal replies have neither an attempt nor a run identifier.
     return None
+
+
+def is_fork_eligible(message: Message, source_id: str, store: SessionStore) -> bool:
+    """Return whether a stored message is a valid Fork cutoff.
+
+    Args:
+        message: Stored message to evaluate.
+        source_id: Session that owns the message.
+        store: Session store used to validate linked attempts.
+
+    Returns:
+        True only when the backend would accept this message as a cutoff.
+    """
+    try:
+        _eligible_assistant(message, source_id, store)
+    except ForkSelectionError:
+        return False
+    return True
 
 
 def _run_references(value: Any, runs_dir: Path) -> set[str]:
@@ -438,12 +523,12 @@ def _copy_run(
                 # opaque bytes that might contain credentials or raw traces.
                 continue
             _write_json(destination, _remap(payload, replacements))
-        elif path.suffix.lower() in {".md", ".py", ".pine", ".html"}:
+        elif path.suffix.lower() in {".md", ".py", ".pine", ".html", ".csv", ".svg"}:
             try:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            destination.write_text(_remap(text, replacements), encoding="utf-8")
+            destination.write_text(_redact_secrets(_remap(text, replacements)), encoding="utf-8")
         else:
             shutil.copy2(path, destination)
 
@@ -499,6 +584,21 @@ def fork_session(
 
     The caller serializes this operation. No source execution claim is taken,
     so an active source run continues while its committed prefix is copied.
+
+    Args:
+        service: Session service that owns source state and run storage.
+        source_id: Source session identifier.
+        message_id: Completed assistant message that ends the copied prefix.
+        owner: Requesting principal used for child ownership and authorization.
+        goal_store: Optional goal ledger to clone at fork time.
+
+    Returns:
+        The newly published child session.
+
+    Raises:
+        ForkSourceNotFound: If the source session does not exist.
+        ForkAuthorizationError: If the requesting owner cannot access the source.
+        ForkSelectionError: If the cutoff or its referenced state is invalid.
     """
     validate_fork_id(source_id, "source session id")
     validate_fork_id(message_id, "message id")

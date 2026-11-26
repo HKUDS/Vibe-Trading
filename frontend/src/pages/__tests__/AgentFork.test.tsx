@@ -65,6 +65,7 @@ function sourceMessages(status = "completed") {
       content: "NVDA analysis",
       created_at: "2026-11-25T10:01:00Z",
       linked_attempt_id: "attempt-1",
+      can_fork: status === "completed",
       metadata: { status },
       tool_trail: [],
     },
@@ -129,6 +130,27 @@ describe("Agent conversation Fork", () => {
     await waitFor(() => expect(screen.getByRole("textbox")).toHaveValue("Keep this draft in the source"));
   });
 
+  it.each([
+    { mode: "goal", menuItem: "Research Goal", chip: "New Research Goal" },
+    { mode: "swarm", menuItem: "Agent Swarm", chip: "Agent Swarm" },
+  ])("keeps the $mode composer mode out of the child and restores it on return", async ({ menuItem, chip }) => {
+    const router = renderAgent();
+    await screen.findByText("NVDA analysis");
+    await userEvent.setup().click(screen.getByTitle("More options"));
+    await userEvent.setup().click(screen.getByRole("menuitem", { name: menuItem }));
+    expect(screen.getByText(chip)).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Fork" }));
+
+    await screen.findByText("Forked from NVDA research");
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.queryByText(chip)).not.toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("link", { name: "View original" }));
+    await waitFor(() => expect(router.state.location.search).toBe("?session=source"));
+    expect(await screen.findByText(chip)).toBeInTheDocument();
+  });
+
   it.each(["failed", "cancelled", "streaming", "running", "interrupted", "waiting_user", "pending"])(
     "does not offer Fork for a %s assistant turn",
     async (status) => {
@@ -140,10 +162,23 @@ describe("Agent conversation Fork", () => {
     },
   );
 
+  it("does not offer Fork when the backend marks a completed-looking turn ineligible", async () => {
+    const messages = sourceMessages();
+    messages[1].can_fork = false;
+    delete messages[1].linked_attempt_id;
+    (messages[1].metadata as Record<string, unknown>).run_id = "orphan-run";
+    apiMock.getSessionMessages.mockResolvedValue(messages);
+    renderAgent();
+
+    await screen.findByText("NVDA analysis");
+    expect(screen.queryByRole("button", { name: "Fork" })).not.toBeInTheDocument();
+  });
+
   it.each(["streaming", "partial", "in_progress", "failed", "cancelled", "interrupted"])(
     "does not offer Fork when a completed turn is marked %s",
     async (flag) => {
       const messages = sourceMessages();
+      messages[1].can_fork = false;
       (messages[1].metadata as Record<string, unknown>)[flag] = true;
       apiMock.getSessionMessages.mockResolvedValue(messages);
       renderAgent();

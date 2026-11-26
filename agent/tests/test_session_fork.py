@@ -56,6 +56,9 @@ def _run_files(service: SessionService, run_id: str, *, session_id: str) -> Path
         "credentials": {"api_key": "do-not-copy"},
         "safe": "kept",
         "task": "keep ordinary artifact fields",
+        "note": "Authorization: Bearer do-not-copy",
+        "opaque": "sk-" + "x" * 20,
+        "limits": "max_tokens=2048",
     }))
     (run_dir / "run_card.json").write_text(
         json.dumps(
@@ -78,14 +81,18 @@ def _run_files(service: SessionService, run_id: str, *, session_id: str) -> Path
             }
         )
     )
-    (run_dir / "run_card.md").write_text(f"Run directory: `{run_dir}`\n")
-    (run_dir / "code" / "signal_engine.py").write_text(f"RUN_ID = {run_id!r}\nSESSION_ID = {session_id!r}\n")
+    (run_dir / "run_card.md").write_text(f"Run directory: `{run_dir}`\nOPENAI_API_KEY=do-not-copy\n")
+    (run_dir / "code" / "signal_engine.py").write_text(
+        f"RUN_ID = {run_id!r}\nSESSION_ID = {session_id!r}\nAPI_KEY = \"do-not-copy\"\nMAX_TOKENS = 2048\n"
+    )
     (run_dir / "logs" / "runner_stdout.txt").write_text("API_KEY=do-not-copy\n")
     (run_dir / "config.json").write_text('{"api_key":"do-not-copy"}')
     outside = run_dir.parent.parent / f"{run_id}-outside-secret.csv"
     outside.write_text("do-not-copy\n")
     (run_dir / "artifacts" / "linked.csv").symlink_to(outside)
     (run_dir / "artifacts" / "metrics.csv").write_text("metric,value\nsharpe,1.5\n")
+    (run_dir / "artifacts" / "notes.md").write_text("Safe note\nOPENAI_API_KEY=do-not-copy\n")
+    (run_dir / "artifacts" / "provider.csv").write_text("provider,note\nopenai,OPENAI_API_KEY=do-not-copy\n")
     (run_dir / "artifacts" / "equity.csv").write_text("date,equity\n2026-01-01,100\n")
     (run_dir / "artifacts" / "price_series.csv").write_text("date,close\n2026-01-01,101\n")
     (run_dir / "artifacts" / "strategy.pine").write_text(f"// {run_id}\n")
@@ -374,6 +381,7 @@ def test_artifacts_survive_source_deletion_and_sensitive_files_are_not_copied(ru
     assert (copied_run / "artifacts" / "price_series.csv").is_file()
     assert (copied_run / "artifacts" / "strategy.pine").is_file()
     assert copied_run_id in (copied_run / "code" / "signal_engine.py").read_text()
+    assert "MAX_TOKENS = 2048" in (copied_run / "code" / "signal_engine.py").read_text()
     assert json.loads((copied_run / "req.json").read_text())["context"]["session_id"] == child.session_id
     assert "api_key" not in json.loads((copied_run / "req.json").read_text())
     assert "do-not-copy" not in (copied_run / "req.json").read_text()
@@ -388,9 +396,17 @@ def test_artifacts_survive_source_deletion_and_sensitive_files_are_not_copied(ru
     planner = json.loads((copied_run / "planner_output.json").read_text())
     assert planner["safe"] == "kept"
     assert planner["task"] == "keep ordinary artifact fields"
+    assert planner["note"] == "Authorization: Bearer <REDACTED>"
+    assert planner["opaque"] == "<REDACTED>"
+    assert planner["limits"] == "max_tokens=2048"
     assert "credentials" not in planner
     provider_response = json.loads((copied_run / "artifacts" / "provider_response.json").read_text())
     assert provider_response == {"nested": {}, "safe": 3}
+    assert "do-not-copy" not in (copied_run / "run_card.md").read_text()
+    for relative in ("code/signal_engine.py", "artifacts/notes.md", "artifacts/provider.csv"):
+        copied_text = (copied_run / relative).read_text()
+        assert "do-not-copy" not in copied_text
+        assert "<REDACTED>" in copied_text
     assert service.store.delete_session(source.session_id)
     assert (copied_run / "artifacts" / "metrics.csv").is_file()
     assert service.store.get_session(child.session_id) is not None
@@ -620,6 +636,20 @@ def test_fork_route_requires_auth_and_maps_selection_and_owner_errors(runtime, m
     assert response.status_code == 201
     assert response.json()["forked_from_session_id"] == source.session_id
     assert response.json()["forked_from_message_id"] == selected.message_id
+    listed = client.get(f"/sessions/{source.session_id}/messages").json()
+    eligibility = {item["message_id"]: item["can_fork"] for item in listed}
+    assert eligibility[selected.message_id] is True
+    assert eligibility[user.message_id] is False
+    orphan = Message(
+        session_id=source.session_id,
+        role="assistant",
+        content="completed-looking orphan run",
+        metadata={"status": "completed", "run_id": "orphan-run"},
+    )
+    service.store.append_message(orphan)
+    listed = client.get(f"/sessions/{source.session_id}/messages").json()
+    eligibility = {item["message_id"]: item["can_fork"] for item in listed}
+    assert eligibility[orphan.message_id] is False
     assert client.post(f"/sessions/{source.session_id}/fork", json={"message_id": user.message_id}).status_code == 422
     assert client.post(f"/sessions/{source.session_id}/fork", json={"message_id": "missing"}).status_code == 422
     assert client.post("/sessions/missing/fork", json={"message_id": selected.message_id}).status_code == 404
