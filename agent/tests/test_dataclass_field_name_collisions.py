@@ -55,7 +55,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCAN_ROOT = REPO_ROOT / "agent"
 # Test fixtures and test-local dataclasses are not part of the shipped surface;
 # scanning them would also trip the gate on deliberately broken snippets.
-EXCLUDED_DIRS = (REPO_ROOT / "agent" / "tests",)
+# Virtual environments contain third-party code and non-source fixtures.
+EXCLUDED_DIRS = (
+    REPO_ROOT / "agent" / "tests",
+    REPO_ROOT / "agent" / ".venv",
+    REPO_ROOT / "agent" / "venv",
+)
 
 
 def _is_dataclass(node: ast.ClassDef) -> bool:
@@ -157,7 +162,7 @@ def test_no_field_is_shadowed_by_a_class_body_binding() -> None:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError) as exc:  # pragma: no cover - unreadable file
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:  # pragma: no cover - unreadable file
             failures.append(f"{path.relative_to(REPO_ROOT)}: could not be parsed ({exc})")
             continue
         for detail in _collisions(tree):

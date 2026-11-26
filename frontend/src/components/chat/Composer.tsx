@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -59,9 +60,11 @@ export interface ComposerHandle {
   fill(prompt: string): void;
   focus(): void;
   submit(prompt: string): void;
+  isUploading(): boolean;
 }
 
 interface Props {
+  sessionId: string | null;
   streaming: boolean;
   activityVerb?: AgentActivity["verb"];
   hasCompletedTurn: boolean;
@@ -80,6 +83,7 @@ interface Props {
 }
 
 export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer({
+  sessionId,
   streaming,
   activityVerb,
   hasCompletedTurn,
@@ -103,19 +107,38 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   const lastCompositionEndRef = useRef(0);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const uploadingRef = useRef(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const dragDepthRef = useRef(0);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const uploadMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftsRef = useRef(new Map<string, { input: string; attachments: ComposerAttachment[] }>());
+  const draftSessionRef = useRef(sessionId);
+
+  useLayoutEffect(() => {
+    const previousSessionId = draftSessionRef.current;
+    if (previousSessionId === sessionId) return;
+    draftsRef.current.set(previousSessionId ?? "__draft__", { input, attachments });
+    const draft = draftsRef.current.get(sessionId ?? "__draft__");
+    setInput(draft?.input ?? "");
+    setAttachments(draft?.attachments ?? []);
+    draftSessionRef.current = sessionId;
+    requestAnimationFrame(() => {
+      const composer = inputRef.current;
+      if (!composer) return;
+      composer.style.height = "auto";
+      composer.style.height = `${composer.scrollHeight}px`;
+    });
+  }, [attachments, input, sessionId]);
 
   const focus = useCallback(() => {
     inputRef.current?.focus({ preventScroll: true });
   }, []);
 
   const submitPrompt = useCallback((prompt: string) => {
-    if ((!prompt.trim() && attachments.length === 0) || streaming || uploading) return;
+    if ((!prompt.trim() && attachments.length === 0) || streaming || uploadingRef.current) return;
     const submitted = prompt.trim();
     const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
     const requestText = goalComposerActive ? submitted : buildChatPrompt(submitted, attachments, Boolean(swarmPreset));
@@ -129,7 +152,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
     if (!goalComposerActive) setAttachments([]);
     onSubmit(submitted, submittedAttachments);
     inputRef.current?.focus();
-  }, [attachments, goalComposerActive, onSubmit, streaming, swarmPreset, t, uploading]);
+  }, [attachments, goalComposerActive, onSubmit, streaming, swarmPreset, t]);
 
   useImperativeHandle(ref, () => ({
     fill(prompt: string) {
@@ -144,6 +167,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
     },
     focus,
     submit: submitPrompt,
+    isUploading: () => uploadingRef.current,
   }), [focus, submitPrompt]);
 
   const handleSubmit = useCallback((event: FormEvent) => {
@@ -152,7 +176,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   }, [input, submitPrompt]);
 
   const uploadFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0 || streaming || uploading) return;
+    if (files.length === 0 || streaming || uploadingRef.current) return;
     const remainingSlots = MAX_ATTACHMENT_COUNT - attachments.length;
     if (remainingSlots <= 0) {
       toast.error(t("agent.attachmentLimit", { count: MAX_ATTACHMENT_COUNT }));
@@ -179,16 +203,25 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
     const accepted = validFiles.slice(0, remainingSlots);
     if (accepted.length === 0) return;
 
+    const uploadSessionId = sessionId;
+    const draftKey = uploadSessionId ?? "__draft__";
+    uploadingRef.current = true;
     setUploading(true);
     setShowUploadMenu(false);
     try {
       for (const file of accepted) {
         try {
           const result = await api.uploadFile(file);
-          setAttachments((current) => [
-            ...current,
-            { filename: result.filename, filePath: result.file_path },
-          ]);
+          const attachment = { filename: result.filename, filePath: result.file_path };
+          if (draftSessionRef.current === uploadSessionId) {
+            setAttachments((current) => [...current, attachment]);
+          } else {
+            const draft = draftsRef.current.get(draftKey) ?? { input: "", attachments: [] };
+            draftsRef.current.set(draftKey, {
+              ...draft,
+              attachments: [...draft.attachments, attachment],
+            });
+          }
           toast.success(t("agent.uploaded", { filename: result.filename }));
         } catch (error) {
           toast.error(t("agent.uploadFailed", {
@@ -197,9 +230,10 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
         }
       }
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
     }
-  }, [attachments.length, streaming, t, uploading]);
+  }, [attachments.length, sessionId, streaming, t]);
 
   const handleFileSelect = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -215,12 +249,12 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   }, [uploadFiles]);
 
   const handleDragEnter = useCallback((event: DragEvent<HTMLFormElement>) => {
-    if (streaming || uploading) return;
+    if (streaming || uploadingRef.current) return;
     if (!Array.from(event.dataTransfer.types ?? []).includes("Files")) return;
     event.preventDefault();
     dragDepthRef.current += 1;
     setDraggingFiles(true);
-  }, [streaming, uploading]);
+  }, [streaming]);
 
   const handleDragLeave = useCallback((event: DragEvent<HTMLFormElement>) => {
     event.preventDefault();

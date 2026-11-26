@@ -1191,6 +1191,9 @@
     "gildataTokenDesc": "任意の Gildata データ：A株の調整済み日足、香港株・指数の未調整価格、店頭投資信託の基準価額、中国のマクロ経済・公告・調査レポートツール。"
   },
   "agent": {
+    "forkedFrom": "{{title}} からフォーク",
+    "viewOriginal": "元の会話を表示",
+    "forkWaitForUpload": "添付ファイルのアップロードが完了してからフォークしてください。",
     "reasoningStrength": "推論強度",
     "unknownProvider": "不明なプロバイダー",
     "unknownModel": "不明なモデル",
@@ -2056,6 +2059,8 @@
     "accountHint": "エージェントはこの口座だけで取引します。自動では選択されません。"
   },
   "messageBubble": {
+    "fork": "フォーク",
+    "forking": "フォーク中…",
     "elapsedTime": "合計応答時間",
     "copied": "コピーしました",
     "copy": "コピー",

@@ -123,13 +123,33 @@ describe("MessageBubble", () => {
     it("exposes the copy action to keyboard focus and announces success", async () => {
       render(<MessageBubble msg={makeMsg({ type: "answer", content: "Analysis" })} />);
       const copyButton = screen.getByRole("button", { name: "Copy" });
-      expect(copyButton).toHaveClass("focus-visible:opacity-100");
+      expect(copyButton.parentElement).toHaveClass("focus-within:opacity-100");
 
       const user = userEvent.setup();
       await user.click(copyButton);
 
       expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("Copied");
+    });
+
+    it("forks from the persisted answer when the action is available", async () => {
+      const onFork = vi.fn();
+      const msg = makeMsg({ content: "Analysis", sourceMessageId: "stored-answer", canFork: true });
+      render(<MessageBubble msg={msg} onFork={onFork} />);
+
+      await userEvent.setup().click(screen.getByRole("button", { name: "Fork" }));
+      expect(onFork).toHaveBeenCalledWith(msg);
+    });
+
+    it("disables Fork while the request is in flight", () => {
+      render(
+        <MessageBubble
+          msg={makeMsg({ sourceMessageId: "stored-answer", canFork: true })}
+          onFork={vi.fn()}
+          forking
+        />,
+      );
+      expect(screen.getByRole("button", { name: "Forking…" })).toBeDisabled();
     });
 
     it("shows the total response time without exposing token counts", () => {
@@ -185,6 +205,22 @@ describe("MessageBubble", () => {
       render(<MessageBubble msg={makeMsg({ type: "run_complete", runId: "run-42" })} />);
       expect(screen.getByTestId("run-complete-card")).toBeInTheDocument();
       expect(screen.getByText("Run: run-42")).toBeInTheDocument();
+    });
+
+    it("offers Fork without an empty Copy action for run-only cards", async () => {
+      const onFork = vi.fn();
+      const msg = makeMsg({
+        type: "run_complete",
+        runId: "run-42",
+        sourceMessageId: "stored-run-answer",
+        canFork: true,
+      });
+      const { container } = render(<MessageBubble msg={msg} onFork={onFork} />);
+
+      expect(container.firstElementChild).not.toHaveClass("flex");
+      expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+      await userEvent.setup().click(screen.getByRole("button", { name: "Fork" }));
+      expect(onFork).toHaveBeenCalledWith(msg);
     });
   });
 

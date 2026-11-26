@@ -967,6 +967,15 @@ vibe-trading --max-iter 40 -p "指令"</code></pre>
             `
           },
           {
+            id: "fork",
+            title: "创建会话分支",
+            body: `
+              <p>在任意已完成的助手回答旁，点击“复制”旁边的“分支”，即可创建一条截至该回答的独立子会话。复制范围包含整个助手回合（含工具调用与输出），不包含后续回合；失败、已取消或仍在流式输出的回答不能创建分支。</p>
+              <p>子会话会立即打开，输入框为空，并显示“分支自”横幅供你返回原会话。原会话继续运行并保留在历史中。草稿与附件仍属于最初编辑它们的会话；子会话继承标题、会话配置、复制后的运行产物，以及创建分支时的当前目标快照。持久记忆、上传文件、生成的报告与连接继续共享。父子会话可独立删除。</p>
+              <p>API 客户端可调用 <code>POST /sessions/{source_id}/fork</code>，请求体为 <code>{"message_id":"..."}</code>。完整状态边界见 <a href="https://github.com/HKUDS/Vibe-Trading/blob/main/guides/cli-and-api.md#fork-a-session" target="_blank" rel="noreferrer">API 指南</a>。</p>
+            `
+          },
+          {
             id: "auth",
             title: "访问与安全",
             body: `
@@ -1000,6 +1009,7 @@ vibe-trading playbook create premarket-brief</code></pre>
                   <tr><td><code>POST /sessions</code>、<code>POST /sessions/{id}/messages</code></td><td>创建会话、发送消息</td></tr>
                   <tr><td><code>GET /sessions/{id}/events</code></td><td>SSE 事件流</td></tr>
                   <tr><td><code>POST /sessions/{id}/cancel</code></td><td>停止正在进行的运行</td></tr>
+                  <tr><td><code>POST /sessions/{source_id}/fork</code></td><td>从已完成的助手回合创建独立子会话</td></tr>
                   <tr><td><code>GET /runs</code>、<code>GET /runs/{run_id}</code></td><td>运行记录</td></tr>
                   <tr><td><code>POST /upload</code></td><td>上传文档、数据文件或图片</td></tr>
                   <tr><td><code>POST /swarm/runs</code></td><td>启动团队运行</td></tr>

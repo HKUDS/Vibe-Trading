@@ -1191,6 +1191,9 @@
     "gildataTokenDesc": "선택적 Gildata 데이터: A주 수정 일봉, 홍콩 주식·지수의 원시 시세, 장외 펀드 순자산가치, 중국 거시경제·공시·리서치 도구."
   },
   "agent": {
+    "forkedFrom": "{{title}}에서 포크됨",
+    "viewOriginal": "원본 보기",
+    "forkWaitForUpload": "첨부 파일 업로드가 완료된 후 포크하세요.",
     "reasoningStrength": "추론 강도",
     "unknownProvider": "알 수 없는 제공자",
     "unknownModel": "알 수 없는 모델",
@@ -2056,6 +2059,8 @@
     "accountHint": "에이전트는 이 계좌에서만 거래합니다. 자동으로 선택되지 않습니다."
   },
   "messageBubble": {
+    "fork": "포크",
+    "forking": "포크 생성 중…",
     "elapsedTime": "총 응답 시간",
     "copied": "복사됨",
     "copy": "복사",

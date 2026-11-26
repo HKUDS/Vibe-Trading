@@ -1197,6 +1197,9 @@
     "gildataTokenDesc": "Optional Gildata data: adjusted A-share daily bars, raw HK/index bars, OTC fund NAVs, and China macro, announcement and research tools."
   },
   "agent": {
+    "forkedFrom": "Forked from {{title}}",
+    "viewOriginal": "View original",
+    "forkWaitForUpload": "Wait for attachments to finish uploading before forking.",
     "reasoningStrength": "Reasoning Effort",
     "unknownProvider": "Unknown provider",
     "unknownModel": "Unknown model",
@@ -2066,6 +2069,8 @@
     "copied": "Copied",
     "copy": "Copy",
     "copyFailed": "Copy failed. Select the text and press Ctrl+C.",
+    "fork": "Fork",
+    "forking": "Forking…",
     "timeoutHint": "Timed out. Simplify the strategy or use fewer assets.",
     "apiFailedHint": "API request failed. Try again shortly.",
     "executionFailedHint": "Execution failed. Try again.",

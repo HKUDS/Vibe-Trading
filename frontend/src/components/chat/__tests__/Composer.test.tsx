@@ -1,9 +1,9 @@
-import { memo } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef, memo } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "../../../i18n";
 import { api } from "@/lib/api";
-import { Composer } from "../Composer";
+import { Composer, type ComposerHandle } from "../Composer";
 import { toast } from "sonner";
 import { MAX_MESSAGE_CHARS, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
 
@@ -16,6 +16,7 @@ vi.mock("sonner", () => ({
 }));
 
 const baseProps = {
+  sessionId: null,
   streaming: false,
   hasCompletedTurn: false,
   showExport: false,
@@ -117,6 +118,69 @@ describe("Composer", () => {
     await user.type(screen.getByRole("textbox"), "local composer state");
 
     expect(messageListRenderCount).toBe(1);
+  });
+
+  it("keeps unsent drafts scoped to their session", () => {
+    const { rerender } = render(<Composer {...baseProps} sessionId="source" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "source draft" } });
+
+    rerender(<Composer {...baseProps} sessionId="child" />);
+    expect(screen.getByRole("textbox")).toHaveValue("");
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "child draft" } });
+    rerender(<Composer {...baseProps} sessionId="source" />);
+    expect(screen.getByRole("textbox")).toHaveValue("source draft");
+  });
+
+  it("keeps unsent attachments scoped to their session", async () => {
+    const { container, rerender } = render(<Composer {...baseProps} sessionId="source" />);
+    fireEvent.drop(container.querySelector("form")!, {
+      dataTransfer: { files: [new File(["data"], "source.csv", { type: "text/csv" })], types: ["Files"] },
+    });
+    await screen.findByText("source.csv");
+
+    rerender(<Composer {...baseProps} sessionId="child" />);
+    expect(screen.queryByText("source.csv")).not.toBeInTheDocument();
+
+    rerender(<Composer {...baseProps} sessionId="source" />);
+    expect(await screen.findByText("source.csv")).toBeInTheDocument();
+  });
+
+  it("reports uploads synchronously and ignores duplicate drops", async () => {
+    const ref = createRef<ComposerHandle>();
+    const { container } = render(<Composer {...baseProps} ref={ref} />);
+    const form = container.querySelector("form")!;
+    const dataTransfer = {
+      files: [new File(["data"], "source.csv", { type: "text/csv" })],
+      types: ["Files"],
+    };
+
+    fireEvent.drop(form, { dataTransfer });
+    fireEvent.drop(form, { dataTransfer });
+
+    expect(api.uploadFile).toHaveBeenCalledTimes(1);
+    expect(ref.current?.isUploading()).toBe(true);
+    await waitFor(() => expect(ref.current?.isUploading()).toBe(false));
+  });
+
+  it("keeps an in-flight upload in the session that started it", async () => {
+    let finishUpload!: (value: { status: string; filename: string; file_path: string }) => void;
+    vi.mocked(api.uploadFile).mockReturnValue(new Promise((resolve) => {
+      finishUpload = resolve;
+    }));
+    const { container, rerender } = render(<Composer {...baseProps} sessionId="source" />);
+
+    fireEvent.drop(container.querySelector("form")!, {
+      dataTransfer: { files: [new File(["data"], "source.csv", { type: "text/csv" })], types: ["Files"] },
+    });
+    rerender(<Composer {...baseProps} sessionId="child" />);
+    await act(async () => {
+      finishUpload({ status: "ok", filename: "source.csv", file_path: "uploads/source.csv" });
+    });
+
+    expect(screen.queryByText("source.csv")).not.toBeInTheDocument();
+    rerender(<Composer {...baseProps} sessionId="source" />);
+    expect(await screen.findByText("source.csv")).toBeInTheDocument();
   });
 
   it("uploads multiple dropped files and submits them together", async () => {

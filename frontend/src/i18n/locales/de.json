@@ -1197,6 +1197,9 @@
     "gildataTokenDesc": "Optionale Gildata-Daten: bereinigte Tageskurse chinesischer A-Aktien, unbereinigte Hongkong- und Indexkurse, Nettoinventarwerte nicht börsengehandelter Fonds sowie chinesische Makro-, Mitteilungs- und Research-Tools."
   },
   "agent": {
+    "forkedFrom": "Verzweigt von {{title}}",
+    "viewOriginal": "Original anzeigen",
+    "forkWaitForUpload": "Warte, bis die Anhänge vollständig hochgeladen sind, bevor du verzweigst.",
     "reasoningStrength": "Reasoning-Aufwand",
     "unknownProvider": "Unbekannter Anbieter",
     "unknownModel": "Unbekanntes Modell",
@@ -2062,6 +2065,8 @@
     "accountHint": "Der Agent handelt nur auf diesem Konto. Es wird nichts für Sie vorausgewählt."
   },
   "messageBubble": {
+    "fork": "Verzweigen",
+    "forking": "Verzweigung wird erstellt…",
     "elapsedTime": "Gesamte Antwortzeit",
     "copied": "Kopiert",
     "copy": "Kopieren",

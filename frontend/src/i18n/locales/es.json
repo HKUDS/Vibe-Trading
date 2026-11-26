@@ -1197,6 +1197,9 @@
     "gildataTokenDesc": "Datos opcionales de Gildata: precios diarios ajustados de acciones A, precios sin ajustar de Hong Kong e índices, valores liquidativos de fondos no cotizados y herramientas de macroeconomía, anuncios y análisis de China."
   },
   "agent": {
+    "forkedFrom": "Bifurcado de {{title}}",
+    "viewOriginal": "Ver original",
+    "forkWaitForUpload": "Espera a que terminen de subirse los archivos adjuntos antes de bifurcar.",
     "reasoningStrength": "Esfuerzo de razonamiento",
     "unknownProvider": "Proveedor desconocido",
     "unknownModel": "Modelo desconocido",
@@ -2062,6 +2065,8 @@
     "accountHint": "El agente solo opera en esta cuenta. No se elige ninguna por ti."
   },
   "messageBubble": {
+    "fork": "Bifurcar",
+    "forking": "Bifurcando…",
     "elapsedTime": "Tiempo total de respuesta",
     "copied": "Copiado",
     "copy": "Copiar",

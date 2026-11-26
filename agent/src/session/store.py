@@ -120,11 +120,11 @@ class SessionStore:
         shutil.rmtree(session_dir, ignore_errors=True)
         return True
 
-    def list_sessions(self, limit: int = 50) -> List[Session]:
+    def list_sessions(self, limit: Optional[int] = 50) -> List[Session]:
         """List all sessions in descending update-time order.
 
         Args:
-            limit: Maximum number of sessions to return.
+            limit: Maximum number of sessions to return, or None for all sessions.
 
         Returns:
             List of Session objects.
@@ -149,7 +149,7 @@ class SessionStore:
                     exc,
                 )
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
-        return sessions[:limit]
+        return sessions if limit is None else sessions[:limit]
 
     # ---- Message Append-Only Log ----
 

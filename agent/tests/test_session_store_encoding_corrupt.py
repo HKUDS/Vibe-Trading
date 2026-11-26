@@ -20,6 +20,7 @@ def test_bad_session_encoding_keeps_order_limit_and_original_bytes(
     path.write_bytes(bad_bytes)
 
     assert [s.session_id for s in store.list_sessions()] == ["newer", "older"]
+    assert [s.session_id for s in store.list_sessions(limit=None)] == ["newer", "older"]
     assert [s.session_id for s in store.list_sessions(limit=1)] == ["newer"]
     assert store.get_session("broken") is None
     assert path.read_bytes() == bad_bytes

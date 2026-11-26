@@ -28,6 +28,7 @@ from src.session.store import SessionStore
 
 if TYPE_CHECKING:
     from src.agent.loop import AgentLoop
+    from src.goal.store import GoalStore
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
@@ -116,6 +117,9 @@ class SessionService:
         self._user_cancel_requests: set[str] = set()
         self._inflight: set[str] = set()
         self._inflight_lock = threading.Lock()
+        # Fork publication is serialized independently of execution claims:
+        # repeated branches are allowed and a busy source remains untouched.
+        self._fork_lock = threading.RLock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
         self._shutting_down = False
@@ -302,6 +306,40 @@ class SessionService:
     def get_session(self, session_id: str) -> Optional[Session]:
         """Return a session by ID."""
         return self.store.get_session(session_id)
+
+    def fork_session(
+        self,
+        source_id: str,
+        message_id: str,
+        *,
+        owner: Optional[Principal] = None,
+        goal_store: Optional[GoalStore] = None,
+    ) -> Session:
+        """Create an idle child from a committed assistant-message prefix.
+
+        Unlike ``send_message``, this never claims or mutates the source. The
+        returned child has no task, loop, event, background, or swarm state.
+
+        Args:
+            source_id: Source session identifier.
+            message_id: Completed assistant message that ends the copied prefix.
+            owner: Requesting principal used for child ownership and authorization.
+            goal_store: Optional goal ledger to clone at fork time.
+
+        Returns:
+            The newly published child session.
+
+        Raises:
+            ForkSourceNotFound: If the source session does not exist.
+            ForkAuthorizationError: If the requesting owner cannot access the source.
+            ForkSelectionError: If the cutoff or its referenced state is invalid.
+        """
+        from src.session.fork import fork_session
+
+        with self._fork_lock:
+            return fork_session(
+                self, source_id, message_id, owner=owner, goal_store=goal_store
+            )
 
     def update_session(self, session: Session) -> None:
         """Persist session metadata and refresh its search label."""
@@ -542,7 +580,8 @@ class SessionService:
             self.event_bus.emit(
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
-                {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
+                {"attempt_id": attempt.attempt_id, "message_id": reply.message_id,
+                 "status": attempt.status.value,
                  "summary": reply.content, "error": attempt.error, "run_dir": attempt.run_dir,
                  "started_at": wall_started_at, "ended_at": time.time(),
                  **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},

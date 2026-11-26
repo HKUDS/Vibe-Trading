@@ -150,6 +150,8 @@ class Session:
         created_at: Creation time in ISO format.
         updated_at: Last update time in ISO format.
         last_attempt_id: ID of the most recent Attempt.
+        forked_from_session_id: Immediate source session for a conversation fork.
+        forked_from_message_id: Selected assistant message in the source prefix.
         config: Session-level configuration such as model overrides or strategy parameters.
         owner: Principal the session belongs to, or None for a session created
             before principals existed or by a path that has no request context.
@@ -163,6 +165,8 @@ class Session:
     created_at: str = field(default_factory=_utc_now_iso)
     updated_at: str = field(default_factory=_utc_now_iso)
     last_attempt_id: Optional[str] = None
+    forked_from_session_id: Optional[str] = None
+    forked_from_message_id: Optional[str] = None
     config: Dict[str, Any] = field(default_factory=dict)
     owner: Optional[Principal] = None
 
