@@ -303,7 +303,7 @@ class ToolDelivery:
                                 "download_url": f"/api/reports/{report_id}"}
             except (ValueError, TypeError, AttributeError, OSError):
                 pass
-        truncated = deliver_tool_result(result, self.env.memory.run_dir, self.env.registry)
+        truncated = deliver_tool_result(result, self.env.memory.run_dir, self.env.registry, tool_name=tc.name)
         self._append_tool_result(
             messages, context, tc.id, tc.name, truncated,
             status=status, elapsed_ms=elapsed_ms, artifact=artifact,

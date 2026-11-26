@@ -194,13 +194,44 @@ def _persist_result_files(
     }
 
 
-def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> str:
+_FILE_READ_FIELDS = ('path', 'truncated', 'returned_chars', 'total_chars', 'returned_lines', 'total_lines')
+
+
+def _file_read_receipt(payload, has_shell: bool) -> dict | None:
+    """Say what a saved read_file response holds instead of claiming a complete result."""
+    from src.tools.read_file_tool import _OUTPUT_LIMIT
+
+    if not (isinstance(payload, dict) and payload.get('status') == 'ok'
+            and isinstance(payload.get('path'), str) and isinstance(payload.get('content'), str)):
+        return None
+    receipt = {key: payload[key] for key in _FILE_READ_FIELDS if key in payload}
+    pages = ('_result_file holds this read_file response, not the source file; its pages are '
+             'parts_relative_dir + /1.txt through part_count, fragments of the response JSON in order.')
+    if not payload.get('truncated'):
+        receipt['_delivery'] = f'Its content is the complete text of the source file at path. {pages}'
+        return receipt
+    shown, total = payload.get('returned_chars'), payload.get('total_chars')
+    held = f'the first {shown} of {total} characters' if isinstance(shown, int) else f'part of the {total} characters'
+    rest = (f'Use bash on path to read the source from character {shown} onward.' if has_shell and isinstance(shown, int)
+            else 'Use bash on path to read the rest of the source.' if has_shell
+            else f'read_file always reads from the first line: a larger limit returns more lines, up to '
+                 f'{_OUTPUT_LIMIT:,} characters, and it has no offset, so text past that is not reachable through read_file.')
+    receipt['_delivery'] = (
+        f'Its content is a partial preview: only {held} of the source file at path, which is unchanged. '
+        f'{pages} Saving the response did not save the rest of the source. {rest}'
+    )
+    return receipt
+
+
+def deliver_tool_result(result: str, run_dir: str | Path | None, registry, *, tool_name: str | None = None) -> str:
     """Keep a large result in full, with a bounded valid JSON receipt.
 
     Args:
         result: Complete tool result. Credentials are scrubbed before saving.
         run_dir: Current task workspace, if available.
         registry: Actual registry, used to check for a local file reader.
+        tool_name: Executed tool. A read_file receipt describes the saved response's
+            partial or complete source content and keeps the source path.
 
     Returns:
         The original bounded result or a receipt naming its full file and readable
@@ -216,12 +247,12 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     try:
         shell = registry.get('bash')
         reader = registry.get('read_file')
-        readable = isinstance(getattr(shell, "_tool", shell), BashTool)
+        readable = has_shell = isinstance(getattr(shell, "_tool", shell), BashTool)
         if not readable and isinstance(getattr(reader, "_tool", reader), ReadFileTool):
             safe_run_dir(str(run_dir), roots=registry.policy.file_roots)
             readable = True
     except (AttributeError, KeyError, ValueError):
-        readable = False
+        readable = has_shell = False
     if not readable:
         return truncate_tool_result(result)
     try:
@@ -250,6 +281,9 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
             'original result coverage before calculating; saving does not fill missing rows.'
         ),
     }
+    file_read = _file_read_receipt(payload, has_shell) if tool_name == 'read_file' else None
+    if file_read:
+        receipt.update(file_read)
     if isinstance(payload, dict):
         metadata = ('status', 'ok', '_provenance', '_unresolved', '_diagnostics')
         receipt.update((key, payload[key]) for key in metadata if key in payload)

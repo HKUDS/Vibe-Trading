@@ -149,7 +149,7 @@ class ToolReplay:
     def _append_cached_result(self, delivery, tc, context, messages, result, key) -> None:
         delivery._append_tool_result(
             messages, context, tc.id, tc.name,
-            deliver_tool_result(result, self.env.memory.run_dir, self.env.registry),
+            deliver_tool_result(result, self.env.memory.run_dir, self.env.registry, tool_name=tc.name),
             status="ok", elapsed_ms=0,
         )
         self.record_success(tc.id, key)

@@ -113,8 +113,9 @@ class ReadFileTool(FileBoundTool, BaseTool):
 
         Returns:
             JSON string containing content or an error. A partial read carries
-            ``truncated``, ``total_chars``, a ``message`` naming the unchanged
-            original file and, for a line window, ``total_lines`` and
+            ``truncated``, ``returned_chars`` (source characters from the file's
+            start held in content), ``total_chars``, a ``message`` naming the
+            unchanged original file and, for a line window, ``total_lines`` and
             ``returned_lines``.
         """
         file_path = kwargs["path"]
@@ -253,11 +254,14 @@ class ReadFileTool(FileBoundTool, BaseTool):
                     text = "".join(lines[:limit])
                     body.update(total_lines=len(lines), returned_lines=limit)
             if len(text) > _OUTPUT_LIMIT:
-                text = text[:_OUTPUT_LIMIT] + "\n... (truncated)"
-            body["content"] = text
+                text = text[:_OUTPUT_LIMIT]
+                body["content"] = text + "\n... (truncated)"
+            else:
+                body["content"] = text
             if text != original:
                 body.update(
                     truncated=True,
+                    returned_chars=len(text),
                     total_chars=len(original),
                     message=(
                         "Partial preview: content holds only part of the original file, "
