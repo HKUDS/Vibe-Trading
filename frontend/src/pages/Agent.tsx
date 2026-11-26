@@ -17,7 +17,16 @@ import {
   extractUploadedAttachments,
 } from "@/lib/attachments";
 import { hasStoredMetrics, runCardFields } from "@/lib/runCards";
-import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
+import {
+  buildChatPrompt,
+  GOAL_CONTINUE_PREFIX,
+  GOAL_KICKOFF_PREFIX,
+  MAX_GOAL_CHARS,
+  MAX_MESSAGE_CHARS,
+  promptExceedsLimit,
+  replacePromptText,
+  SWARM_PROMPT_PREFIX,
+} from "@/lib/chatPrompt";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
@@ -119,18 +128,6 @@ function toolProgressKey(callId: string | undefined, tool: string): string {
 
 const STREAM_FLUSH_INTERVAL_MS = 80;
 const TIMELINE_WINDOW_SIZE = 160;
-const GOAL_KICKOFF_PREFIX = [
-  "Start working on this research goal now.",
-  "Keep it research-only, use available tools when evidence is needed, add concrete evidence to the goal ledger, and keep going until the goal is complete, blocked, waiting for user input, or budget-limited.",
-  "",
-  "Goal: ",
-].join("\n");
-const GOAL_CONTINUE_PREFIX = [
-  "Continue the active research goal.",
-  "Use real available tools as needed, add evidence to the goal ledger, and only stop when the goal is complete, blocked, waiting for user input, or budget-limited.",
-  "",
-  "Goal: ",
-].join("\n");
 
 function toDisplayPrompt(content: string): {
   content: string;
@@ -250,6 +247,7 @@ export function Agent() {
   const swarmRafRef = useRef(0);
   const toolCallSeqRef = useRef(0);
   const replayAttemptSeenRef = useRef(false);
+  const pendingEditAttemptRef = useRef<string | null>(null);
   const replayCheckTimerRef = useRef(0);
   const smoothScrollingRef = useRef(false);
   const smoothScrollTimerRef = useRef(0);
@@ -901,6 +899,22 @@ export function Agent() {
         scrollToBottom();
       },
 
+      "message.edited": (d) => {
+        touch();
+        if (act().sessionId !== sid) return;
+        const targetId = String(d.message_id || "");
+        const target = act().messages.find((message) => message.id === targetId);
+        if (target) act().discardSwarmAfter(target.timestamp);
+        const attemptId = String(d.attempt_id || "");
+        if (attemptId) {
+          pendingEditAttemptRef.current = attemptId;
+          if (act().activity?.attemptId.startsWith("pending-")) {
+            act().setActivityAttemptId(attemptId);
+          }
+        }
+        void refreshSessionMessages(sid);
+      },
+
       "attempt.created": (d) => {
         touch();
         replayAttemptSeenRef.current = true;
@@ -1260,6 +1274,7 @@ export function Agent() {
     markBackgroundCompletion,
     queueStreamUpdate,
     recordLlmUsage,
+    refreshSessionMessages,
     scrollToBottom,
   ]);
 
@@ -1516,6 +1531,143 @@ export function Agent() {
     composerRef.current?.submit(prompt);
   }, []);
 
+  const handleEditPrompt = useCallback(async (
+    message: StoredAgentMessage,
+    editedPrompt: string,
+  ) => {
+    if (!sessionId || !/^[a-f0-9]{12}$/i.test(message.id)) {
+      throw new Error(t("agent.failedToEditPrompt"));
+    }
+    if (status === "streaming") {
+      throw new Error(t("messageBubble.editPromptDisabled"));
+    }
+    const beforeMessages = await api.getSessionMessages(sessionId);
+    if (act().sessionId !== sessionId) return;
+    const beforeTarget = beforeMessages.find((stored) => stored.message_id === message.id);
+    if (!beforeTarget) {
+      throw new Error(t("agent.failedToEditPrompt"));
+    }
+    const content = replacePromptText(beforeTarget.content, editedPrompt);
+    if (promptExceedsLimit(content, MAX_MESSAGE_CHARS)) {
+      throw new Error(t("agent.messageTooLong", { limit: MAX_MESSAGE_CHARS.toLocaleString() }));
+    }
+
+    clearStreamingView();
+    pendingEditAttemptRef.current = null;
+    act().startActivity(`pending-${Date.now()}`);
+    act().setStatus("streaming");
+    forceScrollToBottom();
+
+    let sent: { attempt_id: string };
+    try {
+      setupSSE(sessionId);
+      sent = await api.editMessageAndRegenerate(sessionId, message.id, content);
+    } catch (error) {
+      const transportError = error instanceof ApiError
+        && ["request_timeout", "network_error"].includes(error.code || "");
+      if (transportError) {
+        let storedMessages: Awaited<ReturnType<typeof api.getSessionMessages>> | null = null;
+        try {
+          storedMessages = await api.getSessionMessages(sessionId);
+        } catch {
+          // SSE may still confirm acceptance; otherwise keep the run state intact.
+        }
+        const storedTarget = storedMessages?.find((stored) => stored.message_id === message.id);
+        const editPersisted = Boolean(
+          storedMessages
+          && storedTarget
+          && storedTarget.content === content
+          && (storedTarget.content !== beforeTarget.content || storedMessages.length < beforeMessages.length),
+        );
+        let attemptId: string | null = pendingEditAttemptRef.current;
+        if (editPersisted && storedMessages && storedTarget) {
+          const targetIndex = storedMessages.findIndex((stored) => stored.message_id === message.id);
+          const completedAttempt = storedMessages.slice(targetIndex + 1).reverse().find(
+            (stored) => stored.role === "assistant" && stored.linked_attempt_id,
+          );
+          const completedAttemptId = completedAttempt?.linked_attempt_id;
+          if (completedAttemptId) {
+            attemptId = completedAttemptId;
+            pendingEditAttemptRef.current = completedAttemptId;
+            if (act().activity?.attemptId.startsWith("pending-")) {
+              act().setActivityAttemptId(completedAttemptId);
+            }
+          }
+        }
+        const accepted = Boolean(attemptId) || editPersisted;
+        if (act().sessionId !== sessionId) return;
+        if (accepted) {
+          act().discardSwarmAfter(message.timestamp);
+          if (attemptId && act().activity?.attemptId.startsWith("pending-")) {
+            act().setActivityAttemptId(attemptId);
+          }
+          await refreshSessionMessages(sessionId);
+          if (!attemptId) {
+            try {
+              const latestMessages = await api.getSessionMessages(sessionId);
+              const targetIndex = latestMessages.findIndex((stored) => stored.message_id === message.id);
+              const completedAttempt = targetIndex >= 0
+                ? latestMessages.slice(targetIndex + 1).reverse().find(
+                    (stored) => stored.role === "assistant" && stored.linked_attempt_id,
+                  )
+                : undefined;
+              const completedAttemptId = completedAttempt?.linked_attempt_id;
+              if (completedAttemptId) {
+                attemptId = completedAttemptId;
+                pendingEditAttemptRef.current = completedAttemptId;
+                if (act().activity?.attemptId.startsWith("pending-")) {
+                  act().setActivityAttemptId(completedAttemptId);
+                }
+              }
+            } catch {
+              // SSE can still reconcile the accepted edit.
+            }
+          }
+          if (attemptId) void syncCompletedAttempt(sessionId, attemptId);
+          return;
+        }
+        if (storedMessages && (
+          content !== beforeTarget.content || storedMessages.length < beforeMessages.length
+        )) {
+          if (act().sessionId === sessionId) {
+            act().clearStreaming();
+            act().clearActivity();
+            pendingEditAttemptRef.current = null;
+            act().setStatus("idle");
+          }
+        }
+      } else if (act().sessionId === sessionId) {
+        act().clearStreaming();
+        act().clearActivity();
+        pendingEditAttemptRef.current = null;
+        act().setStatus("idle");
+      }
+      const messageText = isAuthRequiredError(error)
+        ? AUTH_REQUIRED_MESSAGE
+        : error instanceof ApiError
+          ? error.message
+          : t("agent.failedToEditPrompt");
+      throw new Error(messageText);
+    }
+
+    if (act().sessionId !== sessionId) return;
+    act().discardSwarmAfter(message.timestamp);
+    if (act().activity?.attemptId.startsWith("pending-")) {
+      act().setActivityAttemptId(sent.attempt_id);
+    }
+    await refreshSessionMessages(sessionId);
+    void syncCompletedAttempt(sessionId, sent.attempt_id);
+  }, [
+    clearStreamingView,
+    forceScrollToBottom,
+    refreshSessionMessages,
+    sessionId,
+    setupSSE,
+    status,
+    syncCompletedAttempt,
+    t,
+  ]);
+
   const handleCancel = useCallback(async () => {
     if (!sessionId) {
       flushPendingStreamUpdate();
@@ -1610,16 +1762,22 @@ export function Agent() {
     const errorIdx = msgs.findIndex(m => m.id === errorMsg.id);
     if (errorIdx === -1) return;
     // Find the most recent user message before this error
-    let userContent: string | null = null;
+    let target: StoredAgentMessage | null = null;
     for (let i = errorIdx - 1; i >= 0; i--) {
       if (msgs[i].type === "user") {
-        userContent = msgs[i].meta?.requestText || msgs[i].content;
+        target = msgs[i];
         break;
       }
     }
-    if (!userContent) return;
-    submitComposerPrompt(userContent);
-  }, [status, submitComposerPrompt]);
+    if (!target) return;
+    if (/^[a-f0-9]{12}$/i.test(target.id) && sessionId) {
+      void handleEditPrompt(target, target.content).catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : t("agent.failedToEditPrompt"));
+      });
+      return;
+    }
+    submitComposerPrompt(target.meta?.requestText || target.content);
+  }, [handleEditPrompt, sessionId, status, submitComposerPrompt, t]);
 
   const handleContinueActivity = useCallback(() => {
     submitComposerPrompt(t("agent.continuePrompt" as never));
@@ -1898,7 +2056,12 @@ export function Agent() {
                 data-msg-idx={g.msgIdx}
                 className={shouldAnimate ? "msg-enter" : undefined}
               >
-                <MessageBubble msg={g.msg} onRetry={g.msg.type === "error" ? handleRetry : undefined} />
+                <MessageBubble
+                  msg={g.msg}
+                  onRetry={g.msg.type === "error" ? handleRetry : undefined}
+                  onEdit={g.msg.type === "user" ? handleEditPrompt : undefined}
+                  editDisabled={status === "streaming" || !sessionId}
+                />
               </div>
             );
           })}

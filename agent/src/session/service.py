@@ -406,6 +406,145 @@ class SessionService:
             if role == "user" and not handed_off:
                 self._release_session(session_id)
 
+    async def edit_message_and_regenerate(
+        self,
+        session_id: str,
+        message_id: str,
+        content: str,
+        *,
+        include_shell_tools: bool = False,
+    ) -> Dict[str, Any]:
+        """编辑用户消息并截断后续聊天，从该消息创建新的执行尝试。"""
+        session = self.store.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        if not content.strip():
+            raise ValueError("Message content must not be empty")
+        if self._shutting_down:
+            raise SessionBusyError("shutting down; no new runs are accepted")
+
+        self._reserve_session(session_id)
+        handed_off = False
+        try:
+            messages = self.store.get_messages(session_id, limit=None)
+            target_index = next(
+                (
+                    index
+                    for index, message in enumerate(messages)
+                    if message.message_id == message_id
+                ),
+                None,
+            )
+            if target_index is None:
+                raise LookupError(f"Message {message_id} not found")
+            target = messages[target_index]
+            if target.role != "user":
+                raise ValueError("Only user messages can be edited")
+
+            original_content = target.content
+            original_session = Session.from_dict(session.to_dict())
+            original_search_messages = [
+                (message.role, message.content)
+                for message in messages
+            ]
+            target.content = content
+            retained = messages[: target_index + 1]
+            try:
+                started_at = datetime.fromisoformat(session.created_at).timestamp()
+            except (ValueError, TypeError):
+                started_at = time.time()
+            search_messages = [
+                (message.role, message.content)
+                for message in retained
+            ]
+            attempt = None
+            task = None
+            transcript_replaced = False
+            search_replaced = False
+            attempt_created = False
+            session_updated = False
+            try:
+                self.store.replace_messages(session_id, retained)
+                transcript_replaced = True
+                self._search_index.replace_session_messages(
+                    session_id,
+                    session.title,
+                    search_messages,
+                    started_at=started_at,
+                )
+                search_replaced = True
+
+                parent_attempt_id = next(
+                    (
+                        message.linked_attempt_id
+                        for message in reversed(retained[:-1])
+                        if message.linked_attempt_id
+                    ),
+                    None,
+                )
+                attempt = Attempt(
+                    session_id=session_id,
+                    parent_attempt_id=parent_attempt_id,
+                    prompt=content,
+                )
+                self.store.create_attempt(attempt)
+                attempt_created = True
+                session.config["include_shell_tools"] = include_shell_tools
+                session.last_attempt_id = attempt.attempt_id
+                session.updated_at = datetime.now(timezone.utc).isoformat()
+                self.store.update_session(session)
+                session_updated = True
+                task = asyncio.create_task(
+                    self._run_attempt(
+                        session,
+                        attempt,
+                        include_shell_tools=include_shell_tools,
+                    )
+                )
+                self.event_bus.emit(
+                    session_id,
+                    "message.edited",
+                    {
+                        "message_id": target.message_id,
+                        "content": target.content,
+                        "truncated_count": len(messages) - len(retained),
+                        "attempt_id": attempt.attempt_id,
+                    },
+                )
+                self.event_bus.emit(
+                    session_id,
+                    "attempt.created",
+                    {"attempt_id": attempt.attempt_id, "prompt": content},
+                )
+                self._active_tasks[session_id] = task
+                handed_off = True
+                return {
+                    "message_id": target.message_id,
+                    "attempt_id": attempt.attempt_id,
+                }
+            except Exception:
+                # 日志、索引和会话元数据不是跨文件事务；调度前失败必须恢复原聊天。
+                if task is not None and not task.done():
+                    task.cancel()
+                if attempt_created:
+                    self.store.delete_attempt(session_id, attempt.attempt_id)
+                if transcript_replaced:
+                    target.content = original_content
+                    self.store.replace_messages(session_id, messages)
+                if search_replaced:
+                    self._search_index.replace_session_messages(
+                        session_id,
+                        original_session.title,
+                        original_search_messages,
+                        started_at=started_at,
+                    )
+                if session_updated:
+                    self.store.update_session(original_session)
+                raise
+        finally:
+            if not handed_off:
+                self._release_session(session_id)
+
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
         return self.store.get_messages(session_id, limit)

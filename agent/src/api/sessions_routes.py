@@ -111,6 +111,11 @@ class SendMessageRequest(BaseModel):
     content: str = Field(..., description="Research prompt", min_length=1, max_length=MAX_MESSAGE_CHARS)
 
 
+class EditMessageRequest(BaseModel):
+    """Replace a stored user prompt and regenerate from that point."""
+    content: str = Field(..., description="Complete research prompt", min_length=1, max_length=MAX_MESSAGE_CHARS)
+
+
 class MessageResponse(BaseModel):
     """Stored chat message."""
     message_id: str
@@ -838,6 +843,35 @@ def register_sessions_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.patch("/sessions/{session_id}/messages/{message_id}", dependencies=[Depends(require_auth)])
+    async def edit_message(
+        session_id: str,
+        message_id: str,
+        payload: EditMessageRequest,
+        http_request: Request,
+    ):
+        """Edit a user prompt, truncate later chat messages, and regenerate."""
+        _host_validate_path_param(session_id, "session_id")
+        _host_validate_path_param(message_id, "message_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        if not svc.get_session(session_id):
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        try:
+            return await svc.edit_message_and_regenerate(
+                session_id=session_id,
+                message_id=message_id,
+                content=payload.content,
+                include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+            )
+        except SessionBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth)])
     async def cancel_session(session_id: str):

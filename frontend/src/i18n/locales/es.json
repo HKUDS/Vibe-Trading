@@ -1250,6 +1250,7 @@
     "uploadFailed": "Error al subir: {{error}}",
     "messageTooLong": "El mensaje supera {{limit}} caracteres, incluidos los datos de los adjuntos y las instrucciones del equipo. Acórtalo antes de enviarlo.",
     "failedToSend": "Error al enviar el mensaje, intenta de nuevo.",
+    "failedToEditPrompt": "No se pudo actualizar el prompt. Intenta de nuevo.",
     "failedToContinue": "Error al continuar el objetivo, intenta de nuevo.",
     "runtimeBadge": "RUNTIME",
     "activeResearchGoal": "Objetivo de investigación activo",
@@ -2069,6 +2070,12 @@
     "timeoutHint": "Tiempo agotado. Simplifica la estrategia o usa menos activos.",
     "apiFailedHint": "La solicitud a la API falló. Intenta de nuevo en breve.",
     "executionFailedHint": "La ejecución falló. Intenta de nuevo.",
+    "editPrompt": "Editar prompt",
+    "editPromptDisabled": "Espera a que termine la ejecución actual para editar.",
+    "editHint": "Al guardar se reemplazan los mensajes posteriores y se regenera desde este prompt. Los adjuntos y los resultados de investigación se conservan.",
+    "saveAndRegenerate": "Guardar y regenerar",
+    "savingEdit": "Guardando…",
+    "editFailed": "No se pudo actualizar el prompt. Tu borrador sigue aquí.",
     "retry": "Intentar de nuevo"
   },
   "pineViewer": {

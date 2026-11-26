@@ -1,6 +1,6 @@
 import i18n from '@/i18n';
 import { Component, lazy, memo, Suspense, useState, useCallback, type ReactNode } from "react";
-import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target, Clock3 } from "lucide-react";
+import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target, Clock3, Pencil, X, Loader2 } from "lucide-react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -191,6 +191,8 @@ function getRetryHint(content: string): string {
 interface Props {
   msg: StoredAgentMessage;
   onRetry?: (msg: AgentMessage) => void;
+  onEdit?: (msg: StoredAgentMessage, content: string) => Promise<void>;
+  editDisabled?: boolean;
 }
 
 function formatElapsed(elapsedMs: number): string {
@@ -201,42 +203,163 @@ function formatElapsed(elapsedMs: number): string {
   return `${minutes}m ${Math.round(seconds % 60)}s`;
 }
 
-export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({
+  msg,
+  onRetry,
+  onEdit,
+  editDisabled = false,
+}: Props) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(msg.content);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const persisted = /^[a-f0-9]{12}$/i.test(msg.id);
+  const canEdit = Boolean(onEdit && persisted);
+
+  const focusEditor = useCallback((editor: HTMLTextAreaElement | null) => {
+    if (!editor) return;
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+  }, []);
+
+  const beginEdit = useCallback(() => {
+    if (!canEdit || editDisabled || saving) return;
+    setDraft(msg.content);
+    setEditError(null);
+    setEditing(true);
+  }, [canEdit, editDisabled, msg.content, saving]);
+
+  const saveEdit = useCallback(async () => {
+    if (!onEdit || !draft.trim() || saving) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      await onEdit(msg, draft);
+      setEditing(false);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : i18n.t("messageBubble.editFailed"));
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, msg, onEdit, saving]);
+
   if (msg.type === "user") {
     const meta = msg.meta;
     const attachments = meta?.attachments
       ?? (meta?.attachment ? [meta.attachment] : []);
+    const badges = meta && (attachments.length > 0 || meta.swarmMode || meta.goalMode) ? (
+      <div className="mb-1.5 flex flex-wrap justify-end gap-1.5 text-[10px] leading-none text-muted-foreground">
+        {attachments.map((attachment, index) => (
+          <span
+            key={`${attachment.filename}-${index}`}
+            className="inline-flex max-w-full items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground"
+            title={i18n.t("agent.attachmentChip" as never)}
+          >
+            <Paperclip className="h-3 w-3 shrink-0" />
+            <span className="sr-only">{i18n.t("agent.attachmentChip" as never)}: </span>
+            <span className="truncate">{attachment.filename}</span>
+          </span>
+        ))}
+        {meta.swarmMode && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
+            <Users className="h-3 w-3" />
+            {i18n.t("agent.swarmModeChip" as never)}
+          </span>
+        )}
+        {meta.goalMode && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
+            <Target className="h-3 w-3" />
+            {i18n.t("agent.goalModeChip" as never)}
+          </span>
+        )}
+      </div>
+    ) : null;
+
+    if (editing) {
+      return (
+        <div className="flex justify-end group">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveEdit();
+            }}
+            className="w-full max-w-[85%] space-y-2 rounded-[18px] bg-muted p-3 sm:max-w-[72%]"
+          >
+            {badges}
+            <textarea
+              ref={focusEditor}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !saving) {
+                  event.preventDefault();
+                  setEditing(false);
+                  setEditError(null);
+                }
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !saving) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              disabled={saving}
+              rows={5}
+              aria-label={i18n.t("messageBubble.editPrompt")}
+              className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-[15px] leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+            />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {i18n.t("messageBubble.editHint")}
+            </p>
+            {editError && (
+              <p role="alert" className="text-xs leading-relaxed text-danger">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false);
+                  setEditError(null);
+                }}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-background/70 hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-3.5 w-3.5" />
+                {i18n.t("agent.cancel")}
+              </button>
+              <button
+                type="submit"
+                disabled={saving || !draft.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {saving ? i18n.t("messageBubble.savingEdit") : i18n.t("messageBubble.saveAndRegenerate")}
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
     return (
       <div className="flex justify-end group">
-        <div dir="auto" className="max-w-[72%] max-h-[40vh] overflow-y-auto break-words rounded-[18px] bg-muted px-4 py-3 text-[15px] text-foreground leading-relaxed whitespace-pre-wrap">
-          {meta && (attachments.length > 0 || meta.swarmMode || meta.goalMode) && (
-            <div className="mb-1.5 flex flex-wrap justify-end gap-1.5 text-[10px] leading-none text-muted-foreground">
-              {attachments.map((attachment, index) => (
-                <span
-                  key={`${attachment.filename}-${index}`}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground"
-                  title={i18n.t("agent.attachmentChip" as never)}
-                >
-                  <Paperclip className="h-3 w-3 shrink-0" />
-                  <span className="sr-only">{i18n.t("agent.attachmentChip" as never)}: </span>
-                  <span className="truncate">{attachment.filename}</span>
-                </span>
-              ))}
-              {meta.swarmMode && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
-                  <Users className="h-3 w-3" />
-                  {i18n.t("agent.swarmModeChip" as never)}
-                </span>
-              )}
-              {meta.goalMode && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
-                  <Target className="h-3 w-3" />
-                  {i18n.t("agent.goalModeChip" as never)}
-                </span>
-              )}
-            </div>
+        <div className="relative max-w-[85%] sm:max-w-[72%]">
+          <div dir="auto" className="max-h-[40vh] overflow-y-auto break-words rounded-[18px] bg-muted px-4 py-3 pe-10 text-[15px] text-foreground leading-relaxed whitespace-pre-wrap">
+            {badges}
+            {msg.content}
+          </div>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={beginEdit}
+              disabled={editDisabled}
+              aria-label={i18n.t("messageBubble.editPrompt")}
+              title={editDisabled ? i18n.t("messageBubble.editPromptDisabled") : i18n.t("messageBubble.editPrompt")}
+              className="absolute end-1.5 top-1.5 rounded-md bg-background/70 p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
           )}
-          {msg.content}
         </div>
       </div>
     );

@@ -1244,6 +1244,7 @@
     "uploadFailed": "업로드 실패: {{error}}",
     "messageTooLong": "첨부 정보와 팀 지침을 포함한 메시지가 {{limit}}자를 초과합니다. 줄인 후 보내세요.",
     "failedToSend": "메시지 전송에 실패했습니다. 다시 시도해 주세요.",
+    "failedToEditPrompt": "프롬프트 업데이트에 실패했습니다. 다시 시도해 주세요.",
     "failedToContinue": "목표 진행에 실패했습니다. 다시 시도해 주세요.",
     "runtimeBadge": "거래 모니터",
     "activeResearchGoal": "활성 리서치 목표",
@@ -2063,6 +2064,12 @@
     "timeoutHint": "시간이 초과되었습니다. 전략을 단순화하거나 자산 수를 줄여 주세요.",
     "apiFailedHint": "API 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     "executionFailedHint": "실행에 실패했습니다. 다시 시도해 주세요.",
+    "editPrompt": "프롬프트 편집",
+    "editPromptDisabled": "현재 실행이 끝날 때까지 편집할 수 없습니다.",
+    "editHint": "저장하면 이후 채팅이 교체되고 이 프롬프트에서 다시 생성됩니다. 첨부 파일과 연구 산출물은 유지됩니다.",
+    "saveAndRegenerate": "저장 후 다시 생성",
+    "savingEdit": "저장 중…",
+    "editFailed": "프롬프트를 업데이트하지 못했습니다. 초안은 유지됩니다.",
     "retry": "다시 시도"
   },
   "pineViewer": {

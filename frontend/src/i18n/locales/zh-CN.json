@@ -1244,6 +1244,7 @@
     "uploadFailed": "上传失败：{{error}}",
     "messageTooLong": "消息（含附件信息和团队指令）超过 {{limit}} 个字符，请缩短后再发送。",
     "failedToSend": "发送消息失败，请重试。",
+    "failedToEditPrompt": "更新提问失败，请重试。",
     "failedToContinue": "继续目标失败，请重试。",
     "runtimeBadge": "交易监控",
     "activeResearchGoal": "活跃的研究目标",
@@ -2063,6 +2064,12 @@
     "timeoutHint": "执行超时。可简化策略或减少资产。",
     "apiFailedHint": "API 请求失败。请稍后重试。",
     "executionFailedHint": "执行失败。请重试。",
+    "editPrompt": "编辑提问",
+    "editPromptDisabled": "请等待当前任务完成后再编辑。",
+    "editHint": "保存会替换后续聊天消息并从此提问重新生成。附件和研究产物会保留。",
+    "saveAndRegenerate": "保存并重新生成",
+    "savingEdit": "保存中…",
+    "editFailed": "无法更新提问，草稿已保留。",
     "retry": "再试一次"
   },
   "pineViewer": {

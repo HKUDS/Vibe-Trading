@@ -1250,6 +1250,7 @@
     "uploadFailed": "Hochladen fehlgeschlagen: {{error}}",
     "messageTooLong": "Die Nachricht überschreitet {{limit}} Zeichen einschließlich Anhangsinformationen und Teamanweisungen. Kürze sie vor dem Senden.",
     "failedToSend": "Nachricht konnte nicht gesendet werden, bitte erneut versuchen.",
+    "failedToEditPrompt": "Der Prompt konnte nicht aktualisiert werden. Bitte erneut versuchen.",
     "failedToContinue": "Ziel konnte nicht fortgesetzt werden, bitte erneut versuchen.",
     "runtimeBadge": "LAUFZEIT",
     "activeResearchGoal": "Aktives Forschungsziel",
@@ -2069,6 +2070,12 @@
     "timeoutHint": "Zeitüberschreitung. Strategie vereinfachen oder weniger Assets verwenden.",
     "apiFailedHint": "API-Anfrage fehlgeschlagen. Kurz erneut versuchen.",
     "executionFailedHint": "Ausführung fehlgeschlagen. Erneut versuchen.",
+    "editPrompt": "Prompt bearbeiten",
+    "editPromptDisabled": "Warte, bis der aktuelle Lauf beendet ist, bevor du bearbeitest.",
+    "editHint": "Beim Speichern werden spätere Chatnachrichten ersetzt und ab diesem Prompt neu generiert. Anhänge und Forschungsergebnisse bleiben erhalten.",
+    "saveAndRegenerate": "Speichern und neu generieren",
+    "savingEdit": "Wird gespeichert…",
+    "editFailed": "Der Prompt konnte nicht aktualisiert werden. Dein Entwurf bleibt erhalten.",
     "retry": "Erneut versuchen"
   },
   "pineViewer": {

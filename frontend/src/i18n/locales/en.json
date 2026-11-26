@@ -1250,6 +1250,7 @@
     "uploadFailed": "Upload failed: {{error}}",
     "messageTooLong": "Message exceeds {{limit}} characters including attachments and team instructions. Shorten it before sending.",
     "failedToSend": "Failed to send message, please retry.",
+    "failedToEditPrompt": "Failed to update the prompt. Please retry.",
     "failedToContinue": "Failed to continue goal, please retry.",
     "runtimeBadge": "RUNTIME",
     "activeResearchGoal": "Active research goal",
@@ -2069,6 +2070,12 @@
     "timeoutHint": "Timed out. Simplify the strategy or use fewer assets.",
     "apiFailedHint": "API request failed. Try again shortly.",
     "executionFailedHint": "Execution failed. Try again.",
+    "editPrompt": "Edit prompt",
+    "editPromptDisabled": "Wait for the current run to finish before editing.",
+    "editHint": "Saving replaces later chat messages and regenerates from this prompt. Attachments and research artifacts are kept.",
+    "saveAndRegenerate": "Save and regenerate",
+    "savingEdit": "Saving…",
+    "editFailed": "Could not update the prompt. Your draft is still here.",
     "retry": "Try again"
   },
   "pineViewer": {

@@ -302,6 +302,45 @@ class SessionSearchIndex:
         conn.commit()
 
     @_serialized_operation
+    def replace_session_messages(
+        self,
+        session_id: str,
+        title: str,
+        messages: list[tuple[str, str]],
+        *,
+        started_at: float,
+    ) -> None:
+        """Replace one session's searchable transcript in a single transaction."""
+        conn = self._get_conn()
+        indexed = [
+            (role, content[:50_000])
+            for role, content in messages
+            if role in ("user", "assistant") and content.strip()
+        ]
+        timestamp = time.time()
+        with conn:
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            conn.execute(
+                "INSERT INTO sessions (id, title, started_at, message_count) "
+                "VALUES (?, ?, ?, ?)",
+                (session_id, title, started_at, len(indexed)),
+            )
+            for role, content in indexed:
+                conn.execute(
+                    "INSERT INTO messages "
+                    "(session_id, role, content, search_content, tool_name, timestamp) "
+                    "VALUES (?, ?, ?, ?, NULL, ?)",
+                    (
+                        session_id,
+                        role,
+                        content,
+                        _prepare_search_text(content),
+                        timestamp,
+                    ),
+                )
+
+    @_serialized_operation
     def remove_session(self, session_id: str) -> None:
         """Remove a session and all of its messages from the index.
 

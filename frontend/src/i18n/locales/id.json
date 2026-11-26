@@ -1250,6 +1250,7 @@
     "uploadFailed": "Gagal mengunggah: {{error}}",
     "messageTooLong": "Pesan melebihi {{limit}} karakter, termasuk informasi lampiran dan instruksi tim. Persingkat sebelum mengirim.",
     "failedToSend": "Gagal mengirim pesan, silakan coba lagi.",
+    "failedToEditPrompt": "Gagal memperbarui prompt. Silakan coba lagi.",
     "failedToContinue": "Gagal melanjutkan tujuan, silakan coba lagi.",
     "runtimeBadge": "RUNTIME",
     "activeResearchGoal": "Tujuan riset aktif",
@@ -2069,6 +2070,12 @@
     "timeoutHint": "Timeout. Sederhanakan strategi atau gunakan lebih sedikit aset.",
     "apiFailedHint": "Permintaan API gagal. Coba lagi beberapa saat lagi.",
     "executionFailedHint": "Eksekusi gagal. Coba lagi.",
+    "editPrompt": "Edit prompt",
+    "editPromptDisabled": "Tunggu hingga proses saat ini selesai sebelum mengedit.",
+    "editHint": "Menyimpan akan mengganti pesan chat berikutnya dan membuat ulang jawaban dari prompt ini. Lampiran dan hasil penelitian tetap disimpan.",
+    "saveAndRegenerate": "Simpan dan buat ulang",
+    "savingEdit": "Menyimpan…",
+    "editFailed": "Prompt tidak dapat diperbarui. Draf Anda masih tersimpan.",
     "retry": "Coba lagi"
   },
   "pineViewer": {

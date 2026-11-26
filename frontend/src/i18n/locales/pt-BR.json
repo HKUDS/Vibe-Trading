@@ -1250,6 +1250,7 @@
     "uploadFailed": "Falha no upload: {{error}}",
     "messageTooLong": "A mensagem excede {{limit}} caracteres, incluindo informações dos anexos e instruções da equipe. Reduza-a antes de enviar.",
     "failedToSend": "Falha ao enviar mensagem, tente novamente.",
+    "failedToEditPrompt": "Falha ao atualizar o prompt. Tente novamente.",
     "failedToContinue": "Falha ao continuar a meta. Tente novamente.",
     "runtimeBadge": "RUNTIME",
     "activeResearchGoal": "Objetivo de pesquisa ativa",
@@ -2069,6 +2070,12 @@
     "timeoutHint": "Tempo limite esgotado. Simplifique a estratégia ou use menos ativos.",
     "apiFailedHint": "Falha na solicitação da API. Tente novamente em breve.",
     "executionFailedHint": "A execução falhou. Tente novamente.",
+    "editPrompt": "Editar prompt",
+    "editPromptDisabled": "Aguarde a execução atual terminar antes de editar.",
+    "editHint": "Ao salvar, as mensagens posteriores são substituídas e a resposta é regenerada a partir deste prompt. Anexos e resultados de pesquisa são mantidos.",
+    "saveAndRegenerate": "Salvar e regenerar",
+    "savingEdit": "Salvando…",
+    "editFailed": "Não foi possível atualizar o prompt. Seu rascunho foi mantido.",
     "retry": "Tente novamente"
   },
   "pineViewer": {
