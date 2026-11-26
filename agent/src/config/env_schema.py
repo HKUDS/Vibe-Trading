@@ -291,6 +291,10 @@ class DataConfig(_EnvBase):
     longbridge_access_token: str = Field(alias="LONGBRIDGE_ACCESS_TOKEN", default="")
     etoro_api_key: str = Field(alias="ETORO_API_KEY", default="")
     etoro_user_key: str = Field(alias="ETORO_USER_KEY", default="")
+    exness_api_key: str = Field(alias="EXNESS_API_KEY", default="")
+    exness_private_key: str = Field(alias="EXNESS_PRIVATE_KEY", default="")
+    exness_account_id: str = Field(alias="EXNESS_ACCOUNT_ID", default="")
+    exness_gateway_url: str = Field(alias="EXNESS_GATEWAY_URL", default="")
     # Per-market source-order overrides (Settings page "source priority").
     # Value: comma-separated permutation of the market's default chain, e.g.
     # MARKET_DATA_ORDER_A_SHARE=tushare,tencent,eastmoney,... Applied by

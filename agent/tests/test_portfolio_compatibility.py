@@ -21,6 +21,7 @@ def test_every_builtin_portfolio_connector_has_an_explicit_compatibility_tier():
         "binance": "native",
         "dhan": "experimental",
         "etoro": "experimental",
+        "exness": "experimental",
         "futu": "experimental",
         "ibkr": "native",
         "kis": "experimental",

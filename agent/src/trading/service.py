@@ -34,6 +34,7 @@ _SDK_CONNECTOR_MODULES = {
     "trading212": "src.trading.connectors.trading212.sdk",
     "mt5": "src.trading.connectors.mt5.sdk",
     "etoro": "src.trading.connectors.etoro.sdk",
+    "exness": "src.trading.connectors.exness.sdk",
 }
 
 
@@ -412,6 +413,12 @@ def search_instruments(
                 limit=limit,
             ),
         )
+    if profile.connector == "exness" and profile.transport == "broker_sdk":
+        module = _sdk_module(profile.connector)
+        return _with_profile(
+            profile,
+            module.search_instruments(query, config=_sdk_config(profile, module, overrides), limit=limit),
+        )
     if profile.connector != "etoro":
         return _unsupported_etoro(profile, "instruments.search")
     module = _sdk_module(profile.connector)
@@ -701,9 +708,10 @@ def _order_classification(connector: str, symbol: str):
     """
     from src.live.mandate.model import AssetClass, InstrumentType
 
-    if connector == "mt5":
+    if connector in ("mt5", "exness"):
         from src.trading.connectors.mt5.symbols import classify_mt5_symbol
 
+        # The Exness Trader API uses MT5 instrument naming (EURUSD, XAUUSD).
         # Forex pairs → (FOREX, FOREX); metals/indices/anything else → (CFD,
         # None), which the mandate admits only via an explicit "cfd" allowance.
         return classify_mt5_symbol(symbol)

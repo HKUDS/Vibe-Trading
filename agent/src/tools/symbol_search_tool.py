@@ -604,7 +604,7 @@ def _search_selected_connector(
 
     if profile.connector == "binance" and crypto_pair is None:
         return [], None, None
-    if profile.connector not in {"binance", "mt5"}:
+    if profile.connector not in {"binance", "mt5", "exness"}:
         return [], None, None
 
     source = profile.connector
@@ -616,7 +616,8 @@ def _search_selected_connector(
         )
     except Exception as exc:  # noqa: BLE001 - one search source is non-fatal
         logger.debug("%s instrument search failed (%s)", source, type(exc).__name__)
-        message = "connector search failed" if source == "mt5" else f"connector search failed: {exc}"
+        opaque = source in {"mt5", "exness"}
+        message = "connector search failed" if opaque else f"connector search failed: {exc}"
         return [], source, message
 
     if not isinstance(payload, dict) or str(payload.get("status")).casefold() != "ok":
@@ -630,7 +631,8 @@ def _search_selected_connector(
     rows = payload.get("instruments")
     rows = rows if isinstance(rows, list) else []
     candidates: List[Dict[str, Any]] = []
-    if profile.connector == "mt5":
+    # Exness Trader API instruments use MT5 naming, so broker confirmation is shared.
+    if profile.connector in {"mt5", "exness"}:
         requested_base = "".join(mt5_pair) if mt5_pair else query.strip().upper()
         for row in rows:
             if not isinstance(row, dict):

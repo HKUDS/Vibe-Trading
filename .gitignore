@@ -89,6 +89,8 @@ agent/uploads/
 /binance.json
 /dhan.json
 /etoro.json
+/exness.json
+/exness-access-point.json
 /futu.json
 /ibkr-local.json
 /kis.json

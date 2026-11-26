@@ -78,6 +78,10 @@ def test_backtest_runtime_env_scrubs_service_and_broker_secrets(
         "ALPACA_API_KEY",
         "LONGPORT_APP_SECRET",
         "SHOONYA_PASSWORD",
+        "EXNESS_API_KEY",
+        "EXNESS_PRIVATE_KEY",
+        "EXNESS_ACCOUNT_ID",
+        "EXNESS_GATEWAY_URL",
     ]
     for key in sensitive_keys:
         monkeypatch.setenv(key, f"{key.lower()}-secret")
