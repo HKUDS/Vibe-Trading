@@ -104,6 +104,32 @@ def test_retry_preserves_real_tool_result_and_partial_stream(tmp_path, monkeypat
     assert messages[-1]["role"] == "user"
 
 
+def test_resume_at_clean_tool_boundary_keeps_tool_result_last(tmp_path, monkeypatch):
+    """Resume a recorded tool exchange without inserting another user turn.
+
+    Args:
+        tmp_path: Isolated workspace for the node thread.
+        monkeypatch: Fixture for the scripted provider and registry.
+    """
+    registry = Registry()
+
+    def disconnect(_):
+        raise RuntimeError("provider disconnected before emitting any text")
+
+    first = Provider([
+        LLMResponse(tool_calls=[ToolCallRequest(id="filing", name="probe", arguments={})]),
+        disconnect,
+    ])
+    assert run(tmp_path, registry, monkeypatch, first).status == "failed"
+    second = Provider([LLMResponse(content="Filing reviewed.", finish_reason="stop")])
+    assert run(tmp_path, registry, monkeypatch, second, resume=True).status == "completed"
+    assert registry.calls == 1
+    messages = second.seen[0]
+    assert [message["content"] for message in messages if message["role"] == "user"] == ["Analyze NVDA"]
+    assert messages[-1]["role"] == "tool"
+    assert messages[-1]["tool_call_id"] == "filing"
+
+
 def test_cancelled_stream_is_saved_without_dispatching_tools(tmp_path, monkeypatch):
     registry = Registry()
     cancel = threading.Event()
