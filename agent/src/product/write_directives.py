@@ -58,5 +58,6 @@ class WriteTargetState:
             an empty string. Prompts without a recognized write request also return empty.
         """
         return pending_write_directive(
-            user_message, run_started_wall, written_files=self.written_files
+            user_message, run_started_wall, written_files=self.written_files,
+            run_dir=self.memory.run_dir,
         )

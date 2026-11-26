@@ -631,6 +631,32 @@ def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
     )
 
 
+def test_relative_write_target_resolves_in_the_run_directory(tmp_path: Path, monkeypatch) -> None:
+    """A relative target is the file the run's tools write, not one in the server's cwd."""
+    import time
+
+    from src.agent.runtime import AgentRuntime
+    from src.agent.tools import ToolRegistry
+    from src.product.resources.memory import WorkspaceMemory
+
+    run_dir, server = tmp_path / "run", tmp_path / "server"
+    run_dir.mkdir()
+    server.mkdir()
+    monkeypatch.chdir(server)
+    agent = AgentRuntime(
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=None,
+        memory=WorkspaceMemory(run_dir=str(run_dir)),
+    )
+    started = time.time() - 1
+    msg = "Write research.md"
+
+    (server / "research.md").write_text("unrelated", encoding="utf-8")
+    assert "research.md" in agent._write_targets.pending(msg, started)
+    # bash leaves no write_file record; the fresh file in the run directory is the evidence.
+    (run_dir / "research.md").write_text("Computed research", encoding="utf-8")
+    assert agent._write_targets.pending(msg, started) == ""
+
+
 # ---------------------------------------------------------------------------
 # _verification_ledger
 # ---------------------------------------------------------------------------
