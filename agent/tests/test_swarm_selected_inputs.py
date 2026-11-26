@@ -417,8 +417,9 @@ def test_required_preset_variables_fail_before_dispatch(tmp_path, monkeypatch):
     assert build_variables("research", "Collect readings, compute statistics, write a report") == {}
     runtime = SwarmRuntime(SwarmStore(tmp_path / "runs"), policy=_policy())
     monkeypatch.setattr(runtime, "_execute_run", lambda *a, **k: pytest.fail("must not dispatch"))
-    with pytest.raises(ValueError, match="data_request, analysis_request, report_request"):
+    with pytest.raises(ValueError, match="pass them in `variables`: data_request .*analysis_request .*report_request") as missing:
         runtime.start_run("research", {})
+    assert "Requested calculations and their definitions" in str(missing.value), "each missing variable says what it is"
     with pytest.raises(ValueError, match="report_request"):
         runtime.start_run("research", {"data_request": "Get readings", "analysis_request": "Sum", "report_request": " "})
     assert not list((tmp_path / "runs").glob("*/run.json"))

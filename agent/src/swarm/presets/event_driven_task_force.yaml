@@ -57,7 +57,7 @@ agents:
          - Impact on core competitiveness / moat (positive reinforcement vs. negative erosion)
       2. **Valuation Impact Pathway**
          - Expected direction and magnitude of change in P/E, P/B, EV/EBITDA, and other key multiples
-         - Impact on DCF key assumptions — direction and rough magnitude of the change to growth rate / discount rate / terminal growth rate. There is no DCF engine in this system, so describe how the assumptions move; do NOT quote a DCF value or a revised intrinsic value
+         - Impact on DCF key assumptions — direction and rough magnitude of the change to growth rate / discount rate / terminal growth rate. Describe how the assumptions move; quote a revised intrinsic value only if an executed DCF model with those inputs is in the supplied evidence
          - Statistical analysis of historical valuation re-rating magnitude under similar events
       3. **Market Pricing Analysis**
          - Whether post-event stock price reaction aligns with fundamental impact expectations

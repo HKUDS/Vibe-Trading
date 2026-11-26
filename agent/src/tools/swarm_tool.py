@@ -657,7 +657,7 @@ class SwarmTool(BaseTool):
             )
         except ValueError as exc:
             return json.dumps(
-                {"status": "error", "error": f"Invalid DAG: {exc}"},
+                {"status": "error", "error_code": "invalid_swarm_request", "error": f"Cannot start the swarm: {exc}"},
                 ensure_ascii=False,
             )
         except Exception as exc:

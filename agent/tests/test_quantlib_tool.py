@@ -270,3 +270,39 @@ def test_registry_exposes_the_tool_without_shell_tools_enabled():
 
 def test_the_tool_is_read_only(tool):
     assert tool.is_readonly is True
+
+
+def _dcf_inputs() -> dict:
+    """The worked example of tests/quantlib/valuation/test_dcf.py, as JSON."""
+    return {
+        "risk_free_rate": 0.04, "beta": 1.2, "equity_risk_premium": 0.05, "size_premium": 0.01,
+        "country_risk_premium": 0.0, "pretax_cost_of_debt": 0.06, "tax_rate": 0.25,
+        "ebit": [100.0, 105.0, 110.0], "depreciation_amortization": [20.0, 21.0, 22.0],
+        "capex": [30.0, 28.0, 26.0], "delta_nwc": [5.0, 4.0, 3.0],
+        "terminal_growth": {"__assumption__": {"name": "terminal_growth", "value": 0.03,
+                                               "basis": "Long-run nominal GDP proxy"}},
+        "exit_multiple": {"__assumption__": {"name": "exit_multiple", "value": 8.0,
+                                             "basis": "Median EV/EBITDA of the peer set"}},
+        "total_debt": 200.0, "cash_and_equivalents": 50.0, "minority_interest": 10.0,
+        "preferred_equity": 15.0, "associate_investments": 5.0, "diluted_shares": 100.0,
+        "target_equity_weight": 0.7, "target_debt_weight": 0.3,
+    }
+
+
+def test_a_dcf_runs_through_the_tool_with_assumption_envelopes(tool):
+    result = call(tool, action="call", module="valuation.dcf", function="run_dcf", kwargs={
+        "inputs": _dcf_inputs(), "capital_structure_basis": "target",
+        "discounting_convention": "mid_year", "terminal_value_method": "perpetuity_growth",
+    })
+    assert result["ok"] is True, result
+    assert result["result"]["value_per_share"] == pytest.approx(10.428050212786289, abs=1e-9)
+
+
+def test_an_assumption_without_its_basis_is_refused(tool):
+    inputs = _dcf_inputs()
+    del inputs["terminal_growth"]["__assumption__"]["basis"]
+    result = call(tool, action="call", module="valuation.dcf", function="run_dcf", kwargs={
+        "inputs": inputs, "capital_structure_basis": "target",
+        "discounting_convention": "mid_year", "terminal_value_method": "perpetuity_growth",
+    })
+    assert result["ok"] is False and "basis" in json.dumps(result), result

@@ -66,10 +66,12 @@ agents:
       ## Valuation Method Matrix
 
       ### I. Absolute Valuation
-      **There is no DCF or WACC engine in this system.** Nothing computes a
-      discounted cash flow model for you, so you must either build the
-      arithmetic yourself in `bash` or say the number does not exist. Never
-      report a DCF value you did not actually compute from sourced inputs.
+      A DCF value must come from an executed model: `quantlib_call` module
+      `valuation.dcf`, function `run_dcf` (it builds the WACC too), every input
+      sourced, with `terminal_growth` and `exit_multiple` passed as
+      `{"__assumption__": {"name": ..., "value": ..., "basis": ...}}`. If an input
+      cannot be sourced, say the DCF number does not exist. Never report a DCF
+      value you did not actually compute from sourced inputs.
       - **DCF assumption set** — lay out the 3-stage structure and state the
         inputs a valuation would require, each tagged `sourced` or `assumed`:
         - Historical FCF spine (`sourced`): pull the cash flow statement with
@@ -123,12 +125,12 @@ agents:
 
       ## Output Requirements
       1. **Valuation Summary Conclusion** — Explicit "overvalued / fair / undervalued" judgment with margin of safety calculation (% premium/discount of current price vs intrinsic value)
-      2. **Valuation Assumption Ledger and Scenario Range** — Table every input as `sourced` (name the tool call) or `assumed` (name your reasoning): WACC components, terminal growth rate, forecast growth. Then give the bull/base/bear target-price range from `financial_rigor` `three_scenario`, labelled as a PE-scenario model. If you also built a DCF by hand in `bash`, show the arithmetic; if you did not, state plainly that no DCF value is being reported because no DCF engine exists
+      2. **Valuation Assumption Ledger and Scenario Range** — Table every input as `sourced` (name the tool call) or `assumed` (name your reasoning): WACC components, terminal growth rate, forecast growth. Then give the bull/base/bear target-price range from `financial_rigor` `three_scenario`, labelled as a PE-scenario model. If you ran `run_dcf`, show its inputs, assumptions and result; if you did not, state plainly that no DCF value is being reported because no DCF was computed
       3. **Comparable Company Valuation Matrix** — Peer multiples, one row per peer, each traced to the `get_stock_profile` call that produced it; explain relative premium/discount and rationale. Mark any peer you could not retrieve as unavailable
       4. **Historical Valuation Percentile** — Current P/E and P/B vs historical percentile, interpreted alongside fundamental changes
       5. **Target Price Calculation** — Weighted multi-method target price with 12-month upside/downside range
       6. **Valuation Catalysts** — 3–5 positive and negative catalysts that could drive re-rating
-    tools: [bash, read_file, write_file, load_skill, get_financial_statements, get_stock_profile, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, get_financial_statements, get_stock_profile, financial_rigor, quantlib_call]
     skills: [valuation-model, earnings-forecast]
     max_iterations: 50
     timeout_seconds: 1800

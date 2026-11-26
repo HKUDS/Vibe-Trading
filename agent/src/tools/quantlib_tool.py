@@ -43,6 +43,11 @@ anywhere in ``kwargs``::
     {"__series__": {"index": [...], "values": [...]}}
     {"__dataframe__": {"index": [...], "columns": [...], "data": [[...], ...]}}
 
+A valuation judgement travels as an envelope too, so ``valuation.dcf.run_dcf``
+can take its ``terminal_growth`` / ``exit_multiple``::
+
+    {"__assumption__": {"name": "terminal_growth", "value": 0.03, "basis": "...", "source": "..."}}
+
 A plain list stays a plain list, because most functions accept a sequence and
 coercing every list into a Series would break the ones that do not.
 """
@@ -142,11 +147,11 @@ def _decode(value: Any) -> Any:
     """Turn JSON envelopes into the pandas objects some functions require.
 
     Args:
-        value: A decoded-JSON value, possibly a ``__series__`` or
-            ``__dataframe__`` envelope, possibly nested inside a container.
+        value: A decoded-JSON value, possibly a ``__series__``, ``__dataframe__``
+            or ``__assumption__`` envelope, possibly nested inside a container.
 
     Returns:
-        The value with any envelope replaced by the pandas object it describes.
+        The value with any envelope replaced by the object it describes.
 
     Raises:
         ValueError: If an envelope is malformed.
@@ -166,6 +171,13 @@ def _decode(value: Any) -> Any:
             return pd.DataFrame(
                 spec["data"], index=spec.get("index"), columns=spec.get("columns")
             )
+        if "__assumption__" in value:
+            from src.quantlib.valuation.contracts import Assumption
+
+            spec = value["__assumption__"]
+            if not isinstance(spec, dict) or not {"name", "value", "basis"} <= set(spec):
+                raise ValueError("__assumption__ needs 'name', 'value' and 'basis'")
+            return Assumption(name=spec["name"], value=spec["value"], basis=spec["basis"], source=spec.get("source"))
         return {k: _decode(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode(v) for v in value]

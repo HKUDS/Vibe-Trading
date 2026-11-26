@@ -277,7 +277,11 @@ def build_run_from_preset(
     if validate_variables:
         missing = missing_required_variables(data, user_vars)
         if missing:
-            raise ValueError("Missing required preset variables: " + ", ".join(missing))
+            described = {v.get("name"): v.get("description", "") for v in data.get("variables", []) if isinstance(v, dict)}
+            raise ValueError(
+                "Missing required preset variables; pass them in `variables`: "
+                + "; ".join(f"{name} ({described[name]})" if described.get(name) else name for name in missing)
+            )
 
     agents: list[SwarmAgentSpec] = []
     for agent_data in data.get("agents", []):
