@@ -8,6 +8,9 @@ vague prompts, and the explicit caller-override path.
 
 from __future__ import annotations
 
+import pytest
+
+from src.swarm.presets import build_run_from_preset
 from src.tools import swarm_variables
 import src.tools.swarm_tool as swarm_tool
 
@@ -54,6 +57,45 @@ def test_crypto_target_maps_chinese_names_to_symbols() -> None:
 
     assert variables["target"] == "BTC"
     assert variables["timeframe"] == "long-term 3-12 months"
+
+
+@pytest.mark.parametrize(("preset", "prompt", "expected"), [
+    ("crypto_trading_desk", "分析 BTC-USDT 未来一周走势", {"target": "BTC-USDT", "timeframe": "1 week"}),
+    ("earnings_research_desk", "Review NVDA Q3 earnings", {"target": "NVDA (Q3 earnings)"}),
+    ("macro_rates_fx_desk", "美元兑日元三个月展望", {"goal": "美元兑日元三个月展望", "timeframe": "3 months"}),
+])
+def test_desk_goals_fill_required_variables(preset, prompt, expected):
+    """Validate the extracted variables against each desk's real preset.
+
+    Args:
+        preset: Desk preset to validate.
+        prompt: Goal with the required inputs stated explicitly.
+        expected: Variables the built run should receive.
+    """
+    variables = swarm_tool._build_variables(preset, prompt)
+    run = build_run_from_preset(preset, variables, validate_variables=True)
+    assert run.user_vars == expected
+
+
+@pytest.mark.parametrize(("preset", "prompt", "missing"), [
+    ("crypto_trading_desk", "Analyze crypto", "target.*timeframe"),
+    ("earnings_research_desk", "Review Q3 earnings", "target"),
+    ("macro_rates_fx_desk", "美元兑日元展望", "timeframe"),
+    ("crypto_trading_desk", "Compare BTC-USDT and ETH-USDT over the next week", "target"),
+    ("earnings_research_desk", "Review AMD and NVDA Q3 earnings", "target"),
+    ("macro_rates_fx_desk", "美元兑日元 12月展望", "timeframe"),
+])
+def test_ambiguous_desk_goals_still_name_required_overrides(preset, prompt, missing):
+    """Leave ambiguous or missing inputs for the caller to specify.
+
+    Args:
+        preset: Desk preset that should refuse the goal.
+        prompt: Goal that leaves at least one required input unclear.
+        missing: Pattern matching the variables named in the error.
+    """
+    variables = swarm_tool._build_variables(preset, prompt)
+    with pytest.raises(ValueError, match=rf"pass them in `variables`: {missing}"):
+        build_run_from_preset(preset, variables, validate_variables=True)
 
 
 def test_derivatives_view_follows_the_prompt() -> None:
