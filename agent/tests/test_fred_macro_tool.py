@@ -152,6 +152,19 @@ class TestExecuteErrors:
         assert "fred observations request failed" in out["error"]
         assert "429" in out["error"]
 
+    def test_request_failure_does_not_leak_api_key(self, monkeypatch):
+        monkeypatch.setenv("FRED_API_KEY", "tok_123")
+
+        def boom(url, **kwargs):
+            # requests' HTTPError text carries the full URL, query string included.
+            raise RuntimeError(f"500 Server Error for url: {url}?api_key={kwargs['params']['api_key']}")
+
+        monkeypatch.setattr(fred_macro_tool, "throttled_get_json", boom)
+        out = json.loads(FredMacroTool().execute(series_id="CPIAUCSL"))
+        assert out["ok"] is False
+        assert "500 Server Error" in out["error"]
+        assert "tok_123" not in out["error"]
+
     def test_empty_observations_becomes_error_envelope(self, monkeypatch):
         monkeypatch.setenv("FRED_API_KEY", "tok_123")
         monkeypatch.setattr(

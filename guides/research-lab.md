@@ -14,7 +14,8 @@ them. No model, live broker or price-provider call is part of a study.
 
 Run a backtest first, then select its saved run. Its run-card manifest must
 still match the strategy and every exported OHLCV snapshot. A changed or
-missing file is refused; rerun that backtest to create a new baseline.
+missing file is refused; rerun that backtest to create a new baseline. Replays
+preserve the precision of saved prices, including in narrower trial windows.
 
 Market-engine backtests also save the opening and closing prices of the external
 benchmark they used. Research Lab replays those prices separately from the
@@ -110,7 +111,10 @@ provider-usage budget and elapsed-time bound. Run those prompts through the
 normal Agent first, then evaluate the saved artifacts. The verifier itself
 never runs a model, fetches prices, or rewrites a prompt to fit a case.
 `bindings.json` is an array of `case_id`, `run_dir`, optional `trace_dir` objects;
-each task must have its own corresponding saved run. Web evaluates a selected
+each task must have its own corresponding saved run. The batch reports an
+`evaluation_status` alongside `passed` and the individual results. The CLI
+exits 0 when every case passes, 2 when coverage is incomplete but no case failed,
+and 1 if any case failed or has an invalid artifact. Web evaluates a selected
 saved run and task, displaying every verdict and coverage gap.
 
 Numeric expectations read bounded JSON fields or CSV rows. Missing
@@ -121,7 +125,7 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 
 ## API and saved reports
 
-- `GET /api/research-lab/catalog`: available runs, parameters and task prompts.
+- `GET /api/research-lab/catalog`: available runs, parameters and task prompts. A run with malformed saved metadata is skipped without hiding other runs.
 - `POST /api/research-lab/jobs`: `{ "action": "cost_sensitivity|walk_forward|factor_audit|replay", "request": {...} }`.
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.

@@ -166,7 +166,9 @@ class FredMacroTool(BaseTool):
                 timeout=_FRED_TIMEOUT_S,
             )
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
-            return _error(f"fred observations request failed: {exc}")
+            # requests puts the full URL, api_key included, in HTTPError text.
+            detail = str(exc).replace(api_key, "[redacted]")
+            return _error(f"fred observations request failed: {detail}")
 
         observations = _parse_observations(payload)
         if not observations:
