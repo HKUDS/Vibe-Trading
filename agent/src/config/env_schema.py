@@ -407,6 +407,14 @@ class APIConfig(_EnvBase):
     vibe_trading_sandbox_backend: str = Field(
         alias="VIBE_TRADING_SANDBOX_BACKEND", default="",
     )
+    # Swarm node shell commands (bash, background_run): auto confines them to the
+    # node's workspace when a backend works on this host and otherwise runs them
+    # there unconfined with a notice; required refuses instead; off is the main
+    # agent's VIBE_TRADING_SANDBOX_ENABLED behaviour. A typo fails config loading.
+    vibe_trading_swarm_shell_sandbox: Annotated[
+        Literal["auto", "required", "off"],
+        BeforeValidator(lambda value: value.strip().lower() if isinstance(value, str) else value),
+    ] = Field(alias="VIBE_TRADING_SWARM_SHELL_SANDBOX", default="auto")
     vibe_trading_hook_timeout_seconds: float = Field(
         alias="VIBE_TRADING_HOOK_TIMEOUT_SECONDS", default=10.0, gt=0,
     )
