@@ -10,6 +10,7 @@ from pathlib import Path
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.product.result_artifacts import _write_original, save_result_parts
+from src.product.tool_results import _is_tool_success
 from src.session.thread import ThreadLog
 from src.swarm.artifacts import agent_artifact_dir, collect_artifacts, node_thread
 from src.tools.path_utils import is_runtime_path, safe_path
@@ -40,9 +41,10 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
                 calls[call["id"]] = call.get("function", {})
             if message.get("role") == "tool":
                 call_id = message.get("tool_call_id", "")
+                raw = message.get("content", "")
                 yield (
                     calls.get(call_id, {}), call_id, message.get("name", "unknown"),
-                    message.get("content", ""), None, True,
+                    raw, None, _is_tool_success(raw),
                 )
 
 
@@ -58,9 +60,26 @@ def _in_workspace(recorded: str, agent_id: str, task_id: str) -> str | None:
 _ENTRY_FIELDS = ("source_task", "tool", "call_id", "request", "turn_id")
 #: Tools whose recorded results are calculations rather than source observations.
 _CALCULATION_TOOLS = frozenset({"bash", "quantlib_call"})
+_FAILED_CALLS_PATH = "upstream/failed-calls.json"
 
 
-def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
+def _failed_call(task_id: str, tool: str, call_id: str, turn_id: str | None, raw: str) -> dict:
+    """Extract failure diagnostics without copying result data or call arguments."""
+    try:
+        result = json.loads(raw)
+    except (TypeError, ValueError):
+        result = raw
+    failure = {"source_task": task_id, "tool": tool, "call_id": call_id, "status": "failed"}
+    if turn_id is not None:
+        failure["turn_id"] = turn_id
+    if isinstance(result, dict):
+        failure.update({key: result[key] for key in ("error_code", "exit_code", "skipped", "outcome") if key in result})
+        result = result.get("error") or result.get("message") or result.get("reason") or result.get("stderr")
+    failure["error"] = result or "The tool did not return an error detail."
+    return failure
+
+
+def _observations(source: Path, agent_id: str, task_id: str, errors: list[str], failures: list[dict],
                   thread_path: Path | None = None) -> list[tuple[dict, str]]:
     """Read recorded observations, retaining their original producing role."""
     found = []
@@ -102,11 +121,14 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
     canonical = thread_path.is_file()
     for call, call_id, name, raw, turn_id, ok in _recorded_results(source, thread_path):
         tool = call.get("name", name)
+        if not ok:
+            failures.append(_failed_call(task_id, tool, call_id, turn_id, raw))
+            continue
         # Methodology/file plumbing is already in the transcript, and written files
         # travel as files; neither is a fresh observation. A shell command is kept:
         # its command and output are how a calculation was done. This selection
         # never decides whether a task passes.
-        if not ok or tool in {"load_skill", "read_file", "write_file", "edit_file"}:
+        if tool in {"load_skill", "read_file", "write_file", "edit_file"}:
             continue
         args = call.get("arguments", "{}")
         if isinstance(args, str):
@@ -236,7 +258,7 @@ def _write_bytes(path: Path, content: bytes, root: Path) -> None:
             raise ValueError("Existing copied file was modified")
 
 
-def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool) -> dict | None:
+def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool) -> tuple[dict | None, str]:
     """Copy every observation and produced file of the given producers and index them.
 
     Args:
@@ -247,8 +269,7 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
         tag: Record on each entry the direct producer (``input_task``) it arrived through.
 
     Returns:
-        The written index (``observations``, ``files``, ``unavailable``) with its text and page
-        count, or None when there is nothing to record.
+        The written evidence index or None, and a prompt note for any failed calls.
 
     Raises:
         ValueError: If a copy would escape the workspace or differs from one already written.
@@ -258,6 +279,7 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
 
     folder = safe_path("upstream", root)
     entries, files, errors, seen = [], [], [], set()
+    failures, unreadable_failures = [], []
     cap = budget = get_env_config().swarm.swarm_handoff_max_file_bytes
     store = TaskStore(run_dir)
     for task_id in dict.fromkeys(task_ids):
@@ -266,6 +288,17 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
             source_task = store.load_task(task_id)
             source = agent_artifact_dir(run_dir, source_task.agent_id, task_id)
             thread = node_thread(run_dir, source_task.agent_id, task_id)
+            try:
+                inherited_failures = safe_path(_FAILED_CALLS_PATH, source)
+                if inherited_failures.is_file():
+                    records = json.loads(inherited_failures.read_text())
+                    if not isinstance(records, list) or any(
+                        not isinstance(record, dict) or record.get("status") != "failed" for record in records
+                    ):
+                        raise ValueError("Invalid failure records")
+                    failures.extend(records)
+            except (OSError, ValueError):
+                unreadable_failures.append(task_id)
             if thread.is_file():
                 produced = _produced_files(source, thread, source_task.agent_id, task_id, errors)
                 for relative, (tool, call_id) in produced.items():
@@ -292,7 +325,8 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
                         # An execution record names the bytes it wrote, before redaction.
                         entry["source_sha256"] = hashlib.sha256(original).hexdigest()
                     files.append({**entry, **tagged})
-            observations = _observations(source, source_task.agent_id, task_id, errors, thread if thread.is_file() else None)
+            observations = _observations(source, source_task.agent_id, task_id, errors, failures,
+                                         thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()
@@ -308,15 +342,32 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
                                 "part_count": len(parts), **tagged})
         except (OSError, ValueError, KeyError, TypeError) as exc:
             errors.append(f"{task_id}: {type(exc).__name__}: {exc}")
+    failure_note = ""
+    if failures:
+        # Existing attempts can already have an immutable evidence index on disk.
+        # Keep diagnostics independent of that index and of selected evidence.
+        records = list(dict.fromkeys(redact_tool_result(json.dumps(item, ensure_ascii=False)) for item in failures))
+        content = "[" + ", ".join(records) + "]"
+        _write_original(safe_path(_FAILED_CALLS_PATH, root), content, root)
+        pages = save_result_parts(content, folder / "failed-calls-parts", root)
+        failure_note = (
+            f"\n{len(records)} unsuccessful upstream tool calls are recorded as diagnostics in {_FAILED_CALLS_PATH}. "
+            f"For paged reading, use upstream/failed-calls-parts/1.txt through upstream/failed-calls-parts/{len(pages)}.txt. "
+            "Use these failures to explain gaps in the available evidence."
+        )
+        if len(content) <= TOOL_RESULT_LIMIT:
+            failure_note += f"\n{content}"
+    if unreadable_failures:
+        failure_note += "\nUpstream failure diagnostics could not be read for: " + ", ".join(unreadable_failures) + "."
     if not entries and not files and not errors:
-        return None
+        return None, failure_note.lstrip()
     index = {"observations": entries, "files": files, "unavailable": errors}
     content = json.dumps(index, ensure_ascii=False)
     # Same dependencies yield identical bytes on retry/continuation. No report
     # text is rewritten and no source status is promoted by copying its files.
     _write_original(folder / f"{name}.json", content, root)
     parts = save_result_parts(content, folder / f"{name}-parts", root)
-    return {**index, "content": content, "pages": len(parts)}
+    return {**index, "content": content, "pages": len(parts)}, failure_note
 
 
 def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
@@ -334,7 +385,8 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
     Returns:
         Prompt note pointing to the provenance index, which lists the copied observations,
         the files each upstream task produced (copied by content hash under ``upstream/files``)
-        and anything unavailable. Returns an empty string if there is nothing to report.
+        and anything unavailable, plus a pointer to unsuccessful call diagnostics when present.
+        Returns an empty string if there is nothing to report.
 
     Raises:
         ValueError: If the index would escape the workspace, differs from one already written,
@@ -346,9 +398,9 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
     root = destination.resolve()
     if any(isinstance(binding, dict) for binding in task.input_from.values()):
         return _prepare_selected(run_dir, task, root)
-    copied = _copy_upstream(run_dir, task.input_tasks().values(), root, "index", tag=False)
+    copied, failure_note = _copy_upstream(run_dir, task.input_tasks().values(), root, "index", tag=False)
     if copied is None:
-        return ""
+        return failure_note
     entries, files, pages = copied["observations"], copied["files"], copied["pages"]
     tools = ", ".join(sorted({entry["tool"] for entry in entries})) or "none recorded"
     return (
@@ -363,7 +415,7 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         "came from. Missing evidence does not invalidate the available report.\n"
         f"{len(files)} files produced by upstream tasks are copied under upstream/files/; the "
         "\"files\" entries in upstream/index.json give each one's source task, original path, "
-        "sha256 and size, and the writing tool call when one recorded it."
+        "sha256 and size, and the writing tool call when one recorded it." + failure_note
     )
 
 
@@ -412,7 +464,7 @@ def _prepare_selected(run_dir: Path, task, root: Path) -> str:
     """
     from src.swarm.task_store import TaskStore
 
-    copied = _copy_upstream(run_dir, task.input_tasks().values(), root, "audit", tag=True)
+    copied, failure_note = _copy_upstream(run_dir, task.input_tasks().values(), root, "audit", tag=True)
     if copied is None:
         copied = {"observations": [], "files": [], "unavailable": []}
         copied["content"] = json.dumps(copied)
@@ -492,7 +544,7 @@ def _prepare_selected(run_dir: Path, task, root: Path) -> str:
         "The selected upstream values are supplied in the upstream data message. "
         "upstream/index.json records their paths, hashes and missing inputs; "
         "upstream/audit.json keeps every upstream observation, calculation and produced file "
-        "for tracing a specific gap. These are inherited results, not fresh retrievals by you."
+        "for tracing a specific gap. These are inherited results, not fresh retrievals by you." + failure_note
     )
 
 

@@ -14,7 +14,7 @@ import pytest
 from src.config.accessor import get_env_config, reset_env_config
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.product.tool_policy import ToolPolicy
-from src.swarm.evidence_handoff import prepare_handoff
+from src.swarm.evidence_handoff import prepare_handoff, selected_inputs
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.swarm.task_store import TaskStore
 from src.tools.bash_tool import BashTool
@@ -241,6 +241,47 @@ def test_shell_calculation_command_and_output_reach_the_consumer_redacted(tmp_pa
     assert "bash" in note
     upstream = [path.read_text() for path in (destination / "upstream").rglob("*") if path.is_file()]
     assert upstream and not any(secret in text for text in upstream)
+
+
+@pytest.mark.parametrize("select", [False, True], ids=["report", "selection"])
+def test_failed_tool_call_is_visible_without_becoming_evidence(tmp_path, monkeypatch, select):
+    """Carry redacted diagnostics through reports and selections without supplying failed data.
+
+    Args:
+        tmp_path: Isolated workspaces for the producer and its consumers.
+        monkeypatch: Fixture for the scripted provider.
+        select: Whether the direct consumer uses a selected binding.
+    """
+    secret = "sk-live-0123456789abcdefghijklmnop"
+    _produce(
+        tmp_path, monkeypatch,
+        _call("good", "bash", command="echo 42"),
+        _call("failed", "bash", command=f"echo 'lookup failed; Bearer {secret}' >&2; exit 3"),
+    )
+    binding = {"task": "p", "kinds": ["calculation"]} if select else "p"
+    consumer = SwarmTask(id="c", agent_id="editor", prompt_template="Edit", depends_on=["p"],
+                         input_from={"stats": binding})
+    TaskStore(tmp_path).save_task(consumer)
+    destination = node.agent_artifact_dir(tmp_path, "editor", "c")
+    destination.mkdir(parents=True)
+    note = prepare_handoff(tmp_path, consumer, destination)
+    index = json.loads((destination / "upstream/index.json").read_text())
+    assert [entry["call_id"] for entry in index["observations"]] == ["good"]
+    if select:
+        assert len(selected_inputs(destination)["inputs"]["stats"]) == 1
+
+    path = "upstream/failed-calls.json"
+    assert path in note and "lookup failed" in note and secret not in note
+    [failure] = json.loads((destination / path).read_text())
+    assert failure["source_task"] == "p" and failure["call_id"] == "failed"
+    assert failure["status"] == "failed" and failure["tool"] == "bash"
+    assert "lookup failed" in failure["error"] and secret not in failure["error"]
+
+    reader = SwarmTask(id="r", agent_id="reader", prompt_template="Read", depends_on=["c"],
+                       input_from={"stats": "c"})
+    downstream = node.agent_artifact_dir(tmp_path, "reader", "r")
+    assert path in prepare_handoff(tmp_path, reader, downstream)
+    assert json.loads((downstream / path).read_text()) == [failure]
 
 
 def test_files_written_by_other_tools_reach_the_consumer(tmp_path, monkeypatch):
