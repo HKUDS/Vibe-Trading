@@ -310,7 +310,14 @@ class SessionSearchIndex:
         *,
         started_at: float,
     ) -> None:
-        """Replace one session's searchable transcript in a single transaction."""
+        """Replace one session's searchable transcript in a single transaction.
+
+        Args:
+            session_id: Session whose index entries should be replaced.
+            title: Current session title.
+            messages: Retained role and content pairs in chronological order.
+            started_at: Original session start time preserved during replacement.
+        """
         conn = self._get_conn()
         indexed = [
             (role, content[:50_000])

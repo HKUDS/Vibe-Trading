@@ -624,19 +624,6 @@ export function Agent() {
             meta: displayPrompt.meta,
             timestamp: ts,
           });
-        } else if (runId) {
-          // Show text answer first (if non-empty), then chart card
-          if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
-          }
-          if (hasStoredMetrics(metrics)) {
-            agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
-          } else {
-            const card = runCardFields((await previews.get(runId)) ?? null);
-            if (card) {
-              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
-            }
-          }
         } else {
           const editedMessageId = typeof meta?.edited_message_id === "string"
             ? meta.edited_message_id
@@ -649,6 +636,19 @@ export function Agent() {
               meta: { editRetryMessageId: editedMessageId },
               timestamp: assistantTs,
             });
+          } else if (runId) {
+            // Show text answer first (if non-empty), then chart card
+            if (m.content && m.content !== "Strategy execution completed.") {
+              agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+            }
+            if (hasStoredMetrics(metrics)) {
+              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
+            } else {
+              const card = runCardFields((await previews.get(runId)) ?? null);
+              if (card) {
+                agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
+              }
+            }
           } else {
             agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
           }

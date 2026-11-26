@@ -274,7 +274,11 @@ def test_failed_regeneration_keeps_edit_and_retry_does_not_duplicate_prompt(
         nonlocal fail_regeneration
         if attempt.prompt == "edited prompt" and fail_regeneration:
             fail_regeneration = False
-            return {"status": "error", "reason": "regeneration failed"}
+            return {
+                "status": "error",
+                "reason": "regeneration failed",
+                "run_dir": "/tmp/run-failed-edit",
+            }
         return {"status": "success", "content": f"answer: {attempt.prompt}"}
 
     monkeypatch.setattr(service, "_run_with_agent", flaky_agent)
@@ -297,7 +301,9 @@ def test_failed_regeneration_keeps_edit_and_retry_does_not_duplicate_prompt(
             ("user", "edited prompt"),
             ("assistant", "Execution failed: regeneration failed"),
         ]
+        assert failed_messages[-1].metadata["status"] == "failed"
         assert failed_messages[-1].metadata["edited_message_id"] == target.message_id
+        assert failed_messages[-1].metadata["run_id"] == "run-failed-edit"
         assert service.store.get_attempt(session.session_id, failed["attempt_id"]).status.value == "failed"
         reloaded = SessionStore(service.store.base_dir)
         assert reloaded.get_messages(session.session_id)[0].content == "edited prompt"

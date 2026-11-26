@@ -167,7 +167,12 @@ class SessionStore:
             os.fsync(f.fileno())
 
     def replace_messages(self, session_id: str, messages: List[Message]) -> None:
-        """Atomically replace a session transcript with a retained prefix."""
+        """Atomically replace a session transcript with a retained prefix.
+
+        Args:
+            session_id: Session whose transcript should be replaced.
+            messages: Complete retained messages in chronological order.
+        """
         path = self._messages_file(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         encoded = "".join(
@@ -259,7 +264,12 @@ class SessionStore:
         return attempt
 
     def delete_attempt(self, session_id: str, attempt_id: str) -> None:
-        """Delete an attempt that was never handed off to the runtime."""
+        """Delete an attempt that was never handed off to the runtime.
+
+        Args:
+            session_id: Session owning the attempt.
+            attempt_id: Attempt directory to remove.
+        """
         import shutil
 
         shutil.rmtree(self._attempt_dir(session_id, attempt_id), ignore_errors=True)

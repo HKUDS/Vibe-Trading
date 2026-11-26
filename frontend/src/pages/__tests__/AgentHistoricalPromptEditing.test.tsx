@@ -190,6 +190,11 @@ describe("Agent historical prompt editing", () => {
       {
         ...message("a1b2c3d4e5fc", "assistant", "Execution failed", 3),
         linked_attempt_id: "attempt-new",
+        metadata: {
+          status: "failed",
+          edited_message_id: "a1b2c3d4e5f6",
+          run_id: "run-failed-edit",
+        },
       },
     ];
     const completed = [
@@ -254,7 +259,11 @@ describe("Agent historical prompt editing", () => {
       {
         ...message("a1b2c3d4e5fc", "assistant", "Execution failed", 3),
         linked_attempt_id: "attempt-new",
-        metadata: { status: "failed", edited_message_id: "a1b2c3d4e5f6" },
+        metadata: {
+          status: "failed",
+          edited_message_id: "a1b2c3d4e5f6",
+          run_id: "run-failed-edit",
+        },
       },
     ];
     let acceptEdit!: (value: { message_id: string; attempt_id: string }) => void;
@@ -297,6 +306,36 @@ describe("Agent historical prompt editing", () => {
     expect(useAgentStore.getState().messages.find(
       (item) => item.type === "error",
     )?.meta?.editRetryMessageId).toBe("a1b2c3d4e5f6");
+  });
+
+  it("hydrates a failed edit with a run id as retryable after reload", async () => {
+    const user = userEvent.setup();
+    apiMock.getSessionMessages.mockResolvedValue([
+      message("a1b2c3d4e5f6", "user", "Edited prompt", 1),
+      {
+        ...message("a1b2c3d4e5fc", "assistant", "Execution failed", 3),
+        linked_attempt_id: "attempt-new",
+        metadata: {
+          status: "failed",
+          edited_message_id: "a1b2c3d4e5f6",
+          run_id: "run-failed-edit",
+        },
+      },
+    ]);
+    apiMock.editMessageAndRegenerate.mockResolvedValue({
+      message_id: "a1b2c3d4e5f6",
+      attempt_id: "attempt-retry",
+    });
+
+    renderAgent();
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(apiMock.editMessageAndRegenerate).toHaveBeenCalledWith(
+      "session-edit",
+      "a1b2c3d4e5f6",
+      "Edited prompt",
+    ));
+    expect(apiMock.sendMessage).not.toHaveBeenCalled();
   });
 
   it("keeps ordinary failure retry on the non-destructive send path", async () => {
