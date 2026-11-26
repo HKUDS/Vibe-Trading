@@ -66,18 +66,22 @@
 
 ## 📰 뉴스
 
+- **2026-11-26** 🛠️ **옵션 전략 비교 내보내기와 리서치 랩 리플레이 수정** — 옵션 랩에서 저장한 두 전략의 비교 결과를 JSON 또는 CSV로 내보낼 수 있습니다. 두 전략의 손익과 기준 전략 대비 차이가 포함됩니다. [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
+  리서치 랩은 고정된 데이터의 전체 구간이나 더 짧은 구간을 리플레이할 때 저장된 가격의 정밀도를 유지합니다. 한 실행의 설정이 잘못되어도 다른 실행은 목록에 표시됩니다. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
+  일괄 리플레이는 근거 부족과 검증 실패를 구분하고, 잘못된 `--bindings` 파일에는 JSON 오류를 반환합니다. FRED 요청이 실패하면 오류 메시지의 API 키를 가립니다. **`main`에 병합되었습니다.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
+
 - **2026-11-25** 🛠️ **워크포워드 검증 감사와 모의 주문의 지정 시점 취소** — 리서치 랩에서 워크포워드 검증의 각 폴드와 선택적 홀드아웃 구간을 선택된 파라미터 및 테스트 지표와 함께 CSV로 내보낼 수 있습니다. 중국 A주 5분봉 모의 거래 리플레이는 지정한 시점에 주문의 미체결 수량을 취소하고 앞서 발생한 체결과 수수료를 보존합니다. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   Gemini에서 입력 토큰 한도 오류가 발생하면 에이전트가 컨텍스트를 압축하고 재시도할 수 있습니다. 메모리를 저장해도 관련 없는 읽기 결과의 캐시가 유지됩니다. 뉴스 제목의 감성 분석은 곡선형 따옴표, 긴 줄표와 짧은 줄표, 말줄임표 옆의 감성 단어를 인식합니다. **`main`에 병합되었습니다.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
 - **2026-11-24** 🛠️ **Claude CLI 호환성과 백테스트 정확도 개선** — Claude CLI 프로바이더가 상세 모드의 JSON 출력에서 최종 결과를 읽습니다. Yahoo Finance의 1시간 봉을 4시간 봉으로 집계하고, OHLC 검증에서 무한대 가격을 유효하지 않은 값으로 표시합니다. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray는 상관관계를 추정할 수 있는 종목 쌍만 집계합니다. 수익률의 산포가 사실상 0이면 부트스트랩, 워크포워드, 몬테카를로 검증 모두 정의할 수 없는 샤프 비율을 기존 규칙에 따라 0으로 표시합니다. **`main`에 반영되었습니다.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
+<details>
+<summary>이전 뉴스</summary>
+
 - **2026-11-23** 🛠️ **재현 가능한 리서치와 시장 데이터 확대** — 리서치 랩은 고정된 연구 실행을 재현할 때 원래 외부 벤치마크 가격을 사용하며, 워크포워드 표본 외 자산 곡선을 CSV로 내보낼 수 있습니다. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   옵션 랩에서는 저장된 두 전략을 동일한 기초자산 가격과 내재변동성 격자에서 비교할 수 있습니다. Yahoo Finance가 제공하는 유럽 6개 시장의 주식과 ETF를 검색하고 시세를 조회할 수 있습니다. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo는 계좌와 보유 포지션을 읽기 전용으로 제공합니다. CLI에서 별도 프로세스로 백그라운드 Swarm 실행을 취소할 수 있습니다. **`main`에 반영되었습니다.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
-
-<details>
-<summary>이전 뉴스</summary>
 
 - **2026-11-22** 🛠️ **백테스트 정확도 개선과 옵션 분석 내보내기 확대** — 리서치 랩의 워크포워드 분석은 기존 평가 날짜에만 점수를 매기고 이전 봉은 지표 워밍업에 사용합니다. 외부 벤치마크 가격이 음수가 되어도 자산 곡선과 보고 수익률이 일치합니다. 암호화폐 무기한 선물의 장중 펀딩비는 UTC 00:00, 08:00, 16:00에 정산됩니다. [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   옵션 분석 CSV에 저장된 대안과 비교 결과가 포함됩니다. 로컬 일봉 데이터는 `timestamp_basis: session_date`를 설정해 거래소의 거래일을 유지할 수 있습니다. [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)

@@ -66,18 +66,22 @@
 
 ## 📰 新闻
 
+- **2026-11-26** 🛠️ **期权对比导出与研究回放修复** — 期权实验室可将两个已保存策略的对比结果导出为 JSON 或 CSV，包含两套策略的盈亏及相对基准策略的差值。 [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
+  研究实验室在整段或缩短区间的冻结回放中保留原始价格精度，单条损坏的运行配置也不会影响其他运行的显示。 [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
+  批量回放会区分证据不足和检查失败，格式错误的 `--bindings` 文件会返回 JSON 错误。FRED 请求失败时会遮盖错误信息中的 API 密钥。**已合入 `main`。** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
+
 - **2026-11-25** 🛠️ **滚动验证审计与模拟撤单** — 研究实验室支持把每一折滚动验证及可选的独立留出期导出为 CSV，包含选中的参数和测试指标。A 股 5 分钟模拟回放支持定时撤销订单的剩余数量，保留此前的成交和费用。 [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   收到 Gemini 输入 token 超限错误时，Agent 会尝试压缩上下文并重试。保存记忆时保留无关的只读工具缓存。新闻情绪评分能识别弯引号、长短破折号和省略号旁的情绪词。 **已合入 `main`。** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
 - **2026-11-24** 🛠️ **Claude CLI 兼容性与回测准确性** — Claude CLI 适配器现在能从详细模式的 JSON 消息数组中读取最终结果。Yahoo Finance 将小时线聚合为 4 小时线，OHLC 校验会将无穷价格标为无效。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray 仅使用可估计的相关性配对。收益率几乎没有波动时，Bootstrap、滚动验证和蒙特卡洛验证统一用 0 表示未定义的夏普比率。**已合入 `main`。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
+<details>
+<summary>更早的新闻</summary>
+
 - **2026-11-23** 🛠️ **研究回放、期权对比与欧洲行情** — 研究实验室会为冻结回放保留原始外部基准价格，并支持将滚动验证的样本外权益曲线导出为 CSV。 [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   期权实验室可在同一张标的价格与隐含波动率网格上比较两个已保存的策略。Yahoo Finance 覆盖的六个欧洲市场现已支持股票和 ETF 的代码搜索与行情查询。 [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo 支持只读查询账户和持仓。命令行可以从另一个进程取消后台 Swarm 运行。**已合入 `main`。** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
-
-<details>
-<summary>更早的新闻</summary>
 
 - **2026-11-22** 🛠️ **回测口径修复与期权导出** — 研究实验室的滚动样本外测试沿用原回测的评估日期，较早的行情仍可用于指标预热。外部基准经过负价时，权益曲线与报告收益保持一致。加密永续的盘中资金费按 00:00、08:00 和 16:00 UTC 结算。 [#2298](https://github.com/HKUDS/Vibe-Trading/pull/2298) · [#2301](https://github.com/HKUDS/Vibe-Trading/pull/2301) · [#2273](https://github.com/HKUDS/Vibe-Trading/issues/2273)
   期权实验室的 CSV 现在包含已保存的备选方案及对比结果。本地日线可设置 `timestamp_basis: session_date`，按交易所日期读取行情。 [#2319](https://github.com/HKUDS/Vibe-Trading/pull/2319) · [#2274](https://github.com/HKUDS/Vibe-Trading/issues/2274)
