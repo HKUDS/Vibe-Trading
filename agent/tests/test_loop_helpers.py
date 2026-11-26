@@ -15,6 +15,8 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 from src.session.compaction_ops import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
 from src.session.context_budget import estimate_tokens
 from src.product.tool_results import _is_tool_success, _archive_backtest_result
@@ -655,6 +657,51 @@ def test_relative_write_target_resolves_in_the_run_directory(tmp_path: Path, mon
     # bash leaves no write_file record; the fresh file in the run directory is the evidence.
     (run_dir / "research.md").write_text("Computed research", encoding="utf-8")
     assert agent._write_targets.pending(msg, started) == ""
+
+
+@pytest.mark.parametrize("call_dir", ["absolute", "relative"])
+def test_write_record_resolves_against_the_call_run_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call_dir: str,
+) -> None:
+    """The completion ledger records the file created by the tool call.
+
+    Args:
+        tmp_path: Root for the active and supplied run directories.
+        monkeypatch: Fixture for configuring allowed run roots.
+        call_dir: Whether the tool supplies an absolute or a relative run directory.
+    """
+    import time
+
+    from src.agent.runtime import AgentRuntime
+    from src.agent.tools import ToolRegistry
+    from src.product.resources.memory import WorkspaceMemory
+    from src.tools.write_file_tool import WriteFileTool
+    from tests.test_agent_loop_deterministic_cache import _drive
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    run_dir = tmp_path / "run"
+    other = tmp_path / "other" if call_dir == "absolute" else run_dir / "sub"
+    run_dir.mkdir()
+    other.mkdir()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(WriteFileTool(roots=registry.policy.file_roots))
+    agent = AgentRuntime(
+        registry=registry, llm=None, memory=WorkspaceMemory(run_dir=str(run_dir)),
+    )
+    started = time.time() - 1
+    supplied = str(other) if call_dir == "absolute" else "sub"
+
+    messages, _ = _drive(agent, "write_file", run_dir, [
+        {"path": "research.md", "run_dir": supplied, "content": "Computed research"},
+    ])
+    written = other / "research.md"
+
+    assert json.loads(messages[-1]["content"])["path"] == str(written.resolve())
+    assert written.read_text(encoding="utf-8") == "Computed research"
+    assert agent._write_targets.written_files == {str(written.resolve()).casefold()}
+    # The run's own research.md was not written, so the request is still pending.
+    assert "research.md" in agent._write_targets.pending("Write research.md", started)
+    assert agent._write_targets.pending(f"Write {written}", started) == ""
 
 
 # ---------------------------------------------------------------------------
