@@ -21,7 +21,6 @@ from src.providers.settings import ProviderConfig, resolve_config
 logger = logging.getLogger(__name__)
 
 
-_KIMI_FORCED_TEMPERATURE_RE = re.compile(r"kimi-(k\d+|for-coding)", re.IGNORECASE)
 
 
 def uses_responses_api(
@@ -42,10 +41,10 @@ def uses_responses_api(
     """
     if configured_responses_api is not True:
         return False
-    normalized_provider = provider.strip().lower().replace("_", "-")
-    if normalized_provider in {"anthropic", "openai-codex"}:
+    backend = get_provider_capabilities(provider).backend
+    if backend in {"anthropic", "openai_codex"}:
         return False
-    if normalized_provider != "deepseek":
+    if backend != "deepseek":
         return True
     if deepseek_adapter is None:
         from src.config.accessor import get_env_value
@@ -142,16 +141,16 @@ def build_llm(
 
     if openai_adapter.ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
-    # MiniMax rejects a zero temperature.
-    if provider == "minimax" and temperature <= 0.0:
-        temperature = 0.01
+    # Some endpoints reject a zero temperature or require a fixed one for certain models.
+    if caps.min_temperature is not None and temperature <= 0.0:
+        temperature = caps.min_temperature
     if (
-        caps.name in {"moonshot", "kimi-coding"}
-        and _KIMI_FORCED_TEMPERATURE_RE.match(name)
-        and temperature != 1.0
+        caps.forced_temperature is not None
+        and re.match(caps.forced_temperature_models or "", name, re.IGNORECASE)
+        and temperature != caps.forced_temperature
     ):
-        logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
-        temperature = 1.0
+        logger.info("Forcing temperature=%s for %s (provider requirement)", caps.forced_temperature, name)
+        temperature = caps.forced_temperature
     # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.
     use_responses_api = uses_responses_api(
         provider, options.langchain_use_responses_api, options.vibe_trading_deepseek_adapter
@@ -198,7 +197,7 @@ def build_llm(
         kwargs["max_tokens"] = langchain_max_tokens
     if caps.default_headers:
         headers = dict(caps.default_headers)
-        if caps.name in {"moonshot", "kimi-coding"}:
+        if caps.moonshot_user_agent:
             custom_ua = options.moonshot_user_agent.strip()
             if custom_ua:
                 headers["User-Agent"] = custom_ua

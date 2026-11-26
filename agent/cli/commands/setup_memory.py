@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from cli.commands import common
+from src.providers.registry import get_provider_capabilities
 
 def _validate_api_key(api_key: str, expected_prefix: str | None) -> bool:
     """Basic API-key format validation used during interactive setup."""
@@ -184,7 +185,7 @@ def cmd_init() -> int:
     provider_table.add_column("Default model", style="dim")
     provider_table.add_column("Credential", style="dim")
     for idx, option in enumerate(common._PROVIDER_CHOICES, start=1):
-        credential = "OAuth" if option["provider"] == "openai-codex" else "none" if option["key_env"] is None else str(option["key_env"])
+        credential = "OAuth" if get_provider_capabilities(str(option["provider"])).backend == "openai_codex" else "none" if option["key_env"] is None else str(option["key_env"])
         provider_table.add_row(str(idx), str(option["label"]), str(option["model"]), credential)
     common.console.print(provider_table)
 
@@ -226,7 +227,7 @@ def cmd_init() -> int:
             common.console.print(
                 f"[red]That key doesn't look right.[/red] Expected it to start with [bold]{key_prefix}[/bold]."
             )
-    elif provider == "openai-codex":
+    elif get_provider_capabilities(provider).backend == "openai_codex":
         common.console.print("[dim]OpenAI Codex uses ChatGPT OAuth, not an API key.[/dim]")
         common.console.print("[dim]After setup, run: vibe-trading provider login openai-codex[/dim]")
     else:
@@ -261,7 +262,7 @@ def cmd_init() -> int:
     next_steps.add_column(ratio=1)
     next_steps.add_row("Config", f"[cyan]{common._INIT_ENV_PATH}[/cyan]")
     next_steps.add_row("Run", "[bold]vibe-trading[/bold]")
-    if provider == "openai-codex":
+    if get_provider_capabilities(provider).backend == "openai_codex":
         next_steps.add_row("OAuth", "[bold]vibe-trading provider login openai-codex[/bold]")
     common.console.print(common.Panel(next_steps, title="Setup complete", border_style="green", padding=(0, 1)))
     return 0

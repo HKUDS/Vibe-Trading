@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from src.config.accessor import get_env_config
+from src.providers.registry import get_provider_capabilities, provider_names, provider_requires_key
 
 from src.product.tool_policy import ToolPolicy
 
@@ -9,54 +10,21 @@ from cli.commands import common
 from cli.commands import execution
 from cli.commands import inspection
 
-def _provider_key_env(provider: str | None) -> str | None:
-    """Return the credential environment variable for a provider."""
-    return {
-        "openrouter": "OPENROUTER_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "deepseek": "DEEPSEEK_API_KEY",
-        "nvidia": "NVIDIA_API_KEY",
-        "nvidia-nim": "NVIDIA_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "novita": "NOVITA_API_KEY",
-        "dashscope": "DASHSCOPE_API_KEY",
-        "qwen": "DASHSCOPE_API_KEY",
-        "zhipu": "ZHIPU_API_KEY",
-        "moonshot": "MOONSHOT_API_KEY",
-        "minimax": "MINIMAX_API_KEY",
-        "mimo": "MIMO_API_KEY",
-        "spark": "SPARK_API_KEY",
-        "iflytek": "SPARK_API_KEY",
-        "zai": "ZAI_API_KEY",
-        "modelscope": "MODELSCOPE_API_KEY",
-    }.get((provider or "").lower())
+def _provider_env(provider: str | None) -> tuple[str | None, str | None, bool]:
+    """Return a catalog provider's key env, base-URL env and whether it needs a key.
 
+    Args:
+        provider: Configured provider label or alias.
 
-def _provider_base_env(provider: str | None) -> str | None:
-    """Return the base URL environment variable for a provider."""
-    return {
-        "openrouter": "OPENROUTER_BASE_URL",
-        "openai": "OPENAI_BASE_URL",
-        "openai-codex": "OPENAI_CODEX_BASE_URL",
-        "deepseek": "DEEPSEEK_BASE_URL",
-        "nvidia": "NVIDIA_BASE_URL",
-        "nvidia-nim": "NVIDIA_BASE_URL",
-        "gemini": "GEMINI_BASE_URL",
-        "groq": "GROQ_BASE_URL",
-        "novita": "NOVITA_BASE_URL",
-        "dashscope": "DASHSCOPE_BASE_URL",
-        "qwen": "DASHSCOPE_BASE_URL",
-        "zhipu": "ZHIPU_BASE_URL",
-        "moonshot": "MOONSHOT_BASE_URL",
-        "minimax": "MINIMAX_BASE_URL",
-        "mimo": "MIMO_BASE_URL",
-        "spark": "SPARK_BASE_URL",
-        "iflytek": "SPARK_BASE_URL",
-        "zai": "ZAI_BASE_URL",
-        "modelscope": "MODELSCOPE_BASE_URL",
-        "ollama": "OLLAMA_BASE_URL",
-    }.get((provider or "").lower())
+    Returns:
+        The API-key environment variable, the base-URL environment variable and whether a key is
+        required; (None, None, True) for a label the catalog does not know.
+    """
+    name = (provider or "").strip().lower().replace("_", "-")
+    if name not in provider_names():
+        return None, None, True
+    caps = get_provider_capabilities(name)
+    return caps.api_key_env, caps.base_url_env, provider_requires_key(name)
 
 
 def _show_settings() -> None:
@@ -68,8 +36,7 @@ def _show_settings() -> None:
     _cfg = common.get_env_config()
     provider = _cfg.llm.langchain_provider or "(not set)"
     model = _cfg.llm.langchain_model_name or "(not set)"
-    provider_key_env = _provider_key_env(provider)
-    provider_base_env = _provider_base_env(provider)
+    provider_key_env, provider_base_env, key_required = _provider_env(provider)
     provider_key = common.os.getenv(provider_key_env or "")  # noqa: env-gate — dynamic provider key display
     provider_base_url = common.os.getenv(provider_base_env or "") or common.os.getenv("OPENAI_BASE_URL") or common.os.getenv("OPENAI_API_BASE") or "(not set)"  # noqa: env-gate — dynamic provider URL display
 
@@ -94,7 +61,7 @@ def _show_settings() -> None:
     credential_table.add_column(width=21, style="dim")
     credential_table.add_column(ratio=1)
 
-    if provider in {"ollama", "openai-codex"}:
+    if provider_base_env and not key_required:
         credential_table.add_row("Provider key", "[green]not required[/green]")
         credential_ready = True
     elif provider_key_env:
@@ -128,11 +95,12 @@ def cmd_provider_login(provider: str) -> int:
         Selected provider's login exit status, or a usage error if the provider is unsupported.
     """
     normalized = provider.strip().lower().replace("_", "-")
-    if normalized in {"copilot", "github-copilot"}:
+    backend = get_provider_capabilities(normalized).backend if normalized in provider_names() else None
+    if backend == "copilot":
         return _login_copilot()
-    if normalized == "claude-cli":
+    if backend == "claude_cli":
         return _login_claude_cli()
-    if normalized != "openai-codex":
+    if backend != "openai_codex":
         common.console.print(
             "[red]Unknown OAuth provider.[/red] Supported: openai-codex, copilot, claude-cli"
         )

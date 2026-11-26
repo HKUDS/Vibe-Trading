@@ -472,7 +472,7 @@ def register_settings_routes(
         if provider.auth_type == "claude_cli":
             # No HTTP endpoint: the base URL checks below would reject it outright.
             return await _list_claude_cli_models(provider, refresh=payload.refresh)
-        if provider.name == "openai-codex":
+        if provider.backend == "openai_codex":
             # OAuth credentials only go to our fixed Codex catalog endpoint.
             # Do not use base_url or api_key values supplied by the settings form.
             return await _list_openai_codex_models(provider)

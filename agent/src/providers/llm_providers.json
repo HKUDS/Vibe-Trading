@@ -41,7 +41,11 @@
     "default_base_url": "https://api.openai.com/v1",
     "api_key_required": true,
     "capabilities": {
-      "top_level_reasoning_effort": true
+      "top_level_reasoning_effort": true,
+      "official_hosts": [
+        "api.openai.com",
+        "openai.com"
+      ]
     },
     "setup": {
       "order": 7,
@@ -146,6 +150,9 @@
     "model_options": [
       "deepseek-v4-pro",
       "deepseek-flash"
+    ],
+    "infer_model_prefixes": [
+      "deepseek"
     ]
   },
   {
@@ -288,6 +295,9 @@
     },
     "model_options": [
       "nvidia/nemotron-3-ultra-550b-a55b"
+    ],
+    "infer_model_prefixes": [
+      "nvidia/"
     ]
   },
   {
@@ -304,7 +314,10 @@
     "setup": {
       "order": 8,
       "key_placeholder": "api-key..."
-    }
+    },
+    "infer_model_prefixes": [
+      "gemini"
+    ]
   },
   {
     "name": "groq",
@@ -371,7 +384,10 @@
     "setup": {
       "order": 11,
       "key_placeholder": "api-key..."
-    }
+    },
+    "infer_model_prefixes": [
+      "glm"
+    ]
   },
   {
     "name": "glm",
@@ -404,7 +420,13 @@
       ],
       "default_headers": {
         "User-Agent": "{user_agent}"
-      }
+      },
+      "official_hosts": [
+        "api.moonshot.ai"
+      ],
+      "forced_temperature": 1.0,
+      "forced_temperature_models": "kimi-(k\\d+|for-coding)",
+      "moonshot_user_agent": true
     },
     "aliases": [
       "kimi"
@@ -413,7 +435,11 @@
       "order": 12,
       "key_prefix": "sk-",
       "key_placeholder": "sk-..."
-    }
+    },
+    "infer_model_substrings": [
+      "kimi",
+      "moonshot"
+    ]
   },
   {
     "name": "kimi-coding",
@@ -429,7 +455,10 @@
       "normalize_assistant_content": true,
       "default_headers": {
         "User-Agent": "{user_agent}"
-      }
+      },
+      "forced_temperature": 1.0,
+      "forced_temperature_models": "kimi-(k\\d+|for-coding)",
+      "moonshot_user_agent": true
     }
   },
   {
@@ -451,6 +480,15 @@
     "setup": {
       "order": 13,
       "key_placeholder": "api-key..."
+    },
+    "capabilities": {
+      "min_temperature": 0.01
+    },
+    "model_capabilities": {
+      "MiniMax-M3.1-Flash": {
+        "capture_reasoning": true,
+        "send_reasoning_content": true
+      }
     }
   },
   {

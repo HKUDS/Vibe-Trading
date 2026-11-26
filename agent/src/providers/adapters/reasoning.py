@@ -18,33 +18,17 @@ def _supports_top_level_reasoning_effort(caps: ProviderCapabilities, model: str 
     return any(lowered.startswith(prefix) for prefix in models)
 
 
-def _openai_label_points_at_openai(caps: ProviderCapabilities, base_url: str) -> bool:
-    """Report whether the OpenAI capability is actually talking to OpenAI."""
-    if caps.name != "openai":
-        return True
-    if not base_url:
+def _points_at_official_host(caps: ProviderCapabilities, base_url: str) -> bool:
+    """Report whether a provider that lists official hosts is actually talking to one of them."""
+    if not caps.official_hosts or not base_url:
         return True
     host = urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
-    return host.lower() in {"api.openai.com", "openai.com"}
-
-
-def _moonshot_label_points_at_moonshot(caps: ProviderCapabilities, base_url: str) -> bool:
-    """Report whether the Moonshot capability is actually talking to Moonshot."""
-    if caps.name != "moonshot":
-        return True
-    if not base_url:
-        return True
-    host = urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
-    return host.lower() == "api.moonshot.ai"
+    return host.lower() in caps.official_hosts
 
 
 def _sends_top_level_reasoning_effort(caps: ProviderCapabilities, model: str | None = None, base_url: str = "") -> bool:
-    """Combine the allowlist flag with the endpoint-host checks."""
-    return (
-        _supports_top_level_reasoning_effort(caps, model)
-        and _openai_label_points_at_openai(caps, base_url)
-        and _moonshot_label_points_at_moonshot(caps, base_url)
-    )
+    """Combine the allowlist flag with the endpoint-host check."""
+    return _supports_top_level_reasoning_effort(caps, model) and _points_at_official_host(caps, base_url)
 
 
 _MOONSHOT_REASONING_EFFORT_LEVELS = ("low", "high", "max")

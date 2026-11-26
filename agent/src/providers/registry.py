@@ -42,7 +42,8 @@ def provider_catalog() -> list[dict[str, Any]]:
         Independent copies of the public provider records with defaults for backend and automatic
         model listing.
     """
-    private = {"capabilities", "aliases", "runtime_variants", "setup", "onboarding"}
+    private = {"capabilities", "aliases", "runtime_variants", "setup", "onboarding", "model_capabilities",
+               "infer_model_prefixes", "infer_model_substrings"}
     return [
         {"backend": "openai_compatible", "automatic_model_list": False,
          **deepcopy({k: v for k, v in row.items() if k not in private})}
@@ -61,6 +62,21 @@ def provider_names() -> frozenset[str]:
         for row in _catalog()
         for name in (row["name"], *row.get("aliases", ()), *row.get("runtime_variants", {}))
     )
+
+
+def provider_requires_key(provider: str) -> bool:
+    """Report whether a catalog provider needs an API key.
+
+    Args:
+        provider: Catalog name, alias or runtime variant.
+
+    Returns:
+        The catalog row's api_key_required flag, or True for a name the catalog does not list.
+    """
+    for row in _catalog():
+        if provider in (row["name"], *row.get("aliases", ()), *row.get("runtime_variants", {})):
+            return bool(row["api_key_required"])
+    return True
 
 
 def setup_choices() -> list[dict[str, Any]]:
@@ -128,6 +144,11 @@ class ProviderCapabilities:
     native_adapter_package: Optional[str] = None
     default_base_url: str = ""
     backend: str = "openai_compatible"
+    official_hosts: tuple[str, ...] = ()
+    min_temperature: Optional[float] = None
+    forced_temperature: Optional[float] = None
+    forced_temperature_models: Optional[str] = None
+    moonshot_user_agent: bool = False
 
 
 _DISTRIBUTION_NAME = "vibe-trading-ai"
@@ -145,19 +166,14 @@ _VIBE_USER_AGENT = f"Vibe-Trading/{_package_version()}"
 
 
 def _infer_from_model(model: str) -> str | None:
+    """Name the provider a bare model id implies: catalog prefixes first, then substrings."""
     lowered = model.strip().lower()
     if not lowered:
         return None
-    if lowered.startswith("gemini"):
-        return "gemini"
-    if lowered.startswith("deepseek"):
-        return "deepseek"
-    if lowered.startswith("nvidia/"):
-        return "nvidia"
-    if lowered.startswith("glm"):
-        return "zhipu"
-    if "kimi" in lowered or "moonshot" in lowered:
-        return "moonshot"
+    for key, matches in (("infer_model_prefixes", str.startswith), ("infer_model_substrings", str.__contains__)):
+        for row in _catalog():
+            if any(matches(lowered, marker) for marker in row.get(key, ())):
+                return row["name"]
     return None
 
 
@@ -185,14 +201,13 @@ def get_provider_capabilities(provider: str | None = None, model: str | None = N
             return get_provider_capabilities(row["name"], model)
         if name != row["name"]:
             continue
-        caps = deepcopy(row.get("capabilities", {}))
-        if name == "minimax" and model == "MiniMax-M3.1-Flash":
-            caps = {"capture_reasoning": True, "send_reasoning_content": True}
+        caps = deepcopy({**row.get("capabilities", {}), **row.get("model_capabilities", {}).get(model, {})})
         caps["default_headers"] = {
             k: v.replace("{user_agent}", _VIBE_USER_AGENT) for k, v in caps.get("default_headers", {}).items()
         }
-        if caps.get("reasoning_effort_models") is not None:
-            caps["reasoning_effort_models"] = tuple(caps["reasoning_effort_models"])
+        for key in ("reasoning_effort_models", "official_hosts"):
+            if caps.get(key) is not None:
+                caps[key] = tuple(caps[key])
         return ProviderCapabilities(
             caps.pop("name", name), row.get("api_key_env"), row["base_url_env"],
             default_base_url=row["default_base_url"], backend=row.get("backend", "openai_compatible"), **caps,

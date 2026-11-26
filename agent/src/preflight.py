@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.config.accessor import get_env_config, reset_env_config
+from src.providers.registry import get_provider_capabilities
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,8 @@ def _check_llm_provider() -> CheckResult:
         f"proxy={proxy_label}"
     )
 
-    if provider.lower() in {"openai-codex", "openai_codex"}:
+    backend = get_provider_capabilities(provider).backend
+    if backend == "openai_codex":
         try:
             from src.providers.openai_codex import get_openai_codex_login_status
 
@@ -103,7 +105,7 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
-    if provider.lower() in {"copilot", "github-copilot"}:
+    if backend == "copilot":
         from src.providers.copilot_auth import get_copilot_auth_status
 
         authenticated, status_message = get_copilot_auth_status()
@@ -122,7 +124,7 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
-    if provider.lower() == "claude-cli":
+    if backend == "claude_cli":
         from src.providers.claude_cli import get_claude_cli_auth_status
 
         logged_in, auth_method = get_claude_cli_auth_status()
