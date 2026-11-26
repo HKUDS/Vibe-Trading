@@ -881,7 +881,7 @@ def backtest(run_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3, VD-12 hand-written wrapper)
+# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3/pt-v1.4, VD-12 hand-written wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -900,13 +900,14 @@ def paper_trade_step(
     path_model: str | None = None,
     fill_model: str | None = None,
     order_volume_ratio: float | None = None,
+    cancel_schedule: _lenient_dict_list_opt = None,
 ) -> str:
     """Run one step of the deterministic paper-trading matching engine; never places real orders.
 
     Matches the injected ``orders`` (or, in Step 7, a ``strategy_path``'s
     per-day orders) against bars under the market's frozen rules (T+1, price
     limits, board lots, fees) and returns ONE in-band JSON document on
-    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3 success result, or an AM-5
+    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3/pt-v1.4 success result, or an AM-5
     error envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
     non-retryable) on the SAME channel — never a transport error. Research-only:
     it reads market data and the injected ledger, matches on paper, and writes
@@ -921,8 +922,9 @@ def paper_trade_step(
             ``from_date == to_date`` (single day); multi-day ranges are
             strategy_path mode only.
         to_date: Inclusive range end ``YYYY-MM-DD`` (the target trading day).
-        orders: Orders mode — array of ``{symbol, side, qty, limit?}``. Exactly
-            one of ``orders`` / ``strategy_path`` must be given; an empty array
+        orders: Orders-mode array of ``{symbol, side, qty, limit?, order_id?}``.
+            Non-null ids select v1.4 (single-day 5m cn_a only). Exactly one of
+            ``orders`` / ``strategy_path`` must be given; an empty array
             is the zero-order pure-valuation path.
         strategy_path: Strategy mode — path to an AST-hardened strategy whose
             per-day orders are matched. Exactly one of ``orders`` /
@@ -940,6 +942,11 @@ def paper_trade_step(
         order_volume_ratio: Optional pt-v1.3 per-order share of available
             volume, ``0 < r <= 1``; only with ``fill_model='volume_share'``.
             Omitted means 1.0.
+        cancel_schedule: Optional pt-v1.4 ``[{order_id, at}]`` for single-day
+            5m cn_a orders mode. Times are same-day five-minute session boundaries
+            in ``YYYY-MM-DDTHH:MM:00+08:00``. Cancels precede same-label matching,
+            stop further fills as pending_cancel and settle at day end. Omitted
+            or null keeps the legacy model; [] selects v1.4. No broker writes.
     """
     from src.tools.paper_trade.tool import run_paper_trade_step
 
@@ -966,6 +973,8 @@ def paper_trade_step(
         payload["fill_model"] = fill_model
     if order_volume_ratio is not None:
         payload["order_volume_ratio"] = order_volume_ratio
+    if cancel_schedule is not None:
+        payload["cancel_schedule"] = cancel_schedule
     return run_paper_trade_step(payload)
 
 
@@ -1665,6 +1674,8 @@ def get_strategy_evidence(strategy_id: str, regime: str | None = None) -> str:
 def adapt_strategy(strategy_id: str, name: str, universe: str, config: dict, position_sizing: str | None = None) -> str:
     """Prepare a child from fresh adequate SDM evidence, preserving signal logic.
 
+    config must contain explicit ``codes``, ``source``, ``start_date`` and
+    ``end_date`` values. Nothing is inferred or defaulted.
     Returns description and a bound run_dir. Load strategy-generate, write the
     child's code, backtest there, then refresh its evidence with scope=strategies.
     Does not generate code or run a backtest by itself, or copy parent metrics.
@@ -1680,9 +1691,12 @@ def refresh_strategy_evidence(manifest_path: str | None = None, runs: list | Non
     """Rebuild the strategy-discovery evidence cache from backtest run artifacts.
 
     WRITE tool with disposable-cache-only scope: it replaces the facade-owned
-    strategy-evidence cache (drop-and-rebuild by contract) from local run
-    artifacts and NEVER touches the Alpha Zoo or SDM sources of truth. No
-    network access, no credentials, no broker paths.
+    strategy-evidence cache from local run artifacts and NEVER touches the
+    Alpha Zoo or SDM sources of truth. No network access, credentials, or
+    broker paths. ``adapt_strategy`` is the other write and updates the SDM
+    store. ``scope=all`` replaces the whole cache. ``scope=strategies``
+    replaces only successfully refreshed named strategies and is required
+    after adaptation.
 
     Provide EXACTLY ONE of the two parameters:
     - manifest_path: path to a JSON manifest — an object with a "runs" array
@@ -2143,24 +2157,6 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     byte-identical.
     """
     return cap_rows(records, max_rows)
-
-
-@mcp.tool
-def get_hk_quotes(
-    symbols: _lenient_str_list,
-    source: str = "tencent",
-    max_age_seconds: float = 60,
-) -> str:
-    """Fetch read-only HK quotes with provider time, currency, age and delay.
-
-    Tencent r_hk is the faster default; age is not a guaranteed latency.
-    Yahoo HK quotes are delayed. Futu requires the operator's local quote rights.
-    Use get_market_data for bar history. No broker order or account login occurs.
-    """
-    return _get_registry().execute(
-        "get_hk_quotes",
-        {"symbols": symbols, "source": source, "max_age_seconds": max_age_seconds},
-    )
 
 
 def _calculation_workspace() -> str:

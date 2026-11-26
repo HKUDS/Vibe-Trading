@@ -334,7 +334,7 @@ function BrowseView() {
           {selected.size >= 2 ? ` (${selected.size})` : ""}
         </Link>
         <Link
-          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(alphas.find((a) => a.id === [...selected][0])?.zoo ?? "alpha101")}&universe=${alphas.find((a) => a.id === [...selected][0])?.universe.map((u) => BENCH_UNIVERSE_FOR_METADATA[u]).find(Boolean) || "csi300"}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
+          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(alphas.find((a) => a.id === [...selected][0])?.zoo ?? "alpha101")}&universe=${alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_us") ? "sp500" : alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_hk") ? "hsi" : "csi300"}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
         >
           <Play className="h-3.5 w-3.5" aria-hidden="true" /> {selected.size ? i18n.t("analysis.evaluateSelected", { count: selected.size }) : i18n.t("alphaZoo.runBenchmark")}

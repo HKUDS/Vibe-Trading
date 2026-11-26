@@ -529,32 +529,38 @@ def test_loader_cache_round_trip_keeps_adjustment_override(tmp_path, monkeypatch
     assert restored.attrs["adjustment"] == "raw"
 
 
-def test_yfinance_loader_serves_second_fetch_from_cache(tmp_path, monkeypatch, fake_duckdb, loader_cache_root):
-    """A batch loader (yfinance) must skip its bulk download on a full cache hit."""
+def test_yfinance_loader_caches_each_price_policy(monkeypatch, fake_duckdb, loader_cache_root):
     monkeypatch.setenv(LOADER_CACHE_ENV, "1")
     import backtest.loaders.yfinance_loader as yfl
+    from backtest.loaders.base import ohlc_price_policy
 
-    calls = {"n": 0}
+    downloads = []
 
     def fake_download(tickers, start_date, end_date, interval):
-        calls["n"] += 1
+        downloads.append(tickers)
         return pd.DataFrame(
             {
-                "Open": [1.0, 2.0],
-                "High": [1.5, 2.5],
-                "Low": [0.5, 1.5],
-                "Close": [1.2, 2.2],
+                "Open": [1.0, -2.0],
+                "High": [1.5, -1.5],
+                "Low": [0.5, -2.5],
+                "Close": [1.2, -2.2],
                 "Volume": [100, 200],
             },
             index=pd.DatetimeIndex(["2025-01-02", "2025-01-03"], name="Date"),
         )
 
     monkeypatch.setattr(yfl, "_download_history", fake_download)
-
     loader = yfl.DataLoader()
-    first = loader.fetch(["AAPL.US"], "2025-01-01", "2025-01-03")
-    second = loader.fetch(["AAPL.US"], "2025-01-01", "2025-01-03")
 
-    assert calls["n"] == 1  # second fetch is served from cache, no re-download
-    assert "AAPL.US" in first and "AAPL.US" in second
-    pd.testing.assert_frame_equal(first["AAPL.US"], second["AAPL.US"])
+    def fetch():
+        return loader.fetch(["AAPL.US"], "2025-01-01", "2025-01-03")["AAPL.US"]
+
+    strict = fetch()
+    with ohlc_price_policy(True):
+        signed = fetch()
+        pd.testing.assert_frame_equal(fetch(), signed)
+    pd.testing.assert_frame_equal(fetch(), strict)
+
+    assert strict["close"].tolist() == [1.2]
+    assert signed["close"].tolist() == [1.2, -2.2]
+    assert len(downloads) == 2

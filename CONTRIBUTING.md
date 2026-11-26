@@ -10,6 +10,11 @@ For general project setup (`pip install -e ".[dev]"`, dev servers,
 `pytest --ignore=agent/tests/e2e_backtest`), see the README. For bug reports
 and feature requests, use the GitHub issue templates.
 
+Pull requests and pushes that change only root README files and documentation
+images under `assets/` run the README link and repository safety checks. The
+desktop app icon at `assets/icon.png`, any mixed code or configuration change,
+and manually dispatched CI runs use the full test matrix.
+
 The Web UI bounds API requests (including reading the response body) to two
 minutes by default. Set `VITE_API_TIMEOUT_MS` in `frontend/.env.local` before
 starting Vite or building the frontend to change this limit. Conversation-list

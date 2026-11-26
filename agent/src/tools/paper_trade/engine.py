@@ -29,6 +29,12 @@ import pandas as pd
 from . import calendar, corporate_actions, data, session_5m, state_hash, wire
 from .limits_cn_a import (
     PROV_LIMITS_HEURISTIC, CnALimitsClient, get_limit_status, heuristic_limit_prices)
+from .cancellation import (
+    CancelRequest,
+    CancelResult,
+    schedule_payload,
+    validate_request,
+)
 from .order_lifecycle import OrderState
 from .rules import MarketRules, money, quantize_money
 from .schema import (
@@ -78,6 +84,7 @@ class MatchOutcome:
     # pt-v1.3: final per-order lifecycle states in submission order (5m only;
     # empty for interval="1d").  T13 maps these to the wire ``order_states``.
     order_states: tuple[OrderState, ...] = ()
+    cancel_results: tuple[CancelResult, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +186,7 @@ class _MatchSession:
         path_model: str = DEFAULT_PATH_MODEL,
         fill_model: str = DEFAULT_FILL_MODEL,
         order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
+        cancel_schedule: tuple[CancelRequest, ...] | None = None,
     ) -> None:
         self.market = market
         self.rules = rules
@@ -187,6 +195,8 @@ class _MatchSession:
         self.path_model = path_model
         self.fill_model = fill_model
         self.order_volume_ratio = order_volume_ratio
+        self.cancel_schedule = cancel_schedule
+        self.cancel_results: list[CancelResult] = []
         self.limits_client = limits_client
         self.ca_by_day = corporate_action_unresolved_by_day
         self.cash = quantize_money(money(account_state.cash))
@@ -623,14 +633,30 @@ def match_orders(
         error = EngineError("INVALID_REQUEST", "orders mode requires the orders array; "
                             "strategy_path execution lands in Step 7")
         return error_outcome(error, request.account_state, market_data, request.market, request.fee_model)
+    try:
+        validate_request(request)
+    except ValueError as exc:
+        error = EngineError("INVALID_REQUEST", str(exc))
+        return error_outcome(
+            error, request.account_state, market_data, request.market, request.fee_model
+        )
     return run_day_loop(
-        market=request.market, account_state=request.account_state,
-        from_date=request.from_date, to_date=request.to_date, market_data=market_data,
-        orders_by_day={request.from_date: request.orders}, fee_model=request.fee_model,
-        calendar_client=calendar_client, limits_client=limits_client, hk_lot_sizes=hk_lot_sizes,
+        market=request.market,
+        account_state=request.account_state,
+        from_date=request.from_date,
+        to_date=request.to_date,
+        market_data=market_data,
+        orders_by_day={request.from_date: request.orders},
+        fee_model=request.fee_model,
+        calendar_client=calendar_client,
+        limits_client=limits_client,
+        hk_lot_sizes=hk_lot_sizes,
         corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-        path_model=request.path_model, fill_model=request.fill_model,
-        order_volume_ratio=request.order_volume_ratio)
+        path_model=request.path_model,
+        fill_model=request.fill_model,
+        order_volume_ratio=request.order_volume_ratio,
+        cancel_schedule=(request.cancel_schedule or ()) if request.uses_v1_4 else None,
+    )
 
 
 def run_day_loop(
@@ -650,6 +676,7 @@ def run_day_loop(
     path_model: str = DEFAULT_PATH_MODEL,
     fill_model: str = DEFAULT_FILL_MODEL,
     order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
+    cancel_schedule: tuple[CancelRequest, ...] | None = None,
 ) -> MatchOutcome:
     # Day-loop core: enumerate [from, to], gate readiness (AM-9), match
     # serially (VD-10).  Multi-day ranges are only reachable through this
@@ -678,11 +705,20 @@ def run_day_loop(
             "price/volume ratios cannot establish a split. Reconcile against an authoritative action record."),
             account_state, market_data, market, fee_model)
     session = _MatchSession(
-        market, rules, market_data, account_state, limits_client,
+        market,
+        rules,
+        market_data,
+        account_state,
+        limits_client,
         corporate_actions.merge_unresolved(
-            corporate_action_unresolved_by_day, ca_plan.unresolved_by_day),
-        ca_plan, path_model=path_model, fill_model=fill_model,
-        order_volume_ratio=order_volume_ratio)
+            corporate_action_unresolved_by_day, ca_plan.unresolved_by_day
+        ),
+        ca_plan,
+        path_model=path_model,
+        fill_model=fill_model,
+        order_volume_ratio=order_volume_ratio,
+        cancel_schedule=cancel_schedule,
+    )
     order_states: tuple[OrderState, ...] = ()
     for entry in plan:
         session.begin_day(entry)  # T4 session facts (no-op for interval="1d")
@@ -715,15 +751,24 @@ def run_day_loop(
         nav_series=tuple(session.nav_series),
         skipped_days=tuple(session.skipped),
         warnings=tuple(dict.fromkeys(session.warnings)),
-        data_provenance=replace(market_data.provenance, corporate_actions=(
-            tuple(market_data.provenance.corporate_actions) + ca_plan.provenance)),
+        data_provenance=replace(
+            market_data.provenance,
+            corporate_actions=(
+                tuple(market_data.provenance.corporate_actions) + ca_plan.provenance
+            ),
+        ),
         effective_fee_model=rules.effective_fee_model,
         limit_provenance=tuple(dict.fromkeys(session.limit_provenance)),
         engine_fingerprint=state_hash.engine_fingerprint(
-            interval=market_data.interval, path_model=path_model, fill_model=fill_model,
+            interval=market_data.interval,
+            path_model=path_model,
+            fill_model=fill_model,
             bar_fingerprint=market_data.bar_fingerprint,
-            order_volume_ratio=order_volume_ratio),
+            order_volume_ratio=order_volume_ratio,
+            cancel_schedule=schedule_payload(cancel_schedule),
+        ),
         canceled_orders=tuple(session.canceled),
         events=tuple(session.events),
         order_states=order_states,
+        cancel_results=tuple(session.cancel_results),
     )

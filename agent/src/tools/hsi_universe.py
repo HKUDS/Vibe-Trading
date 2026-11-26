@@ -11,19 +11,18 @@ import re
 import pandas as pd
 import requests
 
-from backtest.loaders._symbol_utils import normalize_hk_symbol
 
 LOG = logging.getLogger(__name__)
 WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/Hang_Seng_Index"
-# Full frozen operational roster as of 2026-11-04, from HSI review announcements.
-# Never represent this fallback as historical membership or a live official list.
-FALLBACK_DATE = "2026-11-04"
+# Dated 95-member audit reference retained on 2026-11-04 from the review below.
+# It is never a benchmark fallback, PIT history or indefinitely current list.
+REFERENCE_SNAPSHOT_DATE = "2026-11-04"
 # Official reference: the review announced on 2026-08-21, effective 2026-09-07.
 # This frozen set is an audit reference, not an indefinitely current index list.
 REFERENCE_EFFECTIVE_DATE = "2026-09-07"
 PUBLISHED_CONSTITUENT_COUNT = 95  # Appendix 1 of the dated official review below.
 REFERENCE_SOURCE_URL = "https://www.hsi.com.hk/static/uploads/contents/en/news/pressRelease/20260821T174500.pdf"
-FALLBACK_CODES = """
+REFERENCE_CODES = """
 0001.HK 0002.HK 0003.HK 0005.HK 0006.HK 0012.HK 0016.HK 0027.HK 0066.HK
 0101.HK 0175.HK 0241.HK 0267.HK 0285.HK 0288.HK 0291.HK 0300.HK 0316.HK
 0322.HK 0386.HK 0388.HK 0669.HK 0688.HK 0700.HK 0728.HK 0762.HK 0823.HK
@@ -38,9 +37,17 @@ FALLBACK_CODES = """
 """.split()
 
 
+def normalize_hk_symbol(code: str) -> str:
+    """Normalize HK aliases within the HSI adapter; leave shared loaders unchanged."""
+    digits = str(code).strip().upper().removeprefix("HK.").removesuffix(".HK")
+    if not digits.isascii() or not digits.isdigit() or not 0 < int(digits) < 100000:
+        raise ValueError("Invalid Hong Kong equity symbol")
+    return f"{int(digits):04d}.HK"
+
+
 def _with_reference_metadata(codes: list[str], metadata: dict) -> dict:
     """Disclose set differences against the dated reference without changing codes."""
-    observed, reference = set(codes), set(FALLBACK_CODES)
+    observed, reference = set(codes), set(REFERENCE_CODES)
     missing = sorted(reference - observed)
     unexpected = sorted(observed - reference)
     matches = not missing and not unexpected
@@ -48,7 +55,7 @@ def _with_reference_metadata(codes: list[str], metadata: dict) -> dict:
         LOG.warning(
             "HSI roster differs from frozen %s reference: %d missing, %d unexpected; "
             "review both sources before treating either as current",
-            FALLBACK_DATE,
+            REFERENCE_SNAPSHOT_DATE,
             len(missing),
             len(unexpected),
         )
@@ -57,7 +64,7 @@ def _with_reference_metadata(codes: list[str], metadata: dict) -> dict:
         "constituent_observed_count": len(observed),
         "constituent_reference_source": REFERENCE_SOURCE_URL,
         "constituent_reference_effective_date": REFERENCE_EFFECTIVE_DATE,
-        "constituent_reference_snapshot_date": FALLBACK_DATE,
+        "constituent_reference_snapshot_date": REFERENCE_SNAPSHOT_DATE,
         "constituent_reference_frozen": True,
         "constituent_reference_count": len(reference),
         "constituent_reference_overlap_count": len(observed & reference),
@@ -79,133 +86,50 @@ def parse_constituents(html: str) -> tuple[list[str], dict[str, str]]:
     for table in pd.read_html(io.StringIO(html)):
         columns = {str(column).strip().lower(): column for column in table.columns}
         ticker = next(
-            (
-                columns[key]
-                for key in ("ticker", "stock code", "symbol")
-                if key in columns
-            ),
+            (columns[key] for key in ("ticker", "stock code", "symbol") if key in columns),
             None,
         )
         if ticker is None:
             continue
         sector = next(
-            (
-                columns[key]
-                for key in ("sector", "industry", "sub-index")
-                if key in columns
-            ),
+            (columns[key] for key in ("sector", "industry", "sub-index") if key in columns),
             None,
         )
         codes, sectors = [], {}
         for _, row in table.iterrows():
-            match = re.fullmatch(
-                r"(?:SEHK\s*:\s*)?(\d{1,5})(?:\.HK)?", str(row[ticker]).strip(), re.I
-            )
+            match = re.fullmatch(r"(?:SEHK\s*:\s*)?(\d{1,5})(?:\.HK)?", str(row[ticker]).strip(), re.I)
             if not match:
                 continue
             code = normalize_hk_symbol(match.group(1))
             if code not in codes:
                 codes.append(code)
-            if (
-                sector is not None
-                and pd.notna(row[sector])
-                and str(row[sector]).strip()
-            ):
+            if sector is not None and pd.notna(row[sector]) and str(row[sector]).strip():
                 sectors[code] = str(row[sector]).strip()
         if codes:
             return codes, sectors
     raise ValueError("No HSI constituent table found")
 
 
-def fetch_constituents() -> tuple[list[str], dict[str, str], dict]:
-    """Fetch a revision-dated current roster, or disclose a frozen degraded fallback."""
-    fetched_at = datetime.now(timezone.utc).isoformat()
-    try:
-        response = requests.get(
-            WIKIPEDIA_URL,
-            headers={
-                "User-Agent": "Vibe-Trading/0.1 (research bench; https://github.com/HKUDS/Vibe-Trading)"
-            },
-            timeout=20,
-        )
-        response.raise_for_status()
-        codes, sectors = parse_constituents(response.text)
-        if len(codes) < 50:
-            raise ValueError("Suspiciously short current HSI table")
-        # Read the revision date from this very HTML, avoiding a race with a
-        # separate API request for a newer revision than the parsed table.
-        modified = re.search(r'"dateModified"\s*:\s*"([^"]+)"', response.text)
-        revision = re.search(r'"wgRevisionId"\s*:\s*(\d+)', response.text)
-        date = (
-            datetime.fromisoformat(modified.group(1).replace("Z", "+00:00"))
-            .date()
-            .isoformat()
-            if modified
-            else None
-        )
-        return (
-            codes,
-            sectors,
-            _with_reference_metadata(
-                codes,
-                {
-                    "constituent_source": WIKIPEDIA_URL,
-                    "constituent_source_date": date,
-                    "constituent_source_date_kind": "wikipedia_revision_date",
-                    "constituent_revision_id": revision.group(1) if revision else None,
-                    "constituent_retrieved_at": fetched_at,
-                    "degraded": date is None or revision is None,
-                    "constituent_note": "Wikipedia page revision date is not a membership effective date; current roster can lag reviews and is not point-in-time membership.",
-                },
-            ),
-        )
-    except (requests.RequestException, ValueError, ImportError) as exc:
-        LOG.warning(
-            "hsi Wikipedia failed (%s); using dated fallback", type(exc).__name__
-        )
-        return (
-            list(FALLBACK_CODES),
-            {},
-            _with_reference_metadata(
-                FALLBACK_CODES,
-                {
-                    "constituent_source": "frozen HSI fallback",
-                    "constituent_source_date": FALLBACK_DATE,
-                    "constituent_source_date_kind": "frozen_snapshot_as_of",
-                    "constituent_revision_id": None,
-                    "constituent_retrieved_at": fetched_at,
-                    "degraded": True,
-                    "constituent_note": "Frozen roster; refresh required after index reviews.",
-                },
-            ),
-        )
-
-
 class HSIConstituentError(ValueError):
     """A stable, sanitized benchmark roster failure safe to expose to users."""
 
-    def __init__(self, reason: str, detail: str = "") -> None:
+    def __init__(self, reason: str, detail: str = "", *, metadata: dict | None = None) -> None:
         self.reason = reason
-        super().__init__(
-            f"HSI constituent load failed: {reason}"
-            + (f" ({detail})" if detail else "")
-        )
+        self.metadata = metadata or {}
+        super().__init__(f"HSI constituent load failed: {reason}" + (f" ({detail})" if detail else ""))
 
 
-def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
-    """Load a validated Wikipedia roster; benchmark failures never use a fallback.
+def inspect_constituents() -> tuple[list[str], dict[str, str], dict]:
+    """Inspect one revision-dated source without declaring benchmark eligibility.
 
-    The published count/reference is dated, not a live membership certification.
-    Keep ``fetch_constituents`` separate for existing operational quote consumers.
-    Review this reference after index reviews, rather than suppressing mismatches.
+    Codes are never padded, replaced or combined with the reference. Production
+    benchmarks use fetch_benchmark_constituents to enforce both count and set.
     """
     fetched_at = datetime.now(timezone.utc).isoformat()
     try:
         response = requests.get(
             WIKIPEDIA_URL,
-            headers={
-                "User-Agent": "Vibe-Trading/0.1 (research bench; https://github.com/HKUDS/Vibe-Trading)"
-            },
+            headers={"User-Agent": "Vibe-Trading/0.1 (research bench; https://github.com/HKUDS/Vibe-Trading)"},
             timeout=20,
         )
         response.raise_for_status()
@@ -229,11 +153,7 @@ def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
         for table in tables:
             columns = {str(column).strip().lower(): column for column in table.columns}
             ticker = next(
-                (
-                    columns[key]
-                    for key in ("ticker", "stock code", "symbol")
-                    if key in columns
-                ),
+                (columns[key] for key in ("ticker", "stock code", "symbol") if key in columns),
                 None,
             )
             if ticker is not None:
@@ -243,9 +163,7 @@ def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
         table, ticker = candidates[0]
         raw_codes = []
         for value in table[ticker]:
-            match = re.fullmatch(
-                r"(?:SEHK\s*:\s*)?(\d{1,5})(?:\.HK)?", str(value).strip(), re.I
-            )
+            match = re.fullmatch(r"(?:SEHK\s*:\s*)?(\d{1,5})(?:\.HK)?", str(value).strip(), re.I)
             if not match:
                 raise HSIConstituentError("invalid constituent data", "invalid_symbols")
             code = normalize_hk_symbol(match.group(1))
@@ -254,11 +172,6 @@ def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
             raw_codes.append(code)
         if len(set(raw_codes)) != len(raw_codes):
             raise HSIConstituentError("invalid constituent data", "duplicate_symbols")
-        if len(raw_codes) != PUBLISHED_CONSTITUENT_COUNT:
-            raise HSIConstituentError(
-                "invalid constituent data",
-                f"count_mismatch: observed={len(raw_codes)}, published_reference={PUBLISHED_CONSTITUENT_COUNT}, effective={REFERENCE_EFFECTIVE_DATE}",
-            )
         codes, sectors = parse_constituents(response.text)
         modified = re.search(r'"dateModified"\s*:\s*"([^"]+)"', response.text)
         revision = re.search(r'"wgRevisionId"\s*:\s*(\d+)', response.text)
@@ -270,11 +183,7 @@ def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
     except HSIConstituentError:
         raise
     except Exception as exc:  # noqa: BLE001 — untrusted parser boundary
-        reason = (
-            "invalid constituent data"
-            if isinstance(exc, ValueError)
-            else "constituent source failed"
-        )
+        reason = "invalid constituent data" if isinstance(exc, ValueError) else "constituent source failed"
         raise HSIConstituentError(reason) from None
     return (
         codes,
@@ -285,15 +194,54 @@ def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
                 "constituent_source": WIKIPEDIA_URL,
                 "constituent_source_date": timestamp.date().isoformat(),
                 "constituent_source_timestamp": timestamp.isoformat(),
-                "constituent_sha256": hashlib.sha256(
-                    response.text.encode("utf-8")
-                ).hexdigest(),
+                "constituent_sha256": hashlib.sha256(response.text.encode("utf-8")).hexdigest(),
                 "constituent_source_date_kind": "wikipedia_revision_date",
                 "constituent_revision_id": revision.group(1),
                 "constituent_retrieved_at": fetched_at,
-                "constituent_count_validation": "distinct canonical symbols equal dated published count",
+                "constituent_count_validation": "distinct canonical symbols; eligibility checked separately",
                 "degraded": False,
                 "constituent_note": "Current Wikipedia roster; revision time is not a membership effective date. The published reference is dated and must be reviewed after index reviews; neither is historical membership.",
             },
         ),
     )
+
+
+def fetch_benchmark_constituents() -> tuple[list[str], dict[str, str], dict]:
+    """Require the dated reference's count AND exact members before price access.
+
+    Same-count membership differences are blocked even if Wikipedia is newer:
+    review/update the reference using official effective-date evidence first.
+    Neither a frozen roster nor cached prices substitute for a rejected source.
+    """
+    codes, sectors, metadata = inspect_constituents()
+    eligible = len(codes) == PUBLISHED_CONSTITUENT_COUNT and metadata["constituent_reference_matches"]
+    metadata = metadata | {"benchmark_membership_policy": "strict_dated_reference_v4", "benchmark_eligible": eligible}
+    if len(codes) != PUBLISHED_CONSTITUENT_COUNT:
+        raise HSIConstituentError(
+            "invalid constituent data",
+            f"count_mismatch: observed={len(codes)}, published_reference={PUBLISHED_CONSTITUENT_COUNT}, effective={REFERENCE_EFFECTIVE_DATE}",
+            metadata=metadata,
+        )
+    if not eligible:
+        raise HSIConstituentError(
+            "invalid constituent data",
+            "membership_mismatch: equal counts do not establish equal members; review official changes before updating the dated reference",
+            metadata=metadata,
+        )
+    return codes, sectors, metadata
+
+
+def cache_identity(roster: tuple[list[str], dict[str, str], dict]) -> str:
+    """Key HK price caches by freshly validated source and dated reference."""
+    import json
+
+    codes, _, metadata = roster
+    payload = {
+        "symbols": sorted(codes),
+        "revision": metadata.get("constituent_revision_id"),
+        "source_sha256": metadata.get("constituent_sha256"),
+        "reference": sorted(REFERENCE_CODES),
+        "reference_effective": REFERENCE_EFFECTIVE_DATE,
+        "policy": 4,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:24]

@@ -100,7 +100,7 @@ def compare_alphas(
     Args:
         alpha_ids: The alpha ids to compare (>= 2 after de-duplication). Ids not
             found in the registry are reported under ``skipped``, not raised.
-        universe: Universe key (``csi300`` / ``sp500`` / ``btc-usdt``).
+        universe: Universe key (``csi300`` or ``sp500``).
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD`` window.
         sort: Ranking metric — one of :data:`SORT_KEYS` (default ``"ir"``).
             An unrecognised value falls back to ``"ir"``.

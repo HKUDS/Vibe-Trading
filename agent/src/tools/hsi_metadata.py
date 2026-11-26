@@ -6,7 +6,7 @@ import json
 from collections.abc import Collection, Mapping
 from typing import Any
 
-from backtest.loaders._symbol_utils import normalize_hk_symbol
+from src.tools.hsi_universe import normalize_hk_symbol
 
 
 def canonical_symbol_metadata(
@@ -43,9 +43,7 @@ def canonical_symbol_metadata(
             groups.setdefault(code, {})[str(alias)] = value
     result, conflicts = {}, {}
     for code, entries in groups.items():
-        fingerprints = {
-            json.dumps(value, sort_keys=True, default=str) for value in entries.values()
-        }
+        fingerprints = {json.dumps(value, sort_keys=True, default=str) for value in entries.values()}
         conflict = len(fingerprints) > 1
         chosen = preferred.get(code)
         if chosen in entries:
@@ -64,9 +62,7 @@ def canonical_symbol_metadata(
     return result, conflicts
 
 
-def provenance_summary(
-    codes: Collection[str], provenance: Mapping[str, Mapping[str, Any]]
-) -> dict[str, Any]:
+def provenance_summary(codes: Collection[str], provenance: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     """Disclose provider-native adjustment/volume bases without transforming bars.
 
     Args:
@@ -76,9 +72,7 @@ def provenance_summary(
     Returns:
         Adjustment/unit identities and explicit review warnings.
     """
-    adjustments = {
-        code: provenance.get(code, {}).get("adjustment") or "unknown" for code in codes
-    }
+    adjustments = {code: provenance.get(code, {}).get("adjustment") or "unknown" for code in codes}
     units = {code: provenance.get(code, {}).get("volume_unit") for code in codes}
     warnings = []
     if len(set(adjustments.values())) > 1:

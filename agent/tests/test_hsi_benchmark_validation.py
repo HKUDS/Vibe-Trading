@@ -11,24 +11,16 @@ from src.tools import hsi_universe as hsi
 
 def html_fixture(codes=None, *, revision=True):
     """Return a dated roster fixture without contacting Wikipedia."""
-    codes = hsi.FALLBACK_CODES if codes is None else codes
-    header = (
-        '<script>{"dateModified":"2026-10-01T18:43:56Z","wgRevisionId":123}</script>'
-        if revision
-        else ""
-    )
-    return header + pd.DataFrame(
-        {"Ticker": codes, "Sector": ["Finance"] * len(codes)}
-    ).to_html(index=False)
+    codes = hsi.REFERENCE_CODES if codes is None else codes
+    header = '<script>{"dateModified":"2026-10-01T18:43:56Z","wgRevisionId":123}</script>' if revision else ""
+    return header + pd.DataFrame({"Ticker": codes, "Sector": ["Finance"] * len(codes)}).to_html(index=False)
 
 
 def response_fixture(monkeypatch, html):
     monkeypatch.setattr(
         hsi.requests,
         "get",
-        lambda *args, **kwargs: SimpleNamespace(
-            text=html, raise_for_status=lambda: None
-        ),
+        lambda *args, **kwargs: SimpleNamespace(text=html, raise_for_status=lambda: None),
     )
 
 
@@ -54,7 +46,7 @@ def test_published_count_and_provenance_pass(monkeypatch):
     ],
 )
 def test_invalid_rosters_fail_without_substitution(monkeypatch, mutation, reason):
-    codes = list(hsi.FALLBACK_CODES)
+    codes = list(hsi.REFERENCE_CODES)
     if mutation == "short":
         codes = codes[:85]
     elif mutation == "duplicate":
@@ -67,11 +59,6 @@ def test_invalid_rosters_fail_without_substitution(monkeypatch, mutation, reason
     if mutation == "broken":
         html = "<h1>private page</h1>"
     response_fixture(monkeypatch, html)
-    monkeypatch.setattr(
-        hsi,
-        "fetch_constituents",
-        lambda: pytest.fail("operational fallback must not run"),
-    )
     with pytest.raises(hsi.HSIConstituentError, match=reason) as failure:
         hsi.fetch_benchmark_constituents()
     assert "<private" not in str(failure.value)
@@ -99,8 +86,67 @@ def test_transport_failures_share_nifty_sanitized_reasons(monkeypatch, exc, reas
 
 
 def test_benchmark_does_not_use_quote_fallback(monkeypatch):
-    response_fixture(monkeypatch, html_fixture(hsi.FALLBACK_CODES[:85]))
+    response_fixture(monkeypatch, html_fixture(hsi.REFERENCE_CODES[:85]))
     from src.tools import alpha_bench_tool
 
     with pytest.raises(hsi.HSIConstituentError, match="count_mismatch"):
         alpha_bench_tool._load_hsi_panel("2016-01-01", "2026-10-31")
+
+
+def test_same_count_different_members_is_blocked_before_price_fetch(monkeypatch):
+    from src import market_data
+    from src.tools import alpha_bench_tool
+
+    changed = list(hsi.REFERENCE_CODES)
+    changed[-1] = "0881.HK"
+    response_fixture(monkeypatch, html_fixture(changed))
+    monkeypatch.setattr(
+        market_data, "fetch_market_data", lambda **kw: pytest.fail("Rejected roster must not fetch prices")
+    )
+    with pytest.raises(hsi.HSIConstituentError, match="membership_mismatch") as failure:
+        alpha_bench_tool._load_hsi_panel("2026-11-02", "2026-11-24")
+    meta = failure.value.metadata
+    assert meta["constituent_observed_count"] == meta["constituent_reference_count"] == 95
+    assert meta["constituent_reference_matches"] is False and meta["degraded"] is True
+    assert meta["benchmark_eligible"] is False
+    assert meta["constituent_reference_missing_symbols"] == ["9999.HK"]
+    assert meta["constituent_reference_unexpected_symbols"] == ["0881.HK"]
+
+
+def test_invalid_roster_cannot_reuse_previously_valid_hsi_cache(monkeypatch, tmp_path):
+    from src.tools import alpha_bench_tool as bench
+
+    response_fixture(monkeypatch, html_fixture(hsi.REFERENCE_CODES[:-1] + ["0881.HK"]))
+    monkeypatch.setattr(bench, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        bench, "_read_pickle_cache", lambda *a: pytest.fail("Must reject before reading any price cache")
+    )
+    with pytest.raises(hsi.HSIConstituentError, match="membership_mismatch"):
+        bench._load_universe_panel("hsi", "2026-11-02/2026-11-24")
+
+
+def test_cache_identity_changes_with_revision_members_or_reference(monkeypatch):
+    roster = (list(hsi.REFERENCE_CODES), {}, {"constituent_revision_id": "1"})
+    first = hsi.cache_identity(roster)
+    assert first != hsi.cache_identity((roster[0], {}, {"constituent_revision_id": "2"}))
+    assert first != hsi.cache_identity((roster[0][:-1] + ["0881.HK"], {}, roster[2]))
+    monkeypatch.setattr(hsi, "REFERENCE_EFFECTIVE_DATE", "2026-12-07")
+    assert first != hsi.cache_identity(roster)
+
+
+def test_smoke_does_not_turn_reference_prices_into_benchmark_success(monkeypatch):
+    from src.tools import hsi_smoke
+
+    def blocked(*a, **kw):
+        raise hsi.HSIConstituentError(
+            "invalid constituent data", "count_mismatch", metadata={"constituent_observed_count": 85}
+        )
+
+    monkeypatch.setattr(hsi_smoke.bench, "_load_universe_panel", blocked)
+    monkeypatch.setattr(hsi_smoke.bench, "_load_hsi_panel", lambda *a, **kw: {"synthetic_price_fixture": True})
+    monkeypatch.setattr(hsi_smoke, "coverage", lambda panel: {"requested": 95, "fetched": 95})
+    report = hsi_smoke.run("2026-11-02", "2026-11-24", reference_diagnostic=True)
+    assert report["benchmark_usable"] is False
+    assert report["primary"]["prices"]["status"] == "not_attempted"
+    assert report["reference_price_diagnostic"]["status"] == "loaded"
+    assert report["reference_price_diagnostic"]["benchmark_eligible"] is False

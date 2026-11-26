@@ -62,8 +62,6 @@ _SP500_CONSTITUENT_SOURCE_DATE = "2026-05-17"
 # "unknown" bucket demeans as a single group, which is the global fallback
 # the alphas already have, but reported as industry neutralization.
 _SP500_MIN_SECTOR_COVERAGE = 0.9
-# Keep the HSI gate explicit so market-specific label policies do not couple.
-_HSI_MIN_SECTOR_COVERAGE = 0.9
 
 # Concurrent Tushare ``pro.daily`` fetches when building CSI300. Free tier
 # allows ~200 calls/min; 4 workers stays well under that with a 300-name list.
@@ -83,7 +81,6 @@ _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
     "hsi": "equity_hk",
-    "btc-usdt": "crypto",
 }
 
 
@@ -118,16 +115,22 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500`` | ``hsi`` | ``btc-usdt``.
+        universe: ``csi300`` | ``sp500`` | ``hsi``. ``btc-usdt`` is single-asset and
+            rejected before cache or data access.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
             ``~/.vibe-trading/cache/`` if the same universe+period was fetched
             before. Set to False to force a re-fetch.
 
     Raises:
-        ValueError: unknown universe or bad period.
+        ValueError: Unsupported universe or invalid period.
         RuntimeError: ``TUSHARE_TOKEN`` unset when csi300 is requested.
     """
+    if universe == "btc-usdt":
+        raise ValueError(
+            "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
+            "Supported bench universes: csi300, sp500."
+        )
     if universe not in _UNIVERSE_TAG:
         raise ValueError(
             f"universe {universe!r} not recognized; expected one of {sorted(_UNIVERSE_TAG)}"
@@ -135,11 +138,13 @@ def _load_universe_panel(
     start, end = _parse_period(period)
 
     cache_dir = get_runtime_root() / "cache"
-    # Old HSI cache entries predate canonical provenance and roster reconciliation.
-    # Keep other universes' cache names stable; this versions HSI metadata only.
-    # Prior HSI caches accepted an incomplete 85-name roster/frozen fallback.
-    # A new namespace prevents bypassing the strict published-count validation.
-    cache_universe = "hsi_v3" if universe == "hsi" else universe
+    cache_universe = universe
+    hsi_roster = None
+    if universe == "hsi":
+        from src.tools.hsi_universe import cache_identity
+        # Revalidate current membership even on a price-cache hit.
+        hsi_roster = _fetch_hsi_constituents()
+        cache_universe = f"hsi_v4_{cache_identity(hsi_roster)}"
     cache_path = cache_dir / f"{cache_universe}_{start}_{end}.pkl"
     if use_cache and cache_path.is_file():
         cached = _read_pickle_cache(cache_path)
@@ -152,9 +157,7 @@ def _load_universe_panel(
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
     elif universe == "hsi":
-        panel = _load_hsi_panel(start, end)
-    elif universe == "btc-usdt":
-        panel = _load_btc_panel(start, end)
+        panel = _load_hsi_panel(start, end, constituents=hsi_roster)
     else:  # pragma: no cover — guarded above
         raise ValueError(f"unhandled universe {universe!r}")
 
@@ -162,17 +165,6 @@ def _load_universe_panel(
         raise RuntimeError(
             f"universe {universe!r} produced empty panel for {start}..{end}; "
             "check network / token / date range"
-        )
-
-    # btc-usdt loader returns a single-column close (one instrument). Cross-
-    # sectional IC needs >= 2 instruments — short-circuit with a clean error
-    # that propagates to API (400) and CLI.
-    close_df = panel["close"]
-    if universe == "btc-usdt" and close_df.shape[1] < 2:
-        raise ValueError(
-            "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
-            "Use a multi-symbol crypto basket (e.g. multiple OKX pairs) for "
-            "meaningful results."
         )
 
     if use_cache:
@@ -493,6 +485,20 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     return panel
 
 
+def _fetch_hsi_constituents() -> tuple[list[str], dict[str, str], dict]:
+    """Fetch the strict revision-dated HSI benchmark roster without fallback."""
+    from src.tools.hsi_universe import fetch_benchmark_constituents
+    return fetch_benchmark_constituents()
+
+
+def _load_hsi_panel(start: str, end: str, *, constituents=None) -> dict:
+    """Use existing HK data loaders without changing market/execution engines."""
+    from src.tools.hsi_panel import load_hsi_panel
+    return load_hsi_panel(start,end,
+        constituents_loader=(lambda:constituents) if constituents is not None else _fetch_hsi_constituents,
+        wide_builder=_wide_from_fetched,retry=_retry,min_sector_coverage=_SP500_MIN_SECTOR_COVERAGE)
+
+
 def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     """SP500 panel via the shared per-symbol loader fallback. Adds vwap = (O+H+L+C)/4 fallback for alpha101.
 
@@ -632,42 +638,6 @@ def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("sp500 Wikipedia fetch failed: %s", exc)
     return [], {}
-
-
-def _fetch_hsi_constituents() -> tuple[list[str], dict[str, str], dict]:
-    """Fetch the strict benchmark roster, separate from operational quote fallback."""
-    from src.tools.hsi_universe import fetch_benchmark_constituents
-
-    return fetch_benchmark_constituents()
-
-
-def _load_hsi_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
-    """Load HSI through the isolated adapter and existing benchmark helpers."""
-    from src.tools.hsi_panel import load_hsi_panel
-
-    return load_hsi_panel(
-        start,
-        end,
-        constituents_loader=_fetch_hsi_constituents,
-        wide_builder=_wide_from_fetched,
-        retry=_retry,
-        min_sector_coverage=_HSI_MIN_SECTOR_COVERAGE,
-    )
-
-def _load_btc_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
-    """Single-instrument BTC-USDT panel via OKX. Adds vwap = typical price."""
-    from backtest.loaders.registry import resolve_loader
-
-    loader = resolve_loader("crypto")
-    fetched = _retry(lambda: loader.fetch(["BTC-USDT"], start, end)) or {}
-    panel = _wide_from_fetched(fetched, include_amount=False)
-    if all(k in panel for k in ("open", "high", "low", "close")):
-        panel["vwap"] = (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
-    panel["_meta"] = {
-        "universe": "btc-usdt",
-        "price_source": getattr(loader, "name", None) or "crypto",
-    }
-    return panel
 
 
 def _wide_from_fetched(
@@ -1518,7 +1488,11 @@ class AlphaBenchTool(BaseTool):
             },
             "universe": {
                 "type": "string",
-                "description": "csi300 | sp500 | hsi | btc-usdt (resolved via existing data tools).",
+                "description": (
+                    "csi300 | sp500 | hsi. btc-usdt is single-asset and is rejected before "
+                    "data loading. Alphas requiring fund:* SEC filings need sp500; "
+                    "elsewhere they are excluded."
+                ),
             },
             "period": {
                 "type": "string",

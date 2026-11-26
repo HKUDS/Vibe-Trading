@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-import requests
 
-from backtest.loaders._symbol_utils import normalize_hk_symbol
+from src.tools.hsi_universe import normalize_hk_symbol
 from src.tools import alpha_bench_tool as tool
 from src.tools import hsi_universe as hsi
+from backtest.loaders.registry import FALLBACK_CHAINS
 
 
 @pytest.mark.parametrize("value", ["700", "0700", "0700.HK", "00700.HK", "HK.00700"])
@@ -31,40 +31,6 @@ def test_parse_table_without_counting_aliases_twice():
     assert sectors == {code: "Finance" for code in codes}
 
 
-def test_revision_date_belongs_to_parsed_html(monkeypatch):
-    html = '<script>{"dateModified":"2026-10-01T18:43:56Z","wgRevisionId":123}</script>'
-    html += pd.DataFrame(
-        {
-            "Ticker": [f"SEHK: {code}" for code in range(1, 51)],
-            "Sector": ["Finance"] * 50,
-        }
-    ).to_html(index=False)
-    monkeypatch.setattr(
-        hsi.requests,
-        "get",
-        lambda *a, **kw: SimpleNamespace(text=html, raise_for_status=lambda: None),
-    )
-    codes, sectors, meta = hsi.fetch_constituents()
-    assert len(codes) == len(sectors) == 50
-    assert meta["constituent_source_date"] == "2026-10-01"
-    assert meta["constituent_revision_id"] == "123"
-    assert meta["degraded"] is True
-    assert meta["constituent_reference_matches"] is False
-
-
-def test_network_failure_has_full_dated_fallback(monkeypatch):
-    def fail(*args, **kwargs):
-        raise requests.Timeout()
-
-    monkeypatch.setattr(hsi.requests, "get", fail)
-    codes, sectors, meta = hsi.fetch_constituents()
-    assert len(codes) == len(set(codes)) == 95
-    assert "0700.HK" in codes
-    assert sectors == {}
-    assert meta["degraded"] is True
-    assert meta["constituent_source_date"] == hsi.FALLBACK_DATE
-
-
 def patch_panel(monkeypatch, *, sectors=None):
     codes = ["700", "0700", "0700.HK", "0005.HK", "9988.HK"]
     metadata = {
@@ -72,14 +38,10 @@ def patch_panel(monkeypatch, *, sectors=None):
         "constituent_source_date": "2026-10-01",
         "degraded": False,
     }
-    monkeypatch.setattr(
-        hsi, "fetch_benchmark_constituents", lambda: (codes, sectors or {}, metadata)
-    )
+    monkeypatch.setattr(hsi, "fetch_benchmark_constituents", lambda: (codes, sectors or {}, metadata))
     monkeypatch.setattr(
         "backtest.loaders.registry.resolve_loader",
-        lambda market: (
-            SimpleNamespace(name="tencent") if market == "hk_equity" else None
-        ),
+        lambda market: SimpleNamespace(name="tencent") if market == "hk_equity" else None,
     )
     frame = pd.DataFrame(
         {
@@ -95,7 +57,7 @@ def patch_panel(monkeypatch, *, sectors=None):
     def fetch(**kwargs):
         assert kwargs["codes"] == ["0700.HK", "0005.HK", "9988.HK"]
         assert kwargs["source"] == "tencent"
-        assert kwargs["max_fallback_attempts"] == 9
+        assert kwargs["max_fallback_attempts"] == len(FALLBACK_CHAINS["hk_equity"])
         assert kwargs["include_provenance"] and kwargs["as_frames"]
         return {
             "700.HK": frame,
@@ -128,9 +90,7 @@ def test_panel_metadata_missing_names_and_currency(monkeypatch):
     assert panel["_meta"]["volume_units"]["0700.HK"] == "shares"
     assert "700.HK" in panel["_meta"]["raw_price_provenance"]
     assert "sector" not in panel
-    pd.testing.assert_frame_equal(
-        panel["vwap"], sum(panel[k] for k in ("open", "high", "low", "close")) / 4
-    )
+    pd.testing.assert_frame_equal(panel["vwap"], sum(panel[k] for k in ("open", "high", "low", "close")) / 4)
 
 
 @pytest.mark.parametrize(
@@ -150,9 +110,7 @@ def test_cache_keeps_hsi_metadata_without_refetch(monkeypatch, tmp_path):
     patch_panel(monkeypatch)
     monkeypatch.setattr(tool, "get_runtime_root", lambda: tmp_path)
     first = tool._load_universe_panel("hsi", "2024-01-01/2024-01-02")
-    monkeypatch.setattr(
-        tool, "_load_hsi_panel", lambda *a: pytest.fail("cache was not used")
-    )
+    monkeypatch.setattr(tool, "_load_hsi_panel", lambda *a: pytest.fail("cache was not used"))
     second = tool._load_universe_panel("hsi", "2024-01-01/2024-01-02")
     assert second["_meta"] == first["_meta"]
 
@@ -161,10 +119,7 @@ def test_api_cli_universe_wiring():
     from src.api.alpha_routes import BenchRequest, CompareRequest
     from src.factors.cli_handlers import _LIST_UNIVERSE_ALIASES, _UNIVERSE_CHOICES
 
-    assert (
-        BenchRequest(zoo="alpha101", universe="hsi", period="2024-2024").universe
-        == "hsi"
-    )
+    assert BenchRequest(zoo="alpha101", universe="hsi", period="2024-2024").universe == "hsi"
     assert (
         CompareRequest(
             alpha_ids=["alpha101_001", "alpha101_002"],
@@ -177,9 +132,7 @@ def test_api_cli_universe_wiring():
     assert _LIST_UNIVERSE_ALIASES["hsi"] == "equity_hk"
 
 
-def test_legacy_hsi_cache_cannot_hide_reconciliation_and_provenance_fix(
-    monkeypatch, tmp_path
-):
+def test_legacy_hsi_cache_cannot_hide_reconciliation_and_provenance_fix(monkeypatch, tmp_path):
     patch_panel(monkeypatch)
     monkeypatch.setattr(tool, "get_runtime_root", lambda: tmp_path)
     cache = tmp_path / "cache"
@@ -189,9 +142,9 @@ def test_legacy_hsi_cache_cannot_hide_reconciliation_and_provenance_fix(
     }
     tool._write_pickle_cache(cache, cache / "hsi_2024-01-01_2024-01-02.pkl", legacy)
     panel = tool._load_universe_panel("hsi", "2024-01-01/2024-01-02")
-    assert panel["_meta"]["hsi_metadata_version"] == 3
+    assert panel["_meta"]["hsi_metadata_version"] == 4
     assert "legacy" not in panel["_meta"]
-    assert (cache / "hsi_v3_2024-01-01_2024-01-02.pkl").is_file()
+    assert list(cache.glob("hsi_v4_*_2024-01-01_2024-01-02.pkl"))
 
 
 def test_observed_panel_gaps_are_not_filled_by_hsi_layer(monkeypatch):
@@ -202,9 +155,7 @@ def test_observed_panel_gaps_are_not_filled_by_hsi_layer(monkeypatch):
     assert panel["_meta"]["missing_observations"]["volume"] == 2
     assert panel["_meta"]["universe_tag"] == "equity_hk"
     assert panel["_meta"]["point_in_time_membership"] is False
-    assert (
-        "shared upstream adapters may already" in panel["_meta"]["missing_data_policy"]
-    )
+    assert "shared upstream adapters may already" in panel["_meta"]["missing_data_policy"]
 
 
 def test_equal_alias_frames_deduplicate_but_conflicting_metadata_is_visible(
@@ -263,14 +214,10 @@ def test_ambiguous_provenance_is_unknown_and_all_alias_diagnostics_survive():
             "volume_unit": "shares",
         },
     }
-    canonical, conflicts = canonical_symbol_metadata(
-        raw, ["0700.HK"], {"0700.HK": "00700.HK"}
-    )
+    canonical, conflicts = canonical_symbol_metadata(raw, ["0700.HK"], {"0700.HK": "00700.HK"})
     assert canonical["0700.HK"].get("source") is None
     assert conflicts["0700.HK"] == raw
-    assert provenance_summary(["0700.HK"], canonical)["price_adjustments"] == {
-        "0700.HK": "unknown"
-    }
+    assert provenance_summary(["0700.HK"], canonical)["price_adjustments"] == {"0700.HK": "unknown"}
     diagnostics, _ = canonical_symbol_metadata(
         {"700": {"attempts": ["first"]}, "0700.HK": {"attempts": ["second"]}},
         ["0700.HK"],
@@ -284,18 +231,14 @@ def test_real_hsi_panel_uses_hk_identity_without_claiming_pit_data(monkeypatch):
     from src.factors.data_availability import build_availability_contract
 
     patch_panel(monkeypatch)
-    contract = build_availability_contract(
-        tool._load_hsi_panel("2024-01-01", "2024-01-02"), universe="hsi"
-    )
+    contract = build_availability_contract(tool._load_hsi_panel("2024-01-01", "2024-01-02"), universe="hsi")
     assert (
         contract["venue"],
         contract["currency"],
         contract["timezone"],
         contract["calendar"],
     ) == ("XHKG", "HKD", "Asia/Hong_Kong", "XHKG")
-    membership = next(
-        item for item in contract["fields"] if item["field"] == "universe:membership"
-    )
+    membership = next(item for item in contract["fields"] if item["field"] == "universe:membership")
     assert membership["status"] == "unknown" and membership["pit_safe"] is False
 
 
@@ -316,3 +259,34 @@ def test_fewer_than_two_usable_prices_fail_clearly(monkeypatch, available):
     monkeypatch.setattr(market_data, "fetch_market_data", insufficient)
     with pytest.raises(RuntimeError, match="HSI prices unavailable: fewer than two"):
         tool._load_hsi_panel("2024-01-01", "2024-01-02")
+
+
+@pytest.mark.parametrize("omit_last", [False, True])
+def test_gateway_batches_preserve_per_symbol_metadata_and_partial_coverage(monkeypatch, omit_last):
+    from src import market_data
+
+    codes = hsi.REFERENCE_CODES[:7]
+    monkeypatch.setattr(hsi, "fetch_benchmark_constituents", lambda: (codes, {}, {"degraded": False}))
+    monkeypatch.setattr("backtest.loaders.registry.resolve_loader", lambda market: SimpleNamespace(name="tencent"))
+    calls = []
+    frame = pd.DataFrame(
+        {field: [1.0, 2.0] for field in ["open", "high", "low", "close", "volume"]},
+        index=pd.date_range("2024-01-01", periods=2),
+    )
+
+    def fetch(**kwargs):
+        calls.append(kwargs["codes"])
+        actual = [c for c in kwargs["codes"] if not omit_last or c != codes[-1]]
+        return {
+            **{c: frame for c in actual},
+            "_provenance": {c: {"source": "tencent", "adjustment": "raw", "volume_unit": "shares"} for c in actual},
+        }
+
+    monkeypatch.setattr(market_data, "fetch_market_data", fetch)
+    panel = tool._load_hsi_panel("2024-01-01", "2024-01-02")
+    assert calls == [codes[:5], codes[5:]]
+    meta = panel["_meta"]
+    assert meta["fetched_instruments"] == 7 - int(omit_last)
+    assert meta["degraded"] == omit_last
+    assert len(meta["price_provenance"]) == 7 - int(omit_last)
+    assert meta["missing_instruments"] == ([codes[-1]] if omit_last else [])

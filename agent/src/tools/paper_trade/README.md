@@ -195,6 +195,43 @@ a limit order waits while its side is blocked by a price limit, while a blocked
 market order is canceled immediately. Zero-volume bars cannot fill. Corporate
 actions remain fail-closed.
 
+## Caller cancellation (pt-v1.4)
+
+The stateless 5m step can replay a caller's cancellation plan alongside its orders. A non-null `orders[].order_id` or `cancel_schedule` selects pt-v1.4. Missing or null fields keep v1.1/v1.2/v1.3 behavior; an explicit empty schedule selects v1.4 without requesting a cancellation. This is single-day, `market="cn_a"`, `interval="5m"`, orders-mode research only. Saved accounts and strategy mode do not accept this extension.
+
+For example, a complete step payload can name an order and stop its future matching at 09:40:
+
+```json
+{
+  "account_id": "research-example",
+  "market": "cn_a",
+  "account_state": {"cash": 100000, "positions": []},
+  "from_date": "2026-10-20",
+  "to_date": "2026-10-20",
+  "interval": "5m",
+  "fill_model": "volume_share",
+  "order_volume_ratio": 0.1,
+  "orders": [
+    {"order_id": "entry-a", "symbol": "600519.SH", "side": "buy", "qty": 300, "limit": 10}
+  ],
+  "cancel_schedule": [
+    {"order_id": "entry-a", "at": "2026-10-20T09:40:00+08:00"}
+  ]
+}
+```
+
+The prices and date above are illustrative, not a current quote or a recommendation. The usual market-data readiness and provider limits still apply. The same payload works through the Agent/MCP tool, `POST /api/paper-trade/step`, and `vibe-trading paper step`.
+
+IDs are opaque, valid-Unicode strings of 1 to 128 characters; unpaired surrogate escapes are rejected before hashing or transport. Without an explicit ID, the existing lifecycle assigns `pt-<index>` in submission order. Duplicate IDs, including collisions between explicit and positional IDs, and unknown cancel targets are rejected before a provider is resolved or fetched. IDs belong to this batch; this is not a persistent platform order registry.
+
+`at` must use the request date and the exact `YYYY-MM-DDTHH:MM:00+08:00` spelling. Accepted times lie on the five-minute grid from 09:30 through 11:30 or 13:00 through 15:00. Lunch, another date, an unspecified timezone, off-grid seconds and unknown schedule fields are invalid. Events execute chronologically; ties retain schedule input order, independently of order submission order. A missing or zero-volume bar does not erase a scheduled cancellation.
+
+**Timing is a discrete model convention:** cancellation runs before matching at the same bar-end label. A 09:40 request prevents the model's 09:40 match; it does not establish that a real venue could cancel a fill already executed during the 09:35 to 09:40 interval. No intrabar queue, latency or exchange acknowledgement is simulated. The existing `request_cancel` state stops further matching as `pending_cancel`; `settle_day` confirms it as `canceled` at session end. Already executed shares and their fees remain booked. Repeated pending requests are idempotent. A request against `held`, `rejected` or already `canceled` returns a rejected cancel receipt without reversing the ledger or relabeling an existing price-limit or volume-cap cancel.
+
+A v1.4 result always includes the existing seven-field `order_states` plus `cancel_results`. Each cancel receipt has `order_id`, `at`, `status`, `filled`, `remaining` and `reason`, describing the state at request time; final states are reported separately after settlement. `fills`, `rejected_orders` and `canceled_orders` also carry `order_id` so equal-symbol orders remain distinguishable. Caller-canceled residuals use the v1.4-only `canceled_by_caller` token. No frozen rejection or session-event vocabulary changes, and earlier result versions do not gain these keys. The new contract is packaged in [paper_trade_step-v1.4.json](paper_trade_step-v1.4.json) with a byte-identical published mirror.
+
+The new model covers the supplied schedule in both `received_state_hash` and `engine_fingerprint`; an ID-only request covers an empty schedule. The state hash still excludes `orders`, including their IDs. It is state/model evidence, not a digest of every trading instruction. Error envelopes use the same schedule parser and omit the hash when its coverage is not computable. The old schemas, fixtures, fee defaults and `RULES_VERSION` remain unchanged.
+
 ## JoinQuant parity
 
 Reference: the official JoinQuant API guide,
@@ -230,8 +267,7 @@ served session volume cannot fill is returned immediately instead of resting.
 
 ### Compatibility and rule versioning
 
-The committed v1.1/v1.2 JSON contracts and fixtures are byte-identical, and a
-1d call that omits the new fields is byte-identical. The corrected full/partial
+The committed v1.1/v1.2/v1.3 JSON contracts and fixtures remain byte-identical. Omitting the v1.4 inputs retains the earlier output shapes and hashes. The corrected full/partial
 statuses and 5m limit-fill prices are `pt-rules-v2`; the immediate price-limit
 market cancel is `pt-rules-v3`; shared-timeline matching is `pt-rules-v4`; and
 the opt-in volume-share policy is `pt-rules-v5`. Each version has a distinct
@@ -245,12 +281,9 @@ Four platform gaps remain, plus one disclosed fee divergence:
 
 1. **Slippage.** No spread, market impact, latency or queue-position model; a
    fill uses the bar reference or the 委托价.
-2. **Cancel API.** A caller cannot submit a cancel request; cancels are
-   engine-driven (day end or volume cap).
-3. **Platform-generated order IDs.** IDs are `pt-0`, `pt-1`, ...; JoinQuant uses
-   platform order IDs.
-4. **`pending_cancel`.** JoinQuant exposes the state between a cancel request
-   and its confirmation; this engine never emits or exposes it.
+2. **Interactive cancel/replace.** v1.4 accepts a predeclared cancel schedule, not new requests during a running session. There is no replace, TIF or interactive cancel API.
+3. **Platform-generated order IDs.** Default IDs remain `pt-0`, `pt-1`, ...; v1.4 also honours caller IDs. Neither is a persistent platform-wide order registry.
+4. **Venue `pending_cancel`.** v1.4 exposes the model's pending state in `cancel_results` and confirms it through day-end settlement. It does not model a real venue acknowledgement or an observable live pending interval.
 
 Disclosed fee divergence: the cited PDF charges one commission per completed
 order, while this engine books and charges every fill separately, so a two-fill
