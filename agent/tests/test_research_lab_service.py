@@ -156,6 +156,39 @@ def test_cli_parameter_grid_and_replay_case_listing(capsys):
     assert len(json.loads(capsys.readouterr().out)["cases"]) >= 21
 
 
+@pytest.mark.parametrize(
+    ("raw_content", "expected_fragment"),
+    [
+        (json.dumps([{"case_id": "research.example"}]), "binding[0].run_dir"),
+        (json.dumps([{"case_id": "research.example", "run_dir": "/tmp/run"}, None]), "binding[1]"),
+        (json.dumps({"case_id": "research.example", "run_dir": "/tmp/run"}), "JSON array"),
+        ("{not valid json", ""),
+    ],
+)
+def test_cli_replay_bindings_malformed_input_emits_json_error(tmp_path, capsys, raw_content, expected_fragment):
+    from src.research_lab.cli import dispatch
+    import argparse
+
+    bindings_file = tmp_path / "bindings.json"
+    bindings_file.write_text(raw_content, encoding="utf-8")
+    code = dispatch(
+        argparse.Namespace(
+            lab_command="replay",
+            bindings=bindings_file,
+            run_dir=None,
+            case_ids=None,
+            trace_dir=None,
+            json=True,
+        )
+    )
+    assert code == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert isinstance(payload["error"], str) and payload["error"]
+    if expected_fragment:
+        assert expected_fragment in payload["error"]
+
+
 def test_catalog_does_not_read_an_escaping_strategy(isolated):
     outside = isolated / "outside.py"
     outside.write_text("class SignalEngine:\n    def __init__(self, secret=123):pass\n")

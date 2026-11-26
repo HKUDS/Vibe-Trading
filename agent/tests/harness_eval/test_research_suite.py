@@ -110,3 +110,43 @@ def test_prompt_is_not_rewritten_to_match_case_and_bindings_keep_distinct_runs(t
 def test_invalid_numeric_contracts_fail_before_replay(entry):
     with pytest.raises(ValueError):
         validate_measurements([entry])
+
+
+@pytest.mark.parametrize(
+    ("bindings", "expected_fragment"),
+    [
+        ({}, "JSON array"),
+        ({"case_id": "x", "run_dir": "/tmp/run"}, "JSON array"),
+        ("not-a-list", "JSON array"),
+        (123, "JSON array"),
+        ([], "1 to 100"),
+        ([{"case_id": "x", "run_dir": "/tmp/run"}] * 101, "1 to 100"),
+        ([None], "binding[0]"),
+        ([{"case_id": "x", "run_dir": "/tmp/run"}, None], "binding[1]"),
+        ([{"case_id": "x"}], "binding[0].run_dir"),
+        ([{"run_dir": "/tmp/run"}], "binding[0].case_id"),
+        ([{"case_id": "", "run_dir": "/tmp/run"}], "binding[0].case_id"),
+        ([{"case_id": 123, "run_dir": "/tmp/run"}], "binding[0].case_id"),
+        ([{"case_id": "x", "run_dir": "   "}], "binding[0].run_dir"),
+        ([{"case_id": "x", "run_dir": 123}], "binding[0].run_dir"),
+        ([{"case_id": "x", "run_dir": "/tmp/run", "trace_dir": 123}], "binding[0].trace_dir"),
+        ([{"case_id": "x", "run_dir": "/tmp/run", "trace_dir": ""}], "binding[0].trace_dir"),
+    ],
+)
+def test_replay_suite_rejects_malformed_bindings(bindings, expected_fragment):
+    with pytest.raises(ValueError, match=expected_fragment.replace("[", r"\[").replace("]", r"\]")):
+        replay_suite(bindings)
+
+
+def test_replay_suite_validates_all_bindings_before_running(monkeypatch):
+    called = False
+
+    def _fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("replay_run should not be invoked for invalid bindings")
+
+    monkeypatch.setattr("evals.harness.suite.replay_run", _fail_if_called)
+    with pytest.raises(ValueError, match=r"binding\[1\]\.run_dir"):
+        replay_suite([{"case_id": "x", "run_dir": "/tmp/run"}, {"case_id": "y"}])
+    assert not called

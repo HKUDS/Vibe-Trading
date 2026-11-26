@@ -66,16 +66,31 @@ def replay_run(run_dir: Path, case_ids: list[str] | None = None, trace_dir: Path
     }
 
 
+def validate_bindings(bindings) -> list[tuple[Path, str, Path | None]]:
+    """Validate and normalize batch replay bindings before executing any case."""
+    if not isinstance(bindings, list) or not bindings or len(bindings) > 100:
+        raise ValueError("replay bindings must be a JSON array of 1 to 100 case/run pairs")
+    normalized: list[tuple[Path, str, Path | None]] = []
+    for index, entry in enumerate(bindings):
+        if not isinstance(entry, dict):
+            raise ValueError(f"replay binding[{index}] must be an object")
+        case_id = entry.get("case_id")
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError(f"replay binding[{index}].case_id must be a non-empty string")
+        run_dir = entry.get("run_dir")
+        if not isinstance(run_dir, (str, Path)) or not str(run_dir).strip():
+            raise ValueError(f"replay binding[{index}].run_dir must be a non-empty path string")
+        trace_dir = entry.get("trace_dir")
+        if trace_dir is not None and (not isinstance(trace_dir, (str, Path)) or not str(trace_dir).strip()):
+            raise ValueError(f"replay binding[{index}].trace_dir must be a non-empty path string when provided")
+        normalized.append((Path(run_dir), case_id, Path(trace_dir) if trace_dir is not None else None))
+    return normalized
+
+
 def replay_suite(bindings: list[dict]) -> dict:
     """Replay each case against its own stored run without rewriting prompts."""
-    if not bindings or len(bindings) > 100:
-        raise ValueError("replay bindings must contain 1 to 100 case/run pairs")
-    results = []
-    for entry in bindings:
-        result = replay_run(
-            Path(entry["run_dir"]), [entry["case_id"]], Path(entry["trace_dir"]) if entry.get("trace_dir") else None
-        )
-        results.append(result)
+    normalized = validate_bindings(bindings)
+    results = [replay_run(run_dir, [case_id], trace_dir) for run_dir, case_id, trace_dir in normalized]
     return {
         "kind": "replay_suite",
         "results": results,
