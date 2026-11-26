@@ -187,8 +187,8 @@ def test_run_swarm_charges_usage_after_returning_run_id(tmp_path, monkeypatch):
     monkeypatch.setattr(swarm_tool, "_max_wait_seconds", lambda: 0)
     monkeypatch.setattr(runtime.SwarmRuntime, "_prefetch_grounding_data", lambda *_: None)
 
-    def preset(name, variables):
-        run = build_preset(name, variables)
+    def preset(name, variables, **options):
+        run = build_preset(name, variables, **options)
         run.agents = [SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="Analyze.", max_retries=0)]
         run.tasks = [
             SwarmTask(id=task, agent_id="analyst", prompt_template="Evaluate momentum.")
