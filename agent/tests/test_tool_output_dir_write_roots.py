@@ -244,3 +244,20 @@ def test_swarm_node_output_dir_stays_in_its_workspace(tmp_path, monkeypatch):
     for call_id in ("abs", "up"):
         assert results[call_id]["error_code"] == "outside_write_roots", results[call_id]
     assert list(outside.iterdir()) == [] and list(cwd.iterdir()) == []
+
+
+def test_factor_analysis_inputs_resolve_in_the_run_dir(places):
+    _csvs(places.run_dir)
+    result = json.loads(_registry().get("factor_analysis").execute(
+        factor_csv="f.csv", return_csv="r.csv", output_dir="factor", run_dir=str(places.run_dir),
+    ))
+    assert result["status"] == "ok", result
+
+
+def test_factor_analysis_refuses_inputs_outside_the_readable_roots(places):
+    factor, returns = _csvs(places.outside)
+    result = json.loads(_registry().get("factor_analysis").execute(
+        factor_csv=factor, return_csv=returns, output_dir="factor", run_dir=str(places.run_dir),
+    ))
+    assert result["status"] == "error" and result["error_code"] == "outside_readable_roots", result
+    assert not (places.run_dir / "factor").exists()

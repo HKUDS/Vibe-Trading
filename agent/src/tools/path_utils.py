@@ -314,6 +314,7 @@ def resolve_safe_path(
 
 
 OUTSIDE_WRITE_ROOTS = "outside_write_roots"
+OUTSIDE_READABLE_ROOTS = "outside_readable_roots"
 
 
 def resolve_output_dir(
