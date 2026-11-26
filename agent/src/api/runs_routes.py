@@ -629,7 +629,10 @@ def _build_positions_sector_map(run_dir: Path, run_id: str, *, refresh: bool) ->
 
 def _run_response_payload(response: Any) -> Dict[str, Any]:
     """Return a JSON-ready payload for opt-in run response variants."""
-    return response.model_dump(mode="json")
+    # model_dump(mode="json") keeps an infinite metric (calc_metrics reports
+    # one for an explosive annualized return), which JSONResponse rejects.
+    # The JSON encoder writes it as null, as the default response does.
+    return json.loads(response.model_dump_json())
 
 
 def _render_run_result(
