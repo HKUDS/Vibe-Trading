@@ -453,3 +453,37 @@ def test_server_directory_file_does_not_satisfy_a_relative_target(tmp_path, monk
     assert result.status == "incomplete"
     assert "research.md" in result.error
 
+
+def test_resume_keeps_a_target_written_before_cancellation(tmp_path, monkeypatch):
+    cancel = threading.Event()
+
+    def cancelled(kwargs):
+        cancel.set()
+        return LLMResponse(content="Report drafted")
+
+    registry = TargetRegistry()
+    first = Provider([
+        LLMResponse(tool_calls=[ToolCallRequest("write", "write_file", {"path": "research.md", "content": "x"})]),
+        cancelled,
+    ])
+    prompt = "Write research.md"
+    interrupted = run(tmp_path, registry, monkeypatch, first, prompt=prompt, cancel_event=cancel)
+    assert interrupted.status == "cancelled", interrupted.error
+    second = Provider([LLMResponse(content="Report ready in research.md", finish_reason="stop")])
+    result = run(tmp_path, registry, monkeypatch, second, prompt=prompt, resume=True)
+    assert result.status == "completed", result.error
+    assert registry.calls == 1
+
+
+def test_resume_still_requires_a_target_older_than_the_first_attempt(tmp_path, monkeypatch):
+    workspace = agent_artifact_dir(tmp_path, "analyst", "task")
+    workspace.mkdir(parents=True)
+    stale = workspace / "research.md"
+    stale.write_text("old report")
+    os.utime(stale, (1, 1))
+    prompt = "Write research.md"
+    assert run(tmp_path, Registry(), monkeypatch, Provider([fail_stream]), prompt=prompt).status == "failed"
+    second = Provider([LLMResponse(content="Report ready in research.md", finish_reason="stop")])
+    result = run(tmp_path, Registry(), monkeypatch, second, prompt=prompt, resume=True)
+    assert result.status == "incomplete"
+    assert "research.md" in result.error
