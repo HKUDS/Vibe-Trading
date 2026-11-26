@@ -10,13 +10,13 @@ from pathlib import Path
 from src.config.accessor import get_env_config
 from src.product.result_artifacts import _write_original, save_result_parts
 from src.session.thread import ThreadLog
-from src.swarm.artifacts import agent_artifact_dir, node_thread
+from src.swarm.artifacts import agent_artifact_dir, collect_artifacts, node_thread
 from src.tools.path_utils import is_runtime_path, safe_path
-from src.tools.redaction import redact_text, redact_tool_result
+from src.tools.redaction import redact_payload, redact_text, redact_tool_result
 
 
-def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str, str | None]]:
-    """Yield recorded calls and their results, including from pre-cutover runs."""
+def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str, str | None, bool]]:
+    """Yield recorded calls, their results and whether each succeeded, including from pre-cutover runs."""
     if thread_path.is_file():
         calls = {}
         for item in ThreadLog(thread_path).read():
@@ -26,8 +26,9 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
             elif item.type == "tool_result":
                 call_id = item.get("tool_call_id", "")
                 call = calls.pop((item.turn_id, call_id), None)
-                if call is not None and item.get("status") == "ok":
-                    yield call, call_id, item.get("name", "unknown"), item.get("content", ""), item.turn_id
+                if call is not None:
+                    yield (call, call_id, item.get("name", "unknown"), item.get("content", ""), item.turn_id,
+                           item.get("status") == "ok")
         return
 
     messages_path = safe_path("messages.json", source)
@@ -40,16 +41,33 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
                 call_id = message.get("tool_call_id", "")
                 yield (
                     calls.get(call_id, {}), call_id, message.get("name", "unknown"),
-                    message.get("content", ""), None,
+                    message.get("content", ""), None, True,
                 )
 
 
-def _observations(source: Path, task_id: str, errors: list[str], thread_path: Path | None = None) -> list[tuple[dict, str]]:
+def _in_workspace(recorded: str, agent_id: str, task_id: str) -> str | None:
+    """Return a recorded absolute path relative to the producer workspace, whichever run directory it names."""
+    marker = f"/artifacts/{agent_id}/{task_id}/"
+    posix = Path(recorded).as_posix()
+    return posix[posix.rindex(marker) + len(marker):] if marker in posix else None
+
+
+def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
+                  thread_path: Path | None = None) -> list[tuple[dict, str]]:
     """Read recorded observations, retaining their original producing role."""
     found = []
     inherited = safe_path("upstream/index.json", source)
     if inherited.is_file():
-        for entry in json.loads(inherited.read_text()).get("observations", []):
+        # A bad inherited index costs only the inherited part, never this task's own observations.
+        try:
+            listed = json.loads(inherited.read_text())
+            listed = listed.get("observations", []) if isinstance(listed, dict) else None
+            if not isinstance(listed, list):
+                raise ValueError("not an evidence index")
+        except (OSError, ValueError) as exc:
+            errors.append(f"{task_id} inherited index unavailable: {exc}")
+            listed = []
+        for entry in listed:
             try:
                 path = safe_path(entry["path"], source)
                 raw = path.read_text()
@@ -60,11 +78,13 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
                 errors.append(f"{task_id} inherited observation unavailable: {exc}")
     thread_path = thread_path or safe_path("thread.jsonl", source)
     canonical = thread_path.is_file()
-    for call, call_id, name, raw, turn_id in _recorded_results(source, thread_path):
+    for call, call_id, name, raw, turn_id, ok in _recorded_results(source, thread_path):
         tool = call.get("name", name)
-        # Methodology/file plumbing is already in the transcript; it is not a
-        # fresh observation. This selection never decides whether a task passes.
-        if tool in {"load_skill", "read_file", "write_file", "edit_file", "bash"}:
+        # Methodology/file plumbing is already in the transcript, and written files
+        # travel as files; neither is a fresh observation. A shell command is kept:
+        # its command and output are how a calculation was done. This selection
+        # never decides whether a task passes.
+        if not ok or tool in {"load_skill", "read_file", "write_file", "edit_file"}:
             continue
         args = call.get("arguments", "{}")
         if isinstance(args, str):
@@ -82,12 +102,13 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
             result = json.loads(raw)
         except ValueError:
             continue
-        if not isinstance(result, dict):
+        if not isinstance(result, dict) or (tool == "bash" and result.get("status") != "ok"):
             continue
         if "_result_file" in result:
             ref = result["_result_file"]
-            # Resumed logs can still name the old workspace. Resolve by content
-            # hash inside the copied source task, never by trusting that path.
+            # Resumed logs can still name the old workspace. Resolve inside the copied
+            # source task, at the tool's own run_dir (a workspace subdirectory) when the
+            # receipt names one, and accept only the content hash it recorded.
             try:
                 if not isinstance(ref, dict):
                     raise ValueError("Invalid observation receipt")
@@ -97,6 +118,9 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
                 ):
                     raise ValueError("Invalid observation digest")
                 relative = f"tool-results/{digest}/result.json"
+                recorded = _in_workspace(str(ref.get("path") or ""), agent_id, task_id)
+                if recorded is not None and Path(recorded).parts[-3:] == ("tool-results", digest, "result.json"):
+                    relative = recorded
                 path = safe_path(relative, source)
                 if canonical and not path.is_file():
                     path = safe_path(f"workspace/{relative}", source)
@@ -107,9 +131,10 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
                 errors.append(f"{task_id}/{call_id} observation unavailable: {exc}")
                 continue
         entry = {"source_task": task_id, "tool": tool, "call_id": call_id,
-                 "request": {key: args[key] for key in
-                             ("codes", "symbol", "code", "start_date", "end_date", "module", "function")
-                             if key in args}}
+                 "request": redact_payload({key: args[key] for key in
+                                            ("codes", "symbol", "code", "start_date", "end_date", "module",
+                                             "function", "command")
+                                            if key in args})}
         if turn_id is not None:
             entry["turn_id"] = turn_id
         found.append((entry, raw))
@@ -117,11 +142,11 @@ def _observations(source: Path, task_id: str, errors: list[str], thread_path: Pa
 
 
 def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str,
-                    errors: list[str]) -> dict[str, tuple[str, str]]:
-    """Map each workspace file a node's successful write or shell call produced to that call."""
-    marker = f"/artifacts/{agent_id}/{task_id}/"
-    produced: dict[str, tuple[str, str]] = {}
-    for call, call_id, name, raw, _ in _recorded_results(source, thread_path):
+                    errors: list[str]) -> dict[str, tuple[str | None, str | None]]:
+    """Map each file a node's tools left in its workspace to the successful call that wrote it, if recorded."""
+    produced: dict[str, tuple[str | None, str | None]] = {}
+    failed: set[str] = set()
+    for call, call_id, name, raw, _, ok in _recorded_results(source, thread_path):
         tool = call.get("name", name)
         if tool not in {"write_file", "edit_file", "bash"}:
             continue
@@ -129,16 +154,20 @@ def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str
             result = json.loads(raw) if isinstance(raw, str) else None
         except ValueError:
             continue
-        if not isinstance(result, dict) or result.get("status") != "ok":
+        if not isinstance(result, dict):
+            continue
+        if not ok or result.get("status") != "ok":
+            if tool == "bash":
+                failed.update(ref.get("path") for ref in result.get("artifacts") or [] if isinstance(ref, dict))
             continue
         if tool == "bash":
             paths = [ref.get("path") for ref in result.get("artifacts") or [] if isinstance(ref, dict)]
         else:
             # Recorded paths are absolute and may name the run directory a resumed run came from.
             written = str(result.get("path") or "")
-            posix = Path(written).as_posix()
-            if marker in posix:
-                paths = [posix[posix.rindex(marker) + len(marker):]]
+            relative = _in_workspace(written, agent_id, task_id)
+            if relative is not None:
+                paths = [relative]
             elif written and not Path(written).is_absolute():
                 paths = [written]
             else:
@@ -147,6 +176,12 @@ def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str
         for relative in paths:
             if isinstance(relative, str) and relative and not is_runtime_path(relative):
                 produced[relative] = (tool, call_id)
+    # Other tools (backtests, factor analysis, exports) name their outputs in no common
+    # receipt, so every other file in the producer's own workspace is its output too,
+    # except partial output only a failed command reported.
+    for relative in collect_artifacts(source, source):
+        if relative not in failed and not is_runtime_path(relative):
+            produced.setdefault(relative, (None, None))
     return produced
 
 
@@ -232,7 +267,7 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
                     files.append({"source_task": task_id, "tool": tool, "call_id": call_id,
                                   "original_path": relative, "path": str(path.relative_to(root)),
                                   "sha256": digest, "size": len(content), "redacted": content != original})
-            observations = _observations(source, task_id, errors, thread if thread.is_file() else None)
+            observations = _observations(source, source_task.agent_id, task_id, errors, thread if thread.is_file() else None)
             for entry, raw in observations:
                 raw = redact_tool_result(raw)
                 digest = hashlib.sha256(raw.encode()).hexdigest()
@@ -265,8 +300,9 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
         "by quantlib_call __data_ref__. These are inherited observations, not fresh "
         "fetches by you. Independent analysis can reuse them; describe what you "
         "actually recalculated or newly retrieved. Original dates and assumptions "
-        "still apply. Missing evidence does not invalidate the available report.\n"
+        "still apply. A bash entry's request.command is the command its recorded output "
+        "came from. Missing evidence does not invalidate the available report.\n"
         f"{len(files)} files produced by upstream tasks are copied under upstream/files/; the "
         "\"files\" entries in upstream/index.json give each one's source task, original path, "
-        "sha256 and size."
+        "sha256 and size, and the writing tool call when one recorded it."
     )

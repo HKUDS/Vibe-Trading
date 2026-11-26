@@ -7,6 +7,8 @@ import json
 import shutil
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from src.config.accessor import get_env_config, reset_env_config
@@ -40,14 +42,14 @@ def _policy():
     return ToolPolicy.from_config(get_env_config())
 
 
-def _produce(root: Path, monkeypatch, *calls, agent="analyst", task="p"):
+def _produce(root: Path, monkeypatch, *calls, agent="analyst", task="p", tools=("write_file", "edit_file", "bash")):
     """Run a real producer node whose model issues the given tool calls, then answers."""
     answer = LLMResponse(content="Analysis delivered; outputs are in the workspace files.", finish_reason="stop")
     monkeypatch.setattr(node, "ChatLLM", lambda **kw: _Script(*calls, answer))
     producer = SwarmTask(id=task, agent_id=agent, prompt_template="Compute the statistics.")
     TaskStore(root).save_task(producer)
     result = node.run_node(
-        SwarmAgentSpec(id=agent, role="Analyst", system_prompt="Compute.", tools=["write_file", "edit_file", "bash"]),
+        SwarmAgentSpec(id=agent, role="Analyst", system_prompt="Compute.", tools=list(tools)),
         producer, {}, {}, root, include_shell_tools=True, policy=_policy(),
     )
     assert result.status == "completed", result
@@ -200,3 +202,67 @@ def test_consumer_node_is_told_where_the_files_are(tmp_path, monkeypatch):
                   {"stats": "Upstream summary."}, {}, tmp_path, policy=_policy())
     data = seen[0][1]["content"]
     assert "1 files" in data and "upstream/index.json" in data
+
+
+def test_observation_saved_under_a_nested_run_dir_reaches_the_consumer(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    original = tmp_path / "first"
+    source = _produce(
+        original, monkeypatch,
+        _call("b1", "bash", command="mkdir -p data"),
+        _call("q1", "quantlib_call", action="call", module="risk", function="historical_var",
+              kwargs={"returns": [-.03, .01, -.01, .02, -.02], "confidence": .95}, run_dir="data"),
+        tools=("bash", "quantlib_call"),
+    )
+    assert list((source / "data" / "tool-results").glob("*/result.json"))
+    # A resumed run is a copy; its receipts still name the first run's workspace.
+    moved = tmp_path / "second"
+    shutil.copytree(original, moved)
+    shutil.rmtree(original)
+    destination, _, index = _consume(moved, {"risk": "p"})
+    assert not any("q1" in reason for reason in index["unavailable"]), index["unavailable"]
+    [entry] = [entry for entry in index["observations"] if entry["call_id"] == "q1"]
+    assert json.loads((destination / entry["path"]).read_text())["result"] == pytest.approx(.03)
+
+
+def test_shell_calculation_command_and_output_reach_the_consumer_redacted(tmp_path, monkeypatch):
+    secret = "sk-live-0123456789abcdefghijklmnop"
+    command = f'TOKEN="Bearer {secret}" python3 -c "print(sum([2, 8]) / sum([10, 100]))"'
+    _produce(
+        tmp_path, monkeypatch,
+        _call("b1", "bash", command=command),
+        _call("b2", "bash", command="python3 -c 'print(1/0)'"),
+    )
+    destination, note, index = _consume(tmp_path, {"risk": "p"})
+    [entry] = [entry for entry in index["observations"] if entry["tool"] == "bash"]
+    assert entry["call_id"] == "b1"
+    assert "sum([2, 8]) / sum([10, 100])" in entry["request"]["command"]
+    assert json.loads((destination / entry["path"]).read_text())["stdout"] == "0.09090909090909091\n"
+    assert "bash" in note
+    upstream = [path.read_text() for path in (destination / "upstream").rglob("*") if path.is_file()]
+    assert upstream and not any(secret in text for text in upstream)
+
+
+def test_files_written_by_other_tools_reach_the_consumer(tmp_path, monkeypatch):
+    workspace = node.agent_artifact_dir(tmp_path, "analyst", "p")
+    rng = np.random.default_rng(0)
+    dates = pd.date_range("2026-01-01", periods=30)
+    columns = [f"S{i}" for i in range(8)]
+    factor, returns = (pd.DataFrame(rng.normal(size=(30, 8)) * scale, index=dates, columns=columns).to_csv()
+                       for scale in (1, .01))
+    _produce(
+        tmp_path, monkeypatch,
+        _call("w1", "write_file", path="f.csv", content=factor),
+        _call("w2", "write_file", path="r.csv", content=returns),
+        _call("fa", "factor_analysis", factor_csv=str(workspace / "f.csv"), return_csv=str(workspace / "r.csv"),
+              output_dir=str(workspace / "factor")),
+        tools=("write_file", "factor_analysis"),
+    )
+    written = {"factor/ic_series.csv", "factor/ic_summary.json", "factor/group_equity.csv"}
+    assert written <= {str(path.relative_to(workspace)) for path in workspace.rglob("*")}
+    destination, _, index = _consume(tmp_path, {"factors": "p"})
+    files = {entry["original_path"]: entry for entry in index["files"]}
+    assert written | {"f.csv", "r.csv"} == set(files), index
+    assert (files["f.csv"]["tool"], files["f.csv"]["call_id"]) == ("write_file", "w1")
+    for original in written:
+        assert (destination / files[original]["path"]).read_bytes() == (workspace / original).read_bytes()
