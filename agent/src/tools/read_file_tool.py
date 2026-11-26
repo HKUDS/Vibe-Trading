@@ -112,7 +112,10 @@ class ReadFileTool(FileBoundTool, BaseTool):
             **kwargs: Must include path. Optional limit and run_dir.
 
         Returns:
-            JSON string containing content or an error.
+            JSON string containing content or an error. A partial read carries
+            ``truncated``, ``total_chars``, a ``message`` naming the unchanged
+            original file and, for a line window, ``total_lines`` and
+            ``returned_lines``.
         """
         file_path = kwargs["path"]
         limit = kwargs.get("limit")
@@ -241,20 +244,27 @@ class ReadFileTool(FileBoundTool, BaseTool):
                     ensure_ascii=False,
                 )
 
-            text = resolved.read_text(encoding="utf-8")
+            original = resolved.read_text(encoding="utf-8")
+            text = original
+            body: dict = {"status": "ok", "path": str(resolved)}
             if limit and limit > 0:
-                lines = text.splitlines(keepends=True)
-                text = "".join(lines[:limit])
+                lines = original.splitlines(keepends=True)
+                if len(lines) > limit:
+                    text = "".join(lines[:limit])
+                    body.update(total_lines=len(lines), returned_lines=limit)
             if len(text) > _OUTPUT_LIMIT:
                 text = text[:_OUTPUT_LIMIT] + "\n... (truncated)"
-            return json.dumps(
-                {
-                    "status": "ok",
-                    "path": str(resolved),
-                    "content": text,
-                },
-                ensure_ascii=False,
-            )
+            body["content"] = text
+            if text != original:
+                body.update(
+                    truncated=True,
+                    total_chars=len(original),
+                    message=(
+                        "Partial preview: content holds only part of the original file, "
+                        "which is unchanged at path."
+                    ),
+                )
+            return json.dumps(body, ensure_ascii=False)
         except Exception as exc:
             return json.dumps(
                 {

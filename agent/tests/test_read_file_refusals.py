@@ -73,3 +73,36 @@ def test_a_file_still_reads_as_before(run_dir: Path) -> None:
 
     assert body["status"] == "ok"
     assert body["content"] == "sharpe\n0.69\n"
+
+
+def test_a_complete_read_is_not_marked_partial(run_dir: Path) -> None:
+    assert not _read("artifacts/metrics.csv", run_dir).get("truncated")
+
+
+def _read_limited(path: str, run: Path, limit: int | None) -> dict:
+    tool = ReadFileTool(roots=FileRoots.from_config(get_env_config().api))
+    return json.loads(tool.execute(path=path, run_dir=str(run), limit=limit))
+
+
+@pytest.mark.parametrize("line_limit", [None, 1])
+def test_partial_file_preview_names_the_complete_input(run_dir: Path, line_limit: int | None) -> None:
+    original = json.dumps({"bars": [1] * 20000}) + "\nsecond line\n"
+    (run_dir / "data.json").write_text(original, encoding="utf-8")
+
+    body = _read_limited("data.json", run_dir, line_limit)
+
+    assert body["truncated"] is True
+    assert body["total_chars"] == len(original)
+    assert "original file" in body["message"]
+    assert len(body["content"]) < len(original)
+    assert Path(body["path"]).read_text(encoding="utf-8") == original
+
+
+def test_line_limit_marks_partial_even_below_character_cap(run_dir: Path) -> None:
+    body = _read_limited("artifacts/metrics.csv", run_dir, 1)
+
+    assert body["content"] == "sharpe\n"
+    assert body["truncated"] is True
+    assert body["total_lines"] == 2
+    assert body["returned_lines"] == 1
+    assert body["total_chars"] == len("sharpe\n0.69\n")
