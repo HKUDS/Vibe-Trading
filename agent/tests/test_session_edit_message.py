@@ -145,9 +145,7 @@ def test_edit_rejects_non_user_and_missing_messages(edit_service):
                 "edited",
             )
 
-        assert [message.content for message in service.get_messages(session.session_id)] == [
-            "answer"
-        ]
+        assert [message.content for message in service.get_messages(session.session_id)] == ["answer"]
 
     asyncio.run(scenario())
 
@@ -168,10 +166,7 @@ def test_search_index_failure_restores_exact_original_transcript(edit_service, m
             for message in service.get_messages(session.session_id)
             if message.role == "user" and message.content == "second prompt"
         )
-        before = [
-            (message.role, message.content)
-            for message in service.get_messages(session.session_id)
-        ]
+        before = [(message.role, message.content) for message in service.get_messages(session.session_id)]
 
         def fail_index(*args, **kwargs):
             del args, kwargs
@@ -185,10 +180,7 @@ def test_search_index_failure_restores_exact_original_transcript(edit_service, m
                 "editeduniquetoken",
             )
 
-        assert [
-            (message.role, message.content)
-            for message in service.get_messages(session.session_id)
-        ] == before
+        assert [(message.role, message.content) for message in service.get_messages(session.session_id)] == before
         assert session.session_id not in service._inflight
 
     asyncio.run(scenario())
@@ -215,21 +207,14 @@ def test_preflight_failure_restores_chat_search_and_session(
             for message in service.get_messages(session.session_id)
             if message.role == "user" and message.content == "second prompt"
         )
-        before_messages = [
-            (message.role, message.content)
-            for message in service.get_messages(session.session_id)
-        ]
+        before_messages = [(message.role, message.content) for message in service.get_messages(session.session_id)]
         before_session = service.store.get_session(session.session_id).to_dict()
-        before_attempts = {
-            attempt.attempt_id
-            for attempt in service.store.list_attempts()
-        }
+        before_attempts = {attempt.attempt_id for attempt in service.store.list_attempts()}
         emitted_events: list[str] = []
-        service.event_bus.add_listener(
-            lambda event: emitted_events.append(event.event_type)
-        )
+        service.event_bus.add_listener(lambda event: emitted_events.append(event.event_type))
 
         if failure_stage == "create_attempt":
+
             def fail(*args, **kwargs):
                 del args, kwargs
                 raise RuntimeError("attempt storage unavailable")
@@ -248,6 +233,7 @@ def test_preflight_failure_restores_chat_search_and_session(
 
             monkeypatch.setattr(service.store, "update_session", fail_once)
         else:
+
             def fail(coroutine, *args, **kwargs):
                 del args, kwargs
                 coroutine.close()
@@ -263,14 +249,10 @@ def test_preflight_failure_restores_chat_search_and_session(
             )
 
         assert [
-            (message.role, message.content)
-            for message in service.get_messages(session.session_id)
+            (message.role, message.content) for message in service.get_messages(session.session_id)
         ] == before_messages
         assert service.store.get_session(session.session_id).to_dict() == before_session
-        assert {
-            attempt.attempt_id
-            for attempt in service.store.list_attempts()
-        } == before_attempts
+        assert {attempt.attempt_id for attempt in service.store.list_attempts()} == before_attempts
         assert index.search("keep suffix")[0].session_id == session.session_id
         assert index.search("editeduniquetoken") == []
         assert "message.edited" not in emitted_events
@@ -278,6 +260,186 @@ def test_preflight_failure_restores_chat_search_and_session(
         assert session.session_id not in service._inflight
 
     asyncio.run(scenario())
+
+
+def test_failed_regeneration_keeps_edit_and_retry_does_not_duplicate_prompt(
+    edit_service,
+    monkeypatch,
+):
+    service, _index = edit_service
+    fail_regeneration = True
+
+    async def flaky_agent(attempt, messages=None, **kwargs):
+        del messages, kwargs
+        nonlocal fail_regeneration
+        if attempt.prompt == "edited prompt" and fail_regeneration:
+            fail_regeneration = False
+            return {"status": "error", "reason": "regeneration failed"}
+        return {"status": "success", "content": f"answer: {attempt.prompt}"}
+
+    monkeypatch.setattr(service, "_run_with_agent", flaky_agent)
+
+    async def scenario():
+        session = service.create_session(title="retry edit")
+        await service.send_message(session.session_id, "original prompt")
+        await _wait_until_idle(service, session.session_id)
+        target = service.get_messages(session.session_id)[0]
+
+        failed = await service.edit_message_and_regenerate(
+            session.session_id,
+            target.message_id,
+            "edited prompt",
+        )
+        await _wait_until_idle(service, session.session_id)
+
+        failed_messages = service.get_messages(session.session_id)
+        assert [(message.role, message.content) for message in failed_messages] == [
+            ("user", "edited prompt"),
+            ("assistant", "Execution failed: regeneration failed"),
+        ]
+        assert failed_messages[-1].metadata["edited_message_id"] == target.message_id
+        assert service.store.get_attempt(session.session_id, failed["attempt_id"]).status.value == "failed"
+        reloaded = SessionStore(service.store.base_dir)
+        assert reloaded.get_messages(session.session_id)[0].content == "edited prompt"
+
+        retried = await service.edit_message_and_regenerate(
+            session.session_id,
+            target.message_id,
+            "edited prompt",
+        )
+        await _wait_until_idle(service, session.session_id)
+
+        messages = service.get_messages(session.session_id)
+        assert [(message.role, message.content) for message in messages] == [
+            ("user", "edited prompt"),
+            ("assistant", "answer: edited prompt"),
+        ]
+        assert retried["attempt_id"] != failed["attempt_id"]
+        assert len(service.store.list_attempts()) == 3
+        assert reloaded.get_messages(session.session_id) == messages
+
+    asyncio.run(scenario())
+
+
+def test_exceptional_regeneration_persists_retryable_edit_failure(edit_service, monkeypatch):
+    service, index = edit_service
+
+    async def raising_agent(attempt, messages=None, **kwargs):
+        del attempt, messages, kwargs
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(service, "_run_with_agent", raising_agent)
+
+    async def scenario():
+        session = service.create_session(title="exceptional edit")
+        await service.send_message(session.session_id, "original prompt")
+        await _wait_until_idle(service, session.session_id)
+        target = service.get_messages(session.session_id)[0]
+
+        edited = await service.edit_message_and_regenerate(
+            session.session_id,
+            target.message_id,
+            "edited prompt",
+        )
+        await _wait_until_idle(service, session.session_id)
+
+        messages = service.get_messages(session.session_id)
+        assert [(message.role, message.content) for message in messages] == [
+            ("user", "edited prompt"),
+            ("assistant", "Execution failed: provider unavailable"),
+        ]
+        assert messages[-1].linked_attempt_id == edited["attempt_id"]
+        assert messages[-1].metadata == {
+            "status": "failed",
+            "edited_message_id": target.message_id,
+        }
+        assert service.store.get_attempt(session.session_id, edited["attempt_id"]).status.value == "failed"
+        assert index.search("provider unavailable")[0].session_id == session.session_id
+        assert SessionStore(service.store.base_dir).get_messages(session.session_id) == messages
+
+    asyncio.run(scenario())
+
+
+def test_edit_keeps_old_target_in_bounded_regeneration_context(edit_service, monkeypatch):
+    service, _index = edit_service
+    seen_history = []
+
+    async def recording_agent(attempt, messages=None, **kwargs):
+        del attempt, kwargs
+        seen_history.extend(messages)
+        return {"status": "success", "content": "done"}
+
+    monkeypatch.setattr(service, "_run_with_agent", recording_agent)
+
+    async def scenario():
+        session = service.create_session(title="old prompt")
+        for index in range(120):
+            service.store.append_message(
+                Message(
+                    session_id=session.session_id,
+                    role="user",
+                    content=f"prior {index}",
+                )
+            )
+        target = Message(session_id=session.session_id, role="user", content="old target")
+        service.store.append_message(target)
+        service.store.append_message(
+            Message(
+                session_id=session.session_id,
+                role="assistant",
+                content="removed suffix",
+            )
+        )
+
+        await service.edit_message_and_regenerate(
+            session.session_id,
+            target.message_id,
+            "edited old target",
+        )
+        await _wait_until_idle(service, session.session_id)
+
+        assert len(seen_history) == 100
+        assert seen_history[0].content == "prior 21"
+        assert seen_history[-1].message_id == target.message_id
+        assert seen_history[-1].content == "edited old target"
+
+    asyncio.run(scenario())
+
+
+def test_message_list_can_return_full_history_for_editing(edit_service, monkeypatch):
+    service, _index = edit_service
+    host = SimpleNamespace(
+        require_auth=lambda: None,
+        require_event_stream_auth=lambda: None,
+        _get_session_service=lambda: service,
+        _validate_path_param=lambda value, kind: None,
+        _shell_tools_enabled_for_request=lambda request: False,
+    )
+    monkeypatch.setitem(sys.modules, "api_server", host)
+    app = FastAPI()
+    register_sessions_routes(app)
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if route.path == "/sessions/{session_id}/messages" and "GET" in route.methods
+    )
+    session = service.create_session(title="full history")
+    for index in range(101):
+        service.store.append_message(
+            Message(
+                session_id=session.session_id,
+                role="user",
+                content=f"prompt {index}",
+            )
+        )
+
+    limited = asyncio.run(endpoint(session.session_id, 100, False))
+    complete = asyncio.run(endpoint(session.session_id, 100, True))
+
+    assert len(limited) == 100
+    assert limited[0].content == "prompt 1"
+    assert len(complete) == 101
+    assert complete[0].content == "prompt 0"
 
 
 def test_edit_route_returns_attempt_and_uses_full_prompt_content(
@@ -296,9 +458,7 @@ def test_edit_route_returns_attempt_and_uses_full_prompt_content(
     app = FastAPI()
     register_sessions_routes(app)
     endpoint = next(
-        route.endpoint
-        for route in app.routes
-        if route.path == "/sessions/{session_id}/messages/{message_id}"
+        route.endpoint for route in app.routes if route.path == "/sessions/{session_id}/messages/{message_id}"
     )
 
     async def scenario():

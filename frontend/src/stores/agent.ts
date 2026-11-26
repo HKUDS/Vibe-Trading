@@ -51,6 +51,7 @@ export interface AgentMessageMeta {
   requestText?: string;
   activity?: AgentActivity;
   partialAttemptId?: string;
+  editRetryMessageId?: string;
 }
 
 export type StoredAgentMessage = AgentMessage & { meta?: AgentMessageMeta };

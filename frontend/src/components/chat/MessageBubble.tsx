@@ -7,7 +7,7 @@ import remarkMath from "remark-math";
 import { toast } from "sonner";
 import { normalizeMathDelimiters } from "@/lib/markdown";
 import { downloadGeneratedReport } from "@/lib/api";
-import type { AgentMessage } from "@/types/agent";
+import { isPersistedMessageId } from "@/lib/chatPrompt";
 import type { StoredAgentMessage } from "@/stores/agent";
 import { AgentAvatar } from "./AgentAvatar";
 import { RunCompleteCard } from "./RunCompleteCard";
@@ -190,7 +190,7 @@ function getRetryHint(content: string): string {
 
 interface Props {
   msg: StoredAgentMessage;
-  onRetry?: (msg: AgentMessage) => void;
+  onRetry?: (msg: StoredAgentMessage) => void;
   onEdit?: (msg: StoredAgentMessage, content: string) => Promise<void>;
   editDisabled?: boolean;
 }
@@ -213,7 +213,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [draft, setDraft] = useState(msg.content);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const persisted = /^[a-f0-9]{12}$/i.test(msg.id);
+  const persisted = isPersistedMessageId(msg.id);
   const canEdit = Boolean(onEdit && persisted);
 
   const focusEditor = useCallback((editor: HTMLTextAreaElement | null) => {

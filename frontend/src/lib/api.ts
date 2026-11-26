@@ -778,7 +778,7 @@ export const api = {
       { method: "PATCH", body: JSON.stringify({ content }) },
     ),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
-  getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
+  getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${encodeURIComponent(sid)}/messages?all_messages=true`),
   createGoal: (sid: string, body: CreateGoalRequest) =>
     request<GoalSnapshot>(`/sessions/${sid}/goal`, {
       method: "POST",

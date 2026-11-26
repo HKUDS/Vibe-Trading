@@ -414,7 +414,22 @@ class SessionService:
         *,
         include_shell_tools: bool = False,
     ) -> Dict[str, Any]:
-        """编辑用户消息并截断后续聊天，从该消息创建新的执行尝试。"""
+        """Edit a user prompt, truncate later chat, and schedule regeneration.
+
+        Args:
+            session_id: Session containing the persisted prompt.
+            message_id: Durable ID of the user message to replace.
+            content: Complete raw prompt, including transport wrappers.
+            include_shell_tools: Whether the new attempt may use shell tools.
+
+        Returns:
+            The edited message ID and newly created attempt ID.
+
+        Raises:
+            ValueError: If the session or prompt is invalid.
+            LookupError: If the message does not exist in the session.
+            SessionBusyError: If the session is running or shutting down.
+        """
         session = self.store.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
@@ -486,6 +501,7 @@ class SessionService:
                     session_id=session_id,
                     parent_attempt_id=parent_attempt_id,
                     prompt=content,
+                    edited_message_id=message_id,
                 )
                 self.store.create_attempt(attempt)
                 attempt_created = True
@@ -494,11 +510,15 @@ class SessionService:
                 session.updated_at = datetime.now(timezone.utc).isoformat()
                 self.store.update_session(session)
                 session_updated = True
+                context_messages = self.store.get_messages(session_id)
+                if all(message.message_id != message_id for message in context_messages):
+                    context_messages = [*context_messages[-99:], target]
                 task = asyncio.create_task(
                     self._run_attempt(
                         session,
                         attempt,
                         include_shell_tools=include_shell_tools,
+                        history=context_messages,
                     )
                 )
                 self.event_bus.emit(
@@ -584,13 +604,26 @@ class SessionService:
             return True
         return background_cancelled
 
-    async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
+    async def _run_attempt(
+        self,
+        session: Session,
+        attempt: Attempt,
+        *,
+        include_shell_tools: bool = False,
+        history: Optional[list[Message]] = None,
+    ) -> None:
         """Execute an Attempt in the background.
 
         The whole body runs under try/finally: this coroutine owns the
         in-flight claim taken in :meth:`send_message`, and a failure anywhere —
         including in the pre-run bookkeeping below — must not leave the session
         permanently busy.
+
+        Args:
+            session: Session owning the attempt.
+            attempt: Persisted attempt to execute.
+            include_shell_tools: Whether shell tools are enabled.
+            history: Explicit model context, or the latest session messages.
         """
         started_at = time.perf_counter()
         try:
@@ -608,7 +641,7 @@ class SessionService:
                 "attempt.started",
                 {"attempt_id": attempt.attempt_id, "started_at": wall_started_at},
             )
-            messages = self.store.get_messages(session.session_id)
+            messages = history if history is not None else self.store.get_messages(session.session_id)
             result = await self._run_with_agent(
                 attempt,
                 messages=messages,
@@ -635,6 +668,8 @@ class SessionService:
             if attempt.run_dir:
                 reply_metadata["run_id"] = Path(attempt.run_dir).name
             reply_metadata["status"] = attempt.status.value
+            if attempt.edited_message_id:
+                reply_metadata["edited_message_id"] = attempt.edited_message_id
             if attempt.metrics:
                 reply_metadata["metrics"] = attempt.metrics
             reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
@@ -712,6 +747,19 @@ class SessionService:
             attempt.mark_failed(error=str(exc))
             self.store.update_attempt(attempt)
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
+            if attempt.edited_message_id:
+                reply = Message(
+                    session_id=session.session_id,
+                    role="assistant",
+                    content=f"Execution failed: {exc}",
+                    linked_attempt_id=attempt.attempt_id,
+                    metadata={
+                        "status": attempt.status.value,
+                        "edited_message_id": attempt.edited_message_id,
+                    },
+                )
+                self.store.append_message(reply)
+                self._search_index.index_message(session.session_id, "assistant", reply.content)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
         finally:
             if attempt.status != AttemptStatus.COMPLETED:

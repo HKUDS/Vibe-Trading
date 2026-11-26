@@ -3,6 +3,11 @@ import { extractUploadedAttachments, prependUploadedAttachments, type UploadedAt
 // Match the interactive and goal request schemas in sessions_routes.py.
 export const MAX_MESSAGE_CHARS = 100_000;
 export const MAX_GOAL_CHARS = 5_000;
+
+export function isPersistedMessageId(messageId: string): boolean {
+  return /^[a-f0-9]{12}$/i.test(messageId);
+}
+
 export const SWARM_PROMPT_PREFIX =
   "[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n";
 export const GOAL_KICKOFF_PREFIX = [

@@ -3,6 +3,7 @@ import {
   buildChatPrompt,
   GOAL_CONTINUE_PREFIX,
   GOAL_KICKOFF_PREFIX,
+  isPersistedMessageId,
   promptExceedsLimit,
   replacePromptText,
   SWARM_PROMPT_PREFIX,
@@ -16,6 +17,15 @@ describe("chat request length", () => {
     expect(promptExceedsLimit(prompt, length)).toBe(false);
     expect(promptExceedsLimit(prompt, length - 1)).toBe(true);
     expect(prompt).toContain("uploads/研究.pdf");
+  });
+});
+
+describe("persisted message identity", () => {
+  it("accepts durable hexadecimal IDs and rejects optimistic IDs", () => {
+    expect(isPersistedMessageId("a1b2c3d4e5f6")).toBe(true);
+    expect(isPersistedMessageId("A1B2C3D4E5F6")).toBe(true);
+    expect(isPersistedMessageId("1")).toBe(false);
+    expect(isPersistedMessageId("pending-123")).toBe(false);
   });
 });
 

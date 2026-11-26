@@ -850,8 +850,22 @@ def register_sessions_routes(app: FastAPI) -> None:
         message_id: str,
         payload: EditMessageRequest,
         http_request: Request,
-    ):
-        """Edit a user prompt, truncate later chat messages, and regenerate."""
+    ) -> Dict[str, str]:
+        """Edit a user prompt, truncate later chat messages, and regenerate.
+
+        Args:
+            session_id: Session containing the persisted prompt.
+            message_id: Durable ID of the user message to replace.
+            payload: Complete raw prompt, including transport wrappers.
+            http_request: Request used to resolve shell-tool permissions.
+
+        Returns:
+            The edited message ID and newly created attempt ID.
+
+        Raises:
+            HTTPException: If the runtime is unavailable, the session is busy,
+                or the session, message, or prompt is invalid.
+        """
         _host_validate_path_param(session_id, "session_id")
         _host_validate_path_param(message_id, "message_id")
         svc = _host_get_session_service()
@@ -886,13 +900,17 @@ def register_sessions_routes(app: FastAPI) -> None:
         return {"status": "cancelled"}
 
     @app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
-    async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
+    async def get_messages(
+        session_id: str,
+        limit: int = Query(100, ge=1, le=1000),
+        all_messages: bool = Query(False),
+    ):
         """List messages for a session."""
         _host_validate_path_param(session_id, "session_id")
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        messages = svc.get_messages(session_id, limit=limit)
+        messages = svc.get_messages(session_id, limit=None if all_messages else limit)
         return [
             MessageResponse(
                 message_id=m.message_id,
