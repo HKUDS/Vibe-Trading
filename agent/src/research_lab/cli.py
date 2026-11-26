@@ -114,14 +114,14 @@ def dispatch(args: argparse.Namespace) -> int:
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         report = result.get("result", result)
-        if (
-            result.get("status") == "failed"
-            or report.get("evaluation_status") in {"failed", "invalid_artifact"}
-            or report.get("passed") is False
-            or report.get("finding_count", 0) > 0
-        ):
+        if result.get("status") == "failed":
             return 1
-        return 2 if report.get("evaluation_status") == "not_evaluable" else 0
+        status = report.get("evaluation_status")
+        if status in {"failed", "invalid_artifact"} or report.get("finding_count", 0) > 0:
+            return 1
+        if status == "not_evaluable":
+            return 2
+        return 1 if report.get("passed") is False else 0
     except (ValueError, OSError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
         return 2
