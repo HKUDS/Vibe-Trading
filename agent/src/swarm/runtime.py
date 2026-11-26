@@ -52,7 +52,7 @@ from src.swarm.task_store import (
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
 from src.swarm.node import (
-    UNKNOWN_TOOL_OUTCOME, UsageMeasure, _CancellationSignal, run_node, unknown_outcome,
+    UNKNOWN_TOOL_OUTCOME, UsageMeasure, _CancellationSignal, partial_summary, run_node, unknown_outcome,
 )
 
 logger = logging.getLogger(__name__)
@@ -880,6 +880,7 @@ class SwarmRuntime:
         # Don't wait on work that could still be blocked in I/O after expiry.
         executor = ThreadPoolExecutor(max_workers=self._max_workers)
         futures: dict[Future[WorkerResult], str] = {}
+        task_agents: dict[str, str] = {}
         layer_budget = 0  # seconds — max per-task (retries × timeout) across layer
         try:
             for tid in layer_task_ids:
@@ -971,6 +972,7 @@ class SwarmRuntime:
                     **({"record_usage": partial(usage.record, tid)} if usage is not None else {}),
                 )
                 futures[future] = tid
+                task_agents[tid] = agent_spec.id
                 per_task_budget = (
                     agent_spec.timeout_seconds * (agent_spec.max_retries + 1)
                     + _worker_retry_budget_s(agent_spec.max_retries)
@@ -1009,7 +1011,7 @@ class SwarmRuntime:
                         error += _UNKNOWN_OUTCOME
                     results[tid] = WorkerResult(
                         status="timeout",
-                        summary="",
+                        summary=partial_summary(run_dir, task_agents[tid], tid),
                         error=error,
                     )
         except KeyboardInterrupt:

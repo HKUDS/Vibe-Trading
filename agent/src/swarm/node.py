@@ -704,6 +704,27 @@ def _best_summary(messages: list[dict], fallback: str) -> str:
     return fallback
 
 
+def partial_summary(run_dir: Path, agent_id: str, task_id: str) -> str:
+    """Read the best result a node has saved so far, for a node that did not return.
+
+    Args:
+        run_dir: Root directory of the swarm run.
+        agent_id: Agent that owns the task.
+        task_id: Task whose saved work is read.
+
+    Returns:
+        The workspace report.md, else the longest substantial assistant text in the node thread,
+        else an empty string. Records still being written are skipped, never raised.
+    """
+    try:
+        workspace = agent_artifact_dir(run_dir, agent_id, task_id)
+        items = ThreadLog(node_thread(run_dir, agent_id, task_id)).read()
+        return _resolve_summary(workspace, _best_summary(replay(items), ""))
+    except (OSError, ValueError, ThreadItemError):
+        logger.warning("Partial result of task %s is unreadable", task_id, exc_info=True)
+        return ""
+
+
 def _node_result(result, stop, model, items, workspace, emit, *, resumed):
     iterations = result["iterations"]
     summary = result.get("content") or model.partial or model.last_content
