@@ -8,8 +8,9 @@ from typing import Any
 
 import pandas as pd
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.factors.factor_analysis_core import compute_ic_series, compute_group_equity
+from src.tools.path_utils import OUTSIDE_WRITE_ROOTS, resolve_output_dir
 
 # Backward-compatible aliases for any external imports of the private names.
 _compute_ic_series = compute_ic_series
@@ -105,7 +106,7 @@ def run_factor_analysis(
     return json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
 
 
-class FactorAnalysisTool(BaseTool):
+class FactorAnalysisTool(FileBoundTool, BaseTool):
     """Factor analysis tool: compute IC/IR and layered NAV."""
 
     name = "factor_analysis"
@@ -128,7 +129,7 @@ class FactorAnalysisTool(BaseTool):
             },
             "output_dir": {
                 "type": "string",
-                "description": "Output directory for results",
+                "description": "Output directory for results, relative to run_dir; it must stay inside run_dir or the write roots",
             },
         },
         "required": ["factor_csv", "return_csv", "output_dir"],
@@ -138,14 +139,21 @@ class FactorAnalysisTool(BaseTool):
         """Run factor analysis.
 
         Args:
-            **kwargs: Must include factor_csv, return_csv, output_dir. Optional n_groups.
+            **kwargs: Must include factor_csv, return_csv, output_dir. Optional n_groups and run_dir.
 
         Returns:
-            JSON-formatted analysis summary.
+            JSON-formatted analysis summary, or an ``outside_write_roots`` error
+            naming the allowed roots when output_dir resolves outside them.
         """
+        try:
+            output_dir = resolve_output_dir(str(kwargs["output_dir"]), kwargs.get("run_dir"), roots=self.roots)
+        except ValueError as exc:
+            return json.dumps(
+                {"status": "error", "error_code": OUTSIDE_WRITE_ROOTS, "error": str(exc)}, ensure_ascii=False,
+            )
         return run_factor_analysis(
             factor_csv=kwargs["factor_csv"],
             return_csv=kwargs["return_csv"],
-            output_dir=kwargs["output_dir"],
+            output_dir=str(output_dir),
             n_groups=kwargs.get("n_groups", 5),
         )
