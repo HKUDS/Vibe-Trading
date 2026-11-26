@@ -43,3 +43,48 @@ def test_cancel_still_reports_failure_for_an_unknown_run(tmp_path, monkeypatch, 
     legacy.cmd_swarm_cancel("nonexistent-run")
 
     assert "not found or already finished" in capsys.readouterr().out
+
+
+def test_cancel_records_a_durable_request_for_a_run_in_another_process(tmp_path, monkeypatch, capsys):
+    """Regression for #2306 (remainder): a separate `--swarm-cancel` process
+    shares no memory with the agent process, so the active-run index is empty
+    for it and the in-process fallbacks cannot fire. It must leave a durable
+    cancel request in the run dir for the owning runtime to pick up.
+    """
+    monkeypatch.setattr(legacy, "SWARM_DIR", tmp_path)
+    store = SwarmStore(base_dir=tmp_path)
+    run = SwarmRun(
+        id="run-xproc",
+        preset_name="demo",
+        status=RunStatus.running,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    store.create_run(run)
+    assert not store.cancel_requested(run.id)
+
+    legacy.cmd_swarm_cancel(run.id)
+
+    assert "Cancel signal sent" in capsys.readouterr().out
+    assert store.cancel_requested(run.id)
+    # Re-asking is idempotent: the marker is already there.
+    legacy.cmd_swarm_cancel(run.id)
+    assert "Cancel signal sent" in capsys.readouterr().out
+
+
+def test_cancel_still_reports_failure_for_a_finished_run(tmp_path, monkeypatch, capsys):
+    """A terminal run must not gain a cancel marker: there is no owner left
+    to honour it, and reporting success would be a lie."""
+    monkeypatch.setattr(legacy, "SWARM_DIR", tmp_path)
+    store = SwarmStore(base_dir=tmp_path)
+    run = SwarmRun(
+        id="run-done",
+        preset_name="demo",
+        status=RunStatus.completed,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    store.create_run(run)
+
+    legacy.cmd_swarm_cancel(run.id)
+
+    assert "not found or already finished" in capsys.readouterr().out
+    assert not store.cancel_requested(run.id)

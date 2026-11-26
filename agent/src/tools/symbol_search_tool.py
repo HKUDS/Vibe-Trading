@@ -167,6 +167,12 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "VN": "vn",
     "TW": "tw",
     "TWO": "tw",
+    "DE": "europe",
+    "PA": "europe",
+    "AS": "europe",
+    "MI": "europe",
+    "SW": "europe",
+    "WA": "europe",
 }
 
 # Quote types Yahoo lists under a plain US ticker (``QQQ``, ``SPY``, ``VFIAX``).
