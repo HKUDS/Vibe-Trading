@@ -92,10 +92,10 @@ def _workspace(tmp_path, monkeypatch):
     return calls
 
 
-def _run(root, monkeypatch, spec, task, *responses, upstream=None, seen=None):
+def _run(root, monkeypatch, spec, task, *responses, upstream=None, seen=None, user_vars=None):
     monkeypatch.setattr(node, "ChatLLM", lambda **kw: _Script(*responses, seen=seen))
     TaskStore(root).save_task(task)
-    result = node.run_node(spec, task, upstream or {}, {}, root, include_shell_tools=True, policy=_policy())
+    result = node.run_node(spec, task, upstream or {}, user_vars or {}, root, include_shell_tools=True, policy=_policy())
     if result.status == "completed":
         TaskStore(root).update_status(task.id, TaskStatus.completed, summary=result.summary)
     return result
@@ -389,6 +389,38 @@ def test_node_receives_selected_values_and_never_the_selected_prose(tmp_path, mo
     assert "negligence" not in text and "mean=19" not in text
     assert '\\"measured\\": 19' in text and "sum([11, 17, 23, 25])" in text
     assert "the supplied upstream task results" in text
+
+
+@pytest.mark.parametrize("binding", ["analyze", METRIC_SELECTION], ids=["report", "selection"])
+def test_task_prompt_alias_points_to_upstream_data(tmp_path, monkeypatch, binding):
+    """Resolve an alias to its data section in both handoff modes.
+
+    Args:
+        tmp_path: Isolated preset directory and node workspaces.
+        monkeypatch: Fixture for the custom preset and scripted provider.
+        binding: Plain producer ID or selection binding for the same producer.
+    """
+    _collect(tmp_path, monkeypatch)
+    _analyze(tmp_path, monkeypatch)
+    _user_preset(tmp_path, monkeypatch, {
+        "name": "custom", "agents": [{"id": "editor", "role": "Editor"}],
+        "tasks": [
+            {"id": "analyze", "agent_id": "editor", "prompt_template": "Analyze"},
+            {"id": "publish", "agent_id": "editor", "prompt_template": "Present {results}.",
+             "depends_on": ["analyze"], "input_from": {"results": binding}},
+        ],
+    })
+    built = build_run_from_preset("custom", {"results": "wrong same-named variable"}, validate_variables=True)
+    seen = []
+    result = _run(tmp_path, monkeypatch, built.agents[0], built.tasks[1], _answer("Delivered."),
+                  upstream={"results": PROSE}, seen=seen, user_vars=built.user_vars)
+
+    assert result.status == "completed"
+    messages = json.loads(seen[0]["messages"])
+    assert messages[-1]["content"] == 'Present upstream input "results" in the supplied data message.'
+    assert "### results" in messages[-2]["content"]
+    assert (PROSE in messages[-2]["content"]) == isinstance(binding, str)
+    assert not presets.inspect_preset("custom")["warnings"]
 
 
 def test_selected_handoff_failure_cannot_fall_back_to_the_report(tmp_path, monkeypatch):

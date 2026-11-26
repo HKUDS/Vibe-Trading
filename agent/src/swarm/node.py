@@ -28,7 +28,7 @@ from src.product.usage import _normalize_llm_usage
 from src.providers.chat import ChatLLM
 from src.providers.response import ProviderStreamError
 from src.providers.content_filter import MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS
-from src.session.replay import STOPPED_TURN_NOTES, replay
+from src.session.replay import STOPPED_TURN_NOTES, replay, replay_with_seqs
 from src.session.thread import ThreadLog
 from src.session.thread_schema import ThreadItemError
 from src.swarm.artifacts import agent_artifact_dir, collect_node_artifacts, node_thread
@@ -675,17 +675,21 @@ def _node_history(items, run_dir: Path):
     }
     previous_roots.discard(str(run_dir))
     first_user = next((item.seq for item in items if item.type == "user"), None)
-    messages = [
-        message for message in replay(item for item in items if item.type != "user" or item.seq == first_user)
+    replayed, seqs = replay_with_seqs(item for item in items if item.type != "user" or item.seq == first_user)
+    visible = [
+        (message, seq) for message, seq in zip(replayed, seqs)
         if message.get("content") not in STOPPED_TURN_NOTES.values()
     ]
+    messages = [message for message, _ in visible]
     for message in messages:
         if isinstance(message.get("content"), str):
             for root in previous_roots:
                 message["content"] = message["content"].replace(root, str(run_dir))
-    messages.append({"role": "user", "content":
-        "Continue the interrupted task from the saved work. Reuse available observations and files; "
-        "finish the remaining request. The prior response was incomplete."})
+    # A real tool result is already a valid continuation boundary. A repair stub is not.
+    if not visible or messages[-1]["role"] != "tool" or visible[-1][1] is None:
+        messages.append({"role": "user", "content":
+            "Continue the interrupted task from the saved work. Reuse available observations and files; "
+            "finish the remaining request. The prior response was incomplete."})
     return messages
 
 
@@ -847,8 +851,13 @@ def run_node(
         _emit(event_callback, kind, agent_spec.id, task.id, data)
 
     emit("worker_started")
+    template_vars = TemplateVars(user_vars)
+    template_vars.update({
+        alias: f"upstream input {json.dumps(alias, ensure_ascii=False)} in the supplied data message"
+        for alias in task.input_from
+    })
     try:
-        prompt = task.prompt_template.format_map(TemplateVars(user_vars))
+        prompt = task.prompt_template.format_map(template_vars)
     except (KeyError, ValueError) as exc:
         error = f"Failed to render prompt template: {redact_text(exc)}"
         emit("worker_failed", {"error": error})

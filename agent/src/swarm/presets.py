@@ -189,11 +189,11 @@ def inspect_preset(name: str) -> dict:
 
     declared_variables = _declared_variable_names(data.get("variables", []))
     used_variables: set[str] = set()
-    for task in data.get("tasks", []):
+    for task in run.tasks:
         try:
-            used_variables.update(_template_variables(task.get("prompt_template", "")))
+            used_variables.update(_template_variables(task.prompt_template) - task.input_from.keys())
         except ValueError as exc:
-            errors.append(f"Task '{task.get('id', '?')}' has invalid prompt template: {exc}")
+            errors.append(f"Task '{task.id}' has invalid prompt template: {exc}")
 
     missing_declarations = sorted(used_variables - declared_variables)
     unused_declarations = sorted(declared_variables - used_variables)
