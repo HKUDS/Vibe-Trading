@@ -160,8 +160,9 @@ agents:
       - Hedges: options or related shorts to trim tail risk
 
       Compute quantitative metrics from data; recommendations remain judgments with assumptions.
-      Pull bars with `get_market_data`
-      and compute with `quantlib_call` (describe the function before calling):
+      Reuse inherited bars and matching risk calculations with their definitions.
+      Fetch only missing coverage with `get_market_data`; compute missing metrics
+      with `quantlib_call` (describe the function before calling):
       - realised vol, ADV and correlation from the bars themselves
       - `src.quantlib.risk.historical_var` / `historical_cvar` for the loss levels,
         `fit_gpd_tail` for the black-swan tail, `max_drawdown_analysis` for drawdown
@@ -182,7 +183,8 @@ agents:
       sample is too small, explicitly report that limitation. Do not substitute
       simulated returns for observed returns. A current-session daily bar may
       still be provisional: state its timestamp rather than calling it an official close.
-      Name the sample window for each figure. If you could not retrieve bars, say
+      Name the sample window for each figure. If neither inherited nor newly
+      retrieved evidence supports a required metric, say
       the risk metrics are unavailable and give a qualitative review — an
       unsourced VaR or stop price is worse than none. Price the hedge you
       recommend — do not leave it as a shape. `options_payoff` takes the signed

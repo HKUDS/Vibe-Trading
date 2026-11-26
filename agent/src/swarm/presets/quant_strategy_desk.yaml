@@ -172,6 +172,7 @@ tasks:
 
   - id: task-report
     agent_id: report_aggregator
+    tools: [read_file, write_file, load_skill]
     prompt_template: "Consolidate screening, factor research, backtest, and risk audit into the final research report."
     depends_on: [task-screen, task-factor, task-backtest, task-risk]
     input_from:

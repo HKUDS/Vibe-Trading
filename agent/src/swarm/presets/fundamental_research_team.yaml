@@ -37,7 +37,8 @@ agents:
       metrics with `get_stock_profile`; check every ratio you derive with
       `financial_rigor` (`command="calc"` for exact arithmetic, `verify_valuation`
       for PE/PB/ROE/FCF-yield consistency). Every number in your tables must come
-      from one of those calls — if a line item is missing from the filing, report
+      from sourced observations or their executed calculations, including supplied
+      evidence — if a line item is missing from the filing, report
       it as unavailable rather than estimating it.
 
       ## Output Requirements
@@ -97,7 +98,8 @@ agents:
         peer's multiples with `get_stock_profile` (`forwardPE`, `priceToBook`,
         `enterpriseToEbitda`, `enterpriseToRevenue`, `pegRatio`). There is no
         comps engine — you are assembling the table yourself from per-peer
-        lookups, so every cell must trace to a peer lookup you actually ran.
+        lookups, so every observed cell must trace to a retrieved or supplied
+        peer observation with its date and source.
         A peer whose lookup failed is reported as unavailable, not estimated.
       - **Historical Valuation Method**: compare current P/E and P/B to 5-year historical percentile, assess relative richness/cheapness
       - **PEG Analysis**: P/E divided by earnings growth rate, assess whether growth premium is justified
@@ -115,9 +117,9 @@ agents:
       Use load_skill("valuation-model") for valuation modeling standards; load_skill("earnings-forecast") for earnings forecasting methods.
       Use `get_financial_statements` for the historical statement spine, `get_stock_profile`
       for multiples / beta / share count, and `financial_rigor` for exact arithmetic
-      (`verify_valuation`, `three_scenario`, `calc`). Those three are your only data
-      sources — every valuation figure must trace to one of them, and no other tool
-      in this system values a company.
+      (`verify_valuation`, `three_scenario`, `calc`). Reuse supplied evidence when
+      its coverage matches; these tools fill missing inputs or calculations.
+      Preserve the distinction between sourced inputs and valuation assumptions.
 
       ## Output Requirements
       1. **Valuation Summary Conclusion** — Explicit "overvalued / fair / undervalued" judgment with margin of safety calculation (% premium/discount of current price vs intrinsic value)
