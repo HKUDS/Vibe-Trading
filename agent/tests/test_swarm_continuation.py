@@ -7,7 +7,10 @@ from src.config.accessor import get_env_config
 
 
 import json
+import os
 import threading
+import time
+from pathlib import Path
 
 from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
@@ -51,12 +54,12 @@ class Provider:
         return step
 
 
-def run(tmp_path, registry, monkeypatch, provider, **kwargs):
+def run(tmp_path, registry, monkeypatch, provider, prompt="Analyze NVDA", **kwargs):
     monkeypatch.setattr("src.swarm.node.build_swarm_registry", lambda *a, **k: registry)
     monkeypatch.setattr("src.swarm.node.ChatLLM", lambda **kwargs: provider)
     return run_node(
         SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="Research", max_iterations=4),
-        SwarmTask(id="task", agent_id="analyst", prompt_template="Analyze NVDA"),
+        SwarmTask(id="task", agent_id="analyst", prompt_template=prompt),
         {},
         {},
         tmp_path,
@@ -413,3 +416,74 @@ def test_checkpoint_retry_requires_a_fresh_identity_resolution(tmp_path, monkeyp
     assert result.status == "completed"
     assert not market_reads
     assert lookups == ["AAPL", "AAPL"]
+
+
+class TargetRegistry(Registry):
+    """Write the requested report into the directory the tools run in."""
+
+    def execute(self, name, arguments):
+        self.calls += 1
+        (Path(arguments["run_dir"]) / "research.md").write_text("Computed research")
+        return '{"status":"ok"}'
+
+
+def test_shell_written_relative_target_counts_in_the_node_workspace(tmp_path, monkeypatch):
+    server = tmp_path / "server"
+    server.mkdir()
+    monkeypatch.chdir(server)
+    provider = Provider([
+        LLMResponse(tool_calls=[ToolCallRequest("shell", "bash", {"command": "echo > research.md"})]),
+        LLMResponse(content="Report ready in research.md", finish_reason="stop"),
+    ])
+    result = run(tmp_path / "swarm", TargetRegistry(), monkeypatch, provider, prompt="Write research.md")
+    assert (agent_artifact_dir(tmp_path / "swarm", "analyst", "task") / "research.md").is_file()
+    assert result.status == "completed", result.error
+
+
+def test_server_directory_file_does_not_satisfy_a_relative_target(tmp_path, monkeypatch):
+    server = tmp_path / "server"
+    server.mkdir()
+    unrelated = server / "research.md"
+    unrelated.write_text("unrelated")
+    # Another process keeps rewriting a same-named file in the server directory.
+    os.utime(unrelated, (time.time() + 3600, time.time() + 3600))
+    monkeypatch.chdir(server)
+    provider = Provider([LLMResponse(content="Report ready in research.md", finish_reason="stop")])
+    result = run(tmp_path / "swarm", Registry(), monkeypatch, provider, prompt="Write research.md")
+    assert result.status == "incomplete"
+    assert "research.md" in result.error
+
+
+def test_resume_keeps_a_target_written_before_cancellation(tmp_path, monkeypatch):
+    cancel = threading.Event()
+
+    def cancelled(kwargs):
+        cancel.set()
+        return LLMResponse(content="Report drafted")
+
+    registry = TargetRegistry()
+    first = Provider([
+        LLMResponse(tool_calls=[ToolCallRequest("write", "write_file", {"path": "research.md", "content": "x"})]),
+        cancelled,
+    ])
+    prompt = "Write research.md"
+    interrupted = run(tmp_path, registry, monkeypatch, first, prompt=prompt, cancel_event=cancel)
+    assert interrupted.status == "cancelled", interrupted.error
+    second = Provider([LLMResponse(content="Report ready in research.md", finish_reason="stop")])
+    result = run(tmp_path, registry, monkeypatch, second, prompt=prompt, resume=True)
+    assert result.status == "completed", result.error
+    assert registry.calls == 1
+
+
+def test_resume_still_requires_a_target_older_than_the_first_attempt(tmp_path, monkeypatch):
+    workspace = agent_artifact_dir(tmp_path, "analyst", "task")
+    workspace.mkdir(parents=True)
+    stale = workspace / "research.md"
+    stale.write_text("old report")
+    os.utime(stale, (1, 1))
+    prompt = "Write research.md"
+    assert run(tmp_path, Registry(), monkeypatch, Provider([fail_stream]), prompt=prompt).status == "failed"
+    second = Provider([LLMResponse(content="Report ready in research.md", finish_reason="stop")])
+    result = run(tmp_path, Registry(), monkeypatch, second, prompt=prompt, resume=True)
+    assert result.status == "incomplete"
+    assert "research.md" in result.error

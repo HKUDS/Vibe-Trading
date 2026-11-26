@@ -912,6 +912,8 @@ def run_node(
             pacing_type=NodePacing,
         )
         model.current_iteration = lambda: child.activity.iteration
+        # A target the cancelled attempt already wrote stays written.
+        child._write_targets.continue_attempts(previous)
         child.invocation.stop_on_unknown = stop.set
         child.invocation.heartbeat_interval = lambda: get_env_config().swarm.swarm_heartbeat_interval_s
         child.invocation.successful_reads = successful_reads if successful_reads is not None else {}

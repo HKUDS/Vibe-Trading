@@ -109,7 +109,7 @@ def record_written_target(
 
 
 def pending_write_directive(
-    user_message: str, run_started_wall: float, *, written_files: set[str]
+    user_message: str, run_started_wall: float, *, written_files: set[str], run_dir: str | None
 ) -> str:
     """Build a reminder when a task asks for file writes and none of its targets is confirmed.
 
@@ -117,6 +117,9 @@ def pending_write_directive(
         user_message: User prompt containing write intent and named target paths.
         run_started_wall: Run start as a Unix timestamp used to recognize recent writes.
         written_files: Case-folded target paths already recorded for this run.
+        run_dir: Directory the run's tools write to, if known. Relative targets resolve
+            here rather than in the server's working directory, so a file any tool (bash
+            included) created there counts.
 
     Returns:
         A directive listing the named targets, or an empty string when there is
@@ -133,6 +136,8 @@ def pending_write_directive(
         candidates = [target]
         if not target.is_absolute() and target.parent == Path("."):
             candidates += [directory / target.name for directory in base_dirs]
+        if run_dir:
+            candidates = [Path(run_dir) / candidate for candidate in candidates]
         for candidate in candidates:
             try:
                 key = str(candidate.resolve()).casefold()
