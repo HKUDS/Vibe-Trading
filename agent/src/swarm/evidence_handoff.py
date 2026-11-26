@@ -60,11 +60,18 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
     if inherited.is_file():
         # A bad inherited index costs only the inherited part, never this task's own observations.
         try:
-            listed = json.loads(inherited.read_text())
-            listed = listed.get("observations", []) if isinstance(listed, dict) else None
+            index = json.loads(inherited.read_text())
+            if not isinstance(index, dict):
+                raise ValueError("not an evidence index")
+            gaps = index.get("unavailable", [])
+            if not isinstance(gaps, list) or any(not isinstance(gap, str) for gap in gaps):
+                raise ValueError("invalid inherited limitations")
+            listed = index.get("observations", [])
             if not isinstance(listed, list):
                 raise ValueError("not an evidence index")
-        except (OSError, ValueError) as exc:
+            # What an earlier role could not get is still missing for every later one.
+            errors.extend(gaps)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             errors.append(f"{task_id} inherited index unavailable: {exc}")
             listed = []
         for entry in listed:
@@ -133,7 +140,7 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str],
         entry = {"source_task": task_id, "tool": tool, "call_id": call_id,
                  "request": redact_payload({key: args[key] for key in
                                             ("codes", "symbol", "code", "start_date", "end_date", "module",
-                                             "function", "command")
+                                             "function", "kwargs", "command")
                                             if key in args})}
         if turn_id is not None:
             entry["turn_id"] = turn_id

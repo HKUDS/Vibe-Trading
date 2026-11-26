@@ -246,6 +246,59 @@ def test_bad_inherited_index_keeps_the_producers_own_observations(tmp_path, brok
     assert reason.startswith("p inherited")
 
 
+@pytest.mark.parametrize("broken", ["{not json", '{"observations": [null]}'])
+def test_an_upstream_gap_reaches_every_later_consumer(tmp_path, broken):
+    """What the first consumer could not get is still unavailable two roles later (rf3-e item 9)."""
+    store = TaskStore(tmp_path)
+    producer = SwarmTask(id="p", agent_id="data", prompt_template="Collect")
+    consumer = SwarmTask(id="c", agent_id="editor", prompt_template="Edit", input_from={"d": "p"})
+    final = SwarmTask(id="f", agent_id="publisher", prompt_template="Publish", input_from={"c": "c"})
+    for task in (producer, consumer, final):
+        store.save_task(task)
+    source = agent_artifact_dir(tmp_path, "data", "p")
+    (source / "upstream").mkdir(parents=True)
+    (source / "upstream/index.json").write_text(broken)
+    thread = ThreadLog(node_thread(tmp_path, "data", "p"))
+    thread.append("assistant", "t1", content="", tool_calls=[
+        {"id": "own", "type": "function", "function": {"name": "get_market_data", "arguments": "{}"}}])
+    thread.append("tool_result", "t1", tool_call_id="own", name="get_market_data",
+                  content=json.dumps({"status": "ok", "AAPL.US": [{"close": 1.0}]}), status="ok")
+    middle = agent_artifact_dir(tmp_path, "editor", "c")
+    prepare_handoff(tmp_path, consumer, middle)
+    gaps = json.loads((middle / "upstream/index.json").read_text())["unavailable"]
+    assert gaps
+    last = agent_artifact_dir(tmp_path, "publisher", "f")
+    prepare_handoff(tmp_path, final, last)
+    inherited = json.loads((last / "upstream/index.json").read_text())
+    assert inherited["unavailable"] == gaps
+    assert [entry["call_id"] for entry in inherited["observations"]] == ["own"]
+
+
+def test_handoff_preserves_calculation_parameters_and_redacts_secrets(tmp_path):
+    """A consumer sees the kwargs a quantlib_call ran with, never a credential (rf3-e item 9)."""
+    store = TaskStore(tmp_path)
+    producer = SwarmTask(id="p", agent_id="quant", prompt_template="Calculate")
+    consumer = SwarmTask(id="c", agent_id="editor", prompt_template="Explain", input_from={"x": "p"})
+    for task in (producer, consumer):
+        store.save_task(task)
+    secret = "sk-live-0123456789abcdefghijklmnop"
+    arguments = {"action": "call", "module": "risk", "function": "calculation",
+                 "kwargs": {"annualization": 52, "baseline": 0.03, "ddof": 1, "api_key": secret},
+                 "api_key": secret}
+    thread = ThreadLog(node_thread(tmp_path, "quant", "p"))
+    thread.append("assistant", "t1", content="", tool_calls=[
+        {"id": "q", "type": "function", "function": {"name": "quantlib_call", "arguments": json.dumps(arguments)}}])
+    thread.append("tool_result", "t1", tool_call_id="q", name="quantlib_call",
+                  content=json.dumps({"status": "ok", "result": 1.7}), status="ok")
+    destination = agent_artifact_dir(tmp_path, "editor", "c")
+    prepare_handoff(tmp_path, consumer, destination)
+    raw = (destination / "upstream/index.json").read_text()
+    [entry] = json.loads(raw)["observations"]
+    assert entry["request"]["kwargs"] == {"annualization": 52, "baseline": 0.03, "ddof": 1, "api_key": "[redacted]"}
+    assert entry["request"]["function"] == "calculation"
+    assert secret not in raw
+
+
 def test_a_receipt_naming_a_path_outside_the_producer_workspace_is_not_read(tmp_path):
     store = TaskStore(tmp_path)
     producer = SwarmTask(id="p", agent_id="data", prompt_template="Collect")
