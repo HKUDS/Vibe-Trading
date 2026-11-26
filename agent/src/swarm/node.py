@@ -23,6 +23,7 @@ from src.product.resources.instructions import build_instruction_block
 from src.product.resources.memory import WorkspaceMemory
 from src.product.resources.skills import SkillsLoader
 from src.product.tool_policy import ToolPolicy
+from src.product.tool_results import _looks_like_tool_call_syntax
 from src.product.usage import _normalize_llm_usage
 from src.providers.chat import ChatLLM
 from src.providers.response import ProviderStreamError
@@ -255,21 +256,12 @@ def upstream_data_message(upstream_summaries: dict[str, str], note: str = "") ->
     return {"role": "user", "content": "\n\n".join(parts)}
 
 
-_UNPARSED_TOOL_MARKERS = (
-    "<\uff5ctool\u2581calls\u2581begin\uff5c>",
-    "<tool_calls_begin>",
-    "<tool_call_begin>",
-    "<tool_sep>",
-    "tool\u2581sep",
-)
-
-
 def _delivery_error(summary: str) -> str | None:
     """Detect missing output or unparsed provider protocol, not report quality."""
     text = (summary or "").strip()
     if not text:
         return "empty response"
-    if any(marker in text.lower() for marker in _UNPARSED_TOOL_MARKERS):
+    if _looks_like_tool_call_syntax(text):
         return "unparsed tool-call markup (provider did not parse tool calls)"
     return None
 

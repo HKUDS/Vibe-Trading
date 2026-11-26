@@ -65,15 +65,33 @@ _DSML_BAR_TOOL_CALL_RE = re.compile(
     r"<\s*/?\s*[|\u2502\uFF5C]{2}\s*(?:dsml|tool_calls|invoke)\b",
     re.IGNORECASE,
 )
+# Native call tokens (DeepSeek <｜tool▁calls▁begin｜>, Kimi <|tool_call_begin|>, plain
+# <tool_sep>) that reach the text channel when a provider leaves them unparsed.
+_NATIVE_TOOL_TOKEN_RE = re.compile(
+    r"<\s*[|\uFF5C]?\s*tool[_\u2581](?:calls?(?:[_\u2581]section)?[_\u2581](?:begin|end)"
+    r"|call[_\u2581]argument[_\u2581]begin|sep)\b"
+    r"|tool\u2581sep",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_tool_call_syntax(content: str) -> bool:
-    """Detect provider tool-call markup in a forced-text response."""
+    """Detect unparsed provider tool-call markup in an answer.
+
+    The one recognizer for the main agent's final answer and a swarm node's delivery.
+
+    Args:
+        content: Answer text to check.
+
+    Returns:
+        True when the text holds XML/DSML tool-call tags or native call tokens.
+    """
     if not content:
         return False
     return bool(
         _FORCED_TEXT_TOOL_CALL_RE.search(content)
         or _DSML_BAR_TOOL_CALL_RE.search(content)
+        or _NATIVE_TOOL_TOKEN_RE.search(content)
     )
 
 

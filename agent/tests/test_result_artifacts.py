@@ -227,3 +227,57 @@ def test_large_text_result_keeps_its_text_preview(tmp_path):
     receipt = json.loads(deliver_tool_result(raw, tmp_path, registry_with_reader()))
     assert receipt['_preview'].startswith('head line')
     assert receipt['_preview'].endswith('tail line')
+
+
+def _numbered_source(tmp_path):
+    source = tmp_path / 'source.txt'
+    source.write_text(''.join(f'line {i:06d} ' + 'x' * 40 + '\n' for i in range(2000)))
+    return source
+
+
+@pytest.mark.parametrize('arguments', [{}, {'limit': 300}], ids=['size_cap', 'line_limit'])
+def test_offloaded_partial_read_file_receipt_says_what_was_saved(tmp_path, arguments):
+    source = _numbered_source(tmp_path)
+    original = source.read_text()
+    agent = AgentRuntime(registry=registry_with_reader(), llm=SimpleNamespace(), max_iterations=3)
+    agent.memory.run_dir = str(tmp_path)
+    messages, _ = _drive(agent, 'read_file', tmp_path, [{'path': 'source.txt', **arguments}])
+    delivered = messages[-1]['content']
+    assert len(delivered) <= TOOL_RESULT_LIMIT
+    receipt = json.loads(delivered)
+    saved = json.loads(Path(receipt['_result_file']['path']).read_text())
+    assert saved['truncated'] is True
+    # The receipt keeps the source path and truncation fields the read returned.
+    assert receipt['path'] == str(source.resolve())
+    assert receipt['truncated'] is True
+    assert receipt['total_chars'] == len(original)
+    assert original.startswith(saved['content'][:receipt['returned_chars']])
+    assert receipt['returned_chars'] < len(original)
+    if arguments:
+        assert (receipt['returned_lines'], receipt['total_lines']) == (300, 2000)
+    # It never claims the complete source was saved or is loadable as data.
+    assert 'complete tool result' not in receipt['_delivery']
+    assert '__data_ref__' not in receipt['_delivery']
+    assert 'Do not refetch' not in receipt['_delivery']
+    assert f"first {receipt['returned_chars']} of {len(original)} characters" in receipt['_delivery']
+
+
+def test_offloaded_complete_read_file_receipt_keeps_the_source_path(tmp_path):
+    source = tmp_path / 'source.txt'
+    source.write_text('y' * (TOOL_RESULT_LIMIT * 2))
+    agent = AgentRuntime(registry=registry_with_reader(), llm=SimpleNamespace(), max_iterations=3)
+    agent.memory.run_dir = str(tmp_path)
+    messages, _ = _drive(agent, 'read_file', tmp_path, [{'path': 'source.txt'}])
+    receipt = json.loads(messages[-1]['content'])
+    assert receipt['path'] == str(source.resolve())
+    assert 'truncated' not in receipt
+    assert 'complete text of the source file' in receipt['_delivery']
+    saved = json.loads(Path(receipt['_result_file']['path']).read_text())
+    assert saved['content'] == source.read_text()
+
+
+def test_other_tool_envelope_is_not_described_as_a_file_read(tmp_path):
+    raw = json.dumps({'status': 'ok', 'path': 'another.json', 'content': 'x' * 15000, 'truncated': True})
+    receipt = json.loads(deliver_tool_result(raw, tmp_path, registry_with_reader(), tool_name='other_tool'))
+    assert 'path' not in receipt
+    assert 'source file' not in receipt['_delivery']
