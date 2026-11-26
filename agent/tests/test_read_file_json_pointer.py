@@ -130,13 +130,27 @@ def test_data_ref_pointer_selects_the_same_value_as_read_file(source):
     assert sources[0]["pointer"] == "/a~1b~0//1"
 
 
-def test_mcp_forwards_same_selection_contract(monkeypatch):
+def test_mcp_forwards_same_selection_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The wrapper forwards both selection and paging arguments.
+
+    Args:
+        monkeypatch: Fixture for observing the registry invocation.
+    """
     import mcp_server
 
     calls = []
 
     class Registry:
-        def execute(self, name, arguments):
+        def execute(self, name: str, arguments: dict) -> str:
+            """Capture the arguments the MCP wrapper sent to the registry.
+
+            Args:
+                name: Tool name.
+                arguments: Arguments received from the wrapper.
+
+            Returns:
+                A sentinel forwarded unchanged by the wrapper.
+            """
             calls.append((name, arguments))
             return "result"
 
@@ -149,3 +163,40 @@ def test_mcp_forwards_same_selection_contract(monkeypatch):
         ("read_file", {"path": "data.json", "pointer": "/rows/2", "limit": 4}),
         ("read_file", {"path": "data.json"}),
     ]
+    assert wrapper("data.json", pointer="/rows/2", limit=4, offset=2, char_offset=5) == "result"
+    assert calls[-1] == (
+        "read_file", {"path": "data.json", "pointer": "/rows/2", "limit": 4, "offset": 2, "char_offset": 5},
+    )
+
+
+def test_mcp_continues_the_selected_json_value(source, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Continue a pointer selection through FastMCP and the real file reader.
+
+    Args:
+        source: Generated JSON source and its decoded value.
+        monkeypatch: Fixture for binding the MCP registry and allowed file roots.
+    """
+    import asyncio
+
+    from fastmcp import Client
+    import mcp_server
+
+    path, value = source
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(path.parent))
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=registry.policy.file_roots))
+    monkeypatch.setattr(mcp_server, "_registry", registry)
+
+    async def read_pages():
+        arguments = {"path": str(path), "pointer": "/series/data", "limit": 4}
+        async with Client(mcp_server.mcp) as client:
+            first = json.loads((await client.call_tool("read_file", arguments)).content[0].text)
+            second = json.loads((await client.call_tool(
+                "read_file", {**arguments, "offset": first["next_offset"]},
+            )).content[0].text)
+        lines = json.dumps(value["series"]["data"], ensure_ascii=False, indent=2).splitlines(keepends=True)
+        assert first["content"] == "".join(lines[:4])
+        assert second["content"] == "".join(lines[4:8])
+        assert first["source_truncated"] and second["source_truncated"]
+
+    asyncio.run(read_pages())
