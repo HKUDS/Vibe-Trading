@@ -32,7 +32,8 @@ def execute_batch(calls: list[BoundCall], cancelled: Callable[[], bool]) -> None
                 continue
             workers = [call.start(True) for call in batch]
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(batch), 8)) as pool:
-                futures = [pool.submit(invoke) for invoke in workers]
+                # One copy per call: a Context cannot be entered by two threads at once.
+                futures = [pool.submit(contextvars.copy_context().run, invoke) for invoke in workers]
                 results = []
                 for future in futures:
                     try:
