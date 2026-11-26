@@ -40,10 +40,11 @@ services:
     # --- Runtime hardening (VT-007) ---
     cap_drop:
       - ALL
-    # SETUID/SETGID are kept on purpose: runner.py drops privilege to the
-    # unprivileged vibe-sandbox user for LLM-generated-code subprocesses, which
-    # needs setuid/setgid. They are granted from container start (not gained via
-    # escalation), so no-new-privileges below does not neutralize them.
+    # SETUID/SETGID let runner.py drop LLM-generated-code subprocesses to the
+    # vibe-sandbox user, but only when the server runs as root: the image runs
+    # as `vibe`, and Docker grants cap_add to root alone, so with the default
+    # USER that drop fails (logged). Those subprocesses and swarm node shells are
+    # confined by Landlock instead, which needs no capability.
     cap_add:
       - SETUID
       - SETGID

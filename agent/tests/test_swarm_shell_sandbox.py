@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import platform
-import shutil
-import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -24,18 +22,11 @@ import src.swarm.node as node
 
 
 def _host_backend_works() -> bool:
-    """Probe the platform sandbox the way a real command would use it."""
-    if platform.system() == "Darwin" and shutil.which("sandbox-exec"):
-        argv = ["sandbox-exec", "-p", "(version 1)(allow default)", "/bin/sh", "-c", ":"]
-    elif platform.system() == "Linux" and shutil.which("bwrap"):
-        argv = ["bwrap", "--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--unshare-net",
-                "/bin/sh", "-c", ":"]
-    else:
-        return False
-    try:
-        return subprocess.run(argv, capture_output=True, timeout=10).returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+    """Whether a real backend (Seatbelt, bwrap or Landlock) confines a command on this host."""
+    from src.tools.sandbox import SandboxSettings
+
+    probe = SandboxSettings(runtime_root=Path(tempfile.gettempdir()), swarm_mode="required")
+    return probe.for_workspace(Path(tempfile.gettempdir())).unavailable is None
 
 
 requires_backend = pytest.mark.skipif(not _host_backend_works(), reason="no working OS sandbox backend on this host")
@@ -76,6 +67,23 @@ def no_backend(monkeypatch):
     import src.tools.sandbox as sandbox
 
     monkeypatch.setattr(sandbox, "_probe_backend", lambda backend, network: f"{backend} cannot run here (test)", raising=False)
+    monkeypatch.setattr(sandbox, "_probe_landlock", lambda network: "landlock cannot run here (test)")
+
+
+@pytest.fixture
+def outside(tmp_path, monkeypatch):
+    """A directory a node must not write, away from the temporary directory every backend allows.
+
+    pytest's tmp_path sits under /tmp on Linux, so the shared temporary directory moves aside.
+    """
+    import src.tools.sandbox as sandbox
+
+    scratch = tmp_path / "shared-tmp"
+    scratch.mkdir()
+    monkeypatch.setattr(sandbox, "SHARED_TMP", scratch)
+    path = tmp_path / "outside"
+    path.mkdir()
+    return path
 
 
 def _run_node(root: Path, monkeypatch, *calls, tools=("bash",)):
@@ -106,10 +114,9 @@ def _wait_for(path: Path, seconds: float = 15.0) -> bool:
 
 
 @requires_backend
-def test_node_bash_writes_its_workspace_but_not_outside_it(tmp_path, monkeypatch, mode):
+def test_node_bash_writes_its_workspace_but_not_outside_it(tmp_path, monkeypatch, mode, outside):
     mode(None)  # the default is auto
-    root, outside = tmp_path / "run", tmp_path / "outside"
-    outside.mkdir()
+    root = tmp_path / "run"
     workspace, results = _run_node(
         root, monkeypatch,
         _call("in", "bash", command="printf 'a,b\\n1,2\\n' > table.csv"),
@@ -125,10 +132,9 @@ def test_node_bash_writes_its_workspace_but_not_outside_it(tmp_path, monkeypatch
 
 
 @requires_backend
-def test_node_background_run_is_held_to_its_workspace(tmp_path, monkeypatch, mode):
+def test_node_background_run_is_held_to_its_workspace(tmp_path, monkeypatch, mode, outside):
     mode("auto")
-    root, outside = tmp_path / "run", tmp_path / "outside"
-    outside.mkdir()
+    root = tmp_path / "run"
     workspace, results = _run_node(
         root, monkeypatch,
         _call("bg", "background_run", command=f"touch {outside / 'bg.txt'}; touch done.txt"),
@@ -231,6 +237,25 @@ def test_main_sandbox_runs_in_a_run_dir_under_vibe_trading_home(tmp_path, monkey
     assert result["status"] == "ok", result
     assert result["stdout"].strip() == str(run_dir)
     assert (run_dir / "made.txt").exists()
+
+
+@requires_backend
+def test_a_node_runs_beside_credential_files_it_cannot_read(tmp_path, monkeypatch, mode):
+    home = (tmp_path / "home").resolve()
+    (home / "auth").mkdir(parents=True)
+    (home / "auth" / "token.json").write_text('{"token": "secret"}')
+    (home / "connections.json").write_text('{"key": "secret"}')
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(home))
+    mode(None)
+    _, results = _run_node(
+        tmp_path / "run", monkeypatch,
+        _call("ok", "bash", command="echo still-runs"),
+        _call("file", "bash", command=f"cat {home / 'connections.json'}"),
+        _call("dir", "bash", command=f"cat {home / 'auth' / 'token.json'}"),
+    )
+    assert results["ok"]["status"] == "ok" and results["ok"]["stdout"].strip() == "still-runs", results["ok"]
+    for name in ("file", "dir"):
+        assert "secret" not in results[name].get("stdout", ""), results[name]
 
 
 @requires_backend

@@ -2,6 +2,11 @@
 
 The sandbox is opt-in.  When enabled, an unsupported platform or missing
 backend fails closed before a command is started.
+
+Backends: Seatbelt (``sandbox-exec``) on macOS; on Linux bubblewrap (``bwrap``), and Landlock
+when bwrap cannot run. A container usually cannot give bwrap its namespaces (Docker's default
+seccomp profile refuses them), while Landlock needs no privilege at all: the command starts
+through ``landlock_exec.py``, which restricts itself and then execs it.
 """
 
 from __future__ import annotations
@@ -11,8 +16,10 @@ import functools
 import logging
 import platform
 import re
+import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -25,6 +32,9 @@ logger = logging.getLogger(__name__)
 #: Reasons already warned about, so an unconfined swarm fallback is logged once per process.
 _WARNED_UNAVAILABLE: set[str] = set()
 _PROBE_TIMEOUT_SECONDS = 10
+#: The shared temporary directory every backend leaves writable (Seatbelt matches it resolved:
+#: /tmp is a symlink to /private/tmp on macOS).
+SHARED_TMP = Path("/tmp")
 
 
 class SandboxUnavailableError(RuntimeError):
@@ -59,6 +69,105 @@ def _probe_backend(backend: str, network: bool) -> str | None:
     return None
 
 
+#: Started as ``python -I`` so the command's directory cannot shadow its imports.
+LANDLOCK_EXEC = Path(__file__).with_name("landlock_exec.py")
+
+
+def landlock_command(argv: list[str], spec: dict) -> list[str]:
+    """Wrap ``argv`` so it starts under the Landlock ruleset ``spec`` describes.
+
+    Args:
+        argv: The command to confine.
+        spec: A spec from :func:`build_landlock_spec`.
+
+    Returns:
+        The argv that applies the ruleset and then execs ``argv``.
+    """
+    return [sys.executable, "-I", str(LANDLOCK_EXEC), json.dumps(spec), *argv]
+
+
+@functools.lru_cache(maxsize=None)
+def _probe_landlock(network: bool) -> str | None:
+    """Start a trivial command under Landlock once per process.
+
+    Args:
+        network: Whether commands keep the network; without it the kernel must refuse TCP too.
+
+    Returns:
+        None when Landlock confines a command on this host, else why it cannot.
+    """
+    if platform.system() != "Linux":
+        return "Landlock is Linux-only"
+    with tempfile.TemporaryDirectory(prefix="vibe-landlock-probe-") as scratch:
+        argv = landlock_command(["/bin/sh", "-c", ":"], {"write": [scratch], "read": ["/"], "net": network})
+        try:
+            probe = subprocess.run(argv, capture_output=True, text=True, timeout=_PROBE_TIMEOUT_SECONDS)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return f"landlock could not be started: {exc}"
+    if probe.returncode != 0:
+        return (probe.stderr or "").strip()[:200] or f"landlock probe failed (exit {probe.returncode})"
+    return None
+
+
+def landlock_available(network: bool) -> str | None:
+    """Why Landlock cannot confine a command on this host, or None when it can.
+
+    Args:
+        network: Whether the command keeps the network.
+
+    Returns:
+        None when available, else the reason (probed once per process).
+    """
+    return _probe_landlock(network)
+
+
+def _related(path: Path, others: set[Path]) -> bool:
+    """Whether ``path`` is one of ``others``, inside one, or above one."""
+    return any(path == other or path.is_relative_to(other) or other.is_relative_to(path) for other in others)
+
+
+def landlock_grants(hidden: set[Path], top: Path = Path("/")) -> tuple[list[str], list[str]]:
+    """Split the filesystem into what a Landlock command may read and what it may only list.
+
+    Landlock can only grant, so "everything but the hidden paths" is granted as every sibling
+    along the way down to each hidden path. The directories on that way may be listed (their
+    tree's names, hidden ones included) but not read. A symlink is granted only when its target
+    has nothing to do with a hidden path, because a grant follows it.
+
+    Args:
+        hidden: Resolved absolute paths whose contents must stay unreadable.
+        top: Where the walk starts.
+
+    Returns:
+        ``(read, read_dir)`` path lists for the spec.
+    """
+    read: list[str] = []
+    listed: list[str] = [str(top)]
+    pending = [top]
+    while pending:
+        folder = pending.pop()
+        try:
+            entries = sorted(folder.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry in hidden:
+                continue
+            if entry.is_symlink():
+                try:
+                    target = entry.resolve()
+                except OSError:
+                    continue
+                if not _related(target, hidden):
+                    read.append(str(entry))
+            elif any(other.is_relative_to(entry) for other in hidden):
+                listed.append(str(entry))
+                pending.append(entry)
+            else:
+                read.append(str(entry))
+    return read, listed
+
+
 def enumerate_protected_runtime_paths(runtime_root: Path) -> tuple[Path, ...]:
     """Find broker/auth runtime paths from the source's path declarations.
 
@@ -66,6 +175,12 @@ def enumerate_protected_runtime_paths(runtime_root: Path) -> tuple[Path, ...]:
     shell sandbox.  The directory names are discovered from ``get_runtime_root``
     path expressions and connector ``CONFIG_FILENAME`` declarations so adding a
     connector does not require a second security list.
+
+    Args:
+        runtime_root: The runtime root (``get_runtime_root()``).
+
+    Returns:
+        The credential paths under it, sorted, whether or not they exist yet.
     """
     root = Path(runtime_root).expanduser().resolve()
     source_root = Path(__file__).resolve().parents[1]
@@ -109,6 +224,39 @@ def enumerate_protected_runtime_paths(runtime_root: Path) -> tuple[Path, ...]:
     protected.update(root / name for name in config_files if name.endswith(".json"))
     protected.update(root.glob("*.json"))
     return tuple(sorted(protected, key=lambda path: str(path)))
+
+
+def build_landlock_spec(*, hidden: set[Path], writable: list[Path], network: bool, private_tmp: Path,
+                        readable: tuple[Path, ...] = ()) -> dict:
+    """Describe a Landlock ruleset: read all but ``hidden``, write ``writable`` and the temp dirs.
+
+    Landlock can only grant, so when a hidden path lies inside /tmp (a runtime root there), /tmp
+    is not granted and TMPDIR moves to ``private_tmp`` instead; a /tmp grant would cover it.
+
+    Args:
+        hidden: Resolved paths whose contents stay unreadable.
+        writable: Directories granted every filesystem right.
+        network: Whether TCP stays open.
+        private_tmp: The TMPDIR used when /tmp cannot be granted; created then.
+        readable: Paths inside ``hidden`` that are readable after all.
+
+    Returns:
+        The spec ``landlock_exec.py`` reads.
+    """
+    read, read_dir = landlock_grants(hidden)
+    read += [str(path) for path in readable if path.exists()]
+    tmp = SHARED_TMP.resolve()
+    env: dict[str, str] = {}
+    granted = [str(Path(path).resolve()) for path in writable]
+    if _related(tmp, hidden):
+        Path(private_tmp).mkdir(parents=True, exist_ok=True)
+        env["TMPDIR"] = str(private_tmp)
+        granted.append(str(Path(private_tmp).resolve()))
+    else:
+        granted.append(str(tmp))
+    granted += [path for path in ("/dev/shm",) if Path(path).is_dir()]
+    return {"read": read, "read_dir": read_dir, "write": list(dict.fromkeys(granted)), "dev": ["/dev"],
+            "net": network, "env": env}
 
 
 @dataclass(frozen=True)
@@ -166,12 +314,17 @@ class SandboxSettings:
             return self
         pinned = Path(workspace).expanduser().resolve()
         try:
-            backend = self._selected_backend()
-            reason = _probe_backend(backend, self.network) if backend else "no sandbox backend exists for this platform"
+            candidates = self._candidate_backends()
         except SandboxUnavailableError as exc:
-            backend, reason = "", str(exc)
-        if reason is None:
-            return replace(self, enabled=True, backend=backend, workspace=pinned)
+            candidates, reasons = [], [str(exc)]
+        else:
+            reasons = [] if candidates else ["no sandbox backend exists for this platform"]
+        for backend in candidates:
+            reason = self._probe(backend)
+            if reason is None:
+                return replace(self, enabled=True, backend=backend, workspace=pinned)
+            reasons.append(reason)
+        reason = "; ".join(reasons)
         if self.swarm_mode == "required" or self.enabled:
             return replace(self, enabled=True, workspace=pinned, unavailable=reason)
         if reason not in _WARNED_UNAVAILABLE:
@@ -181,6 +334,23 @@ class SandboxSettings:
                 "Set VIBE_TRADING_SWARM_SHELL_SANDBOX=required to refuse them instead.", reason,
             )
         return replace(self, enabled=False, workspace=pinned, unavailable=reason)
+
+    def _candidate_backends(self) -> list[str]:
+        """The backends to try in order: the selected one, then Landlock on Linux unless one was named.
+
+        Raises:
+            SandboxUnavailableError: An unsupported backend was named.
+        """
+        selected = self._selected_backend()
+        if selected == "bwrap" and self.backend is None:
+            return ["bwrap", "landlock"]
+        return [selected] if selected else []
+
+    def _probe(self, backend: str) -> str | None:
+        """Why ``backend`` cannot confine a command here, or None when it can."""
+        if backend == "landlock":
+            return _probe_landlock(self.network)
+        return _probe_backend(backend, self.network)
 
     @property
     def unconfined_fallback(self) -> bool:
@@ -195,7 +365,8 @@ class SandboxSettings:
         """Return the supported backend name or raise when unavailable.
 
         Returns:
-            ``disabled`` when the sandbox is off, else ``sandbox-exec`` or ``bwrap``.
+            ``disabled`` when the sandbox is off, else ``sandbox-exec``, ``bwrap`` or ``landlock``
+            (on Linux when bwrap cannot run and no backend was named).
 
         Raises:
             SandboxUnavailableError: The sandbox is required but this host cannot provide it.
@@ -204,6 +375,15 @@ class SandboxSettings:
             return "disabled"
         if self.unavailable is not None:
             raise SandboxUnavailableError(f"a swarm node shell sandbox is required but unavailable: {self.unavailable}")
+        candidates = self._candidate_backends()
+        if "landlock" in candidates:
+            reasons = []
+            for backend in candidates:
+                reason = self._probe(backend)
+                if reason is None:
+                    return backend
+                reasons.append(reason)
+            raise SandboxUnavailableError(f"sandbox is enabled but no backend works: {'; '.join(reasons)}")
         requested = self._selected_backend()
         if not requested or shutil.which(requested) is None:
             raise SandboxUnavailableError(
@@ -218,6 +398,8 @@ class SandboxSettings:
             requested = "sandbox-exec"
         elif requested in {"bwrap", "bubblewrap"}:
             requested = "bwrap"
+        elif requested == "landlock":
+            pass
         elif requested not in (None, ""):
             raise SandboxUnavailableError(f"unsupported sandbox backend {requested!r}")
         if requested is None:
@@ -254,8 +436,7 @@ class SandboxSettings:
             '(allow file-read* (subpath "/"))',
             f'(allow file-read* (subpath "{Path(workspace).resolve()}"))',
             f'(allow file-write* (subpath "{Path(workspace).resolve()}"))',
-            # Seatbelt matches resolved paths, and /tmp is a symlink to /private/tmp.
-            f'(allow file-write* (subpath "{Path("/tmp").resolve()}"))',
+            f'(allow file-write* (subpath "{SHARED_TMP.resolve()}"))',
             '(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper")'
             ' (literal "/dev/stdout") (literal "/dev/stderr") (subpath "/dev/fd") (regex #"^/dev/tty"))',
         ]
@@ -273,7 +454,7 @@ class SandboxSettings:
             workspace: Writable working directory of the command.
 
         Returns:
-            The argv to spawn and the Seatbelt profile file to delete afterwards (None for bwrap).
+            The argv to spawn and the Seatbelt profile file to delete afterwards (None otherwise).
 
         Raises:
             SandboxUnavailableError: No supported backend is available.
@@ -294,20 +475,61 @@ class SandboxSettings:
             argv = ["bwrap", "--die-with-parent", "--new-session", "--ro-bind", "/", "/"]
             if not self.network:
                 argv.append("--unshare-net")
-            argv.extend(["--bind", str(workspace), str(workspace)])
+            # The read-only root covers /dev and /tmp too: a fresh /dev (null, zero, urandom, shm,
+            # tty) and the shared /tmp keep what Seatbelt allows writable.
+            tmp = str(SHARED_TMP.resolve())
+            argv.extend(["--dev", "/dev", "--bind", tmp, tmp, "--bind", str(workspace), str(workspace)])
             for protected in enumerate_protected_runtime_paths(self.runtime_root):
-                if protected.exists():
+                # --tmpfs needs a directory; a credential file is covered with an empty one.
+                if protected.is_dir():
                     argv.extend(["--tmpfs", str(protected)])
+                elif protected.exists():
+                    argv.extend(["--ro-bind", "/dev/null", str(protected)])
             argv.extend(["--chdir", str(workspace), "/bin/sh", "-c", command])
             return argv, None
+        if backend == "landlock":
+            return landlock_command(["/bin/sh", "-c", command], self.landlock_spec(workspace)), None
         raise SandboxUnavailableError(f"unsupported sandbox backend {backend!r}")
+
+    def landlock_spec(self, workspace: Path) -> dict:
+        """The Landlock ruleset for one command, matching what Seatbelt allows.
+
+        Everything is readable except the runtime root's credential paths; the workspace, /tmp
+        and /dev/shm (semaphores) are writable; files under /dev may be written; the network
+        follows ``network``. Landlock can only grant, so when a credential path lies inside /tmp
+        (a runtime root there), /tmp is not granted and the command's TMPDIR moves into the
+        workspace instead.
+
+        Args:
+            workspace: The one writable directory besides the temporary ones.
+
+        Returns:
+            The spec ``landlock_exec.py`` reads.
+        """
+        workspace = Path(workspace).resolve()
+        hidden = {path.resolve() for path in enumerate_protected_runtime_paths(self.runtime_root)}
+        return build_landlock_spec(hidden=hidden, writable=[workspace], network=self.network,
+                                   private_tmp=workspace / ".tmp")
 
 
 def sandbox_command(command: str, workspace: Path, settings: SandboxSettings) -> tuple[list[str], Path | None]:
-    """Build an enabled sandbox command, refusing unsupported hosts."""
+    """Build an enabled sandbox command, refusing unsupported hosts.
+
+    Args:
+        command: Shell command to run.
+        workspace: Its writable working directory.
+        settings: The resolved sandbox settings.
+
+    Returns:
+        The argv to spawn and the Seatbelt profile to delete afterwards (None otherwise).
+
+    Raises:
+        SandboxUnavailableError: No supported backend is available.
+    """
     return settings.command_argv(command, workspace)
 
 
 __all__ = [
-    "SandboxSettings", "SandboxUnavailableError", "enumerate_protected_runtime_paths", "sandbox_command",
+    "SandboxSettings", "SandboxUnavailableError", "build_landlock_spec", "enumerate_protected_runtime_paths",
+    "landlock_command", "landlock_available", "sandbox_command",
 ]
