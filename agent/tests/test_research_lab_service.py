@@ -143,6 +143,28 @@ def test_catalog_http_keeps_valid_runs_beside_malformed_metadata(isolated, malfo
     assert broken_config.read_bytes() == before
 
 
+def test_catalog_checks_parameters_after_applying_saved_overrides(isolated, monkeypatch):
+    monkeypatch.setattr(service, "constructor_defaults", lambda _source: {"threshold": float("nan")})
+
+    paths = {}
+    for name, parameters in (("default-only", {}), ("saved-override", {"threshold": 0.5})):
+        root = isolated / name
+        (root / "code").mkdir(parents=True)
+        (root / "code/signal_engine.py").write_text("# synthetic strategy\n", encoding="utf-8")
+        config = root / "config.json"
+        config.write_text(json.dumps({"codes": ["AAPL.US"], "signal_parameters": parameters}), encoding="utf-8")
+        paths[config] = config.read_bytes()
+    replay = isolated / "replay"
+    replay.mkdir()
+    (replay / "req.json").write_text('{"prompt":"saved task"}', encoding="utf-8")
+
+    rows = {row["id"]: row for row in service.catalog()["runs"]}
+    assert set(rows) == {"saved-override", "replay"}
+    assert rows["saved-override"]["parameters"] == {"threshold": 0.5}
+    assert rows["replay"]["parameters"] == {}
+    assert all(path.read_bytes() == content for path, content in paths.items())
+
+
 def test_http_authentication_submission_and_report_recovery(isolated, monkeypatch):
     import src.factors.audit
 

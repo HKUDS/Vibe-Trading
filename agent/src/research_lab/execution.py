@@ -236,7 +236,12 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
         if is_benchmark:
             frame = read_benchmark_prices(raw, entry.get("timezone"))
         else:
-            frame = pd.read_csv(io.BytesIO(raw), index_col=0, parse_dates=True)
+            frame = pd.read_csv(
+                io.BytesIO(raw),
+                index_col=0,
+                parse_dates=True,
+                float_precision="round_trip",
+            )
         visible = frame.loc[settings["start_date"] : settings["end_date"]]
         if len(visible) == len(frame):
             try:
