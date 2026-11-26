@@ -1051,6 +1051,8 @@ export function Agent() {
         // Add final answer
         const runDir = String(d.run_dir || "");
         const runId = runDir ? runDir.split(/[/\\]/).pop() : undefined;
+        const messageId = String(d.message_id || "").trim();
+        const hasForkTarget = Boolean(messageId);
         const summary = String(d.summary || "");
         const finalAnswer = summary.trim() ? summary : streamedAnswer;
         if (finalAnswer) {
@@ -1058,6 +1060,8 @@ export function Agent() {
             id: "",
             type: "answer",
             content: finalAnswer,
+            sourceMessageId: messageId || undefined,
+            canFork: hasForkTarget,
             elapsed_ms: Number(d.elapsed_ms || 0) || undefined,
             timestamp: Date.now(),
           });
@@ -1099,6 +1103,8 @@ export function Agent() {
           if (card || shadowId) {
             s.addMessage({
               id: "", type: "run_complete", content: "", runId,
+              sourceMessageId: finalAnswer ? undefined : messageId || undefined,
+              canFork: !finalAnswer && hasForkTarget,
               metrics: card?.metrics,
               equityCurve: card?.equityCurve,
               shadowId,
@@ -1106,7 +1112,12 @@ export function Agent() {
             });
           }
         } else if (shadowId) {
-          s.addMessage({ id: "", type: "run_complete", content: "", shadowId, timestamp: Date.now() });
+          s.addMessage({
+            id: "", type: "run_complete", content: "", shadowId,
+            sourceMessageId: finalAnswer ? undefined : messageId || undefined,
+            canFork: !finalAnswer && hasForkTarget,
+            timestamp: Date.now(),
+          });
         }
 
         scrollToBottom();

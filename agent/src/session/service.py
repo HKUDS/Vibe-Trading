@@ -319,6 +319,20 @@ class SessionService:
 
         Unlike ``send_message``, this never claims or mutates the source. The
         returned child has no task, loop, event, background, or swarm state.
+
+        Args:
+            source_id: Source session identifier.
+            message_id: Completed assistant message that ends the copied prefix.
+            owner: Requesting principal used for child ownership and authorization.
+            goal_store: Optional goal ledger to clone at fork time.
+
+        Returns:
+            The newly published child session.
+
+        Raises:
+            ForkSourceNotFound: If the source session does not exist.
+            ForkAuthorizationError: If the requesting owner cannot access the source.
+            ForkSelectionError: If the cutoff or its referenced state is invalid.
         """
         from src.session.fork import fork_session
 
@@ -566,7 +580,8 @@ class SessionService:
             self.event_bus.emit(
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
-                {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
+                {"attempt_id": attempt.attempt_id, "message_id": reply.message_id,
+                 "status": attempt.status.value,
                  "summary": reply.content, "error": attempt.error, "run_dir": attempt.run_dir,
                  "started_at": wall_started_at, "ended_at": time.time(),
                  **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},

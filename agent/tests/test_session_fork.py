@@ -316,6 +316,32 @@ def test_ineligible_cutoffs_are_rejected(runtime, kind):
     assert not list(service.runs_dir.glob(".*.fork-*"))
 
 
+@pytest.mark.parametrize("metadata", [{}, {"status": None}])
+def test_assistant_without_completion_evidence_is_ineligible(runtime, metadata):
+    service, goals, _, source = _source(runtime)
+    message = Message(
+        session_id=source.session_id,
+        role="assistant",
+        content="unmarked answer",
+        metadata=metadata,
+    )
+    service.store.append_message(message)
+
+    with pytest.raises(ForkSelectionError):
+        service.fork_session(source.session_id, message.message_id, owner=ALICE, goal_store=goals)
+    assert service.store.list_sessions(limit=10) == [source]
+    assert not list(service.runs_dir.glob(".*.fork-*"))
+
+
+def test_completed_linked_attempt_is_completion_evidence_without_reply_status(runtime):
+    service, goals, _, source = _source(runtime)
+    _, selected, _ = _turn(service, source.session_id, "legacy-status", metadata_status=None)
+
+    child = service.fork_session(source.session_id, selected.message_id, owner=ALICE, goal_store=goals)
+
+    assert child.last_attempt_id is not None
+
+
 def test_legacy_terminal_assistant_without_run_is_allowed(runtime):
     service, goals, _, source = _source(runtime)
     message = Message(
@@ -484,6 +510,61 @@ def test_current_goal_snapshot_has_new_ids_and_cannot_auto_continue(runtime):
     assert (service.runs_dir / evidence["run_id"] / "artifacts" / "metrics.csv").is_file()
     assert goals.get_goal_snapshot(source_goal.goal_id, evidence_limit=None) == source_before
     assert goals.get_current_goal(source.session_id).status is GoalStatus.ACTIVE
+
+
+@pytest.mark.parametrize("run_state", ["running", "malformed", "missing"])
+def test_goal_snapshot_rejects_nonterminal_run(runtime, run_state):
+    service, goals, _, source = _source(runtime)
+    _, selected, _ = _turn(service, source.session_id, "selected")
+    run_dir = _run_files(service, "active-goal-run", session_id=source.session_id)
+    state_path = run_dir / "state.json"
+    if run_state == "running":
+        state_path.write_text(json.dumps({"status": "running"}))
+    elif run_state == "malformed":
+        state_path.write_text("not-json")
+    else:
+        state_path.unlink()
+        (run_dir / "run_card.json").unlink()
+        (run_dir / "run_card.md").unlink()
+    goal = goals.replace_goal(session_id=source.session_id, objective="Do not copy live state.", criteria=["Check"])
+    goals.append_evidence(
+        session_id=source.session_id,
+        goal_id=goal.goal_id,
+        expected_goal_id=goal.goal_id,
+        evidence=EvidenceInput(
+            text="Evidence from a run that has not reached a terminal state.",
+            run_id="active-goal-run",
+            artifact_path=str(run_dir / "artifacts" / "metrics.csv"),
+        ),
+    )
+    source_before = goals.get_goal_snapshot(goal.goal_id, evidence_limit=None)
+
+    with pytest.raises(ForkSelectionError, match="goal.*run.*terminal"):
+        service.fork_session(source.session_id, selected.message_id, owner=ALICE, goal_store=goals)
+
+    assert service.store.list_sessions(limit=10) == [source]
+    assert not list(service.runs_dir.glob(".*.fork-*"))
+    assert goals.get_goal_snapshot(goal.goal_id, evidence_limit=None) == source_before
+
+
+def test_goal_snapshot_accepts_legacy_terminal_run_card(runtime):
+    service, goals, _, source = _source(runtime)
+    _, selected, _ = _turn(service, source.session_id, "selected")
+    run_dir = _run_files(service, "legacy-goal-run", session_id=source.session_id)
+    (run_dir / "state.json").unlink()
+    goal = goals.replace_goal(session_id=source.session_id, objective="Keep legacy evidence.", criteria=["Check"])
+    goals.append_evidence(
+        session_id=source.session_id,
+        goal_id=goal.goal_id,
+        expected_goal_id=goal.goal_id,
+        evidence=EvidenceInput(text="Completed legacy run.", run_id="legacy-goal-run"),
+    )
+
+    child = service.fork_session(source.session_id, selected.message_id, owner=ALICE, goal_store=goals)
+
+    evidence = goals.get_current_snapshot(child.session_id)["evidence"][0]
+    assert evidence["run_id"] != "legacy-goal-run"
+    assert (service.runs_dir / evidence["run_id"] / "run_card.json").is_file()
 
 
 def test_goal_paths_outside_the_run_root_remain_shared(runtime, tmp_path):

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { Agent } from "../Agent";
@@ -7,6 +7,7 @@ import { useSessionsStore } from "@/stores/sessions";
 import i18n from "@/i18n";
 
 const apiMock = vi.hoisted(() => ({
+  autoTitleSession: vi.fn(),
   cancelSession: vi.fn(),
   forkSession: vi.fn(),
   getGoal: vi.fn(),
@@ -81,6 +82,14 @@ function renderAgent() {
   return router;
 }
 
+type Handlers = Record<string, (data: Record<string, unknown>) => void>;
+
+function latestHandlers(): Handlers {
+  const call = sseMock.connect.mock.calls.at(-1);
+  if (!call) throw new Error("useSSE.connect was never called");
+  return call[1] as Handlers;
+}
+
 describe("Agent conversation Fork", () => {
   beforeAll(async () => {
     await i18n.changeLanguage("en");
@@ -90,6 +99,7 @@ describe("Agent conversation Fork", () => {
     useAgentStore.getState().reset();
     useSessionsStore.getState().reset();
     useSessionsStore.getState().upsert(sourceSession);
+    apiMock.autoTitleSession.mockReset().mockResolvedValue({ status: "updated" });
     apiMock.cancelSession.mockReset();
     apiMock.forkSession.mockReset().mockResolvedValue(childSession);
     apiMock.getGoal.mockResolvedValue(null);
@@ -105,10 +115,38 @@ describe("Agent conversation Fork", () => {
     toastMock.error.mockReset();
     toastMock.success.mockReset();
     toastMock.warning.mockReset();
+    sseMock.connect.mockClear();
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
       configurable: true,
       value: vi.fn(),
     });
+  });
+
+  it.each([
+    { kind: "text answer", summary: "Live completed answer", preview: null },
+    {
+      kind: "run-only answer",
+      summary: "",
+      preview: { metrics: { sharpe: 1.25 }, equity_curve: [], report_worthy: true },
+    },
+  ])("offers Fork on a newly completed $kind using its persisted message id", async ({ summary, preview }) => {
+    apiMock.getSessionMessages.mockResolvedValue([]);
+    apiMock.getRunPreview.mockResolvedValue(preview);
+    renderAgent();
+    await waitFor(() => expect(sseMock.connect).toHaveBeenCalled());
+
+    await act(async () => {
+      await latestHandlers()["attempt.completed"]({
+        attempt_id: "live-attempt",
+        message_id: "live-message",
+        status: "completed",
+        summary,
+        run_dir: preview ? "/tmp/runs/live-run" : undefined,
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Fork" }));
+    expect(apiMock.forkSession).toHaveBeenCalledWith("source", "live-message");
   });
 
   it("opens the child with a blank draft and restores the source draft on return", async () => {

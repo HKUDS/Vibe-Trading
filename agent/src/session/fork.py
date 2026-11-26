@@ -123,6 +123,7 @@ _FORBIDDEN_ARTIFACT_RUNTIME_KEYS = frozenset(
         "sse",
     )
 )
+_TERMINAL_RUN_STATUSES = frozenset({"success", "failed", "cancelled"})
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(\b(?=[A-Z0-9_-]*(?:API[_-]?KEY|SECRET|PASSWORD|PASSWD|TOKEN|CREDENTIAL|COOKIE|"
     r"AUTHORIZATION|PRIVATE[_-]?KEY|ACCESS[_-]?KEY))[A-Z][A-Z0-9_-]*\b\s*[:=]\s*)"
@@ -371,6 +372,8 @@ def _eligible_assistant(
         return attempt
     if run_id:
         raise ForkSelectionError("a run-backed assistant message must link its completed attempt")
+    if status_value is None or str(status_value).lower() != AttemptStatus.COMPLETED.value:
+        raise ForkSelectionError("the cutoff assistant turn has no positive completion evidence")
     # Older terminal replies have neither an attempt nor a run identifier.
     return None
 
@@ -497,6 +500,29 @@ def _write_json(path: Path, value: Any) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _require_terminal_goal_run(run_dir: Path) -> None:
+    """Reject goal evidence whose run has no trustworthy terminal marker."""
+    if run_dir.is_symlink() or not run_dir.is_dir():
+        raise ForkSelectionError(f"goal evidence run {run_dir.name} has no terminal state")
+    state_path = run_dir / "state.json"
+    if state_path.exists():
+        try:
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ForkSelectionError(f"goal evidence run {run_dir.name} has no terminal state") from exc
+        status = payload.get("status") if isinstance(payload, dict) else None
+        if not isinstance(status, str) or status.strip().lower() not in _TERMINAL_RUN_STATUSES:
+            raise ForkSelectionError(f"goal evidence run {run_dir.name} has no terminal state")
+        return
+    try:
+        # Older reproducible runs wrote a complete card but no state.json.
+        card = json.loads((run_dir / "run_card.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ForkSelectionError(f"goal evidence run {run_dir.name} has no terminal state") from exc
+    if not isinstance(card, dict) or not isinstance(card.get("metrics"), dict):
+        raise ForkSelectionError(f"goal evidence run {run_dir.name} has no terminal state")
+
+
 def _copy_run(
     source: Path,
     staged: Path,
@@ -619,7 +645,7 @@ def fork_session(
         raise ForkSelectionError("the source prefix contains duplicate message ids")
     attempts, run_ids = _attempt_snapshot(source_id, prefix, selected_attempt, store, service.runs_dir)
 
-    used_ids = {item.session_id for item in store.list_sessions(limit=1_000_000)}
+    used_ids = {item.session_id for item in store.list_sessions(limit=None)}
     used_ids.update(item.message_id for item in messages)
     used_ids.update(item.attempt_id for item in store.list_attempts())
     service.runs_dir.mkdir(parents=True, exist_ok=True)
@@ -707,11 +733,9 @@ def fork_session(
             def ensure_goal_run(run_id: str) -> str:
                 validate_fork_id(run_id, "goal evidence run id")
                 if run_id not in run_ids:
+                    _require_terminal_goal_run(service.runs_dir / run_id)
                     run_ids[run_id] = _fresh_id(used_ids)
                 return run_ids[run_id]
-
-            def remap_goal_run(run_id: str) -> str:
-                return ensure_goal_run(run_id)
 
             def remap_goal_path(value: str) -> str:
                 # Goal state is from fork time and can reference runs newer
@@ -728,7 +752,7 @@ def fork_session(
                 source_id,
                 target_session_id=child_id,
                 remap_reference=remap_goal_path,
-                remap_run_id=remap_goal_run,
+                remap_run_id=ensure_goal_run,
             )
 
         for old_run_id, new_run_id in run_ids.items():

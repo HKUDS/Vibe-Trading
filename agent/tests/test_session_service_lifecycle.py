@@ -232,6 +232,7 @@ def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeyp
         assert "[研究报告.pdf](/api/reports/" in reply.content
         completed = next(data for kind, data in events if kind == "attempt.completed")
         assert completed["summary"] == reply.content
+        assert completed["message_id"] == reply.message_id
     asyncio.run(scenario())
 
 
