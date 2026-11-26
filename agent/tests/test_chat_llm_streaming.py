@@ -480,23 +480,37 @@ def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call, adap
 
 @pytest.mark.parametrize("status", ["completed", "incomplete"])
 def test_responses_terminal_status_remains_valid(status):
-    """Responses has terminal status rather than Chat Completions finish_reason."""
+    """Keep the distinction between completed and incomplete Responses status.
+
+    Args:
+        status: Terminal status reported without a finish reason.
+    """
     chunk = AIMessageChunk(content="Answer")
     chunk.response_metadata = {"status": status}
     fake = _FakeStreamingLLM([chunk])
     fake._llm_type = "openai-chat"
-    assert _client(fake).stream_chat([{"role": "user", "content": "Hi"}]).content == "Answer"
+    result = _client(fake).stream_chat([{"role": "user", "content": "Hi"}])
+    assert result.content == "Answer"
+    assert result.finish_reason == ("incomplete" if status == "incomplete" else "stop")
 
 
 @pytest.mark.parametrize("metadata,args,valid", [
     ({"finish_reason": "tool_calls"}, '{"path":"a.txt"}', True),
     ({"finish_reason": "length"}, '{"path":"a.txt"}', False),
     ({"stop_reason": "max_tokens"}, '{"path":"a.txt"}', False),
+    ({"finish_reason": "max_output_tokens"}, '{"path":"a.txt"}', False),
     ({"status": "incomplete"}, '{"path":"a.txt"}', False),
     ({"finish_reason": "tool_calls"}, '{"path":"a.txt', False),
     ({"finish_reason": "tool_calls"}, 'invalid-json', False),
 ])
 def test_only_complete_tool_arguments_can_execute(metadata, args, valid):
+    """Require both a complete response and valid JSON for tool execution.
+
+    Args:
+        metadata: Finish and status metadata reported by the adapter.
+        args: Raw tool arguments received over the stream.
+        valid: Whether the parser should accept the tool call.
+    """
     chunk = AIMessageChunk(content="", response_metadata=metadata, tool_call_chunks=[
         {"id": "call-1", "index": 0, "name": "write_file", "args": args},
     ])

@@ -666,9 +666,9 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
                     "name": buf.get("name") or item.get("name") or "",
                     "args": _decode_tool_args(args_raw),
                 }])
-        elif event_type == "response.completed":
+        elif event_type in {"response.completed", "response.incomplete"}:
             response = event.get("response") or {}
-            status = response.get("status")
+            status = "incomplete" if event_type == "response.incomplete" else response.get("status")
             response_metadata = {"finish_reason": _map_finish_reason(status)}
             model = response.get("model")
             if isinstance(model, str) and model.strip():

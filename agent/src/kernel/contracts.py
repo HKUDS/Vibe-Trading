@@ -94,6 +94,9 @@ class LoopContext:
     tools: list[dict[str, Any]] | None
 
 
+PARTIAL_FINISH_REASONS = frozenset({"length", "max_tokens", "max_output_tokens", "incomplete"})
+
+
 @dataclass(frozen=True)
 class RunLimits:
     """Define the turn's iteration budget and partial-output stop conditions.
@@ -103,7 +106,7 @@ class RunLimits:
         partial_finish_reasons: Provider finish reasons that retain partial text and stop the loop.
     """
     max_iterations: int
-    partial_finish_reasons: frozenset[str] = frozenset({"length", "max_tokens"})
+    partial_finish_reasons: frozenset[str] = PARTIAL_FINISH_REASONS
 
 
 @dataclass(frozen=True)
