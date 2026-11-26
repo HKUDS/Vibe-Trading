@@ -43,9 +43,10 @@ import numpy as np
 import pandas as pd
 
 from backtest.loaders.cn_adjust import apply_qfq as _apply_qfq
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
+from src.tools.path_utils import OUTSIDE_WRITE_ROOTS, FileRoots, resolve_output_dir
 from src.factors.data_availability import build_availability_contract
 from src.factors.research_contract import (
     RESEARCH_MODES,
@@ -1267,6 +1268,25 @@ def _default_output_dir() -> Path:
     return get_runtime_root() / "reports"
 
 
+def resolve_report_dir(output_dir: str, run_dir: str | None, *, roots: FileRoots) -> Path:
+    """Resolve a caller-chosen report directory inside the authorized write roots.
+
+    Args:
+        output_dir: Relative (to ``run_dir``) or absolute report directory.
+        run_dir: The run directory of the call, if it has one.
+        roots: File roots authorized by the host; the report roots
+            ``~/.vibe-trading/reports`` are added unless writes are confined.
+
+    Returns:
+        The resolved report directory.
+
+    Raises:
+        ValueError: The directory is outside ``run_dir`` and every allowed root.
+    """
+    report_roots = (roots.home / ".vibe-trading" / "reports", roots.runtime_root / "reports")
+    return resolve_output_dir(output_dir, run_dir, roots=roots, tool_roots=report_roots)
+
+
 def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     """Run the bench and return a parsed envelope (dict, not JSON string)."""
     universe = kwargs.get("universe")
@@ -1466,7 +1486,7 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     return envelope
 
 
-class AlphaBenchTool(BaseTool):
+class AlphaBenchTool(FileBoundTool, BaseTool):
     """Bench one alpha or a whole zoo on a universe and emit an HTML IC report."""
 
     name = "alpha_bench"
@@ -1521,7 +1541,10 @@ class AlphaBenchTool(BaseTool):
             },
             "output_dir": {
                 "type": "string",
-                "description": "Where to write the HTML report; default ~/.vibe-trading/reports/.",
+                "description": (
+                    "Where to write the HTML report, relative to run_dir; it must stay inside run_dir, "
+                    "~/.vibe-trading/reports/ or the write roots. Default ~/.vibe-trading/reports/."
+                ),
             },
         },
         "required": ["universe", "period"],
@@ -1530,5 +1553,25 @@ class AlphaBenchTool(BaseTool):
     is_readonly = False
 
     def execute(self, **kwargs: Any) -> str:
+        """Run the bench with its report held to the authorized write roots.
+
+        Args:
+            **kwargs: The parameters above, plus the injected run_dir.
+
+        Returns:
+            The bench envelope as JSON, or an ``outside_write_roots`` error
+            naming the allowed roots when output_dir resolves outside them.
+            A confined child without output_dir writes into its workspace.
+        """
+        if kwargs.get("output_dir"):
+            try:
+                output_dir = resolve_report_dir(str(kwargs["output_dir"]), kwargs.get("run_dir"), roots=self.roots)
+            except ValueError as exc:
+                return json.dumps(
+                    {"status": "error", "error_code": OUTSIDE_WRITE_ROOTS, "error": str(exc)}, ensure_ascii=False,
+                )
+            kwargs = {**kwargs, "output_dir": str(output_dir)}
+        elif self.roots.confined_writes is not None:
+            kwargs = {**kwargs, "output_dir": str(self.roots.confined_writes)}
         envelope = run_alpha_bench(**kwargs)
         return json.dumps(envelope, ensure_ascii=False)

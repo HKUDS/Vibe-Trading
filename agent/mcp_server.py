@@ -1212,26 +1212,15 @@ def alpha_bench(
 
     registry = _get_registry()
     if output_dir:
-        from src.tools.path_utils import allowed_write_roots, resolve_safe_path
+        from src.tools.alpha_bench_tool import resolve_report_dir
+        from src.tools.path_utils import OUTSIDE_WRITE_ROOTS
 
-        roots = registry.policy.file_roots
         try:
-            report_roots = [
-                roots.home / ".vibe-trading" / "reports",
-                roots.runtime_root / "reports",
-                *allowed_write_roots(roots=roots),
-            ]
-            params["output_dir"] = str(
-                resolve_safe_path(
-                    output_dir,
-                    None,
-                    report_roots,
-                    purpose="alpha bench report",
-                    roots=roots,
-                )
-            )
+            params["output_dir"] = str(resolve_report_dir(output_dir, None, roots=registry.policy.file_roots))
         except ValueError as exc:
-            return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
+            return json.dumps(
+                {"status": "error", "error_code": OUTSIDE_WRITE_ROOTS, "error": str(exc)}, ensure_ascii=False,
+            )
 
     return registry.execute("alpha_bench", params)
 

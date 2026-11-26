@@ -313,6 +313,35 @@ def resolve_safe_path(
     )
 
 
+OUTSIDE_WRITE_ROOTS = "outside_write_roots"
+OUTSIDE_READABLE_ROOTS = "outside_readable_roots"
+
+
+def resolve_output_dir(
+    output_dir: str, run_dir: str | None, *, roots: FileRoots, tool_roots: tuple[Path, ...] = (),
+) -> Path:
+    """Resolve a caller-chosen output directory the way write_file resolves a path.
+
+    Args:
+        output_dir: Relative (to ``run_dir``) or absolute directory, ``~`` expanded.
+        run_dir: The run directory of the call, if it has one.
+        roots: File roots authorized by the host.
+        tool_roots: The tool's own output roots; ignored when writes are
+            confined to a workspace.
+
+    Returns:
+        The resolved directory inside ``run_dir`` or an allowed write root.
+
+    Raises:
+        ValueError: The directory resolves outside ``run_dir`` and every
+            allowed root; the message lists the allowed roots.
+    """
+    allowed = allowed_write_roots(roots=roots)
+    if roots.confined_writes is None:
+        allowed = list(dict.fromkeys([*allowed, *(root.resolve() for root in tool_roots)]))
+    return resolve_safe_path(output_dir, run_dir, allowed, roots=roots, purpose="write")
+
+
 def _allowed_run_roots(*, roots: FileRoots) -> list[Path]:
     """Return all roots allowed for run_dir-based tools."""
     configured = _configured_roots(roots.runs)
