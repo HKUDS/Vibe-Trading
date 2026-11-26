@@ -220,7 +220,8 @@ def test_cancel_current_only_stops_the_current_turn():
 
 
 @pytest.mark.parametrize("has_active_turn", [False, True])
-def test_cancel_current_leaves_detached_swarm_for_explicit_cancel(has_active_turn):
+def test_cancel_current_stops_the_swarm_its_turn_started(has_active_turn):
+    """Owner decision 2026-11-26: stopping a session also stops a swarm its turn left running."""
     service = _bare_service()
     if has_active_turn:
         service._active_loops["sess-2"] = _FakeLoop()
@@ -232,12 +233,22 @@ def test_cancel_current_leaves_detached_swarm_for_explicit_cancel(has_active_tur
 
     rt.register_active_run("detached", "sess-2", cancel_run)
     try:
-        assert service.cancel_current("sess-2") is has_active_turn
-        assert not stopped.is_set()
-        assert rt.cancel_indexed_run("detached") is True
+        assert service.cancel_current("sess-2") is True
         assert stopped.is_set()
+        assert rt.cancel_indexed_run("detached") is False  # left the index once signalled
     finally:
         rt.unregister_active_run("detached")
+
+
+def test_cancel_current_leaves_other_sessions_swarms_running():
+    service = _bare_service()
+    stopped = threading.Event()
+    rt.register_active_run("other", "sess-3", lambda: stopped.set() or True)
+    try:
+        assert service.cancel_current("sess-2") is False
+        assert not stopped.is_set()
+    finally:
+        rt.unregister_active_run("other")
 
 
 # ---------------------------------------------------------------------------

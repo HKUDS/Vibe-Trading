@@ -616,13 +616,18 @@ class SessionService:
             session_id: Session ID whose active turn or background work should be cancelled.
 
         Returns:
-            True if cancellation was requested for an active runtime, an in-flight attempt, or a
-            background task.
+            True if cancellation was requested for an active runtime, an in-flight attempt, a
+            background task, or a swarm run the session started (also one its turn left running).
         """
         background_handle = self._background_handles.get(session_id)
         background_cancelled = False
         if background_handle is not None:
             background_cancelled = bool(background_handle.cancel_all().get("requested"))
+        # A swarm keeps spending after the tool that launched it returns, so stopping the
+        # session's turn stops the swarms it started as well (owner decision, 2026-11-26).
+        from src.swarm.runtime import cancel_runs_for_session
+
+        swarms_cancelled = cancel_runs_for_session(session_id) > 0
         loop = self._active_loops.get(session_id)
         if loop is not None:
             loop.cancel()
@@ -633,7 +638,7 @@ class SessionService:
             self._user_cancel_requests.add(session_id)
             task.cancel()
             return True
-        return background_cancelled
+        return background_cancelled or swarms_cancelled
 
     async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
         """Execute an Attempt in the background."""

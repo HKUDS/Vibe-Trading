@@ -106,6 +106,20 @@ def cancel_indexed_run(run_id: str) -> bool:
         return False
 
 
+def cancel_runs_for_session(session_id: str) -> int:
+    """Signal every indexed run a session started, including ones its launching tool left running.
+
+    Args:
+        session_id: ID of the owning session.
+
+    Returns:
+        How many runs accepted the cancellation signal.
+    """
+    with _ACTIVE_RUNS_LOCK:
+        run_ids = [run_id for run_id, (owner, _) in _ACTIVE_RUNS.items() if owner == session_id]
+    return sum(cancel_indexed_run(run_id) for run_id in run_ids)
+
+
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
     """Return the capped exponential ceiling for a one-based retry number."""
     if retry_number < 1:
