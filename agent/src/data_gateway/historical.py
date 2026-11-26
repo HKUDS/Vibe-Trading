@@ -304,7 +304,9 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                 if alias not in result:
                     attempts = result.get("_diagnostics", {}).get(code, {}).get("attempts", [])
                     reason = (
-                        "source_busy"
+                        "adjustment_unsupported"
+                        if attempts and all(a.get("reason") == "adjustment_unsupported" for a in attempts)
+                        else "source_busy"
                         if any(a.get("reason") == "source_busy" for a in attempts)
                         else "network_failure"
                         if any(a.get("reason") in {"fetch_failed", "network_failure"} for a in attempts)

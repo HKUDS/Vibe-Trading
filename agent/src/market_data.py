@@ -211,6 +211,52 @@ def cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     }
 
 
+#: The one adjustment a caller may request; omitting it keeps each source's
+#: default caliber. The value is the provenance vocabulary itself
+#: (``registry.price_caliber``), so a request and a stamp never disagree.
+RAW_ADJUSTMENT = "raw"
+#: Calibers a raw request may be served: unadjusted prices, or a market that
+#: has no corporate actions to adjust for.
+_UNADJUSTED_CALIBERS = frozenset({"raw", "na"})
+
+
+def _check_adjustment(adjustment: str | None) -> None:
+    """Refuse an adjustment request the fetch path does not implement.
+
+    Args:
+        adjustment: ``None`` for each source's default caliber, or ``"raw"``.
+
+    Raises:
+        ValueError: Any other value.
+    """
+    if adjustment not in (None, RAW_ADJUSTMENT):
+        raise ValueError(f"adjustment must be omitted or {RAW_ADJUSTMENT!r}; got {adjustment!r}")
+
+
+def _raw_route(loader_cls: type, source: str, market: str, symbol: str) -> str | None:
+    """Say how a loader can serve unadjusted bars for one symbol.
+
+    Args:
+        loader_cls: The resolved loader class.
+        source: The source name that loader serves under.
+        market: The symbol's market.
+        symbol: The requested symbol.
+
+    Returns:
+        ``"request"`` when the loader declares the market in ``raw_markets``
+        and so honours ``fetch(..., adjustment="raw")``; ``"native"`` when its
+        default series is already unadjusted there (an index, a raw source);
+        ``None`` when it cannot serve raw bars and must be skipped.
+    """
+    from backtest.loaders.registry import price_caliber
+
+    if market in getattr(loader_cls, "raw_markets", ()):
+        return "request"
+    if price_caliber(source, market, symbol) in _UNADJUSTED_CALIBERS:
+        return "native"
+    return None
+
+
 def _json_safe(value: Any) -> Any:
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -234,11 +280,19 @@ def _fetch_market_data_direct(
     max_fallback_attempts: int = 5,
     include_provenance: bool = False,
     as_frames: bool = False,
+    adjustment: str | None = None,
 ) -> dict[str, Any]:
     """Fetch normalized OHLCV data through the repository loader layer.
 
     ``as_frames`` retains the observed DataFrames for in-process analysis;
     row limits apply only to the JSON form.
+
+    ``adjustment="raw"`` asks for unadjusted bars. A loader that declares the
+    market in ``raw_markets`` is asked for them; a loader whose default series
+    is already unadjusted is used as is; any other loader is skipped with the
+    reason ``adjustment_unsupported`` so the chain moves on. A served frame
+    whose caliber is not unadjusted is dropped the same way, so a raw request
+    never returns adjusted prices. ``None`` keeps each source's default.
 
     When ``source="auto"`` (or any resolved source), if the chosen loader
     raises during :meth:`fetch` the call falls through to the next source in
@@ -263,6 +317,8 @@ def _fetch_market_data_direct(
         price_caliber,
         refresh_source_order_overrides,
     )
+
+    _check_adjustment(adjustment)
 
     # Pick up MARKET_DATA_ORDER_* overrides that appeared after this module's
     # import (e.g. ~/.vibe-trading/.env loaded lazily, or a Settings PUT in
@@ -378,17 +434,29 @@ def _fetch_market_data_direct(
             if serving_source in attempted_providers:
                 continue
             attempted_providers.add(serving_source)
+            attempt_symbols = remaining
+            fetch_options: dict[str, str] = {}
+            if adjustment is not None:
+                routes = {symbol: _raw_route(loader_cls, serving_source, market, symbol) for symbol in remaining}
+                record([symbol for symbol, route in routes.items() if route is None],
+                       serving_source, "adjustment_unsupported")
+                attempt_symbols = [symbol for symbol in remaining if routes[symbol] is not None]
+                if not attempt_symbols:
+                    continue
+                if "request" in routes.values():
+                    fetch_options["adjustment"] = adjustment
             try:
                 loader = loader_cls()
                 # Weekly and monthly bars are built from daily ones (#1479).
-                loader_symbols = {symbol: normalize_crypto_symbol(symbol) for symbol in remaining}
+                loader_symbols = {symbol: normalize_crypto_symbol(symbol) for symbol in attempt_symbols}
                 from src.data_gateway.reads import managed_reader
 
                 fetch = loader.fetch
                 if not getattr(fetch, "gateway_public_read", False):
                     fetch = managed_reader(fetch)
                 fetched = fetch(
-                    list(dict.fromkeys(loader_symbols.values())), start_date, end_date, interval=source_interval(interval)
+                    list(dict.fromkeys(loader_symbols.values())), start_date, end_date,
+                    interval=source_interval(interval), **fetch_options,
                 )
                 partial = {
                     code: resample_bars(frame, interval) if hasattr(frame, "groupby") else frame
@@ -405,14 +473,25 @@ def _fetch_market_data_direct(
                     if original != normalized and normalized not in remaining:
                         partial.pop(normalized, None)
             except Exception as exc:  # noqa: BLE001 — contained per-symbol fallback
-                record(remaining, serving_source, "fetch_failed")
+                record(attempt_symbols, serving_source, "fetch_failed")
                 logger.error(
                     "market-data loader %r failed for %s; trying next source in chain: %s",
-                    attempt_src, remaining, exc,
+                    attempt_src, attempt_symbols, exc,
                 )
                 continue
-            for symbol in remaining:
-                if symbol not in partial:
+            rejected: list[str] = []
+            if adjustment is not None:
+                # The request is checked against what was served, not what the
+                # loader declared: a frame stamped adjusted never passes as raw.
+                rejected = [
+                    symbol for symbol, frame in partial.items()
+                    if frame_caliber(frame, serving_source, market, symbol) not in _UNADJUSTED_CALIBERS
+                ]
+                for symbol in rejected:
+                    partial.pop(symbol)
+                record(rejected, serving_source, "adjustment_unsupported")
+            for symbol in attempt_symbols:
+                if symbol not in partial and symbol not in rejected:
                     failure = getattr(loader, "fetch_errors", {}).get(loader_symbols[symbol], "no_data")
                     record([symbol], serving_source, failure)
             if not partial:
@@ -591,13 +670,19 @@ def _fetch_market_data_direct(
     if include_provenance and provenance:
         results["_provenance"] = provenance
     if unresolved:
+        recovery = (
+            "Use search_symbol to confirm the symbol and venue; check supported history/interval. source_unavailable means "
+            "the source needs configuration or an optional dependency; fetch_failed means "
+            "the request failed; network_failure means a transport error; no_data means that source returned no bars for this range. "
+            "For recent intraday bars, narrow the date range or request daily bars."
+        )
+        if adjustment is not None:
+            recovery += (
+                f" adjustment_unsupported means that source cannot serve adjustment={adjustment!r} bars "
+                "and was skipped rather than return adjusted ones."
+            )
         results["_diagnostics"] = {
-            code: {"attempts": diagnostics.get(code, []), "recovery": (
-                "Use search_symbol to confirm the symbol and venue; check supported history/interval. source_unavailable means "
-                "the source needs configuration or an optional dependency; fetch_failed means "
-                "the request failed; network_failure means a transport error; no_data means that source returned no bars for this range. "
-                "For recent intraday bars, narrow the date range or request daily bars."
-            )} for code in unresolved
+            code: {"attempts": diagnostics.get(code, []), "recovery": recovery} for code in unresolved
         }
 
     return results
@@ -609,19 +694,46 @@ def fetch_market_data(
     loader_resolver: Callable[[str], type] = get_loader,
     fallback_chain_provider: Callable[[str], list[str]] | None = None,
     max_fallback_attempts: int = 5, include_provenance: bool = False,
-    as_frames: bool = False,
+    as_frames: bool = False, adjustment: str | None = None,
 ) -> dict[str, Any]:
     """Read public snapshots through the same gateway used by pages and streams.
 
     Full analysis frames and explicit resolver integrations retain the loader
     contract; registered loaders still acquire through the gateway source pool.
     Gateway source workers call the raw normalizer inline, avoiding recursion.
+
+    Args:
+        codes: Requested symbols.
+        start_date: Inclusive ``YYYY-MM-DD`` start.
+        end_date: Inclusive ``YYYY-MM-DD`` end.
+        source: Loader name, or ``"auto"`` to route by symbol with fallback.
+        interval: Bar size.
+        max_rows: Per-symbol JSON row cap (0 = all rows).
+        loader_resolver: Source name -> loader class.
+        fallback_chain_provider: Test hook replacing the market chain.
+        max_fallback_attempts: Attempt budget per group.
+        include_provenance: Attach the per-symbol ``_provenance`` block.
+        as_frames: Return DataFrames instead of JSON rows.
+        adjustment: ``None`` for each source's default caliber, ``"raw"`` for
+            unadjusted bars only (see :func:`_fetch_market_data_direct`).
+
+    Returns:
+        Per-symbol bars plus ``_provenance`` / ``_unresolved`` /
+        ``_diagnostics`` metadata.
+
+    Raises:
+        ValueError: ``adjustment`` is neither ``None`` nor ``"raw"``.
     """
     from src.data_gateway import get_gateway
     from src.data_gateway.reads import owned_source
 
+    _check_adjustment(adjustment)
     params = dict(codes=codes, start_date=start_date, end_date=end_date,
                   source=source, interval=interval, max_rows=max_rows)
+    if adjustment is not None:
+        # Added only when requested, so a default request keeps its gateway
+        # cache identity and a raw one is keyed apart from it.
+        params["adjustment"] = adjustment
     default_resolver = loader_resolver is get_loader or getattr(loader_resolver, "gateway_default_resolver", False)
     if (owned_source.get() or as_frames or max_rows == 0 or not default_resolver
             or fallback_chain_provider is not None or max_fallback_attempts != 5):
@@ -655,19 +767,30 @@ def fetch_market_data_json(**kwargs: Any) -> str:
     told the model to change the request. ``_unresolved`` and ``_provenance``
     stay, so grounding still records each symbol as unavailable. The dict API
     (``fetch_market_data``) is unchanged for in-process callers.
+
+    Args:
+        **kwargs: :func:`fetch_market_data` arguments. A refused
+            ``adjustment="raw"`` request is named in the error text.
+
+    Returns:
+        The payload as strict JSON text.
+
+    Raises:
+        ValueError: An unsupported ``adjustment``.
     """
     payload = fetch_market_data(**kwargs)
     unresolved = payload.get("_unresolved") or []
     if unresolved and not any(not str(key).startswith("_") for key in payload):
-        payload = {
-            "status": "error",
-            "error_code": "no_market_data",
-            "error": (
-                f"No data returned for any requested symbol: {', '.join(map(str, unresolved))} "
-                f"({kwargs.get('start_date')}..{kwargs.get('end_date')}, "
-                f"source={kwargs.get('source', 'auto')}). Check the symbol suffix and the date "
-                "range or try another source. Read _diagnostics for attempted sources and recovery steps."
-            ),
-            **payload,
-        }
+        error = (
+            f"No data returned for any requested symbol: {', '.join(map(str, unresolved))} "
+            f"({kwargs.get('start_date')}..{kwargs.get('end_date')}, "
+            f"source={kwargs.get('source', 'auto')}). Check the symbol suffix and the date "
+            "range or try another source. Read _diagnostics for attempted sources and recovery steps."
+        )
+        if kwargs.get("adjustment") is not None:
+            error += (
+                f" adjustment={kwargs['adjustment']!r} was requested: a source that cannot serve "
+                "unadjusted bars refuses (adjustment_unsupported) instead of returning adjusted ones."
+            )
+        payload = {"status": "error", "error_code": "no_market_data", "error": error, **payload}
     return json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False)
