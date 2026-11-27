@@ -152,6 +152,14 @@ def _resolve_broker_symbol(mt5: ModuleType, code: str) -> str | None:
     )
     matches = sorted({m for m in matches if m and m.upper().startswith(base)})
     if len(matches) > 1:
+        # Several account-type variants (Exness ``XAUUSDm`` / ``XAUUSD247m``):
+        # the user's configured ``symbol_suffix`` picks the exact one.
+        suffix = _read_mt5_config().get("symbol_suffix")
+        if isinstance(suffix, str) and suffix.strip():
+            wanted = (base + suffix.strip()).upper()
+            exact = [m for m in matches if m.upper() == wanted]
+            if len(exact) == 1:
+                return exact[0]
         logger.warning("mt5: ambiguous broker symbol %r; specify the exact native symbol", code)
         return None
     if not matches:

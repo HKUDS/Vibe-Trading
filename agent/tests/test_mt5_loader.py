@@ -309,6 +309,15 @@ def test_resolution_rechecks_catalog_ambiguity(fake_mod):
     assert mt5_loader._resolve_broker_symbol(fake_mod, "EURUSDz") == "EURUSDz"
 
 
+def test_resolution_uses_configured_symbol_suffix_to_disambiguate(fake_mod, monkeypatch):
+    fake_mod.symbol_names.extend(["XAUUSDm", "XAUUSD247m"])
+    assert mt5_loader._resolve_broker_symbol(fake_mod, "XAU/USD") is None
+    monkeypatch.setattr(mt5_loader, "_read_mt5_config", lambda: {"symbol_suffix": "m"})
+    assert mt5_loader._resolve_broker_symbol(fake_mod, "XAU/USD") == "XAUUSDm"
+    monkeypatch.setattr(mt5_loader, "_read_mt5_config", lambda: {"symbol_suffix": "x"})
+    assert mt5_loader._resolve_broker_symbol(fake_mod, "XAU/USD") is None
+
+
 @pytest.mark.parametrize("config", [{"timeout": "nan"}, {"timeout": "bad"}, {"timeout": -1}, {"terminal_path": {"password": "private"}}, {"login": "bad"}])
 def test_loader_invalid_config_degrades_without_attach(fake_mod, monkeypatch, config):
     monkeypatch.setattr(mt5_loader, "_read_mt5_config", lambda: config)
