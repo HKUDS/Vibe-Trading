@@ -223,9 +223,12 @@ def _normalize_columns(
         if df["trade_date"].dropna().duplicated().any():
             raise ValueError("session_date sources require one bar per calendar date")
     else:
-        # Infer each row independently when the source has no declared format,
-        # so valid ISO timestamps with different precision are retained.
-        parsed_dates = pd.to_datetime(dates, format=date_fmt or "mixed", errors="coerce", utc=True)
+        parsed_dates = pd.to_datetime(dates, format=date_fmt, errors="coerce", utc=True)
+        if date_fmt is None and parsed_dates.isna().any():
+            # Preserve column-wide date inference, recovering only ISO rows
+            # rejected because their timestamp precision differs.
+            iso_dates = pd.to_datetime(dates, format="ISO8601", errors="coerce", utc=True)
+            parsed_dates = parsed_dates.fillna(iso_dates)
         df["trade_date"] = parsed_dates.dt.tz_convert(None)
     df = df.dropna(subset=["trade_date"])
     df = df.set_index("trade_date").sort_index()
