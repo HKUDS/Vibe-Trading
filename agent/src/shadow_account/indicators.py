@@ -28,16 +28,23 @@ def _wilder_average(values: pd.Series, period: int) -> pd.Series:
     return result
 
 
-def compute_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
+def compute_rsi(
+    close: pd.Series,
+    period: int = RSI_PERIOD,
+    *,
+    flat_value: float = np.nan,
+) -> pd.Series:
     """Calculate SMA-seeded Wilder RSI without future bars.
 
     Args:
         close: Close prices in chronological order.
         period: Positive number of observed deltas used for warmup.
+        flat_value: Value returned when both average gain and average loss are zero
+            after warmup (defaults to NaN to preserve shadow-account conventions).
 
     Returns:
         RSI aligned with close, NaN during warmup or at a missing delta.
-        Flat prices retain the existing undefined (NaN) convention.
+        Zero-loss uptrends evaluate to 100.0.
 
     Raises:
         ValueError: If period is not a positive integer.
@@ -47,4 +54,8 @@ def compute_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     delta = close.diff()
     avg_gain = _wilder_average(delta.clip(lower=0), period)
     avg_loss = _wilder_average((-delta).clip(lower=0), period)
-    return 100 - 100 / (1 + avg_gain / avg_loss)
+    rsi = 100 - 100 / (1 + avg_gain / avg_loss)
+    if not np.isnan(flat_value):
+        flat_mask = (avg_gain == 0) & (avg_loss == 0)
+        rsi = rsi.where(~flat_mask, flat_value)
+    return rsi
