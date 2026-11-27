@@ -250,6 +250,8 @@ _NEGATIVE_TERMS: frozenset[str] = frozenset(
     }
 )
 
+_EDGE_PUNCTUATION = ".,;:!?\"'()“”‘’…"
+
 
 def default_lexicon_scorer(title: str, summary: str) -> float:
     """Score text in ``[-1, 1]`` by net positive/negative term frequency.
@@ -265,11 +267,15 @@ def default_lexicon_scorer(title: str, summary: str) -> float:
     Returns:
         Sentiment score in ``[-1.0, 1.0]``; ``0.0`` when no terms match.
     """
-    tokens = f"{title} {summary}".lower().replace("/", " ").split()
+    text = f"{title} {summary}".lower()
+    # Feeds use typographic quotes, dashes and "…"; treat them like ASCII.
+    for separator in ("/", "—", "–"):
+        text = text.replace(separator, " ")
+    tokens = [tok.strip(_EDGE_PUNCTUATION) for tok in text.split()]
     if not tokens:
         return 0.0
-    pos = sum(1 for tok in tokens if tok.strip(".,;:!?\"'()") in _POSITIVE_TERMS)
-    neg = sum(1 for tok in tokens if tok.strip(".,;:!?\"'()") in _NEGATIVE_TERMS)
+    pos = sum(1 for tok in tokens if tok in _POSITIVE_TERMS)
+    neg = sum(1 for tok in tokens if tok in _NEGATIVE_TERMS)
     hits = pos + neg
     if hits == 0:
         return 0.0
