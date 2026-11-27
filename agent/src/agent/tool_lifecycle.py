@@ -1036,7 +1036,15 @@ class ToolCallLifecycle:
             self._readonly_replay_ready.discard(cache_key)
             # A write can change what a readonly call reads (a factor file, a
             # config), so no result cached before it may be replayed after it.
-            if update_memory and not self._is_tool_readonly(tc.name):
+            # A non-readonly tool with no such relationship (e.g. remember,
+            # which only touches ~/.vibe-trading/memory/) opts out via
+            # invalidates_readonly_cache so it doesn't force unrelated
+            # readonly results to be re-fetched after compaction.
+            if (
+                update_memory
+                and not self._is_tool_readonly(tc.name)
+                and getattr(tool_def, "invalidates_readonly_cache", True)
+            ):
                 self._readonly_replay_cache.clear()
                 self._readonly_replay_ready.clear()
                 self._readonly_replay_protected.clear()

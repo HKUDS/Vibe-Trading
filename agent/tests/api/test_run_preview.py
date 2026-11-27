@@ -199,3 +199,29 @@ def test_preview_rejects_invalid_run_id(client: TestClient) -> None:
     response = client.get("/runs/foo.bar/preview")
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "path", ["/preview", "?chart_payload=summary", "?chart_symbol=S000", ""]
+)
+def test_infinite_annual_return_is_served_as_null(
+    tmp_path: Path, monkeypatch, path: str
+) -> None:
+    # calc_metrics reports an explosive annualized return as inf, and the
+    # backtest writes it to metrics.csv as is.
+    runs = tmp_path / "runs"
+    _write_backtest_run(runs / BACKTEST_RUN, symbols=1, bars=3, equity_rows=3)
+    (runs / BACKTEST_RUN / "artifacts" / "metrics.csv").write_text(
+        METRICS_CSV.replace("0.05", "inf"), encoding="utf-8"
+    )
+    monkeypatch.setattr(api_server, "RUNS_DIR", runs)
+    client = TestClient(
+        api_server.app, client=("127.0.0.1", 50000), raise_server_exceptions=False
+    )
+
+    response = client.get(f"/runs/{BACKTEST_RUN}{path}")
+
+    assert response.status_code == 200
+    metrics = response.json()["metrics"]
+    assert metrics["annual_return"] is None
+    assert metrics["total_return"] == 0.12

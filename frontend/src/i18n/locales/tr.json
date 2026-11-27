@@ -2790,6 +2790,7 @@
     "report": "Araştırma raporu",
     "download": "JSON indir",
     "downloadOosCsv": "Örneklem dışı portföy değeri CSV",
+    "downloadFoldsCsv": "Fold denetimi CSV",
     "scenario": "Senaryo",
     "return": "Getiri",
     "drawdown": "Düşüş",

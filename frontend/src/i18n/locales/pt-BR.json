@@ -2790,6 +2790,7 @@
     "report": "Relatório de pesquisa",
     "download": "Baixar JSON",
     "downloadOosCsv": "CSV do patrimônio fora da amostra",
+    "downloadFoldsCsv": "CSV de auditoria de folds",
     "scenario": "Cenário",
     "return": "Retorno",
     "drawdown": "Rebaixamento",

@@ -1,5 +1,6 @@
 """Each financial task has a passing fixture and a deliberately wrong answer."""
 
+import argparse
 import json
 from pathlib import Path
 
@@ -54,6 +55,19 @@ def make_bundle(root, case):
     return values
 
 
+def _wrong_measurement(root, case, values):
+    entry = case.expect["measurements"][0]
+    target = values
+    parts = entry["field"].split(".")
+    for part in parts[:-1]:
+        target = target[part]
+    expected = entry.get("expected", 1)
+    target[parts[-1]] = (
+        not expected if type(expected) is bool else expected + 100 if type(expected) in (int, float) else "WRONG"
+    )
+    _write(root / "artifacts/task_result.json", values)
+
+
 @pytest.mark.parametrize("identifier", RESEARCH_CASES)
 def test_each_task_passes_then_rejects_incorrect_measurement(identifier, tmp_path, monkeypatch):
     # Any attempt to introduce network/model work into the offline verifier fails.
@@ -64,16 +78,7 @@ def test_each_task_passes_then_rejects_incorrect_measurement(identifier, tmp_pat
     values = make_bundle(tmp_path, case)
     result = replay_run(tmp_path, [identifier])
     assert result["evaluation_status"] == "passed", result
-    entry = case.expect["measurements"][0]
-    target = values
-    parts = entry["field"].split(".")
-    for part in parts[:-1]:
-        target = target[part]
-    expected = entry.get("expected", 1)
-    target[parts[-1]] = (
-        not expected if type(expected) is bool else expected + 100 if type(expected) in (int, float) else "WRONG"
-    )
-    _write(tmp_path / "artifacts/task_result.json", values)
+    _wrong_measurement(tmp_path, case, values)
     assert replay_run(tmp_path, [identifier])["evaluation_status"] == "failed"
 
 
@@ -100,6 +105,48 @@ def test_prompt_is_not_rewritten_to_match_case_and_bindings_keep_distinct_runs(t
 
 
 @pytest.mark.parametrize(
+    "outcomes, expected_status, expected_exit",
+    [
+        pytest.param(("passed", "passed"), "passed", 0, id="all-pass"),
+        pytest.param(("not_evaluable",), "not_evaluable", 2, id="no-evidence"),
+        pytest.param(("passed", "not_evaluable"), "not_evaluable", 2, id="partial-coverage"),
+        pytest.param(("not_evaluable", "failed"), "failed", 1, id="actual-failure"),
+        pytest.param(("failed", "invalid_artifact"), "invalid_artifact", 1, id="invalid-artifact"),
+    ],
+)
+def test_batch_replay_reports_status_and_exit_code(tmp_path, capsys, outcomes, expected_status, expected_exit):
+    from src.research_lab.cli import add_subparser, dispatch
+
+    bindings = []
+    for index, outcome in enumerate(outcomes):
+        case = load_case(case_paths()[RESEARCH_CASES[index]])
+        root = tmp_path / f"run-{index}"
+        values = make_bundle(root, case)
+        artifact = root / "artifacts/task_result.json"
+        if outcome == "not_evaluable":
+            artifact.unlink()
+        elif outcome == "failed":
+            _wrong_measurement(root, case, values)
+        elif outcome == "invalid_artifact":
+            artifact.write_text("{", encoding="utf-8")
+        bindings.append({"case_id": case.case_id, "run_dir": str(root)})
+
+    binding_file = tmp_path / "bindings.json"
+    _write(binding_file, bindings)
+    parser = argparse.ArgumentParser()
+    add_subparser(parser.add_subparsers(dest="command"))
+    args = parser.parse_args(["research-lab", "replay", "--bindings", str(binding_file), "--json"])
+    exit_code = dispatch(args)
+    report = json.loads(capsys.readouterr().out)
+
+    assert [result["evaluation_status"] for result in report["results"]] == list(outcomes)
+    assert exit_code == expected_exit
+    assert report["evaluation_status"] == expected_status
+    assert report["passed"] is (expected_exit == 0)
+    assert report["case_count"] == len(outcomes)
+
+
+@pytest.mark.parametrize(
     "entry",
     [
         {"artifact": "../escape.json", "field": "x", "operator": "finite"},
@@ -110,3 +157,43 @@ def test_prompt_is_not_rewritten_to_match_case_and_bindings_keep_distinct_runs(t
 def test_invalid_numeric_contracts_fail_before_replay(entry):
     with pytest.raises(ValueError):
         validate_measurements([entry])
+
+
+@pytest.mark.parametrize(
+    ("bindings", "expected_fragment"),
+    [
+        ({}, "JSON array"),
+        ({"case_id": "x", "run_dir": "/tmp/run"}, "JSON array"),
+        ("not-a-list", "JSON array"),
+        (123, "JSON array"),
+        ([], "1 to 100"),
+        ([{"case_id": "x", "run_dir": "/tmp/run"}] * 101, "1 to 100"),
+        ([None], "binding[0]"),
+        ([{"case_id": "x", "run_dir": "/tmp/run"}, None], "binding[1]"),
+        ([{"case_id": "x"}], "binding[0].run_dir"),
+        ([{"run_dir": "/tmp/run"}], "binding[0].case_id"),
+        ([{"case_id": "", "run_dir": "/tmp/run"}], "binding[0].case_id"),
+        ([{"case_id": 123, "run_dir": "/tmp/run"}], "binding[0].case_id"),
+        ([{"case_id": "x", "run_dir": "   "}], "binding[0].run_dir"),
+        ([{"case_id": "x", "run_dir": 123}], "binding[0].run_dir"),
+        ([{"case_id": "x", "run_dir": "/tmp/run", "trace_dir": 123}], "binding[0].trace_dir"),
+        ([{"case_id": "x", "run_dir": "/tmp/run", "trace_dir": ""}], "binding[0].trace_dir"),
+    ],
+)
+def test_replay_suite_rejects_malformed_bindings(bindings, expected_fragment):
+    with pytest.raises(ValueError, match=expected_fragment.replace("[", r"\[").replace("]", r"\]")):
+        replay_suite(bindings)
+
+
+def test_replay_suite_validates_all_bindings_before_running(monkeypatch):
+    called = False
+
+    def _fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("replay_run should not be invoked for invalid bindings")
+
+    monkeypatch.setattr("evals.harness.suite.replay_run", _fail_if_called)
+    with pytest.raises(ValueError, match=r"binding\[1\]\.run_dir"):
+        replay_suite([{"case_id": "x", "run_dir": "/tmp/run"}, {"case_id": "y"}])
+    assert not called
