@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.agent.tools import BaseTool, FileBoundTool, ToolRegistry
+from src.tools.workspace_writes import WorkspaceWrites, workspace_call_id
 
 logger = logging.getLogger(__name__)
 
@@ -220,18 +221,24 @@ class _WorkspaceTool(BaseTool):
     The class name stays empty so discovery never registers the wrapper.
     """
 
-    def __init__(self, tool: BaseTool, workspace: Path, *, pin_undeclared: bool = False) -> None:
+    def __init__(
+        self, tool: BaseTool, workspace: Path, *, pin_undeclared: bool = False,
+        writes: WorkspaceWrites | None = None,
+    ) -> None:
         """Wrap one of the parent's tools.
 
         Args:
             tool: The parent's tool instance; its bindings stay the parent's.
             workspace: The child's run directory, resolved.
+            pin_undeclared: Force workspace for tools without a run_dir schema.
+            writes: Optional node workspace write recorder.
         """
         if isinstance(tool, FileBoundTool):
             tool = copy(tool)
             tool.roots = replace(tool.roots, confined_writes=workspace)
         self._tool = tool
         self._workspace = workspace
+        self._writes = writes
         self.name = tool.name
         self.description = tool.description
         self.parameters = tool.parameters
@@ -261,7 +268,34 @@ class _WorkspaceTool(BaseTool):
         args, refusal = self.workspace_arguments(kwargs)
         if refusal is not None:
             return _error("outside_subagent_workspace", refusal)
-        return self._tool.execute(**args)
+        if self._writes is None:
+            return self._tool.execute(**args)
+
+        from src.product.tool_results import _is_tool_success
+        from src.tools.background_tools import BackgroundRunTool, CancelBackgroundTool, CheckBackgroundTool
+        from src.tools.bash_tool import BashTool, _changed_files
+        from src.tools.read_file_tool import ReadFileTool
+
+        # is_readonly is a dispatch/cache declaration. Some such tools write files.
+        # These verified implementations only read files or control a separately tracked process.
+        may_write = type(self._tool) not in (
+            ReadFileTool, BackgroundRunTool, CheckBackgroundTool, CancelBackgroundTool,
+        )
+        bash = type(self._tool) is BashTool
+        index, before = self._writes.start(self.name, workspace_call_id.get(), may_write=may_write)
+        success = False
+        try:
+            result = (self._tool._execute(args["command"], args["run_dir"], record_artifacts=False)
+                      if bash else self._tool.execute(**args))
+            success = _is_tool_success(result)
+        finally:
+            after = self._writes.finish(index, success=success, exclusive_files=bash)
+        if bash:
+            payload = json.loads(result)
+            if "exit_code" in payload:
+                payload["artifacts"] = _changed_files(self._workspace, before, after=after)
+                result = json.dumps(payload, ensure_ascii=False)
+        return result
 
 
 def child_registry(parent: ToolRegistry, workspace: Path) -> ToolRegistry:
