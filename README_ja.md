@@ -66,6 +66,10 @@
 
 ## 📰 ニュース
 
+- **2026-11-27** 🛠️ **NIFTY 100 のベンチマークとバックテストの修正** — Alpha Zoo で NIFTY 100 を対象にファクターを検証・比較できるようになりました。過去期間の検証には現在の構成銘柄を使うため、生存者バイアスがあります。 [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
+  ウェブチャットでユーザーのメッセージをコピーできます。MT5 で複数のブローカー銘柄コードが候補になった場合、バックテストは設定した接尾辞で完全一致するコードを選びます。 [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
+  年率リターンがオーバーフローした場合、バックテストのプレビューでは `null` と表示します。研究ラボのコスト感応度分析では、その指標を省略してほかの結果を表示します。**`main` にマージ済み。** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
+
 - **2026-11-26** 🛠️ **オプション戦略の比較結果のエクスポートと研究ラボのリプレイ修正** — オプションラボでは、保存済みの2つの戦略の比較結果を JSON または CSV で出力できます。両方の損益と基準戦略との差分が含まれます。 [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
   研究ラボでは、固定したデータの全期間を再生する場合も、期間を短くして再生する場合も、保存済みの価格精度が維持されます。実行設定が1件壊れていても、他の実行は一覧に表示されます。 [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   バッチリプレイでは、検証に必要な証拠の不足と検証の失敗を区別し、不正な `--bindings` ファイルには JSON 形式のエラーを返します。FRED へのリクエストが失敗した際は、エラーメッセージ内の API キーを伏せます。**`main` にマージ済みです。** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
@@ -73,11 +77,11 @@
 - **2026-11-25** 🛠️ **ウォークフォワード検証の監査とペーパートレードの取消予約** — 研究ラボでは、ウォークフォワード検証の各フォールドと任意のホールドアウト期間を、選択したパラメーターとテスト指標を含む CSV に出力できます。中国 A 株の 5 分足ペーパートレードの再生では、指定した時刻に注文の未約定分を取り消し、それ以前の約定と手数料を保持します。 [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   Gemini で入力トークンの上限エラーが発生すると、エージェントはコンテキストを圧縮して再試行できます。メモリを保存しても、無関係な読み取り結果はキャッシュに残ります。見出しのセンチメント分析では、曲線型の引用符、長短のダッシュ、省略記号に隣接する感情語も認識します。 **`main` にマージ済みです。** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
-- **2026-11-24** 🛠️ **Claude CLI の互換性とバックテストの精度向上** — Claude CLI プロバイダーは詳細モードの JSON 出力から最終結果を読み取れるようになりました。Yahoo Finance の 1 時間足を 4 時間足に集約し、OHLC の検証では無限大の価格を無効と判定します。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
-  Risk X-Ray は相関係数を推定できる組み合わせだけを集計します。リターンのばらつきが実質的にゼロの場合、ブートストラップ、ウォークフォワード、モンテカルロの各検証で、未定義のシャープレシオを既存の規約に従って 0 と表示します。**`main` に反映済み。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
-
 <details>
 <summary>過去のニュース</summary>
+
+- **2026-11-24** 🛠️ **Claude CLI の互換性とバックテストの精度向上** — Claude CLI プロバイダーは詳細モードの JSON 出力から最終結果を読み取れるようになりました。Yahoo Finance の 1 時間足を 4 時間足に集約し、OHLC の検証では無限大の価格を無効と判定します。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray は相関係数を推定できる組み合わせだけを集計します。リターンのばらつきが実質的にゼロの場合、ブートストラップ、ウォークフォワード、モンテカルロの各検証で、未定義のシャープレシオを既存の規約に従って 0 と表示します。**`main` に反映済み。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
 - **2026-11-23** 🛠️ **研究の再現性向上と対応市場の拡大** — 研究ラボでは、固定した研究結果を再実行する際に元の外部ベンチマーク価格を使い、ウォークフォワード検証のアウト・オブ・サンプル資産曲線を CSV で出力できます。 [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   オプションラボでは、保存済みの二つの戦略を、原資産価格とインプライド・ボラティリティの共通グリッドで比較できます。Yahoo Finance が扱う欧州六市場の株式と ETF で、銘柄検索と価格データの取得に対応しました。 [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
@@ -129,7 +133,7 @@
 
 - **2026-11-06** 📈 **インプライド・ボラティリティのグリッドとペーパー取引の修正** — 提供されたオプション観測値から権利行使価格 × 満期の IV グリッドを構築し、観測点と補間点を区別します。データ範囲外への外挿は行いません（[#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)）。極端な数値入力には有限の結果または明示的なエラーを返します。中国A株の5分足シミュレーションでは、値幅制限で約定できない成行注文を直ちに取り消します（[#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)）。銘柄をまたぐ約定処理も時刻順にし、後の売却代金で先の買い注文を賄うことを防ぎました。**`main` に反映済みで、次回の pip リリースに含まれます。公開の5分足リクエストは引き続き1ステップ1銘柄です。**
 
-- **2026-11-05** 🚀 **v0.1.19 リリース**（[リリースノート](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19)、`pip install -U vibe-trading-ai`）：チャットが終わっても残る調査へ。根拠付きの調査記録をバージョンごとに保存・改訂でき、以前のターンやセッションのバックテストを再利用でき、調査目標をその場で編集できます。新しいオプトイン機能：中国A株の5分刻みペーパーシミュレーション、Gildata の財務照会・銘柄抽出と Shannon のポートフォリオ診断（QVeris は削除。既存の `GILDATA_TOKEN` だけでは何も有効になりません）。ほかにアルゼンチン（BYMA）のバックテスト、Parallel ウェブ検索、Codex OAuth のモデル検出を追加し、0.1.18 の回帰 2 件をどちらも修正しました。マージ済みプルリクエスト 116 件に加え、メンテナーのコミット経由で取り込まれたものが 21 件あり、貢献者は 26 人です（[CHANGELOG](CHANGELOG.md)）。
+- **2026-11-05** 🚀 **v0.1.19 リリース**（[リリースノート](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19)、`pip install -U vibe-trading-ai`）：チャットが終わっても残る調査へ。根拠付きの調査記録をバージョンごとに保存・改訂でき、以前のターンやセッションのバックテストを再利用でき、調査目標をその場で編集できます。新しいオプトイン機能：中国A株の5分刻みペーパーシミュレーション、Gildata の財務照会・銘柄抽出と Shannon のポートフォリオ診断（QVeris は削除。既存の `GILDATA_TOKEN` だけでは何も有効になりません）。ほかにアルゼンチン（BYMA）のバックテスト、Codex OAuth のモデル検出を追加し、0.1.18 の回帰 2 件をどちらも修正しました。マージ済みプルリクエスト 116 件に加え、メンテナーのコミット経由で取り込まれたものが 21 件あり、貢献者は 26 人です（[CHANGELOG](CHANGELOG.md)）。
   **本日の修正：** バックテストは実際に評価したベンチマークを報告し、ロング・ショートのポートフォリオにもリスク分析（risk x-ray）が付きます。GTJA alpha 17 は入力のウォームアップ中は欠損のまま保たれ、Shannon パネルは UI の 11 言語すべてに対応しました。レビュー済みで未取り込みだった貢献者の修正 2 件も取り込みました（[#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) 欠損四半期をまたぐ TTM 合計の修正、[#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) 3:2 株式分割の検出）。[@rudycelekli](https://github.com/rudycelekli)、[@he-yufeng](https://github.com/he-yufeng)、[@Jackzigen](https://github.com/Jackzigen)、[@Shizoqua](https://github.com/Shizoqua)、[@cgycorey](https://github.com/cgycorey)、[@dajiaohuang](https://github.com/dajiaohuang)、[@zeus229](https://github.com/zeus229)、[@alexwan02](https://github.com/alexwan02)、[@BHhhh-123](https://github.com/BHhhh-123)、[@remote-controlled-man](https://github.com/remote-controlled-man)、[@shadowinlife](https://github.com/shadowinlife)、[@TWJxi](https://github.com/TWJxi)、[@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen)、[@TerryF7](https://github.com/TerryF7)、[@davidalmeida90](https://github.com/davidalmeida90)、[@DrDLyuan](https://github.com/DrDLyuan)、[@goatyyc](https://github.com/goatyyc)、[@hnq-ai](https://github.com/hnq-ai)、[@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber)、[@MetaAviator](https://github.com/MetaAviator)、[@octo-patch](https://github.com/octo-patch)、[@RowanAldean](https://github.com/RowanAldean)、[@VectorPeak](https://github.com/VectorPeak)、[@wavebyrd](https://github.com/wavebyrd)、[@yufengsika](https://github.com/yufengsika) に感謝します！
   **リリース後に main で修正（次の pip リリースに含まれます）：** バックテストのベンチマークは、戦略と同じく評価期間最初の足の始値で買うようになり、ウォームアップ最後の終値からは計算しなくなりました。超過リターンにはその値動きが含まれなくなります（AAPL 20/60 SMA の例：22.5% → 18.4%）。
 
@@ -194,7 +198,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 ## 📡 データソースと自動切り替え
 
-**28種類の市場データソース**に対応。`source: "auto"` では銘柄から市場を判定し、設定順に取得を試みます。
+**27種類の市場データソース**に対応。`source: "auto"` では銘柄から市場を判定し、設定順に取得を試みます。
 
 | 市場 | 取得順 |
 |---|---|
@@ -456,7 +460,6 @@ Vibe-Trading に貢献してくださった皆さまに感謝します。
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -584,9 +587,7 @@ Vibe-Trading に貢献してくださった皆さまに感謝します。
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -648,7 +649,6 @@ Vibe-Trading に貢献してくださった皆さまに感謝します。
 - @Marnie0415 — composite sub-engine fallback for unknown symbols (#734) and the frontend `insertBefore` streaming DOM-race fix (#717)
 - @YZY0108 — the look-ahead-bias fix across all five portfolio optimizers (#487)
 - @UNHNQ — the SiliconFlow CN + Global providers (#565)
-- @FenjuFu — the iFlytek Spark provider (#537)
 - @jelech — the native Anthropic Messages API adapter (#695)
 - @octo-patch — MiniMax regional API endpoints (#731)
 - @Thibaultjaigu — the Requesty OpenAI-compatible gateway provider (#474)

@@ -97,13 +97,13 @@ function effortOptions(): string[] {
 }
 
 const catalogOnlyProvider = {
-  ...providerCatalog.find((entry) => entry.name === "novita")!,
+  ...providerCatalog.find((entry) => entry.name === "opencode")!,
   name: "catalog-test", label: "Catalog Test", api_key_env: "CATALOG_TEST_KEY",
   base_url_env: "CATALOG_TEST_URL", default_model: "catalog-model",
 };
 
 it.each([
-  ...providerCatalog.filter((p) => ["opencode", "novita"].includes(p.name)).map((provider) => ({ provider, isDesktop: true })),
+  { provider: providerCatalog.find((entry) => entry.name === "opencode")!, isDesktop: true },
   { provider: catalogOnlyProvider, isDesktop: true },
   { provider: catalogOnlyProvider, isDesktop: false },
 ])("saves $provider.name credentials (desktop=$isDesktop)", async ({ provider, isDesktop }) => {

@@ -92,7 +92,7 @@ def test_explicit_fmp_unavailable_raises_no_fallback(monkeypatch):
 
 
 def test_explicit_fmp_unavailable_names_the_missing_credential(monkeypatch):
-    """The refusal must say how to fix it, the way local/tickerall already do.
+    """The refusal must say how to fix it, the way local already does.
 
     ``fmp`` joined ``_NO_NETWORK_FALLBACK_SOURCES`` but not the hint table
     beside it, so the user got "unavailable and does not fall back" with no

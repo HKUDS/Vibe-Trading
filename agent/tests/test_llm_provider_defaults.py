@@ -30,7 +30,6 @@ EXPECTED_PROVIDER_DEFAULTS = {
     "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
     "gemini": "gemini-3.5-flash",
     "groq": "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "novita": "moonshotai/kimi-k3",
     "dashscope": "qwen-plus-latest",
     "qwen": "qwen-plus-latest",
     "zhipu": "glm-5.1",
@@ -38,7 +37,6 @@ EXPECTED_PROVIDER_DEFAULTS = {
     "moonshot": "kimi-k2.6",
     "minimax": "MiniMax-M3.1-Flash",
     "mimo": "MiMo-72B-A27B",
-    "spark": "4.0Ultra",
     "zai": "glm-5.1",
     "modelscope": "Qwen/Qwen3.5-27B",
 }

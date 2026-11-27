@@ -66,6 +66,10 @@
 
 ## 📰 Berita
 
+- **2026-11-27** 🛠️ **Benchmark NIFTY 100 dan perbaikan backtest** — Alpha Zoo dapat menguji dan membandingkan faktor pada NIFTY 100. Pengujian historis memakai konstituen saat ini sehingga hasilnya mengandung bias penyintas. [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
+  Pesan pengguna kini bisa disalin dari chat web. Jika beberapa simbol broker MT5 cocok, backtest memakai akhiran yang dikonfigurasi untuk memilih kecocokan persis. [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
+  Jika perhitungan imbal hasil tahunan melampaui batas numerik, pratinjau backtest menampilkan `null`. Studi sensitivitas biaya di Research Lab melewati metrik itu dan tetap melaporkan hasil lainnya. **Sudah digabungkan ke `main`.** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
+
 - **2026-11-26** 🛠️ **Ekspor perbandingan opsi dan perbaikan pemutaran ulang di Research Lab** — Options Lab dapat mengekspor perbandingan dua strategi tersimpan ke JSON atau CSV, termasuk laba rugi masing-masing dan selisih terhadap strategi acuan. [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
   Research Lab mempertahankan presisi harga tersimpan saat memutar ulang seluruh data yang dibekukan atau rentang yang lebih pendek. Konfigurasi run yang rusak tidak lagi menghalangi run lain muncul di katalog. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   Pemutaran ulang secara batch membedakan bukti yang belum lengkap dari pemeriksaan yang gagal, serta mengembalikan galat JSON jika berkas `--bindings` tidak valid. Kunci API disamarkan dalam pesan galat permintaan FRED. **Sudah digabung ke `main`.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
@@ -73,11 +77,11 @@
 - **2026-11-25** 🛠️ **Audit walk-forward dan pembatalan terjadwal dalam simulasi perdagangan** — Research Lab dapat mengekspor setiap jendela validasi walk-forward dan periode uji akhir opsional ke CSV, lengkap dengan parameter terpilih dan metrik pengujian. Dalam simulasi ulang perdagangan saham kelas A Tiongkok dengan bar 5 menit, sisa pesanan dapat dibatalkan pada waktu yang ditentukan, dengan transaksi dan biaya sebelumnya tetap tercatat. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   Saat Gemini mengembalikan galat batas token masukan, agen dapat meringkas konteks dan mencoba lagi. Menyimpan memori mempertahankan cache hasil baca yang tidak terkait. Analisis sentimen judul mengenali kata sentimen di dekat tanda kutip tipografis, tanda pisah panjang dan pendek, serta elipsis. **Sudah digabungkan ke `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
-- **2026-11-24** 🛠️ **Kompatibilitas Claude CLI dan akurasi backtest** — Penyedia Claude CLI membaca hasil akhir dari keluaran JSON dalam mode terperinci. Data per jam Yahoo Finance digabungkan menjadi bar empat jam, dan validasi OHLC menandai harga tak terhingga sebagai tidak valid. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
-  Risk X-Ray memakai pasangan aset yang korelasinya dapat diestimasi. Saat sebaran imbal hasil praktis nol, validasi bootstrap, walk-forward, dan Monte Carlo menggunakan angka 0 sesuai konvensi untuk menandai rasio Sharpe yang tidak terdefinisi. **Tersedia di `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
-
 <details>
 <summary>Berita sebelumnya</summary>
+
+- **2026-11-24** 🛠️ **Kompatibilitas Claude CLI dan akurasi backtest** — Penyedia Claude CLI membaca hasil akhir dari keluaran JSON dalam mode terperinci. Data per jam Yahoo Finance digabungkan menjadi bar empat jam, dan validasi OHLC menandai harga tak terhingga sebagai tidak valid. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray memakai pasangan aset yang korelasinya dapat diestimasi. Saat sebaran imbal hasil praktis nol, validasi bootstrap, walk-forward, dan Monte Carlo menggunakan angka 0 sesuai konvensi untuk menandai rasio Sharpe yang tidak terdefinisi. **Tersedia di `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
 - **2026-11-23** 🛠️ **Riset yang dapat diulang dan cakupan pasar yang lebih luas** — Research Lab menyimpan harga tolok ukur eksternal yang dipakai pada pengujian awal untuk pemutaran ulang berbasis data beku dan dapat mengekspor kurva ekuitas di luar sampel dari validasi walk-forward ke CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   Options Lab membandingkan dua strategi tersimpan pada kisi harga spot dan volatilitas tersirat yang sama. Pencarian simbol dan data harga kini mencakup saham dan ETF di enam pasar Eropa yang dilayani Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
@@ -129,7 +133,7 @@
 
 - **2026-11-06** 📈 **Grid volatilitas tersirat dan perbaikan simulasi perdagangan** — Susun grid IV berdasarkan harga pelaksanaan dan waktu jatuh tempo dari observasi opsi yang diberikan, dengan penanda titik observasi/interpolasi dan tanpa ekstrapolasi ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). Input numerik ekstrem kini menghasilkan nilai berhingga atau kesalahan yang jelas. Dalam simulasi saham A per lima menit, order pasar yang terhalang batas harga langsung dibatalkan ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)); mesin juga memproses simbol secara kronologis agar hasil penjualan di waktu berikutnya tidak membiayai pembelian sebelumnya. **Tersedia di `main` untuk rilis pip berikutnya; permintaan publik lima menit tetap dibatasi satu simbol per langkah.**
 
-- **2026-11-05** 🚀 **v0.1.19 dirilis** ([Catatan rilis](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): riset yang bertahan melampaui obrolan — simpan artefak riset berversi beserta buktinya lalu revisi, gunakan kembali backtest dari giliran dan sesi sebelumnya, dan sunting tujuan riset di tempat. Fitur opsional baru: simulasi saham A per lima menit, serta kueri keuangan, seleksi saham, dan diagnosis portofolio Shannon dari Gildata (QVeris dihapus; `GILDATA_TOKEN` yang sudah ada kini tidak lagi mengaktifkan apa pun dengan sendirinya). Juga backtest Argentina (BYMA), pencarian web Parallel, penemuan model lewat Codex OAuth, dan perbaikan kedua regresi 0.1.18. 116 pull request digabung ditambah 21 yang masuk lewat commit maintainer, dari 26 kontributor ([CHANGELOG](CHANGELOG.md)).
+- **2026-11-05** 🚀 **v0.1.19 dirilis** ([Catatan rilis](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): riset yang bertahan melampaui obrolan — simpan artefak riset berversi beserta buktinya lalu revisi, gunakan kembali backtest dari giliran dan sesi sebelumnya, dan sunting tujuan riset di tempat. Fitur opsional baru: simulasi saham A per lima menit, serta kueri keuangan, seleksi saham, dan diagnosis portofolio Shannon dari Gildata (QVeris dihapus; `GILDATA_TOKEN` yang sudah ada kini tidak lagi mengaktifkan apa pun dengan sendirinya). Juga backtest Argentina (BYMA), penemuan model lewat Codex OAuth, dan perbaikan kedua regresi 0.1.18. 116 pull request digabung ditambah 21 yang masuk lewat commit maintainer, dari 26 kontributor ([CHANGELOG](CHANGELOG.md)).
   **Diperbaiki hari ini:** backtest melaporkan tolok ukur yang benar-benar dievaluasinya, portofolio long/short mendapat risk x-ray, alfa GTJA 17 tetap kosong selama inputnya masih dalam masa pemanasan, panel Shannon tersedia dalam kesebelas bahasa antarmuka, dan dua perbaikan kontributor yang sudah ditinjau tetapi belum masuk kini disertakan ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) jumlah TTM yang melintasi kuartal yang hilang, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) deteksi pemecahan saham 3:2). Terima kasih [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) dan [@yufengsika](https://github.com/yufengsika)!
   **Diperbaiki di main setelah rilis (masuk rilis pip berikutnya):** benchmark backtest kini dibeli pada harga pembukaan bar evaluasi pertama, sama seperti strategi, bukan dari harga penutupan terakhir masa pemanasan; excess return tidak lagi memuat pergerakan itu (contoh AAPL SMA 20/60: 22,5% → 18,4%).
 
@@ -194,7 +198,7 @@ Buka **Run Detail** untuk membandingkan hasil dengan beli dan tahan, meninjau tr
 
 ## 📡 Sumber data dan peralihan otomatis
 
-Tersedia **28 sumber data pasar**. Dengan `source: "auto"`, sistem mengenali pasar dari simbol dan mencoba sumber sesuai urutan konfigurasi.
+Tersedia **27 sumber data pasar**. Dengan `source: "auto"`, sistem mengenali pasar dari simbol dan mencoba sumber sesuai urutan konfigurasi.
 
 | Pasar | Urutan sumber |
 |---|---|
@@ -456,7 +460,6 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -584,9 +587,7 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -648,7 +649,6 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @Marnie0415 — composite sub-engine fallback for unknown symbols (#734) and the frontend `insertBefore` streaming DOM-race fix (#717)
 - @YZY0108 — the look-ahead-bias fix across all five portfolio optimizers (#487)
 - @UNHNQ — the SiliconFlow CN + Global providers (#565)
-- @FenjuFu — the iFlytek Spark provider (#537)
 - @jelech — the native Anthropic Messages API adapter (#695)
 - @octo-patch — MiniMax regional API endpoints (#731)
 - @Thibaultjaigu — the Requesty OpenAI-compatible gateway provider (#474)

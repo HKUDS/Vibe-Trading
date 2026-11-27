@@ -66,6 +66,10 @@
 
 ## 📰 الأخبار
 
+- **2026-11-27** 🛠️ **اختبار العوامل على NIFTY 100 وإصلاحات الاختبار التاريخي** — يدعم Alpha Zoo اختبار العوامل ومقارنتها على مؤشر NIFTY 100. وتستخدم الاختبارات التاريخية مكونات المؤشر الحالية، مما يؤدي إلى تحيز البقاء. [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
+  يمكن نسخ رسائل المستخدم في محادثة الويب. وعند تطابق عدة رموز لدى وسيط MT5، يستخدم الاختبار التاريخي اللاحقة المضبوطة لاختيار الرمز المطابق تمامًا. [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
+  إذا تجاوز حساب العائد السنوي النطاق العددي، تعرض معاينة الاختبار التاريخي القيمة `null`. وتحذف دراسات حساسية التكاليف في مختبر الأبحاث هذا المقياس مع عرض بقية النتائج. **دُمجت التغييرات في `main`.** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
+
 - **2026-11-26** 🛠️ **تصدير مقارنات استراتيجيات الخيارات وإصلاحات إعادة التشغيل في مختبر الأبحاث** — يمكن لمختبر الخيارات تصدير مقارنة بين استراتيجيتين محفوظتين بصيغة JSON أو CSV، بما في ذلك الأرباح والخسائر لكل منهما والفارق عن الاستراتيجية المرجعية. [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
   يحافظ مختبر الأبحاث على دقة الأسعار المحفوظة عند إعادة التشغيل على كامل نطاق البيانات المثبّتة أو على نطاق أقصر. ولا يمنع ملف إعدادات تالف لإحدى عمليات التشغيل ظهور العمليات الأخرى في القائمة. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   يميّز التشغيل الدفعي بين نقص الأدلة وفشل عمليات التحقق، ويُرجع خطأ بصيغة JSON عند وجود ملف `--bindings` غير صالح. تُخفى قيمة مفتاح API من رسائل أخطاء طلبات FRED. **دُمجت التغييرات في `main`.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
@@ -73,11 +77,11 @@
 - **2026-11-25** 🛠️ **تدقيق التحقق المتدرّج والإلغاء المجدول في التداول التجريبي** — يمكن لمختبر الأبحاث تصدير كل نافذة من نوافذ التحقق المتدرّج وفترة الاختبار المستقلة الاختيارية إلى CSV، مع المعلمات المختارة ومقاييس الاختبار. تتيح إعادة تشغيل التداول التجريبي لأسهم الفئة A الصينية بفواصل خمس دقائق إلغاء الكمية المتبقية في وقت محدد، مع الاحتفاظ بالتنفيذات والرسوم السابقة. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   عندما يتجاوز إدخال Gemini الحد المسموح به من الرموز، يمكن للوكيل ضغط السياق وإعادة المحاولة. يحافظ حفظ الذاكرة على نتائج القراءة المخزّنة مؤقتًا التي لا تتأثر به. يتعرّف تحليل مشاعر العناوين على الكلمات بجوار علامات الاقتباس المنحنية والشرطات الطويلة والمتوسطة وعلامات الحذف. **دُمجت التغييرات في `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
-- **2026-11-24** 🛠️ **توافق Claude CLI وتحسين دقة الاختبار التاريخي** — يقرأ موفّر Claude CLI النتيجة النهائية من مخرجات JSON في الوضع المفصّل. تُجمّع بيانات Yahoo Finance من فواصل ساعة واحدة إلى فواصل أربع ساعات، ويصنّف التحقق من بيانات OHLC الأسعار اللانهائية على أنها غير صالحة. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
-  يستخدم Risk X-Ray أزواج الأصول التي يمكن تقدير ارتباطها. عندما يكون تشتّت العوائد قريبًا عمليًا من الصفر، تعرض اختبارات إعادة المعاينة والتحقق المتحرك ومحاكاة مونت كارلو نسبة شارب غير المعرّفة بالقيمة الاصطلاحية 0. **متاح على `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
-
 <details>
 <summary>أخبار سابقة</summary>
+
+- **2026-11-24** 🛠️ **توافق Claude CLI وتحسين دقة الاختبار التاريخي** — يقرأ موفّر Claude CLI النتيجة النهائية من مخرجات JSON في الوضع المفصّل. تُجمّع بيانات Yahoo Finance من فواصل ساعة واحدة إلى فواصل أربع ساعات، ويصنّف التحقق من بيانات OHLC الأسعار اللانهائية على أنها غير صالحة. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  يستخدم Risk X-Ray أزواج الأصول التي يمكن تقدير ارتباطها. عندما يكون تشتّت العوائد قريبًا عمليًا من الصفر، تعرض اختبارات إعادة المعاينة والتحقق المتحرك ومحاكاة مونت كارلو نسبة شارب غير المعرّفة بالقيمة الاصطلاحية 0. **متاح على `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
 - **2026-11-23** 🛠️ **إعادة تشغيل الأبحاث وتوسيع تغطية الأسواق** — يحتفظ مختبر الأبحاث بالأسعار الأصلية للمؤشر المرجعي الخارجي عند إعادة تشغيل الدراسات المجمّدة، ويصدّر منحنى قيمة المحفظة خارج العينة من التحقق المتحرك بصيغة CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   يقارن مختبر الخيارات استراتيجيتين محفوظتين على شبكة واحدة للسعر الفوري والتقلب الضمني. يتوفر الآن البحث عن الرموز وجلب بيانات الأسعار للأسهم والصناديق المتداولة في ستة أسواق أوروبية تغطيها Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
@@ -129,7 +133,7 @@
 
 - **2026-11-06** 📈 **شبكات التقلب الضمني وإصلاحات التداول التجريبي** — إنشاء شبكات IV حسب سعر التنفيذ ووقت الاستحقاق من بيانات الخيارات المقدّمة، مع تمييز القيم المرصودة عن المستوفاة ورفض الاستقراء خارج نطاق البيانات ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). تعيد المدخلات العددية المتطرفة نتائج محدودة أو أخطاء واضحة. في محاكاة أسهم A بشموع خمس دقائق، تُلغى فورًا أوامر السوق التي تمنع حدود الأسعار تنفيذها ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176))؛ ويعالج المحرك الرموز بترتيب زمني حتى لا تموّل حصيلة بيع لاحق أمر شراء سابقًا. **متاح في `main` وسيُضمّن في إصدار pip القادم؛ تظل طلبات الخمس دقائق المتاحة للمستخدم مقتصرة على رمز واحد لكل خطوة.**
 
-- **2026-11-05** 🚀 **صدور v0.1.19** ([ملاحظات الإصدار](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): أبحاث تبقى بعد انتهاء المحادثة: احفظ نسخًا مؤرخة من الأبحاث مع أدلتها ونقّحها، وأعد استخدام الاختبارات التاريخية من الأدوار والجلسات السابقة، وعدّل هدف البحث في مكانه. ميزات اختيارية جديدة: محاكاة تجريبية لأسهم A بخطوات خمس دقائق، والاستعلامات المالية وفرز الأسهم عبر Gildata وتشخيص المحافظ عبر Shannon (أُزيل QVeris، ولم يعد وجود `GILDATA_TOKEN` وحده يفعّل أي ميزة). وأيضًا اختبارات تاريخية لسوق الأرجنتين (BYMA)، والبحث في الويب عبر Parallel، واكتشاف النماذج عبر Codex OAuth، وإصلاح التراجعين اللذين ظهرا في 0.1.18. ‏116 طلب سحب مدموجًا، إضافة إلى 21 دخلت عبر إيداعات المشرفين، من 26 مساهمًا ([CHANGELOG](CHANGELOG.md)).
+- **2026-11-05** 🚀 **صدور v0.1.19** ([ملاحظات الإصدار](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): أبحاث تبقى بعد انتهاء المحادثة: احفظ نسخًا مؤرخة من الأبحاث مع أدلتها ونقّحها، وأعد استخدام الاختبارات التاريخية من الأدوار والجلسات السابقة، وعدّل هدف البحث في مكانه. ميزات اختيارية جديدة: محاكاة تجريبية لأسهم A بخطوات خمس دقائق، والاستعلامات المالية وفرز الأسهم عبر Gildata وتشخيص المحافظ عبر Shannon (أُزيل QVeris، ولم يعد وجود `GILDATA_TOKEN` وحده يفعّل أي ميزة). وأيضًا اختبارات تاريخية لسوق الأرجنتين (BYMA)، واكتشاف النماذج عبر Codex OAuth، وإصلاح التراجعين اللذين ظهرا في 0.1.18. ‏116 طلب سحب مدموجًا، إضافة إلى 21 دخلت عبر إيداعات المشرفين، من 26 مساهمًا ([CHANGELOG](CHANGELOG.md)).
   **إصلاحات اليوم:** يعرض الاختبار التاريخي المؤشر المرجعي الذي قيّمه فعلًا، وتحصل المحافظ الطويلة/القصيرة على فحص المخاطر (risk x-ray)، ويبقى عامل GTJA رقم 17 فارغًا ما دامت مدخلاته في فترة الإحماء، وتتوفر لوحة Shannon بلغات الواجهة الإحدى عشرة، ودخل إصلاحان من المساهمين كانا قد رُوجعا ولم يُدمجا ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) مجاميع TTM التي تمتد عبر ربع سنة مفقود، [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) رصد تجزئة الأسهم بنسبة 3:2). شكرًا لـ [@rudycelekli](https://github.com/rudycelekli)، [@he-yufeng](https://github.com/he-yufeng)، [@Jackzigen](https://github.com/Jackzigen)، [@Shizoqua](https://github.com/Shizoqua)، [@cgycorey](https://github.com/cgycorey)، [@dajiaohuang](https://github.com/dajiaohuang)، [@zeus229](https://github.com/zeus229)، [@alexwan02](https://github.com/alexwan02)، [@BHhhh-123](https://github.com/BHhhh-123)، [@remote-controlled-man](https://github.com/remote-controlled-man)، [@shadowinlife](https://github.com/shadowinlife)، [@TWJxi](https://github.com/TWJxi)، [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen)، [@TerryF7](https://github.com/TerryF7)، [@davidalmeida90](https://github.com/davidalmeida90)، [@DrDLyuan](https://github.com/DrDLyuan)، [@goatyyc](https://github.com/goatyyc)، [@hnq-ai](https://github.com/hnq-ai)، [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber)، [@MetaAviator](https://github.com/MetaAviator)، [@octo-patch](https://github.com/octo-patch)، [@RowanAldean](https://github.com/RowanAldean)، [@VectorPeak](https://github.com/VectorPeak)، [@wavebyrd](https://github.com/wavebyrd) و[@yufengsika](https://github.com/yufengsika)!
   **أُصلح على main بعد الإصدار (يصل في إصدار pip التالي):** يُشترى معيار المقارنة في الاختبار الرجعي الآن عند سعر افتتاح أول شريط مُقيَّم، كما تُنفَّذ الاستراتيجية، بدلًا من آخر سعر إغلاق في فترة الإحماء؛ ولم يعد العائد الزائد يتضمن هذه الحركة (مثال AAPL بمتوسطي 20/60: من 22.5% إلى 18.4%).
 
@@ -194,7 +198,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 ## 📡 مصادر البيانات والانتقال التلقائي
 
-يدعم المحمّل **28 مصدرا لبيانات السوق**. عند تحديد `source: "auto"` يستنتج السوق من الرمز ويجرب المصادر بالترتيب المضبوط.
+يدعم المحمّل **27 مصدرا لبيانات السوق**. عند تحديد `source: "auto"` يستنتج السوق من الرمز ويجرب المصادر بالترتيب المضبوط.
 
 | السوق | ترتيب المصادر |
 |---|---|
@@ -456,7 +460,6 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -584,9 +587,7 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -648,7 +649,6 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 - @Marnie0415 — fallback لمحرّك فرعي مركّب للرموز غير المعروفة (#734)، وإصلاح تسابق DOM أثناء البث لـ `insertBefore` في الواجهة الأمامية (#717)
 - @YZY0108 — إصلاح انحياز الاستشراف look-ahead عبر كل محسّنات المحفظة الخمسة (#487)
 - @UNHNQ — مزوّدا SiliconFlow الصيني + العالمي (#565)
-- @FenjuFu — مزوّد iFlytek Spark (#537)
 - @jelech — محوّل Anthropic Messages API الأصلي (#695)
 - @octo-patch — نقاط نهاية API الإقليمية لـ MiniMax (#731)
 - @Thibaultjaigu — مزوّد بوابة Requesty المتوافق مع OpenAI (#474)

@@ -325,10 +325,9 @@ def _fetch_market_data_direct(
         # via the Settings page) rewrites the attempt order for auto-detected
         # sources: the override list IS the attempt order, so a user who put
         # tushare first actually starts there. Guards: explicit source
-        # requests stay src-first; the fallback_chain_provider test hook wins;
-        # local:/tickerall/fmp keep their no-network entry point
-        # (explicit fmp must not silently return yahoo on Stable 403 — issue #1270).
-        # Sources in _NO_NETWORK_FALLBACK_SOURCES never walk the chain.
+        # requests stay src-first and the fallback_chain_provider test hook wins.
+        # Sources in _NO_NETWORK_FALLBACK_SOURCES never walk the chain. For
+        # example, an explicit FMP request cannot return Yahoo data on a 403 (#1270).
         if src in _NO_NETWORK_FALLBACK_SOURCES:
             candidates = [src]
             override = None
@@ -537,7 +536,7 @@ def _fetch_market_data_direct(
                 continue
             src = detect_source(code) if source == "auto" else source
             if src in _NO_NETWORK_FALLBACK_SOURCES:
-                # Explicit local/tickerall requests must not silently
+                # Explicit requests for these sources must not silently
                 # fall through to a network loader (registry contract).
                 continue
             market = _detect_market(code)
