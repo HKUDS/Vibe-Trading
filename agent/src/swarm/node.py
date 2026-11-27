@@ -651,16 +651,19 @@ class NodePacing(TurnPacing):
             )
 
     def handle(self, state, response):
-        """Record the final answer and release the turn.
+        """Apply shared tool-syntax recovery before recording a final answer.
 
         Args:
             state: Current turn state whose final content is set.
             response: Provider response carrying the final answer.
 
         Returns:
-            A final_answer stop for the shared turn engine.
+            A continuation for a corrective round or a stop after delivery.
         """
         state.final_content = response.content or ""
+        recovery = self._handle_tool_call_syntax(state, response)
+        if recovery is not None:
+            return recovery
         self._release(state, stream_finish=False)
         return Stop("final_answer")
 

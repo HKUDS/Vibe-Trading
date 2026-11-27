@@ -122,6 +122,82 @@ def test_stream_dsml_tool_call_content_is_not_emitted_as_text() -> None:
     assert response.tool_calls[0].name == "bash"
 
 
+@pytest.mark.parametrize("streaming", [False, True], ids=["complete", "split-stream"])
+def test_captured_dsml_calls_normalize_without_streaming_markup(streaming: bool) -> None:
+    """Replay the Ark capture's wrapper, tag spacing, and string attribute."""
+    content = (
+        '<｜｜DSML｜｜ calls>\n'
+        '<｜｜DSML｜｜ invoke name="bash">\n'
+        '<｜｜DSML｜｜ parameter name="command" string="true">pwd</｜｜DSML｜｜ parameter>\n'
+        '</｜｜DSML｜｜ invoke>\n'
+        '</｜｜DSML｜｜ calls>'
+    )
+    text_chunks: list[str] = []
+    if streaming:
+        fake = _FakeStreamingLLM([AIMessageChunk(content=piece) for piece in [
+            content[:2], content[2:13], content[13:16], content[16:],
+        ]])
+        response = _client(fake).stream_chat(
+            [{"role": "user", "content": "hi"}], on_text_chunk=text_chunks.append
+        )
+    else:
+        response = parse_response(AIMessageChunk(content=content))
+
+    assert text_chunks == []
+    assert response.content == ""
+    assert response.finish_reason == "tool_calls"
+    assert [(call.name, call.arguments) for call in response.tool_calls] == [
+        ("bash", {"command": "pwd"}),
+    ]
+
+
+def test_ascii_dsml_preserves_typed_json_and_explicit_strings() -> None:
+    """Decode typed arguments and keep JSON-looking strings as text."""
+    content = (
+        '< || DSML || tool_calls >'
+        '<||DSML||invoke name="probe">'
+        '<||DSML||parameter name="options" string="false">{"n":2,"flags":[true,null]}</||DSML||parameter>'
+        '<||DSML||parameter name="label" string="true">false</||DSML||parameter>'
+        '</||DSML||invoke></ || DSML || tool_calls >'
+    )
+    response = parse_response(AIMessageChunk(content=content))
+
+    assert response.tool_calls[0].arguments == {
+        "options": {"n": 2, "flags": [True, None]},
+        "label": "false",
+    }
+
+
+_DSML_TEST_INVOKE = (
+    '<||DSML||invoke name="probe">'
+    '<||DSML||parameter name="text" string="true">ok</||DSML||parameter>'
+    '</||DSML||invoke>'
+)
+
+
+@pytest.mark.parametrize(
+    "damaged_tail",
+    [
+        '<||DSML||invoke name="probe">',
+        '<||DSML||invoke name="probe"><||DSML||parameter name="text">missing close</||DSML||invoke>',
+        '<||DSML||invoke name="probe" name="other"></||DSML||invoke>',
+        '<||DSML||invoke name="probe" broken></||DSML||invoke>',
+        '<||DSML||invoke name="probe"><||DSML||parameter name="text" string="false">[</||DSML||parameter></||DSML||invoke>',
+        'unexpected prose inside the wrapper',
+        '</||DSML||tool_calls><||DSML||calls>',
+    ],
+    ids=["invoke", "parameter", "duplicate-attribute", "bad-attribute", "invalid-json", "stray-text", "mismatched-wrapper"],
+)
+def test_malformed_dsml_never_returns_a_valid_prefix_call(damaged_tail: str) -> None:
+    """Reject the entire payload even when an earlier invoke was complete."""
+    content = '<||DSML||tool_calls>' + _DSML_TEST_INVOKE + damaged_tail + '</||DSML||tool_calls>'
+
+    response = parse_response(AIMessageChunk(content=content))
+
+    assert response.tool_calls == []
+    assert response.content == content
+
+
 def test_anthropic_content_blocks_stream_with_native_tool_call() -> None:
     chunk = AIMessageChunk(content="")
     chunk.content = [

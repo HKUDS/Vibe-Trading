@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 import re
 from importlib import import_module
@@ -83,11 +84,13 @@ def _native_deepseek_adapter_available() -> bool:
     return callable(getattr(module, "ChatDeepSeek", None))
 
 
-_DSML_BAR = r"(?:\|\||｜｜)"
+_DSML_BARS = ("||", "｜｜")
+_DSML_WRAPPERS = ("calls", "tool_calls")
+_DSML_BAR = "(?:" + "|".join(map(re.escape, _DSML_BARS)) + ")"
 _DSML_TAG = rf"{_DSML_BAR}\s*DSML\s*{_DSML_BAR}"
 _DSML_TOOL_CALLS_RE = re.compile(
-    rf"<\s*{_DSML_TAG}\s*tool_calls\s*>(?P<body>.*?)"
-    rf"</\s*{_DSML_TAG}\s*tool_calls\s*>",
+    rf"<\s*{_DSML_TAG}\s*(?P<wrapper>{'|'.join(_DSML_WRAPPERS)})\s*>(?P<body>.*?)"
+    rf"</\s*{_DSML_TAG}\s*(?P=wrapper)\s*>",
     re.DOTALL,
 )
 _DSML_INVOKE_RE = re.compile(
@@ -100,54 +103,91 @@ _DSML_PARAMETER_RE = re.compile(
     rf"</\s*{_DSML_TAG}\s*parameter\s*>",
     re.DOTALL,
 )
-_DSML_ATTR_RE = re.compile(r"""([A-Za-z_][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
-_DSML_PREFIXES = ("<||dsml||tool_calls", "<｜｜dsml｜｜tool_calls")
+_DSML_ATTR_RE = re.compile(r"""\s+([A-Za-z_][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+_DSML_MARKUP_RE = re.compile(rf"</?\s*{_DSML_TAG}")
+_DSML_PREFIXES = tuple(
+    f"<{left}DSML{right}{wrapper}>"
+    for left in _DSML_BARS for right in _DSML_BARS for wrapper in _DSML_WRAPPERS
+)
 
 
-def _parse_dsml_attrs(raw: str) -> dict[str, str]:
-    """Parse attributes from a DSML tag."""
+def _dsml_sequence(pattern: re.Pattern[str], text: str) -> list[re.Match[str]] | None:
+    """Read a sequence of elements separated only by whitespace."""
+    matches = []
+    end = 0
+    for match in pattern.finditer(text):
+        if text[end:match.start()].strip():
+            return None
+        matches.append(match)
+        end = match.end()
+    return None if text[end:].strip() else matches
+
+
+def _parse_dsml_attrs(raw: str) -> dict[str, str] | None:
+    """Parse a DSML tag's attributes, rejecting malformed or duplicate keys."""
+    matches = _dsml_sequence(_DSML_ATTR_RE, raw)
+    if matches is None:
+        return None
     attrs: dict[str, str] = {}
-    for match in _DSML_ATTR_RE.finditer(raw):
-        attrs[match.group(1)] = html.unescape(match.group(2) or match.group(3) or "")
+    for match in matches:
+        key = match.group(1)
+        if key in attrs:
+            return None
+        attrs[key] = html.unescape(match.group(2) or match.group(3) or "")
     return attrs
 
 
 def _is_possible_dsml_tool_call_prefix(content: str) -> bool:
     """Return True while buffered stream text could still be a DSML call."""
-    compact = re.sub(r"\s+", "", content.lstrip()[:80]).lower()
-    if not compact:
-        return True
+    compact = re.sub(r"\s+", "", content.lstrip()[:80])
     return any(prefix.startswith(compact) or compact.startswith(prefix) for prefix in _DSML_PREFIXES)
 
 
+def _reject_dsml_json_constant(value: str) -> None:
+    """Reject JavaScript numeric constants outside JSON."""
+    raise ValueError(f"Invalid DSML JSON constant: {value}")
+
+
 def _parse_dsml_tool_calls(content: Any) -> list[contracts.ToolCallRequest]:
-    """Parse DeepSeek-style DSML tool calls embedded as assistant content."""
+    """Parse a complete assistant payload of DeepSeek-style DSML tool calls."""
     if not isinstance(content, str):
         return []
 
-    stripped = content.strip()
-    blocks = list(_DSML_TOOL_CALLS_RE.finditer(stripped))
+    # Some relays append a slash after the last wrapper.
+    blocks = _dsml_sequence(_DSML_TOOL_CALLS_RE, content.strip().removesuffix("/"))
     if not blocks:
-        return []
-
-    outside = _DSML_TOOL_CALLS_RE.sub("", stripped).strip()
-    if outside not in {"", "/"}:
         return []
 
     tool_calls: list[contracts.ToolCallRequest] = []
     for block in blocks:
-        for invoke in _DSML_INVOKE_RE.finditer(block.group("body")):
-            invoke_attrs = _parse_dsml_attrs(invoke.group("attrs"))
-            name = invoke_attrs.get("name", "").strip()
-            if not name:
-                continue
+        invokes = _dsml_sequence(_DSML_INVOKE_RE, block.group("body"))
+        if not invokes:
+            return []
+        for invoke in invokes:
+            attrs = _parse_dsml_attrs(invoke.group("attrs"))
+            name = (attrs or {}).get("name", "").strip()
+            params = _dsml_sequence(_DSML_PARAMETER_RE, invoke.group("body"))
+            if not name or params is None:
+                return []
 
             arguments: dict[str, Any] = {}
-            for param in _DSML_PARAMETER_RE.finditer(invoke.group("body")):
-                param_attrs = _parse_dsml_attrs(param.group("attrs"))
+            for param in params:
+                param_attrs = _parse_dsml_attrs(param.group("attrs")) or {}
                 param_name = param_attrs.get("name", "").strip()
-                if param_name:
-                    arguments[param_name] = html.unescape(param.group("body")).strip()
+                raw = param.group("body")
+                string = param_attrs.get("string", "true")
+                if not param_name or param_name in arguments or _DSML_MARKUP_RE.search(raw):
+                    return []
+                value = html.unescape(raw).strip()
+                if string == "true":
+                    arguments[param_name] = value
+                elif string == "false":
+                    try:
+                        arguments[param_name] = json.loads(value, parse_constant=_reject_dsml_json_constant)
+                    except (ValueError, RecursionError):
+                        return []
+                else:
+                    return []
 
             tool_calls.append(
                 contracts.ToolCallRequest(
