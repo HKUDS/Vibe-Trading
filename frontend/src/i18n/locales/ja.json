@@ -1867,6 +1867,7 @@
     "universeOption": {
       "csi300": "CSI 300 (中国 A 株)",
       "sp500": "S&P 500 (米国)",
+      "nifty100": "NIFTY 100 (インド)",
       "btc-usdt": "BTC-USDT (暗号資産)",
       "equity_cn": "中国 A 株",
       "equity_us": "米国株式",

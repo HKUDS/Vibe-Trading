@@ -1867,6 +1867,7 @@
     "universeOption": {
       "csi300": "CSI 300 (중국 A주)",
       "sp500": "S&P 500 (미국)",
+      "nifty100": "NIFTY 100 (인도)",
       "btc-usdt": "BTC-USDT (암호화폐)",
       "equity_cn": "중국 A주",
       "equity_us": "미국 주식",

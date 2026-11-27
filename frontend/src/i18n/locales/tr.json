@@ -1833,6 +1833,7 @@
     "universeOption": {
       "csi300": "CSI 300 (Çin A hisseleri)",
       "sp500": "S&P 500 (ABD)",
+      "nifty100": "NIFTY 100 (Hindistan)",
       "btc-usdt": "BTC-USDT (Kripto)",
       "equity_cn": "Çin A hisseleri",
       "equity_us": "ABD hisseleri",

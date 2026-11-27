@@ -64,7 +64,7 @@ class AlphaCompareTool(BaseTool):
             "universe": {
                 "type": "string",
                 "description": (
-                    "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+                    "csi300 | sp500 | nifty100. btc-usdt is single-asset and is rejected before "
                     "data loading. csi300 needs TUSHARE_TOKEN; fund:* alphas require sp500."
                 ),
             },

@@ -1873,6 +1873,7 @@
     "universeOption": {
       "csi300": "CSI 300 (China A)",
       "sp500": "S&P 500 (EUA)",
+      "nifty100": "NIFTY 100 (Índia)",
       "btc-usdt": "BTC-USDT (criptomoeda)",
       "equity_cn": "Ações A da China",
       "equity_us": "Ações dos EUA",

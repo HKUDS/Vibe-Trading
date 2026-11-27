@@ -1873,6 +1873,7 @@
     "universeOption": {
       "csi300": "CSI 300 (سهام A چین)",
       "sp500": "S&P 500 (آمریکا)",
+      "nifty100": "NIFTY 100 (هند)",
       "btc-usdt": "BTC-USDT (رمزارز)",
       "equity_cn": "سهام A چین",
       "equity_us": "سهام آمریکا",
