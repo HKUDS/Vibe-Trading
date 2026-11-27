@@ -6,6 +6,7 @@ import ast
 import hashlib
 import io
 import json
+import math
 import os
 import shutil
 from pathlib import Path
@@ -290,7 +291,9 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
             "trade_count",
             "total_turnover",
         )
-        if name in raw_metrics and pd.notna(raw_metrics[name])
+        # calc_metrics reports an annualisation that overflows as inf, which the
+        # report cannot store (allow_nan=False), so it is dropped like a NaN.
+        if name in raw_metrics and math.isfinite(float(raw_metrics[name]))
     }
     if not metrics:
         raise ValueError(f"trial {name} produced no structured metrics")
