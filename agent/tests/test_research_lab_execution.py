@@ -92,6 +92,63 @@ def test_cost_study_reexecutes_same_frozen_data(saved_run, tmp_path):
     assert result["input_manifest_sha256"]
 
 
+def test_cost_study_completes_when_annualisation_overflows(tmp_path, monkeypatch):
+    import dotenv
+    from backtest import runner
+    import backtest.loaders.local_loader as local
+    from src.research_lab import service
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **kw: False)
+    monkeypatch.setattr(service, "get_runs_dir", lambda: tmp_path)
+    # +50% over 50 one-minute bars: calc_metrics annualises this to inf.
+    prices = np.linspace(10, 15, 50)
+    frame = pd.DataFrame(
+        {
+            "date": pd.date_range("2026-01-05 09:30", periods=50, freq="min"),
+            "open": prices,
+            "high": prices * 1.001,
+            "low": prices * 0.999,
+            "close": prices,
+            "volume": 1e8,
+        }
+    )
+    source = tmp_path / "prices.csv"
+    frame.to_csv(source, index=False)
+    bridge = tmp_path / "bridge.json"
+    bridge.write_text(json.dumps({"sources": [{"symbol": "AAPL.US", "type": "csv", "path": str(source)}]}))
+    monkeypatch.setattr(local, "_CONFIG_PATH", bridge)
+    root = tmp_path / "baseline"
+    (root / "code").mkdir(parents=True)
+    (root / "code/signal_engine.py").write_text(
+        "import pandas as pd\nclass SignalEngine:\n    def generate(self, data_map):\n"
+        "        frame = data_map['AAPL.US']\n        return {'AAPL.US': pd.Series(1, index=frame.index)}\n"
+    )
+    (root / "config.json").write_text(
+        json.dumps(
+            {
+                "codes": ["local:AAPL.US"],
+                "source": "local",
+                "interval": "1m",
+                "start_date": "2026-01-05",
+                "end_date": "2026-01-05",
+                "initial_cash": 10000,
+                "slippage": 0,
+                "slippage_us": 0,
+            }
+        )
+    )
+    runner.main(root)
+    assert pd.read_csv(root / "artifacts/metrics.csv").iloc[0]["annual_return"] == np.inf
+
+    state = service.run("cost_sensitivity", {"run_dir": str(root), "scenarios": [{"name": "base"}]})
+
+    assert state["status"] == "completed", state.get("error")
+    row = state["result"]["rows"][0]
+    assert "annual_return" not in row
+    assert row["total_return"] > 0.4
+
+
 @pytest.fixture
 def saved_benchmark_run(tmp_path, tmp_path_factory, monkeypatch, request):
     import dotenv
