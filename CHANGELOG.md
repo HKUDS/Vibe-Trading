@@ -152,9 +152,8 @@ JoinQuant's limit-fill rules; saved accounts still settle daily. Gildata
 financial queries, report-period stock screening and Shannon portfolio
 diagnosis arrive as separate opt-ins for Gildata account holders, Gildata
 quotes are used only when named, and the QVeris integration is removed.
-Argentina (BYMA shares and CEDEARs) joins as a backtest market, `web_search`
-can use Parallel's hosted search, and Codex OAuth lists the models the
-signed-in account offers. Both 0.1.18 regressions are fixed: a retried
+Argentina (BYMA shares and CEDEARs) joins as a backtest market, and Codex OAuth
+lists the models the signed-in account offers. Both 0.1.18 regressions are fixed: a retried
 provider error no longer halts live decisions for the day, and a research
 goal's answer that crosses its token budget is delivered. Most of the rest is
 correctness: formula corrections to GTJA and Qlib alphas, futures contract
@@ -278,14 +277,6 @@ Sources or `VIBE_TRADING_GILDATA_FEATURES`.
   `ar_slippage` are simulation inputs, not official tariffs; all of it is
   labelled in the `ar_data_basis` metric, `artifacts/byma_preparation.json`
   and `artifacts/cash_ledger.csv`.
-
-- **Optional Parallel search in `web_search`** (#2113, thanks @RowanAldean).
-  With `VIBE_TRADING_SEARCH_PARALLEL=1`, `web_search` queries Parallel's
-  anonymous hosted MCP endpoint (free and rate-limited; no account, key or
-  new dependency) after a configured Aliyun IQS and before the ddgs engines
-  and CN fallbacks. Off by default. A Parallel failure falls through to the
-  existing sources and its reason is prefixed to any final error; results are
-  security-scanned and snippets cut to 300 characters.
 
 - **Gildata combined financial queries and search candidates** (#2117, thanks
   @TWJxi and @lishuanghong1989-netizen). The `gildata_fin_query` agent tool
@@ -3866,7 +3857,7 @@ values the backtest itself had written.
   and concurrent cold callers wait for them.
 
 - **An explicit source that must not fall back no longer has its gaps filled**
-  (#1441, thanks @chiww) — `local`, `fmp`, `qveris`, `tickerall`, `nobitex`
+  (#1441, thanks @chiww) — `local`, `fmp`, `qveris`, `nobitex`
   and `wallex` were kept from degrading only when the loader was unavailable
   as a whole. A symbol the named source lacked was still fetched down the
   market's chain, so one run could mix a local snapshot with Tencent bars
@@ -5131,11 +5122,6 @@ Rolls up 272 commits / 74 merged pull requests since 0.1.13.
   missing-symbol and unexpected-symbol drift deterministically. Liquidation-engine
   validation is explicitly left unassessed rather than silently assumed. This is
   the Shadow 1 slice: contracts and fixture-only offline reconciliation.
-- **Novita AI** as a built-in OpenAI-compatible provider (#1059, thanks
-  @jax-novita) — registered in the provider registry with `NOVITA_API_KEY` /
-  `NOVITA_BASE_URL` and wired through capabilities, CLI onboarding,
-  `.env.example` and the README provider list, so it is selectable from the
-  built-in list instead of hand-configured as a custom endpoint.
 - **GitHub Copilot** as a provider through the official `github-copilot-sdk`
   (#990, supersedes #899, thanks @sykuang), with SDK-managed authentication from
   `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, stored Copilot CLI
@@ -5143,12 +5129,6 @@ Rolls up 272 commits / 74 merged pull requests since 0.1.13.
   reasoning and tool-call handling and Settings/preflight integration. This
   implements the boundary #899 was closed on: no borrowed OAuth client ID and no
   editor-impersonation headers.
-- **tickerall hosted MetaTrader 5 data source** (#968, closes #897, thanks
-  @miguelangelo78) — a broker's MetaTrader 5 candle feed over the hosted
-  TickerAll HTTP API, so forex and metals backtests run on any OS with no local,
-  logged-in MetaTrader 5 terminal. Purely opt-in: `is_available()` is False
-  unless `TICKERALL_API_KEY` and `TICKERALL_ACCOUNT_ID` are set, and the loader
-  never joins an automatic chain.
 - **A drift tolerance band for rebalance mode** — a rebalance that would move
   the book by less than the band is skipped rather than executed for a rounding
   difference.
@@ -5740,8 +5720,8 @@ Rolls up 408 commits / 162 merged pull requests since 0.1.12.
   into one bloc?"). Descriptive risk context, not a trading signal; shares
   `/correlation`'s auth + rate-limit budget. Backed by the **correlation-regime
   skill** (#557, thanks @ebujinovch).
-- **Three new LLM providers** — SiliconFlow CN + Global (#565, thanks @UNHNQ),
-  iFlytek Spark (#537, thanks @FenjuFu), and a **native Anthropic Messages API**
+- **New LLM providers** — SiliconFlow CN + Global (#565, thanks @UNHNQ)
+  and a **native Anthropic Messages API**
   adapter (#695, thanks @jelech; `pip install "vibe-trading-ai[anthropic]"`).
   MiniMax now exposes its regional API endpoints (#731, thanks @octo-patch).
 - **Historical USD-M funding settlements** for Binance perpetuals (#716, thanks

@@ -129,7 +129,7 @@
 
 - **2026-11-06** 📈 **Cuadrículas de volatilidad implícita y correcciones de negociación simulada** — Crea cuadrículas de IV por precio de ejercicio y vencimiento a partir de observaciones de opciones, distingue puntos observados e interpolados y rechaza la extrapolación ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). Las entradas numéricas extremas producen resultados finitos o errores explícitos. En la simulación de acciones A con barras de cinco minutos, las órdenes de mercado bloqueadas por los límites de precio se cancelan de inmediato ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)); el motor también procesa los símbolos en orden cronológico para impedir que una venta posterior financie una compra anterior. **Disponible en `main`, para la próxima versión de pip; las solicitudes públicas de cinco minutos siguen limitadas a un símbolo por paso.**
 
-- **2026-11-05** 🚀 **Publicada la v0.1.19** ([Notas de la versión](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): investigación que sobrevive al chat: guarda investigaciones versionadas con su evidencia y revísalas, reutiliza backtests de turnos y sesiones anteriores y edita un objetivo de investigación sin empezar de cero. Nuevas funciones opcionales: una simulación de acciones A en pasos de cinco minutos y las consultas financieras, la selección de acciones y el diagnóstico de cartera Shannon de Gildata (se retira QVeris; un `GILDATA_TOKEN` existente ya no activa nada por sí solo). Además: backtests de Argentina (BYMA), búsqueda web con Parallel, descubrimiento de modelos con OAuth de Codex y corrección de las dos regresiones de la 0.1.18. 116 pull requests fusionados más 21 incorporados mediante commits de los mantenedores, de 26 contribuidores ([CHANGELOG](CHANGELOG.md)).
+- **2026-11-05** 🚀 **Publicada la v0.1.19** ([Notas de la versión](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): investigación que sobrevive al chat: guarda investigaciones versionadas con su evidencia y revísalas, reutiliza backtests de turnos y sesiones anteriores y edita un objetivo de investigación sin empezar de cero. Nuevas funciones opcionales: una simulación de acciones A en pasos de cinco minutos y las consultas financieras, la selección de acciones y el diagnóstico de cartera Shannon de Gildata (se retira QVeris; un `GILDATA_TOKEN` existente ya no activa nada por sí solo). Además: backtests de Argentina (BYMA), descubrimiento de modelos con OAuth de Codex y corrección de las dos regresiones de la 0.1.18. 116 pull requests fusionados más 21 incorporados mediante commits de los mantenedores, de 26 contribuidores ([CHANGELOG](CHANGELOG.md)).
   **Corregido hoy:** el backtest informa del índice de referencia que realmente evaluó, las carteras largo/corto tienen radiografía de riesgo, el alfa 17 de GTJA queda vacío mientras sus datos de entrada completan el periodo de calentamiento, el panel Shannon está disponible en los once idiomas de la interfaz y entran dos correcciones revisadas de colaboradores que no se habían incorporado ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) sumas TTM que abarcaban un trimestre ausente, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) detección de desdoblamientos 3:2). ¡Gracias a [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) y [@yufengsika](https://github.com/yufengsika)!
   **Corregido en main tras el lanzamiento (llegará en la próxima versión de pip):** el benchmark del backtest ahora se compra a la apertura de la primera barra evaluada, como la estrategia, en lugar de partir del último cierre del calentamiento; el exceso de rentabilidad ya no incluye ese movimiento (ejemplo AAPL SMA 20/60: 22,5 % → 18,4 %).
 
@@ -194,7 +194,7 @@ Abre **Run Detail** para comparar ambas estrategias, revisar las operaciones dur
 
 ## 📡 Fuentes de datos y alternativas
 
-Hay **28 fuentes de datos de mercado**. Con `source: "auto"` se identifica el mercado por el símbolo y se prueban las fuentes en el orden configurado.
+Hay **27 fuentes de datos de mercado**. Con `source: "auto"` se identifica el mercado por el símbolo y se prueban las fuentes en el orden configurado.
 
 | Mercado | Orden de consulta |
 |---|---|
@@ -456,7 +456,6 @@ Elige una [incidencia para empezar](https://github.com/HKUDS/Vibe-Trading/issues
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -584,9 +583,7 @@ Elige una [incidencia para empezar](https://github.com/HKUDS/Vibe-Trading/issues
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -648,7 +645,6 @@ Elige una [incidencia para empezar](https://github.com/HKUDS/Vibe-Trading/issues
 - @Marnie0415 — fallback de sub-motor composite para símbolos desconocidos (#734) y la corrección de la race condition de DOM en `insertBefore` durante el streaming en el frontend (#717)
 - @YZY0108 — la corrección de look-ahead-bias en los cinco optimizadores de portfolio (#487)
 - @UNHNQ — los proveedores SiliconFlow CN + Global (#565)
-- @FenjuFu — el proveedor iFlytek Spark (#537)
 - @jelech — el adaptador nativo de la API de Messages de Anthropic (#695)
 - @octo-patch — endpoints regionales de la API de MiniMax (#731)
 - @Thibaultjaigu — el proveedor de gateway Requesty compatible con OpenAI (#474)

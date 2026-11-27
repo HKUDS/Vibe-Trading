@@ -321,20 +321,6 @@
     }
   },
   {
-    "name": "novita",
-    "label": "Novita AI",
-    "api_key_env": "NOVITA_API_KEY",
-    "base_url_env": "NOVITA_BASE_URL",
-    "default_model": "moonshotai/kimi-k3",
-    "default_base_url": "https://api.novita.ai/openai",
-    "api_key_required": true,
-    "setup": {
-      "order": 15,
-      "key_prefix": "sk_",
-      "key_placeholder": "sk_..."
-    }
-  },
-  {
     "name": "dashscope",
     "label": "DashScope / Qwen",
     "api_key_env": "DASHSCOPE_API_KEY",
@@ -464,22 +450,6 @@
     "setup": {
       "order": 14,
       "key_placeholder": "api-key..."
-    }
-  },
-  {
-    "name": "spark",
-    "label": "iFlytek Spark",
-    "api_key_env": "SPARK_API_KEY",
-    "base_url_env": "SPARK_BASE_URL",
-    "default_model": "4.0Ultra",
-    "default_base_url": "https://spark-api-open.xf-yun.com/v1",
-    "api_key_required": true,
-    "aliases": [
-      "iflytek"
-    ],
-    "setup": {
-      "order": 16,
-      "key_placeholder": "api-password..."
     }
   },
   {

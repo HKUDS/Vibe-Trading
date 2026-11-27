@@ -129,7 +129,7 @@
 
 - **2026-11-06** 📈 **شبكات التقلب الضمني وإصلاحات التداول التجريبي** — إنشاء شبكات IV حسب سعر التنفيذ ووقت الاستحقاق من بيانات الخيارات المقدّمة، مع تمييز القيم المرصودة عن المستوفاة ورفض الاستقراء خارج نطاق البيانات ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). تعيد المدخلات العددية المتطرفة نتائج محدودة أو أخطاء واضحة. في محاكاة أسهم A بشموع خمس دقائق، تُلغى فورًا أوامر السوق التي تمنع حدود الأسعار تنفيذها ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176))؛ ويعالج المحرك الرموز بترتيب زمني حتى لا تموّل حصيلة بيع لاحق أمر شراء سابقًا. **متاح في `main` وسيُضمّن في إصدار pip القادم؛ تظل طلبات الخمس دقائق المتاحة للمستخدم مقتصرة على رمز واحد لكل خطوة.**
 
-- **2026-11-05** 🚀 **صدور v0.1.19** ([ملاحظات الإصدار](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): أبحاث تبقى بعد انتهاء المحادثة: احفظ نسخًا مؤرخة من الأبحاث مع أدلتها ونقّحها، وأعد استخدام الاختبارات التاريخية من الأدوار والجلسات السابقة، وعدّل هدف البحث في مكانه. ميزات اختيارية جديدة: محاكاة تجريبية لأسهم A بخطوات خمس دقائق، والاستعلامات المالية وفرز الأسهم عبر Gildata وتشخيص المحافظ عبر Shannon (أُزيل QVeris، ولم يعد وجود `GILDATA_TOKEN` وحده يفعّل أي ميزة). وأيضًا اختبارات تاريخية لسوق الأرجنتين (BYMA)، والبحث في الويب عبر Parallel، واكتشاف النماذج عبر Codex OAuth، وإصلاح التراجعين اللذين ظهرا في 0.1.18. ‏116 طلب سحب مدموجًا، إضافة إلى 21 دخلت عبر إيداعات المشرفين، من 26 مساهمًا ([CHANGELOG](CHANGELOG.md)).
+- **2026-11-05** 🚀 **صدور v0.1.19** ([ملاحظات الإصدار](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): أبحاث تبقى بعد انتهاء المحادثة: احفظ نسخًا مؤرخة من الأبحاث مع أدلتها ونقّحها، وأعد استخدام الاختبارات التاريخية من الأدوار والجلسات السابقة، وعدّل هدف البحث في مكانه. ميزات اختيارية جديدة: محاكاة تجريبية لأسهم A بخطوات خمس دقائق، والاستعلامات المالية وفرز الأسهم عبر Gildata وتشخيص المحافظ عبر Shannon (أُزيل QVeris، ولم يعد وجود `GILDATA_TOKEN` وحده يفعّل أي ميزة). وأيضًا اختبارات تاريخية لسوق الأرجنتين (BYMA)، واكتشاف النماذج عبر Codex OAuth، وإصلاح التراجعين اللذين ظهرا في 0.1.18. ‏116 طلب سحب مدموجًا، إضافة إلى 21 دخلت عبر إيداعات المشرفين، من 26 مساهمًا ([CHANGELOG](CHANGELOG.md)).
   **إصلاحات اليوم:** يعرض الاختبار التاريخي المؤشر المرجعي الذي قيّمه فعلًا، وتحصل المحافظ الطويلة/القصيرة على فحص المخاطر (risk x-ray)، ويبقى عامل GTJA رقم 17 فارغًا ما دامت مدخلاته في فترة الإحماء، وتتوفر لوحة Shannon بلغات الواجهة الإحدى عشرة، ودخل إصلاحان من المساهمين كانا قد رُوجعا ولم يُدمجا ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) مجاميع TTM التي تمتد عبر ربع سنة مفقود، [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) رصد تجزئة الأسهم بنسبة 3:2). شكرًا لـ [@rudycelekli](https://github.com/rudycelekli)، [@he-yufeng](https://github.com/he-yufeng)، [@Jackzigen](https://github.com/Jackzigen)، [@Shizoqua](https://github.com/Shizoqua)، [@cgycorey](https://github.com/cgycorey)، [@dajiaohuang](https://github.com/dajiaohuang)، [@zeus229](https://github.com/zeus229)، [@alexwan02](https://github.com/alexwan02)، [@BHhhh-123](https://github.com/BHhhh-123)، [@remote-controlled-man](https://github.com/remote-controlled-man)، [@shadowinlife](https://github.com/shadowinlife)، [@TWJxi](https://github.com/TWJxi)، [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen)، [@TerryF7](https://github.com/TerryF7)، [@davidalmeida90](https://github.com/davidalmeida90)، [@DrDLyuan](https://github.com/DrDLyuan)، [@goatyyc](https://github.com/goatyyc)، [@hnq-ai](https://github.com/hnq-ai)، [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber)، [@MetaAviator](https://github.com/MetaAviator)، [@octo-patch](https://github.com/octo-patch)، [@RowanAldean](https://github.com/RowanAldean)، [@VectorPeak](https://github.com/VectorPeak)، [@wavebyrd](https://github.com/wavebyrd) و[@yufengsika](https://github.com/yufengsika)!
   **أُصلح على main بعد الإصدار (يصل في إصدار pip التالي):** يُشترى معيار المقارنة في الاختبار الرجعي الآن عند سعر افتتاح أول شريط مُقيَّم، كما تُنفَّذ الاستراتيجية، بدلًا من آخر سعر إغلاق في فترة الإحماء؛ ولم يعد العائد الزائد يتضمن هذه الحركة (مثال AAPL بمتوسطي 20/60: من 22.5% إلى 18.4%).
 
@@ -194,7 +194,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 ## 📡 مصادر البيانات والانتقال التلقائي
 
-يدعم المحمّل **28 مصدرا لبيانات السوق**. عند تحديد `source: "auto"` يستنتج السوق من الرمز ويجرب المصادر بالترتيب المضبوط.
+يدعم المحمّل **27 مصدرا لبيانات السوق**. عند تحديد `source: "auto"` يستنتج السوق من الرمز ويجرب المصادر بالترتيب المضبوط.
 
 | السوق | ترتيب المصادر |
 |---|---|
@@ -456,7 +456,6 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -584,9 +583,7 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -648,7 +645,6 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 - @Marnie0415 — fallback لمحرّك فرعي مركّب للرموز غير المعروفة (#734)، وإصلاح تسابق DOM أثناء البث لـ `insertBefore` في الواجهة الأمامية (#717)
 - @YZY0108 — إصلاح انحياز الاستشراف look-ahead عبر كل محسّنات المحفظة الخمسة (#487)
 - @UNHNQ — مزوّدا SiliconFlow الصيني + العالمي (#565)
-- @FenjuFu — مزوّد iFlytek Spark (#537)
 - @jelech — محوّل Anthropic Messages API الأصلي (#695)
 - @octo-patch — نقاط نهاية API الإقليمية لـ MiniMax (#731)
 - @Thibaultjaigu — مزوّد بوابة Requesty المتوافق مع OpenAI (#474)

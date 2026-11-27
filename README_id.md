@@ -129,7 +129,7 @@
 
 - **2026-11-06** 📈 **Grid volatilitas tersirat dan perbaikan simulasi perdagangan** — Susun grid IV berdasarkan harga pelaksanaan dan waktu jatuh tempo dari observasi opsi yang diberikan, dengan penanda titik observasi/interpolasi dan tanpa ekstrapolasi ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). Input numerik ekstrem kini menghasilkan nilai berhingga atau kesalahan yang jelas. Dalam simulasi saham A per lima menit, order pasar yang terhalang batas harga langsung dibatalkan ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)); mesin juga memproses simbol secara kronologis agar hasil penjualan di waktu berikutnya tidak membiayai pembelian sebelumnya. **Tersedia di `main` untuk rilis pip berikutnya; permintaan publik lima menit tetap dibatasi satu simbol per langkah.**
 
-- **2026-11-05** 🚀 **v0.1.19 dirilis** ([Catatan rilis](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): riset yang bertahan melampaui obrolan — simpan artefak riset berversi beserta buktinya lalu revisi, gunakan kembali backtest dari giliran dan sesi sebelumnya, dan sunting tujuan riset di tempat. Fitur opsional baru: simulasi saham A per lima menit, serta kueri keuangan, seleksi saham, dan diagnosis portofolio Shannon dari Gildata (QVeris dihapus; `GILDATA_TOKEN` yang sudah ada kini tidak lagi mengaktifkan apa pun dengan sendirinya). Juga backtest Argentina (BYMA), pencarian web Parallel, penemuan model lewat Codex OAuth, dan perbaikan kedua regresi 0.1.18. 116 pull request digabung ditambah 21 yang masuk lewat commit maintainer, dari 26 kontributor ([CHANGELOG](CHANGELOG.md)).
+- **2026-11-05** 🚀 **v0.1.19 dirilis** ([Catatan rilis](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): riset yang bertahan melampaui obrolan — simpan artefak riset berversi beserta buktinya lalu revisi, gunakan kembali backtest dari giliran dan sesi sebelumnya, dan sunting tujuan riset di tempat. Fitur opsional baru: simulasi saham A per lima menit, serta kueri keuangan, seleksi saham, dan diagnosis portofolio Shannon dari Gildata (QVeris dihapus; `GILDATA_TOKEN` yang sudah ada kini tidak lagi mengaktifkan apa pun dengan sendirinya). Juga backtest Argentina (BYMA), penemuan model lewat Codex OAuth, dan perbaikan kedua regresi 0.1.18. 116 pull request digabung ditambah 21 yang masuk lewat commit maintainer, dari 26 kontributor ([CHANGELOG](CHANGELOG.md)).
   **Diperbaiki hari ini:** backtest melaporkan tolok ukur yang benar-benar dievaluasinya, portofolio long/short mendapat risk x-ray, alfa GTJA 17 tetap kosong selama inputnya masih dalam masa pemanasan, panel Shannon tersedia dalam kesebelas bahasa antarmuka, dan dua perbaikan kontributor yang sudah ditinjau tetapi belum masuk kini disertakan ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) jumlah TTM yang melintasi kuartal yang hilang, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) deteksi pemecahan saham 3:2). Terima kasih [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) dan [@yufengsika](https://github.com/yufengsika)!
   **Diperbaiki di main setelah rilis (masuk rilis pip berikutnya):** benchmark backtest kini dibeli pada harga pembukaan bar evaluasi pertama, sama seperti strategi, bukan dari harga penutupan terakhir masa pemanasan; excess return tidak lagi memuat pergerakan itu (contoh AAPL SMA 20/60: 22,5% → 18,4%).
 
@@ -194,7 +194,7 @@ Buka **Run Detail** untuk membandingkan hasil dengan beli dan tahan, meninjau tr
 
 ## 📡 Sumber data dan peralihan otomatis
 
-Tersedia **28 sumber data pasar**. Dengan `source: "auto"`, sistem mengenali pasar dari simbol dan mencoba sumber sesuai urutan konfigurasi.
+Tersedia **27 sumber data pasar**. Dengan `source: "auto"`, sistem mengenali pasar dari simbol dan mencoba sumber sesuai urutan konfigurasi.
 
 | Pasar | Urutan sumber |
 |---|---|
@@ -456,7 +456,6 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -584,9 +583,7 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -648,7 +645,6 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @Marnie0415 — composite sub-engine fallback for unknown symbols (#734) and the frontend `insertBefore` streaming DOM-race fix (#717)
 - @YZY0108 — the look-ahead-bias fix across all five portfolio optimizers (#487)
 - @UNHNQ — the SiliconFlow CN + Global providers (#565)
-- @FenjuFu — the iFlytek Spark provider (#537)
 - @jelech — the native Anthropic Messages API adapter (#695)
 - @octo-patch — MiniMax regional API endpoints (#731)
 - @Thibaultjaigu — the Requesty OpenAI-compatible gateway provider (#474)

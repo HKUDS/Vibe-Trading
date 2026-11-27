@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BACKENDS = "duckduckgo, google, bing, brave, mojeek, yahoo"
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 0.8
-_MAX_PARALLEL_ERROR_CHARS = 200
 
 
 def _aliyun_iqs_search(query: str, max_results: int = 5) -> list[dict] | None:
@@ -232,19 +231,6 @@ class WebSearchTool(BaseTool):
             except Exception as exc:  # noqa: BLE001
                 logger.warning("aliyun_iqs failed: %s, trying other search providers", exc)
 
-        parallel_error: str | None = None
-        if get_env_config().agent_tuning.vibe_trading_search_parallel:
-            try:
-                from src.tools._parallel_search import search_parallel
-
-                payload = search_parallel(query, max_results)
-                if payload["results"]:
-                    return json.dumps(payload, ensure_ascii=False)
-            except Exception as exc:  # noqa: BLE001 — keep existing sources usable
-                parallel_error = (str(exc) or type(exc).__name__)[:_MAX_PARALLEL_ERROR_CHARS]
-                logger.warning("Parallel search failed: %s, falling through to ddgs", parallel_error)
-
-        parallel_error_prefix = f"Parallel search failed: {parallel_error}. " if parallel_error else ""
         try:
             from ddgs import DDGS
 
@@ -255,10 +241,8 @@ class WebSearchTool(BaseTool):
             except ImportError:
                 payload = {
                     "status": "error",
-                    "error": parallel_error_prefix + "Web search package not installed. Run: pip install ddgs",
+                    "error": "Web search package not installed. Run: pip install ddgs",
                 }
-                if parallel_error:
-                    payload = with_security_warnings(payload, fields=("error",))
                 return json.dumps(payload, ensure_ascii=False)
             supports_backend = False
 
@@ -346,7 +330,7 @@ class WebSearchTool(BaseTool):
                     fb_err = f"{fb_name}: {exc}"
                     fb_errors.append(fb_err)
                     continue
-        if last_error is None and not fb_errors and parallel_error is None:
+        if last_error is None and not fb_errors:
             return json.dumps(
                 {
                     "status": "ok",
@@ -360,8 +344,7 @@ class WebSearchTool(BaseTool):
         payload = {
             "status": "error",
             "error": (
-                parallel_error_prefix
-                + f"Web search failed after {attempt} ddgs attempts "
+                f"Web search failed after {attempt} ddgs attempts "
                 f"(backends: {backends if supports_backend else 'duckduckgo'}): {last_error or 'no results'}. "
                 f"CN fallbacks (sogou, bing_cn): {'; '.join(fb_errors) or fb_err}. "
                 "Retry shortly, set VIBE_TRADING_SEARCH_BACKENDS to a different engine list, "
@@ -369,6 +352,4 @@ class WebSearchTool(BaseTool):
                 "known URL directly with read_url."
             ),
         }
-        if parallel_error:
-            payload = with_security_warnings(payload, fields=("error",))
         return json.dumps(payload, ensure_ascii=False)
