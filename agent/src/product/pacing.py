@@ -39,6 +39,7 @@ class TurnPacing:
         self.llm = llm
         self.max_iterations = max_iterations
         self.goals = goals
+        self._syntax_retry_used = False
 
     def handle(self, state: Any, response: LLMResponse) -> Continue | Stop:
         """Handle a response with no executable tool batch.
@@ -55,10 +56,9 @@ class TurnPacing:
             if self._empty_response(state):
                 return Continue.NEXT
         state.consecutive_empty_responses = 0
-        if state.final_answer_retry and response.has_tool_calls:
-            return self._syntax_retry(state)
-        if _looks_like_tool_call_syntax(state.final_content):
-            return self._syntax_retry(state)
+        recovery = self._handle_tool_call_syntax(state, response)
+        if recovery is not None:
+            return recovery
         if self.goals.continue_goal(state, self.conversation):
             return Continue.NEXT
         self._release(state)
@@ -82,24 +82,38 @@ class TurnPacing:
         )
         return True
 
+    def _handle_tool_call_syntax(self, state: Any, response: LLMResponse) -> Continue | Stop | None:
+        """Recover unparsed tool syntax for both conversation and node turns."""
+        if (state.final_answer_retry and response.has_tool_calls) or _looks_like_tool_call_syntax(state.final_content):
+            return self._syntax_retry(state)
+        return None
+
     def _syntax_retry(self, state: Any) -> Continue | Stop:
-        """Withhold tool syntax and grant one bounded plain-text retry."""
+        """Withhold tool syntax and allow one correction within the existing request modes."""
         if state.stream.streamed_chars:
             state.stream.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_RESET, "iter": state.current_iter, "reason": "tool_call_syntax_in_answer"})
         state.trace.write({"type": "tool_call_syntax_in_answer", "iter": state.current_iter})
         self.conversation.append_assistant(
             state.view.messages, {"role": "assistant", "content": state.final_content}, phase="commentary"
         )
-        self.conversation.inject(
-            state.view.messages,
-            "<system>Your previous response was not released: it contained tool-call syntax even though tool calling is unavailable now. Provide the final answer as plain prose only, with no XML/DSML tags.</system>",
-        )
         state.final_content = ""
-        if state.iteration <= self.max_iterations:
+        if not self._syntax_retry_used:
+            self._syntax_retry_used = True
+            if state.view.tools and state.iteration + 1 < self.max_iterations:
+                directive = (
+                    "Reissue it through the tool-calling interface if needed, or provide the final answer as plain prose. "
+                    "Do not write tool-call markup in your response."
+                )
+            else:
+                directive = "Provide the final answer as plain prose only, with no XML/DSML tags."
+            self.conversation.inject(
+                state.view.messages,
+                f"<system>Your previous tool call was not executed because it appeared as response text. {directive}</system>",
+            )
             return Continue.FINAL_ANSWER if state.iteration == self.max_iterations else Continue.NEXT
         state.final_content = "My final response could not be delivered: it contained tool-call syntax instead of a plain-text answer. Please ask me to continue."
         state.released_fallback = True
-        state.released_fallback_reason = "final answer withheld: it contained tool-call syntax on the forced-text iteration"
+        state.released_fallback_reason = "final answer withheld: it contained tool-call syntax after the corrective round"
         state.stream.emit(vocabulary.ITEM_DELTA, {"kind": vocabulary.TEXT_DELTA, "delta": state.final_content, "iter": state.current_iter, "phase": "final"})
         self._release(state, stream_finish=False)
         return Stop("syntax_retry_exhausted")

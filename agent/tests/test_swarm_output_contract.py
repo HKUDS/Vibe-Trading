@@ -240,12 +240,61 @@ class _ScriptedLLM:
                 finish_reason="stop",
             ),
         ]
+        self.requests = []
 
     def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None, **_callbacks):
+        self.requests.append(([dict(message) for message in messages], tools))
         return self._responses.pop(0)
 
     def close(self) -> None:
         """No-op: the scripted stub owns no HTTP client."""
+
+
+@pytest.mark.parametrize("repeats", [False, True], ids=["native-call", "repeated-markup"])
+def test_swarm_tool_syntax_gets_one_correction_with_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repeats: bool,
+) -> None:
+    """Retry a progress-prefaced capture through the normal node turn."""
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(_ResultTool('{"status": "ok"}'))
+    llm = _ScriptedLLM()
+    markup = (
+        "Backtest ran. Now computing phase-by-phase performance.\n\n"
+        '<｜｜DSML｜｜ calls>\n'
+        '<｜｜DSML｜｜ invoke name="bash">\n'
+        '<｜｜DSML｜｜ parameter name="command" string="true">pwd</｜｜DSML｜｜ parameter>\n'
+        '</｜｜DSML｜｜ invoke>\n'
+        '</｜｜DSML｜｜ calls>'
+    )
+    llm._responses.insert(0, LLMResponse(content=markup))
+    if repeats:
+        llm._responses.insert(1, LLMResponse(content=markup))
+    monkeypatch.setattr(worker_mod, "ChatLLM", lambda **kwargs: llm)
+    monkeypatch.setattr(worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry)
+    events: list[SwarmEvent] = []
+
+    result = run_node(
+        SwarmAgentSpec(
+            id="analyst", role="Analyst", system_prompt="Analyse the result.",
+            tools=["market_probe"], max_iterations=4,
+        ),
+        SwarmTask(id="task", agent_id="analyst", prompt_template="Probe the market."),
+        {}, {}, tmp_path, policy=ToolPolicy.from_config(get_env_config()),
+        event_callback=events.append,
+    )
+
+    assert result.iterations == (2 if repeats else 3)
+    messages, tools = llm.requests[1]
+    assert tools
+    assert sum(
+        "was not executed" in msg.get("content", "") and "tool-calling interface" in msg["content"]
+        for msg in messages
+    ) == 1
+    assert sum(event.type == "item.completed" for event in events) == (0 if repeats else 1)
+    assert result.status == ("incomplete" if repeats else "completed")
+    assert markup not in result.summary
+    if repeats:
+        assert "tool-call syntax" in result.error
 
 
 @pytest.mark.parametrize(

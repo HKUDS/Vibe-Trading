@@ -70,9 +70,12 @@ def _chat_llm(fake_llm: _ScriptedStreamingLLM):
     return chat_with_adapter(fake_llm, model="deepseek-v4-pro")
 
 
+@pytest.mark.parametrize("tag_space, wrapper", [("", "tool_calls"), (" ", "calls")])
 def test_agent_loop_executes_dsml_textual_tool_call(
     tmp_path: Path,
     monkeypatch,
+    tag_space: str,
+    wrapper: str,
 ) -> None:
     """A pure DSML response must execute as a tool call instead of final text."""
     class _ImmediateHeartbeatTimer:
@@ -91,13 +94,14 @@ def test_agent_loop_executes_dsml_textual_tool_call(
     monkeypatch.setattr(
         "src.product.tool_invocation.HeartbeatTimer", _ImmediateHeartbeatTimer
     )
-    dsml = (
-        '<｜｜DSML｜｜tool_calls>'
-        '<｜｜DSML｜｜invoke name="echo_probe">'
-        '<｜｜DSML｜｜parameter name="marker" string="true">ran-dsml</｜｜DSML｜｜parameter>'
-        "</｜｜DSML｜｜invoke>"
-        "</｜｜DSML｜｜tool_calls>"
-    )
+    tag = f"｜｜DSML｜｜{tag_space}"
+    dsml = "\n".join((
+        f'<{tag}{wrapper}>',
+        f'<{tag}invoke name="echo_probe">',
+        f'<{tag}parameter name="marker" string="true">ran-dsml</{tag}parameter>',
+        f'</{tag}invoke>',
+        f'</{tag}{wrapper}>',
+    ))
     registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     memory = PersistentMemory(memory_dir=tmp_path / "memory")
@@ -256,6 +260,7 @@ class _AnswerRetryLLM:
     def __init__(self, responses: list[LLMResponse]) -> None:
         self.responses = responses
         self.offered_tools: list[list[dict[str, Any]] | None] = []
+        self.requests: list[list[dict[str, Any]]] = []
 
     def stream_chat(
         self,
@@ -265,10 +270,51 @@ class _AnswerRetryLLM:
         **kwargs: Any,
     ) -> LLMResponse:
         self.offered_tools.append(tools)
+        self.requests.append([dict(message) for message in messages])
         response = self.responses.pop(0)
         if on_text_chunk and response.content:
             on_text_chunk(response.content)
         return response
+
+
+@pytest.mark.parametrize("repeats", [False, True], ids=["native-call", "repeated-markup"])
+def test_main_tool_syntax_gets_one_correction_with_tools(
+    tmp_path: Path, repeats: bool,
+) -> None:
+    """Let the model reissue a native call once while tools can still be offered."""
+    markup = '<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="echo_probe">'
+    native = LLMResponse(tool_calls=[
+        ToolCallRequest(id="corrected", name="echo_probe", arguments={"marker": "ready"})
+    ])
+    llm = _AnswerRetryLLM([
+        LLMResponse(content=markup), LLMResponse(content=markup) if repeats else native,
+        LLMResponse(content="The report is ready."),
+    ])
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(_EchoProbeTool())
+    events = []
+    agent = AgentRuntime(
+        registry=registry, llm=llm, max_iterations=4,
+        persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
+        event_callback=lambda kind, data: events.append(data.get("kind", kind)),
+    )
+    agent.memory.run_dir = str(tmp_path)
+
+    result = agent.run("Use the probe and report.")
+
+    assert result["iterations"] == (2 if repeats else 3)
+    assert llm.offered_tools[1]
+    assert sum(
+        "was not executed" in msg.get("content", "") and "tool-calling interface" in msg["content"]
+        for msg in llm.requests[1]
+    ) == 1
+    assert events.count("tool.completed") == (0 if repeats else 1)
+    if repeats:
+        assert result.get("degraded") is True
+        assert "tool-call syntax" in result["content"]
+        assert markup not in result["content"]
+    else:
+        assert result["content"] == "The report is ready."
 
 
 def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> None:
