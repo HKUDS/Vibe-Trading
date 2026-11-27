@@ -200,6 +200,7 @@ def test_prepare_sandbox_home_reexposes_mt5_config_without_credentials(tmp_path:
             {
                 "terminal_path": "C:/MT5/terminal64.exe",
                 "timeout": 60,
+                "symbol_suffix": "m",
                 "login": 12345678,
                 "password": "broker-secret",
                 "server": "Exness-Demo",
@@ -213,7 +214,7 @@ def test_prepare_sandbox_home_reexposes_mt5_config_without_credentials(tmp_path:
         sandbox_cfg = sandbox / ".vibe-trading" / "mt5.json"
         assert sandbox_cfg.exists()
         subset = json.loads(sandbox_cfg.read_text(encoding="utf-8"))
-        assert subset == {"terminal_path": "C:/MT5/terminal64.exe", "timeout": 60}
+        assert subset == {"terminal_path": "C:/MT5/terminal64.exe", "timeout": 60, "symbol_suffix": "m"}
         for secret in ("login", "password", "server"):
             assert secret not in subset
     finally:
@@ -492,6 +493,17 @@ def test_mt5_sandbox_allowlist_rejects_nonprimitive_settings(tmp_path, value):
     source, target = tmp_path / "source", tmp_path / "target"
     source.mkdir()
     target.mkdir()
-    (source / "mt5.json").write_text(json.dumps({"terminal_path": value, "timeout": value, "login": "private"}))
+    (source / "mt5.json").write_text(json.dumps({"terminal_path": value, "timeout": value, "symbol_suffix": value, "login": "private"}))
+    _reexpose_mt5_config(source, target)
+    assert not (target / "mt5.json").exists()
+
+
+@pytest.mark.parametrize("value", ["", "m" * 17, "m\x00", "../x", "a b"])
+def test_mt5_sandbox_allowlist_rejects_malformed_symbol_suffix(tmp_path, value):
+    from src.core.runner import _reexpose_mt5_config
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    (source / "mt5.json").write_text(json.dumps({"symbol_suffix": value, "login": "private"}))
     _reexpose_mt5_config(source, target)
     assert not (target / "mt5.json").exists()
