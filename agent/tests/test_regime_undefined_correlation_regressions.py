@@ -21,3 +21,14 @@ def test_valid_low_density_still_exits_and_unknown_density_keeps_state():
     assert compute_edge_density(returns, corr_window=3).iloc[-1] == 1.0
     actual = detect_regimes(pd.Series([1.0, np.nan, 0.0]), smooth_window=1)
     assert actual["fused"].tolist() == [1, 1, 0]
+
+
+def test_smoothing_does_not_enter_on_unknown_density():
+    entering = detect_regimes(pd.Series([0.0, 1.0, np.nan, 1.0]), smooth_window=2)
+    assert entering["fused"].tolist() == [0, 0, 0, 1]
+    assert pd.isna(entering["smoothed"].iloc[2])
+
+def test_smoothing_does_not_exit_on_unknown_density():
+    exiting = detect_regimes(pd.Series([1.0, 0.0, np.nan, 0.0]), smooth_window=2)
+    assert exiting["fused"].tolist() == [1, 1, 1, 0]
+    assert pd.isna(exiting["smoothed"].iloc[2])

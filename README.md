@@ -180,6 +180,8 @@ Vibe-Trading turns finance questions into research reports, runnable backtests a
 | Coordinate or repeat research | Run a [Swarm team](guides/research.md#swarm-workflows), assign work in Pixel Office or schedule a brief in `/scheduled`. |
 | Revisit research with dated evidence | Search `/research-artifacts`, compare any two revisions, and export a full series or selected comparison as JSON or Markdown. [Versioned research](guides/research.md#versioned-research-artifacts) |
 
+Correlation regime timelines leave smoothed density unavailable when the current density cannot be estimated, and retain the previous regime until a measurable observation arrives.
+
 For image attachments, `analyze_image` accepts browser handles such as
 `uploads/<filename>` (and legacy `agent/uploads/<filename>`), resolving them
 under the runtime upload directory (`~/.vibe-trading/uploads`, or

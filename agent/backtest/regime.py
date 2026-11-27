@@ -82,7 +82,8 @@ def detect_regimes(
         raise ValueError("exit_threshold must be below enter_threshold")
 
     # Trailing mean = causal. A centered window here silently reads the future.
-    smoothed = density.rolling(smooth_window, min_periods=1).mean()
+    # Do not let older observations supply a value for an unknown current bar.
+    smoothed = density.rolling(smooth_window, min_periods=1).mean().where(density.notna())
 
     fused = False
     states = np.zeros(len(smoothed), dtype=int)
