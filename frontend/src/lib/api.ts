@@ -630,6 +630,8 @@ export const api = {
   getResearchLabJob: (id: string) => request<LabJob>(`/api/research-lab/jobs/${encodeURIComponent(id)}`),
   downloadResearchLabOosEquity: (id: string): Promise<Blob> =>
     performRequest(`/api/research-lab/jobs/${encodeURIComponent(id)}/report?format=oos_equity_csv`, { headers: authHeaders() }, (response) => response.blob()),
+  downloadResearchLabFoldSummary: (id: string): Promise<Blob> =>
+    performRequest(`/api/research-lab/jobs/${encodeURIComponent(id)}/report?format=folds_csv`, { headers: authHeaders() }, (response) => response.blob()),
   getPixelOffice: () => request<OfficeSnapshot>("/api/pixel-office"),
   updatePixelOffice: (action: "create" | "assign" | "complete" | "rank", arguments_: Record<string, unknown>) =>
     request<OfficeSnapshot>("/api/pixel-office/actions", { method: "POST", body: JSON.stringify({ action, arguments: arguments_ }) }),

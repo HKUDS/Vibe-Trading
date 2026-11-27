@@ -18,6 +18,16 @@ describe("generated report download", () => {
     expect(await blob.text()).toBe("return,equity\n0.01,101\n");
   });
 
+  it("downloads walk-forward fold audit CSV with bearer authentication", async () => {
+    vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "research-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
+    const fetch = vi.fn().mockResolvedValue(new Response("phase,fold\nvalidation,1\n", { headers: { "content-type": "text/csv" } }));
+    vi.stubGlobal("fetch", fetch);
+    const { api } = await loadApiModule();
+    const blob = await api.downloadResearchLabFoldSummary("job/1");
+    expect(fetch).toHaveBeenCalledWith("/api/research-lab/jobs/job%2F1/report?format=folds_csv", expect.objectContaining({ headers: { Authorization: "Bearer research-key" } }));
+    expect(await blob.text()).toBe("phase,fold\nvalidation,1\n");
+  });
+
   it("downloads PDF bytes with bearer authentication and keeps the key out of the URL", async () => {
     vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "report-test-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
     const fetch = vi.fn().mockResolvedValue(new Response("%PDF-contents", { headers: { "content-type": "application/pdf" } }));

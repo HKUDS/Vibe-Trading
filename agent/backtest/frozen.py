@@ -121,7 +121,9 @@ def load_frozen_frames(manifest_path: str, config: dict) -> tuple[dict, dict]:
         if entry is None:
             raise ValueError(f"frozen snapshot has no data for {code}")
         raw = read_frozen_input(path.parent, entry, code)
-        frame = pd.read_csv(io.BytesIO(raw), index_col=0, parse_dates=True)
+        frame = pd.read_csv(
+            io.BytesIO(raw), index_col=0, parse_dates=True, float_precision="round_trip"
+        )
         if not isinstance(frame.index, pd.DatetimeIndex) or not frame.index.is_unique:
             raise ValueError(f"frozen input needs distinct dated bars: {code}")
         frame = frame.sort_index()

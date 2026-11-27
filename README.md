@@ -73,6 +73,19 @@
 
 ## 📰 News
 
+- **2026-11-26** 🛠️ **Options comparison exports and Research Lab replay fixes** — Options Lab can export a comparison of two saved strategies as JSON or CSV, including both P&L series and the difference from the baseline strategy. [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
+  Research Lab preserves saved price precision when replaying the full frozen dataset or a shorter window. A malformed run configuration no longer prevents other runs from appearing in the catalog. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
+  Batch replay distinguishes incomplete evidence from failed checks and returns a JSON error for malformed `--bindings` files. FRED request errors redact the API key. **Merged into `main`.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
+
+- **2026-11-25** 🛠️ **Walk-forward audits and scheduled paper-trade cancellations** — Research Lab can export each walk-forward validation fold and the optional holdout to CSV with the selected parameters and test metrics. In the 5-minute China A-share paper replay, a scheduled cancellation stops the remaining quantity from matching while preserving earlier fills and fees. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  When Gemini reports an input token limit error, the agent can compact its context and retry. Saving a memory preserves unrelated cached reads. Headline scoring recognizes sentiment words next to typographic quotes, em and en dashes, and ellipses. **Merged into `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
+
+- **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
+
+<details>
+<summary>Earlier news</summary>
+
 - **2026-11-23** 🛠️ **Replayable research and broader market coverage** — Research Lab preserves the original external benchmark prices for frozen replays and exports walk-forward out-of-sample equity as CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   Options Lab compares two saved strategies on the same spot-price and implied-volatility grid. Symbol search and market data now cover equities and ETFs from six European exchanges via Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
   OpenAlgo provides read-only access to account and position data. The CLI can cancel a background Swarm run from a separate process. **On `main`.** [#2214](https://github.com/HKUDS/Vibe-Trading/pull/2214) · [#2340](https://github.com/HKUDS/Vibe-Trading/pull/2340)
@@ -85,9 +98,6 @@
 
 - **2026-11-20** 📈 **US share classes and Tencent price history** — Eastmoney and Yahoo search now agree on `BRK-B.US`. Eastmoney checks the ticker before loading prices, keeping listings such as `BW-A.US` and `BWA.US` distinct. Tencent now returns all pages of daily bars when dates are entered as `2023-1-5`. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
   Strategy Comparison ranks a −10% drawdown above −30%. Backtests retain negative prices only with `allow_nonpositive_prices: true`. CLI users can resume a saved chat with its history. **On `main`, for the next pip release.**
-
-<details>
-<summary>Earlier news</summary>
 
 - **2026-11-19** 📄 **Technical report published** — The report describes how Vibe-Trading traces results to source data and runs, preserves research revisions, and enforces user-authorized limits on live trading. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
@@ -193,6 +203,8 @@ In backtests with `allow_nonpositive_prices: true`, a separately loaded benchmar
 
 In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.
 
+Risk X-Ray correlation summaries use only estimable pairs. A holding with constant returns does not hide correlations between other holdings; the average and strongest pair are unavailable when no pair can be estimated.
+
 This is a constant-weight return model, not account NAV, strategy P&L or a forecast. Backtests use the average executed basket weights; the model itself does not include fees or cash flows. Duration counts observed bar intervals from peak to recovery, or to the window's end if unrecovered, not calendar days. Daily, weekly and monthly observations retain their original labels.
 
 A missing interior return or non-positive/non-finite model wealth makes the periods unavailable, rather than an empty set or zero risk. Values within a relative `1e-12` of a running peak are treated as at that peak to avoid an extra recovery bar caused only by floating-point noise; smaller differences are not distinguished. The JSON report declares this as `recovery_rtol`. Existing scalar statistics and older reports without episode metadata remain supported.
@@ -219,6 +231,8 @@ The loader supports **28 market-data sources**. With `source: "auto"`, it infers
 | Futures | Chinese contracts can use AKShare or local bars. Supply local bars for global contracts. |
 
 You can also choose a source explicitly. For example, installing `vibe-trading-ai[ashare]` adds the token-free BaoStock loader for daily A-share bars. The [data source reference](guides/capabilities.md#-data-sources--smart-fallback) lists the full chains and credential requirements.
+
+Yahoo `4H`/`4h` requests aggregate hourly OHLCV into four-hour bars aligned to UTC midnight. Partial buckets are retained; empty buckets are omitted.
 
 ## 🔩 Detailed Capabilities
 
@@ -248,7 +262,7 @@ Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JS
 | Feature | What you can do |
 |---|---|
 | Portfolio | Bring read-only broker holdings into one snapshot or import an extraETF export. Enter target weights to preview the value change for each holding. |
-| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
+| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. A separate five-minute A-share research step supports caller order IDs and a deterministic cancel schedule, with partial fills preserved. [Cancellation timing and limits](agent/src/tools/paper_trade/README.md#caller-cancellation-pt-v14) are explicit; this is not a live order session. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
 | Shadow Account | Import your broker’s trade journal, inspect fees and trading habits, then compare the actual trades with a rule-based replay. |
 | Broker connections | Set up a connection in the CLI or Web and test it with a read. For supported live profiles, set symbol, order and exposure limits before enabling trading. The kill switch halts live activity. |
 
@@ -258,7 +272,7 @@ Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JS
 |---|---|
 | Swarm and Pixel Office | Run a bull–bear investment committee or a quant research desk and inspect the workers’ reports. In Pixel Office, assign a task to a teammate and record the result on the shared board. |
 | Scheduled briefs | Start from a premarket brief, an earnings tracker or a portfolio checkup. Choose a schedule and send the report to a configured channel such as Slack, Telegram or email. |
-| Research history | Search older sessions and reopen a saved run. Save a dated conclusion with its evidence and compare revisions when the investment case changes. |
+| Research history | Search older sessions and reopen a saved run. Copy prompts or answers to the clipboard, save a dated conclusion with its evidence, and compare revisions when the investment case changes. |
 | Run records | Inspect the data source, model, execution record and metric references behind a backtest. Reopen the saved trades and equity curve to check a reported figure. |
 
 <!-- BEGIN GENERATED broker-capability-matrix -->

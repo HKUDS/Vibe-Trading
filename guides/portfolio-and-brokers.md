@@ -180,7 +180,11 @@ MT5 candidate.
 If several broker aliases match, specify the exact native symbol (for example,
 `EURUSDm`) or configure `symbol_suffix`; search never chooses an alias arbitrarily
 or substitutes a web-search result. Backtest sandboxes receive only a validated
-`terminal_path` and positive finite `timeout`, not account credentials.
+`terminal_path`, positive finite `timeout` and short plain-token
+`symbol_suffix`, not account credentials. The backtest loader uses
+`symbol_suffix` only to pick the exact match among same-base broker symbols
+(for example `XAUUSDm` over `XAUUSD247m`); with no configured suffix, or no
+exact match, it still refuses the ambiguous request.
 
 Then:
 

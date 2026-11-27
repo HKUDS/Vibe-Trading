@@ -456,10 +456,11 @@ def combine_factors(
 
     diagnostics: dict[str, Any] = {
         "method": method,
+        # ``explicit`` is a frame for both kinds by now; ask the caller's input.
         "weights_source": (
             "caller_table"
-            if isinstance(explicit, pd.DataFrame)
-            else ("caller_mapping" if isinstance(explicit, Mapping) else method)
+            if isinstance(weights, pd.DataFrame)
+            else ("caller_mapping" if isinstance(weights, Mapping) else method)
         ),
         "standardize": bool(standardize),
         "window": window,

@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -145,6 +146,10 @@ def _rlimit_bootstrap_argv() -> list[str] | None:
     ]
 
 
+#: Broker symbol suffixes are short plain tokens; anything else is not copied.
+_MT5_SYMBOL_SUFFIX_RE = re.compile(r"[A-Za-z0-9._#\-]{1,16}")
+
+
 def _reexpose_mt5_config(src_root: Path, dst_root: Path) -> None:
     """Write a credential-free subset of the host's ``mt5.json`` into the sandbox.
 
@@ -152,7 +157,8 @@ def _reexpose_mt5_config(src_root: Path, dst_root: Path) -> None:
     which strategy code must never see (VT-001), so the file can never join the
     generic re-expose list. A backtest still has to attach to the
     already-running, already-logged-in terminal, so it gets only
-    ``terminal_path`` and ``timeout`` (#1589).
+    ``terminal_path`` and ``timeout`` (#1589), plus ``symbol_suffix`` so the
+    loader can tell same-base broker symbols apart.
     """
     src = src_root / "mt5.json"
     if not src.exists():
@@ -170,6 +176,11 @@ def _reexpose_mt5_config(src_root: Path, dst_root: Path) -> None:
     timeout = config.get("timeout")
     if type(timeout) in (int, float) and math.isfinite(timeout) and timeout > 0:
         subset["timeout"] = timeout
+    # Not a credential: the account-type suffix (Exness ``m``) only tells the
+    # loader which of several same-base broker symbols is the user's.
+    symbol_suffix = config.get("symbol_suffix")
+    if isinstance(symbol_suffix, str) and _MT5_SYMBOL_SUFFIX_RE.fullmatch(symbol_suffix):
+        subset["symbol_suffix"] = symbol_suffix
     if not subset:
         return
     try:

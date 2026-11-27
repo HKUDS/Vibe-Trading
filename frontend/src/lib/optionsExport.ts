@@ -1,4 +1,5 @@
 import type { OptionsPayoffRequest, OptionsPayoffResponse } from "./options";
+import { assertFiniteNumbers, csvText } from "./exportUtils";
 
 export const OPTIONS_ANALYSIS_FORMAT = "vibe-options-analysis-v1";
 
@@ -22,20 +23,6 @@ const CSV_COLUMNS = [
 
 type CsvColumn = (typeof CSV_COLUMNS)[number];
 type CsvRow = Partial<Record<CsvColumn, string | number>>;
-
-function assertFiniteNumbers(value: unknown, path = "export"): void {
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error(`${path} must contain finite numbers`);
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertFiniteNumbers(item, `${path}[${index}]`));
-    return;
-  }
-  if (value && typeof value === "object") {
-    Object.entries(value).forEach(([key, item]) => assertFiniteNumbers(item, `${path}.${key}`));
-  }
-}
 
 function validateGrids(result: GridResult): void {
   const expiry = result.expiry_curve;
@@ -64,11 +51,6 @@ function validateExport(request: OptionsPayoffRequest, result: OptionsPayoffResp
   assertFiniteNumbers(request, "request");
   assertFiniteNumbers(result, "result");
   validateGrids(result);
-}
-
-function csvText(value: string): string {
-  const safe = /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 function renderRow(row: CsvRow): string {
