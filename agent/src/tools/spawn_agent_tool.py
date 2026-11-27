@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 import time
 from copy import copy
@@ -80,6 +81,13 @@ def is_order_action_name(name: str) -> bool:
     return any(part in name.casefold() for part in ("place_order", "cancel_order", "submit_order", "replace_order"))
 
 
+def _is_loaded_tool_type(tool: BaseTool, module: str, name: str) -> bool:
+    """Check an optional tool type without importing its dependencies for local tools."""
+    # Any registered instance or subclass already loaded the defining module.
+    tool_type = getattr(sys.modules.get(module), name, None)
+    return tool_type is not None and isinstance(tool, tool_type)
+
+
 def is_trading_state_tool(tool: BaseTool, *, include_unclassified_remote: bool = True) -> bool:
     """Whether a tool places, modifies or cancels orders or changes trading state.
 
@@ -105,23 +113,12 @@ def is_trading_state_tool(tool: BaseTool, *, include_unclassified_remote: bool =
         return True
     if getattr(candidate, "is_readonly", False) is True:
         return False
-    from src.live.order_guard import LiveOrderGuardTool
-
-    if isinstance(candidate, LiveOrderGuardTool):
+    if _is_loaded_tool_type(candidate, "src.live.order_guard", "LiveOrderGuardTool"):
         return True
     if type(candidate).__module__.startswith(_TRADING_MODULES):
         return True
-    try:
-        from src.tools.mcp import MCPRemoteTool
-        from src.live.classification import ToolClass, classify_tool
-
-        if include_unclassified_remote and isinstance(candidate, MCPRemoteTool):
-            spec = getattr(candidate, "_spec", None)
-            if spec is None:
-                return True
-            return classify_tool(spec.remote_name, spec.annotations) is not ToolClass.READ
-    except ImportError:
-        pass
+    if include_unclassified_remote and _is_undeclared_remote_tool(candidate):
+        return True
     return str(candidate.name).startswith(_broker_tool_prefixes())
 
 
@@ -157,11 +154,7 @@ def _parent_bound_classes() -> tuple[type[BaseTool], ...]:
 
 def _is_undeclared_remote_tool(tool: BaseTool) -> bool:
     """Whether an MCP tool is anything but declared read-only by its server."""
-    try:
-        from src.tools.mcp import MCPRemoteTool
-    except ImportError:
-        return False
-    if not isinstance(tool, MCPRemoteTool):
+    if not _is_loaded_tool_type(tool, "src.tools.mcp", "MCPRemoteTool"):
         return False
     from src.live.classification import ToolClass, classify_tool
 

@@ -12,6 +12,7 @@ from src.tools.path_utils import FileRoots
 from src.product.tool_policy import ToolPolicy
 
 
+import builtins
 import copy
 import json
 import threading
@@ -425,13 +426,47 @@ def test_only_an_mcp_tool_declared_read_only_reaches_the_child(tmp_path: Path) -
     assert child.tool_names == ["mcp_probe_quotes"]
 
 
+def test_local_child_registry_does_not_import_mcp_or_order_guard(
+    run_root: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep optional remote and broker dependencies off the local startup path.
+
+    Args:
+        run_root: Isolated parent workspace.
+        monkeypatch: Fixture for recording optional import attempts.
+    """
+    parent = parent_registry(ScriptedLLM([]), RecordingTool("local_write", is_readonly=False))
+    imports: list[str] = []
+    real_import = builtins.__import__
+
+    def track_optional_import(name, *args, **kwargs):
+        if name in {"src.tools.mcp", "src.live.order_guard"}:
+            imports.append(name)
+        return real_import(name, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(builtins, "__import__", track_optional_import)
+        child = child_registry(parent, run_root / "child")
+
+    assert child.tool_names == ["local_write"]
+    assert imports == []
+
+
 def test_a_mandate_gated_live_order_tool_is_trading_state_under_any_name() -> None:
+    """Exclude the order guard even when another module subclasses it."""
     from src.live.order_guard import LiveOrderGuardTool
 
     gated = object.__new__(LiveOrderGuardTool)
     gated.name = "mcp_rh_place_equity_order"
 
+    class ExternalGuard(LiveOrderGuardTool):
+        pass
+
+    subclass = object.__new__(ExternalGuard)
+    subclass.name = "probe_gate"
+
     assert is_trading_state_tool(gated)
+    assert is_trading_state_tool(subclass, include_unclassified_remote=False)
     assert not is_trading_state_tool(RecordingTool("trading_positions_probe", is_readonly=True))
     assert is_trading_state_tool(RecordingTool("etoro_probe_write", is_readonly=False))
     assert not is_trading_state_tool(RecordingTool("write_probe", is_readonly=False))
