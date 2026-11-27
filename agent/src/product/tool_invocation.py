@@ -13,6 +13,7 @@ from src.kernel.tool_runner import wait_for_tool
 from src.product.tool_results import _is_tool_success, parse_tool_payload
 from src.product.resources.hooks import HookManager
 from src.tools.redaction import redact_payload, redact_tool_result
+from src.tools.workspace_writes import workspace_call_id
 
 
 @dataclass(frozen=True)
@@ -185,7 +186,11 @@ class ToolInvocation:
         def invoke():
             if self.stop_on_unknown is not None and self.cancelled():
                 return json.dumps({"status": "error", "error_code": "tool_cancelled", "skipped": True})
-            return self.env.registry.execute(tool_name, effective_args)
+            token = workspace_call_id.set(call_id)
+            try:
+                return self.env.registry.execute(tool_name, effective_args)
+            finally:
+                workspace_call_id.reset(token)
 
         result, elapsed_ms = wait_for_tool(
             tool_name, call_id, invoke,

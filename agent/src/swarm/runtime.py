@@ -51,6 +51,7 @@ from src.swarm.task_store import (
 )
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
+from src.tools.workspace_writes import workspace_write_receipt
 from src.swarm.node import (
     UNKNOWN_TOOL_OUTCOME, UsageMeasure, _CancellationSignal, partial_summary, run_node, unknown_outcome,
 )
@@ -825,6 +826,9 @@ class SwarmRuntime:
         destination = node_thread(target, task.agent_id, task.id)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(original, destination)
+        receipt = workspace_write_receipt(original)
+        if receipt.is_file():
+            shutil.copyfile(receipt, workspace_write_receipt(destination))
         return True
 
     def _prefetch_grounding_data(self, run: SwarmRun) -> None:

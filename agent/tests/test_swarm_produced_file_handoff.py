@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -18,8 +20,10 @@ from src.swarm.evidence_handoff import prepare_handoff, selected_inputs
 from src.swarm.models import SwarmAgentSpec, SwarmTask
 from src.swarm.task_store import TaskStore
 from src.tools.bash_tool import BashTool
+from src.tools.read_file_tool import ReadFileTool
 from src.tools.sandbox import SandboxSettings
 import src.swarm.node as node
+import src.product.tool_execution as execution
 
 
 class _Script:
@@ -27,7 +31,8 @@ class _Script:
         self.responses = iter(responses)
 
     def stream_chat(self, messages, **kwargs):
-        return next(self.responses)
+        response = next(self.responses)
+        return response() if callable(response) else response
 
     def close(self):
         pass
@@ -307,3 +312,192 @@ def test_files_written_by_other_tools_reach_the_consumer(tmp_path, monkeypatch):
     assert (files["f.csv"]["tool"], files["f.csv"]["call_id"]) == ("write_file", "w1")
     for original in written:
         assert (destination / files[original]["path"]).read_bytes() == (workspace / original).read_bytes()
+
+
+def test_failed_factor_tool_outputs_are_not_handed_downstream(tmp_path, monkeypatch) -> None:
+    """Send valid inputs and record gaps for the failed factor output.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
+    factor = ",A,B,C,D,E\n2026-01-01,1,2,3,4,5\n"
+    returns = ",A,B,C,D,E\n2026-01-01,.01,.02,.03,.04,.05\n"
+    source = _produce(
+        tmp_path, monkeypatch,
+        _call("w1", "write_file", path="f.csv", content=factor),
+        _call("w2", "write_file", path="r.csv", content=returns),
+        _call("fa", "factor_analysis", factor_csv="f.csv", return_csv="r.csv",
+              output_dir="factor", n_groups=6),
+        tools=("write_file", "factor_analysis"),
+    )
+    assert {path.name for path in (source / "factor").iterdir()} == {"ic_series.csv", "ic_summary.json"}
+    destination, _, index = _consume(tmp_path, {"factors": "p"})
+    failures = json.loads((destination / "upstream/failed-calls.json").read_text())
+    assert [(failure["call_id"], failure["tool"]) for failure in failures] == [("fa", "factor_analysis")]
+    assert {entry["original_path"] for entry in index["files"]} == {"f.csv", "r.csv"}, index["files"]
+    for path in ("factor/ic_series.csv", "factor/ic_summary.json"):
+        assert any(path in gap and "fa" in gap and "failed" in gap for gap in index["unavailable"])
+
+
+@pytest.mark.parametrize("exit_code", [3, 0, None], ids=["failed", "successful", "running"])
+def test_background_output_overlapping_successful_bash(tmp_path, monkeypatch, exit_code) -> None:
+    """Require a successful exit from a background task that overlapped a successful bash.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+        exit_code: Child exit code, or None to keep it running through node completion.
+    """
+    workspace = node.agent_artifact_dir(tmp_path, "analyst", "p")
+    managers = []
+    build_registry = node.build_swarm_registry
+
+    def remember_registry(*args, **kwargs):
+        registry = build_registry(*args, **kwargs)
+        managers.append(registry.get("background_run").background)
+        return registry
+
+    def wait_for_outcome(expected):
+        manager = managers[0]
+        [summary] = manager.check().splitlines()
+        task_id = summary.split(":", 1)[0]
+        deadline = time.monotonic() + 4
+        while True:
+            task = json.loads(manager.check(task_id))
+            if task["status"] == expected or time.monotonic() >= deadline:
+                break
+            time.sleep(.02)
+        assert task["status"] == expected, task
+
+    def finish():
+        wait_for_outcome({3: "error", 0: "completed", None: "running"}[exit_code])
+        return LLMResponse(content="Done.", finish_reason="stop")
+
+    monkeypatch.setattr(node, "build_swarm_registry", remember_registry)
+    wait_go = 'i=0; while [ ! -f .go ] && [ "$i" -lt 200 ]; do sleep .02; i=$((i+1)); done; '
+    wait_done = 'i=0; while [ ! -f .done ] && [ "$i" -lt 200 ]; do sleep .02; i=$((i+1)); done; '
+    wait_release = 'i=0; while [ ! -f .release ] && [ "$i" -lt 200 ]; do sleep .02; i=$((i+1)); done; '
+    outcome = f"exit {exit_code}" if exit_code is not None else wait_release + "exit 0"
+    try:
+        _produce(
+            tmp_path, monkeypatch,
+            _call("bg", "background_run", command=wait_go +
+                  "test -f .go || exit 4; printf partial > partial.csv; touch .done; " + outcome),
+            _call("fg", "bash", command="touch .go; " + wait_done + "test -f .done"),
+            finish,
+            tools=("background_run", "bash"),
+        )
+        assert (workspace / "partial.csv").read_text() == "partial"
+        results = {item.get("tool_call_id"): item for item in node.ThreadLog(
+            node.node_thread(tmp_path, "analyst", "p")).read() if item.type == "tool_result"}
+        assert results["fg"].get("status") == "ok"
+        _, _, index = _consume(tmp_path, {"producer": "p"})
+        paths = [entry["original_path"] for entry in index["files"]]
+        if exit_code == 0:
+            assert paths == ["partial.csv"], index
+        else:
+            assert paths == [], index["files"]
+            task_id = json.loads(results["bg"].get("content"))["task_id"]
+            reason = "failed" if exit_code == 3 else "running"
+            assert any("partial.csv" in gap and "bg" in gap and task_id in gap and reason in gap
+                       for gap in index["unavailable"]), index
+    finally:
+        if exit_code is None and managers:
+            (workspace / ".release").touch()
+            wait_for_outcome("completed")
+
+
+def test_any_failed_writer_blocks_a_file_even_after_successful_overwrite(tmp_path, monkeypatch) -> None:
+    """Keep a failed writer in the file's history across a later rewrite.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
+    _produce(
+        tmp_path, monkeypatch,
+        _call("fail", "bash", command="printf partial > replaced.txt; exit 3"),
+        _call("ok", "write_file", path="replaced.txt", content="replacement"),
+        _call("only-ok", "write_file", path="clean.txt", content="clean"),
+    )
+    _, _, index = _consume(tmp_path, {"producer": "p"})
+    assert [entry["original_path"] for entry in index["files"]] == ["clean.txt"], index["files"]
+    assert any("replaced.txt" in gap and "bash" in gap and "fail" in gap for gap in index["unavailable"])
+
+
+def test_unattributed_files_are_gaps_but_runtime_files_stay_private(tmp_path, monkeypatch) -> None:
+    """Report preexisting visible files as gaps and omit excluded paths.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
+    workspace = node.agent_artifact_dir(tmp_path, "analyst", "p")
+    workspace.mkdir(parents=True)
+    (workspace / "old.txt").write_text("Already present")
+    _produce(tmp_path, monkeypatch,
+             _call("b", "bash", command="touch .hidden; mkdir -p tool-results; touch tool-results/private.json"))
+    _, _, index = _consume(tmp_path, {"producer": "p"})
+    assert index["files"] == [], index["files"]
+    assert any("old.txt" in gap and "no candidate" in gap for gap in index["unavailable"])
+    assert not any(".hidden" in gap or "tool-results" in gap for gap in index["unavailable"])
+
+
+def test_legacy_run_without_workspace_receipt_keeps_original_handoff(tmp_path, monkeypatch) -> None:
+    """Keep legacy explicit writes and receiptless outputs available for handoff.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
+    source = _produce(tmp_path, monkeypatch, _call("write", "write_file", path="explicit.txt", content="old"))
+    thread = node.node_thread(tmp_path, "analyst", "p")
+    thread.with_name("workspace-writes.json").unlink(missing_ok=True)
+    (source / "receiptless.txt").write_text("Older export")
+    _, _, index = _consume(tmp_path, {"producer": "p"})
+    assert {entry["original_path"]: entry["call_id"] for entry in index["files"]} == {
+        "explicit.txt": "write", "receiptless.txt": None,
+    }
+
+
+def test_swarm_read_only_batch_dispatch_is_serial(tmp_path, monkeypatch) -> None:
+    """Pin serial dispatch even when all calls in the same batch declare read-only.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
+    observed = []
+    execute_batch = execution.execute_batch
+    execute_read = ReadFileTool.execute
+    active = threading.Lock()
+    entered = []
+
+    def capture(calls, cancelled):
+        observed.append([call.parallel for call in calls])
+        return execute_batch(calls, cancelled)
+
+    def observe_read(tool, **arguments):
+        acquired = active.acquire(blocking=False)
+        entered.append((arguments["path"], acquired))
+        try:
+            # Leave a window in which a concurrently dispatched call can enter.
+            time.sleep(.05)
+            return execute_read(tool, **arguments)
+        finally:
+            if acquired:
+                active.release()
+
+    monkeypatch.setattr(execution, "execute_batch", capture)
+    monkeypatch.setattr(ReadFileTool, "execute", observe_read)
+    _produce(
+        tmp_path, monkeypatch,
+        LLMResponse(content=None, finish_reason="tool_calls", tool_calls=[
+            ToolCallRequest("first", "read_file", {"path": "req.json"}),
+            ToolCallRequest("second", "read_file", {"path": "state.json"}),
+        ]),
+        tools=("read_file",),
+    )
+    assert observed == [[False, False]], observed
+    assert entered == [("req.json", True), ("state.json", True)], entered

@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -39,18 +40,18 @@ def _sandbox_workspace(cwd: Any, sandbox: SandboxSettings) -> Path:
 _DRAIN_TIMEOUT = 5
 
 
-def _workspace_files(cwd: Any) -> dict[str, tuple[int, int]] | None:
+def _workspace_files(cwd: Any, *, require_request: bool = True) -> dict[str, tuple[int, int]] | None:
     """Stat a run workspace's task files so a command's outputs can be told apart.
 
     Args:
-        cwd: Command working directory. Only a run workspace (holding the runtime's req.json) is
-            walked.
+        cwd: Command working directory.
+        require_request: Require req.json unless the host has already identified the workspace.
 
     Returns:
         Modification time and size per POSIX relative path, without runtime records, hidden paths
         or symlinks; None when cwd is not a run workspace.
     """
-    if not cwd or not Path(str(cwd), "req.json").is_file():
+    if not cwd or (require_request and not Path(str(cwd), "req.json").is_file()):
         return None
     found: dict[str, tuple[int, int]] = {}
     pending = [("", os.fspath(cwd))]
@@ -69,16 +70,21 @@ def _workspace_files(cwd: Any) -> dict[str, tuple[int, int]] | None:
                     pending.append((relative + "/", entry.path))
                 else:
                     stat = entry.stat()
-                    found[relative] = (stat.st_mtime_ns, stat.st_size)
+                    if S_ISREG(stat.st_mode):
+                        found[relative] = (stat.st_mtime_ns, stat.st_size)
             except OSError:
                 continue
     return found
 
 
-def _changed_files(cwd: Any, before: dict[str, tuple[int, int]]) -> list[dict[str, Any]]:
+def _changed_files(
+    cwd: Any, before: dict[str, tuple[int, int]], *, after: dict[str, tuple[int, int]] | None = None,
+) -> list[dict[str, Any]]:
     """List and hash the task files a command created or rewrote; a read changes nothing."""
     changed = []
-    for relative, stat in sorted((_workspace_files(cwd) or {}).items()):
+    if after is None:
+        after = _workspace_files(cwd) or {}
+    for relative, stat in sorted(after.items()):
         if before.get(relative) == stat:
             continue
         try:
@@ -182,8 +188,10 @@ class BashTool(BaseTool):
             A swarm node command
             that ran without its sandbox carries ``"sandbox": "unavailable"``.
         """
-        command = kwargs["command"]
-        cwd = kwargs.get("run_dir")
+        return self._execute(kwargs["command"], kwargs.get("run_dir"), record_artifacts=True)
+
+    def _execute(self, command: str, cwd: Any, *, record_artifacts: bool) -> str:
+        """Run the command, optionally leaving snapshots to the node's workspace wrapper."""
         safety_error = broad_python_kill_error(command)
         if safety_error:
             return json.dumps(
@@ -230,7 +238,7 @@ class BashTool(BaseTool):
             cwd = str(workspace)
             shell = False
 
-        before_files = _workspace_files(cwd)
+        before_files = _workspace_files(cwd) if record_artifacts else None
 
         # Spawn with a dedicated process group so a timeout can kill the
         # WHOLE tree, not just cmd.exe. Without this, grandchildren that

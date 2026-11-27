@@ -33,12 +33,13 @@ from src.session.thread import ThreadLog
 from src.session.thread_schema import ThreadItemError
 from src.swarm.artifacts import agent_artifact_dir, collect_node_artifacts, node_thread
 from src.swarm.context import NodeContext
-from src.swarm.evidence_handoff import prepare_handoff, selected_inputs
+from src.swarm.evidence_handoff import _produced_files, prepare_handoff, selected_inputs
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import redact_payload, redact_text
 from src.tools.spawn_agent_tool import _WorkspaceTool
+from src.tools.workspace_writes import WorkspaceWrites, workspace_write_receipt
 
 logger = logging.getLogger(__name__)
 
@@ -881,9 +882,24 @@ def run_node(
 
     from src.tools.background_tools import BackgroundScope, get_background_manager
 
-    background = get_background_manager().for_scope(BackgroundScope(
+    scope = BackgroundScope(
         owner_id=f"swarm:{Path(run_dir).resolve()}:{agent_spec.id}:{task.id}", attempt_id=task.id,
-    ))
+    )
+    background = get_background_manager().for_scope(scope)
+    receipt = workspace_write_receipt(thread_path)
+    legacy = (_produced_files(workspace, thread_path, agent_spec.id, task.id, [])
+              if previous and not receipt.exists() else None)
+    try:
+        writes = WorkspaceWrites(
+            workspace, receipt, legacy=legacy,
+            background_running=lambda task_id: json.loads(background.check(task_id))["status"] in {"running", "cancelling"},
+        )
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.warning("Workspace write receipt unavailable", exc_info=True)
+        error = "Workspace write receipt unavailable"
+        emit("worker_failed", {"error": error})
+        return WorkerResult(status="failed", summary="", error=error)
+    background = background.for_scope(scope, workspace_writes=writes)
     # Shell commands stay in this node's workspace (VIBE_TRADING_SWARM_SHELL_SANDBOX).
     shell_policy = replace(policy, sandbox=policy.sandbox.for_workspace(workspace))
     # A task's own tool list narrows its agent's whitelist (validated when the run was built).
@@ -897,7 +913,7 @@ def run_node(
     for name in available:
         tool = registry.get(name)
         if isinstance(tool, BaseTool):
-            registry.register(_WorkspaceTool(tool, workspace.resolve(), pin_undeclared=True))
+            registry.register(_WorkspaceTool(tool, workspace.resolve(), pin_undeclared=True, writes=writes))
     skills = (_filter_skill_descriptions(SkillsLoader(), agent_spec.skills)
               if registry.get("load_skill") is not None else "")
     system = build_worker_prompt(
@@ -949,7 +965,10 @@ def run_node(
         with agent_authored_request():
             result = child.run(prompt, history=history or None)
     finally:
-        llm.close()
+        try:
+            writes.seal()
+        finally:
+            llm.close()
     try:
         items = thread.read(strict=True)
     except (OSError, ThreadItemError):

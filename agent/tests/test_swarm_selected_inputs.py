@@ -28,6 +28,7 @@ from src.swarm.serialization import serialize_task
 from src.swarm.task_store import TaskStore, validate_dag
 from src.tools.path_utils import FileRoots
 from src.tools.read_file_tool import ReadFileTool
+from src.tools.workspace_writes import workspace_write_receipt
 import src.swarm.node as node
 
 PROSE = "Correlation proves operator negligence."
@@ -108,7 +109,7 @@ def _collect(root, monkeypatch, task_id="collect"):
     assert result.status == "completed", result
 
 
-def _analyze(root, monkeypatch, task_id="analyze", value=19, depends=("collect",)):
+def _analyze(root, monkeypatch, task_id="analyze", value=19, depends=("collect",), extra_calls=()):
     """A producer that observes, computes metrics.json with a recorded command and writes a draft."""
     spec = SwarmAgentSpec(id=task_id, role="Analyst", system_prompt="Compute.",
                           tools=["fetch_records", "bash", "write_file", "quantlib_call"])
@@ -122,6 +123,7 @@ def _analyze(root, monkeypatch, task_id="analyze", value=19, depends=("collect",
                   _call("q", "quantlib_call", action="call", module="units", function="compare_rates",
                         kwargs={"left": 0.05, "right": 0.03}),
                   _call("draft", "write_file", path="draft.md", content=PROSE),
+                  *extra_calls,
                   _answer(f"Computed metrics.json. {PROSE}"))
     assert result.status == "completed", result
     return node.agent_artifact_dir(root, task_id, task_id)
@@ -269,10 +271,17 @@ def test_copied_output_does_not_overwrite_a_consumers_changed_file(tmp_path, mon
     assert json.loads((directory / "metrics.json").read_text()) == {"consumer_edit": True}
 
 
-def test_edited_metrics_cannot_inherit_an_old_execution_claim(tmp_path, monkeypatch):
+def test_edited_metrics_cannot_inherit_an_old_execution_claim(tmp_path, monkeypatch) -> None:
+    """A successful edit cannot inherit the previous calculation's execution hash.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
     _collect(tmp_path, monkeypatch)
-    producer = _analyze(tmp_path, monkeypatch)
-    (producer / "metrics.json").write_text('{"measured": 999}')
+    _analyze(tmp_path, monkeypatch, extra_calls=(
+        _call("edit", "write_file", path="metrics.json", content='{"measured": 999}'),
+    ))
     task, directory = _consumer(tmp_path, {"results": METRIC_SELECTION})
     prepare_handoff(tmp_path, task, directory)
     supplied = selected_inputs(directory)
@@ -281,10 +290,17 @@ def test_edited_metrics_cannot_inherit_an_old_execution_claim(tmp_path, monkeypa
     assert metric["content"] == {"measured": 999} and "execution" not in metric
 
 
-def test_oversized_selection_keeps_a_readable_file_reference(tmp_path, monkeypatch):
+def test_oversized_selection_keeps_a_readable_file_reference(tmp_path, monkeypatch) -> None:
+    """A successful tool's oversized output remains readable by reference.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
     _collect(tmp_path, monkeypatch)
-    producer = _analyze(tmp_path, monkeypatch)
-    (producer / "metrics.json").write_text(json.dumps({"items": list(range(10000))}))
+    _analyze(tmp_path, monkeypatch, extra_calls=(
+        _call("large", "write_file", path="metrics.json", content=json.dumps({"items": list(range(10000))})),
+    ))
     task, directory = _consumer(tmp_path, {"results": {"task": "analyze", "files": ["metrics.json"]}})
     prepare_handoff(tmp_path, task, directory)
     value = selected_inputs(directory)["inputs"]["results"][0]
@@ -334,7 +350,15 @@ def test_incomplete_producer_is_named_and_its_files_are_not_transferred(tmp_path
     assert not (directory / "metrics.json").exists()
 
 
-def test_transitive_selection_keeps_values_and_the_original_audit(tmp_path, monkeypatch):
+@pytest.mark.parametrize("legacy", [False, True], ids=["recorded", "legacy"])
+def test_transitive_selection_keeps_values_and_the_original_audit(tmp_path, monkeypatch, legacy) -> None:
+    """Keep observation provenance without treating an input copy as a tool's output.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+        legacy: Whether the editor predates workspace write receipts.
+    """
     _collect(tmp_path, monkeypatch)
     _analyze(tmp_path, monkeypatch)
     editor_spec = SwarmAgentSpec(id="editor", role="Editor", system_prompt="Present.", tools=["write_file"])
@@ -344,16 +368,22 @@ def test_transitive_selection_keeps_values_and_the_original_audit(tmp_path, monk
                   _call("w", "write_file", path="result.json", content='{"answer": 19}'),
                   _answer("Report written to result.json."))
     assert result.status == "completed", result
+    if legacy:
+        workspace_write_receipt(node.node_thread(tmp_path, "editor", "publish")).unlink(missing_ok=True)
     final, final_dir = _consumer(tmp_path, {"answer": {"task": "publish", "kinds": ["observation"],
                                                        "files": ["result.json", "metrics.json"]}}, "final", "final")
     prepare_handoff(tmp_path, final, final_dir)
     supplied = selected_inputs(final_dir)
     values = supplied["inputs"]["answer"]
     assert next(v["content"] for v in values if v.get("file") == "result.json") == {"answer": 19}
-    # The copy_to transfer is the editor's own deliverable now; the original observation travels too.
-    assert next(v["content"] for v in values if v.get("file") == "metrics.json") == {"measured": 19}
+    if legacy:
+        assert next(v["content"] for v in values if v.get("file") == "metrics.json") == {"measured": 19}
+        assert not supplied["unavailable"]
+    else:
+        assert all(v.get("file") != "metrics.json" for v in values)
+        assert any("metrics.json" in gap and "no candidate writer" in gap for gap in supplied["unavailable"])
+        assert any("requested input file metrics.json unavailable" in gap for gap in supplied["unavailable"])
     assert [v["tool"] for v in values if v["kind"] == "observation"] == ["fetch_records"]
-    assert not supplied["unavailable"]
     audit = json.loads((final_dir / "upstream/audit.json").read_text())
     assert {e["source_task"] for e in audit["observations"]} >= {"analyze"}
     assert any(e["tool"] == "quantlib_call" for e in audit["observations"])
@@ -533,8 +563,13 @@ class _MarketData(_Records):
     name = "get_market_data"
 
 
-def test_research_preset_runs_end_to_end_and_resumes_without_replay(tmp_path, monkeypatch):
-    """The scheduler hands selected values to the editor, and a continuation reuses finished stages."""
+def test_research_preset_runs_end_to_end_and_resumes_without_replay(tmp_path, monkeypatch) -> None:
+    """The scheduler hands selected values to the editor, and a continuation reuses finished stages.
+
+    Args:
+        tmp_path: Isolated swarm run.
+        monkeypatch: Scripted provider fixture.
+    """
     import threading
     from src.swarm.models import RunStatus
     from src.swarm.runtime import SwarmRuntime
@@ -591,6 +626,7 @@ def test_research_preset_runs_end_to_end_and_resumes_without_replay(tmp_path, mo
     final = store.load_run("continued")
     assert final.status == RunStatus.completed, [(t.id, t.status, t.error) for t in final.tasks]
     assert len(fetched) == 1 and len(analyst_runs) == 1  # finished stages are not replayed
+    assert workspace_write_receipt(node.node_thread(store.run_dir("continued"), "analyst", "analyze")).is_file()
     text = editor_seen[-1]["messages"]
     assert '\\"mean\\": 19' in text and "sum([11, 17, 23, 25])" in text and "fetch_records" not in text
     assert "negligence" not in text

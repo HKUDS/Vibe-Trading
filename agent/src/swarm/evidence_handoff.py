@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -13,8 +14,10 @@ from src.product.result_artifacts import _write_original, save_result_parts
 from src.product.tool_results import _is_tool_success
 from src.session.thread import ThreadLog
 from src.swarm.artifacts import agent_artifact_dir, collect_artifacts, node_thread
+from src.tools.bash_tool import _workspace_files
 from src.tools.path_utils import is_runtime_path, safe_path
 from src.tools.redaction import redact_payload, redact_text, redact_tool_result
+from src.tools.workspace_writes import workspace_write_receipt
 
 
 def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, str, str, str, str | None, bool]]:
@@ -229,7 +232,51 @@ def _produced_files(source: Path, thread_path: Path, agent_id: str, task_id: str
     return produced
 
 
-def _read_produced(source: Path, relative: str, budget: int) -> bytes:
+def _attributed_files(
+    source: Path, receipt: Path, task_id: str, errors: list[str],
+) -> dict[str, tuple[str | None, str | None, tuple[int, int]]]:
+    """Read the sealed receipt and list gaps for visible files it cannot authorize."""
+    data = json.loads(receipt.read_text())
+    if data["sealed"] is not True:
+        errors.append(f"{task_id}: workspace write receipt was not sealed")
+        return {}
+    calls, files, legacy = data["calls"], data["files"], data["legacy"]
+    produced = {}
+    for relative, stat in sorted((_workspace_files(source, require_request=False) or {}).items()):
+        entry = files.get(relative)
+        candidates = [calls[index] for index in entry["writers"]] if entry else []
+        rejected = []
+        for call in candidates:
+            if call["outcome"] == "ok":
+                continue
+            identity = f"{call['tool']} {call['call_id']}"
+            if call["task_id"]:
+                identity += f" (task {call['task_id']})"
+            outcome = call["outcome"]
+            if "exit_code" in call:
+                outcome += f" with exit code {call['exit_code']}"
+            rejected.append(f"{identity}: {outcome}")
+        if rejected:
+            reason = "; ".join(rejected)
+        elif not entry or entry["stat"] != list(stat):
+            reason = "no candidate writer for the current file version"
+        elif relative in legacy:
+            produced[relative] = (*legacy[relative], stat)
+            continue
+        elif entry["latest"]:
+            # Keep the old single-writer fields only when the last change identifies one.
+            writer = calls[entry["latest"][0]] if len(entry["latest"]) == 1 else {}
+            produced[relative] = (writer.get("tool"), writer.get("call_id"), stat)
+            continue
+        else:
+            reason = "no candidate writer"
+        errors.append(f"{task_id}/{relative}: produced file not copied: {reason}")
+    return produced
+
+
+def _read_produced(
+    source: Path, relative: str, budget: int, expected: tuple[int, int] | None,
+) -> bytes:
     """Read one produced file within the budget, refusing escapes, symlinks and non-files."""
     path = safe_path(relative, source)
     current = source
@@ -239,10 +286,19 @@ def _read_produced(source: Path, relative: str, budget: int) -> bytes:
             raise ValueError("is a symlink")
     if not path.is_file():
         raise ValueError("is no longer a regular file")
-    size = path.stat().st_size
-    if size > budget:
-        raise ValueError(f"{size} bytes exceed the remaining file copy budget")
-    return path.read_bytes()
+    with path.open("rb") as stream:
+        before = os.fstat(stream.fileno())
+        if before.st_size > budget:
+            raise ValueError(f"{before.st_size} bytes exceed the remaining file copy budget")
+        if expected is not None and (before.st_mtime_ns, before.st_size) != expected:
+            raise ValueError("changed after the node recorded its writers")
+        data = stream.read(before.st_size + 1)
+        after = os.fstat(stream.fileno())
+        if expected is not None and (after.st_mtime_ns, after.st_size) != expected:
+            raise ValueError("changed while reading the produced file")
+        if len(data) > before.st_size:
+            raise ValueError("grew while reading the produced file")
+        return data
 
 
 def _write_bytes(path: Path, content: bytes, root: Path) -> None:
@@ -300,10 +356,15 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
             except (OSError, ValueError):
                 unreadable_failures.append(task_id)
             if thread.is_file():
-                produced = _produced_files(source, thread, source_task.agent_id, task_id, errors)
-                for relative, (tool, call_id) in produced.items():
+                receipt = workspace_write_receipt(thread)
+                if receipt.exists():
+                    produced = _attributed_files(source, receipt, task_id, errors)
+                else:
+                    produced = {path: (*writer, None) for path, writer in
+                                _produced_files(source, thread, source_task.agent_id, task_id, errors).items()}
+                for relative, (tool, call_id, expected) in produced.items():
                     try:
-                        original = _read_produced(source.resolve(), relative, budget)
+                        original = _read_produced(source.resolve(), relative, budget, expected)
                         try:
                             content = redact_text(original.decode("utf-8")).encode("utf-8")
                         except UnicodeDecodeError:

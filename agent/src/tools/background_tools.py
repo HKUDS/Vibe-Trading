@@ -19,6 +19,7 @@ from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
 from src.tools.redaction import redact_text, redact_tool_result
 from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
+from src.tools.workspace_writes import WorkspaceWrites, workspace_call_id
 
 WORKDIR = Path(__file__).resolve().parents[2]
 #: Task ids with a live process anywhere in this interpreter. Restart recovery
@@ -183,6 +184,7 @@ class BackgroundManager:
         self._accepting = [True]
         self._on_completion = on_completion
         self._sandbox = sandbox
+        self._workspace_writes: WorkspaceWrites | None = None
         self._scope = scope or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
 
     @property
@@ -196,8 +198,19 @@ class BackgroundManager:
         *,
         on_completion: Optional[Callable[[str, dict], None]] = None,
         sandbox: SandboxSettings | None = None,
+        workspace_writes: WorkspaceWrites | None = None,
     ) -> "BackgroundManager":
-        """Return a handle over the same task table bound to another owner."""
+        """Return a handle over the same task table bound to another owner.
+
+        Args:
+            scope: Owner and attempt associated with the returned handle.
+            on_completion: Completion callback override.
+            sandbox: Sandbox override for commands on the returned handle.
+            workspace_writes: Optional recorder for node tool windows.
+
+        Returns:
+            Scoped handle over the existing tasks, notifications and store.
+        """
         other = BackgroundManager(scope=scope)
         other.tasks = self.tasks
         other._notifications = self._notifications
@@ -210,6 +223,7 @@ class BackgroundManager:
             self._on_completion if on_completion is None else on_completion
         )
         other._sandbox = self._sandbox if sandbox is None else sandbox
+        other._workspace_writes = self._workspace_writes if workspace_writes is None else workspace_writes
         return other
 
     def _owns(self, task: dict) -> bool:
@@ -328,23 +342,28 @@ class BackgroundManager:
             with _LIVE_TASK_IDS_LOCK:
                 _LIVE_TASK_IDS.add(task_id)
         self._persist(task_id)
-        threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
+        threading.Thread(target=self._execute, args=(task_id, command, workspace_call_id.get()), daemon=True).start()
         started = {"status": "ok", "task_id": task_id, "message": f"Started: {command_preview[:80]}"}
         if self._sandbox is not None and self._sandbox.unconfined_fallback:
             started["sandbox"] = "unavailable"
         return json.dumps(started)
 
-    def _execute(self, task_id: str, command: str) -> None:
+    def _execute(self, task_id: str, command: str, call_id: str = "") -> None:
         exit_code: int | None = None
         process: subprocess.Popen[str] | None = None
         output = ""
         status = "error"
+        window = None
         try:
             with self._lock:
                 task = self.tasks.get(task_id)
                 skip_spawn = task is None or bool(task.get("cancel_requested"))
             if not skip_spawn:
                 sandbox = self._sandbox
+                if self._workspace_writes is not None:
+                    window, _ = self._workspace_writes.start(
+                        "background_run", call_id, may_write=True, task_id=task_id,
+                    )
                 process = (
                     _start_process(command, sandbox=sandbox)
                     if sandbox is not None and (sandbox.enabled or sandbox.workspace is not None)
@@ -382,6 +401,8 @@ class BackgroundManager:
                 _terminate_process_tree(process)
                 exit_code = process.returncode
 
+        if self._workspace_writes is not None:
+            self._workspace_writes.finish(window, success=exit_code == 0, exit_code=exit_code)
         with self._lock:
             task = self.tasks.get(task_id)
             if task is None:
