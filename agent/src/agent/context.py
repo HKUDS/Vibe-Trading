@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_COMPACT_SKILL_CATALOG_WINDOW = 16_384
+
 # Post-backtest attribution thresholds (Sharpe/MaxDD bands, ≥60-day OLS window,
 # holding-period buckets, p≤0.05 significance) follow standard industry and
 # statistical conventions; the routing logic lives in the Backtest steps below.
@@ -261,7 +263,8 @@ class ContextBuilder:
 
     def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
                  skills_loader: Optional[SkillsLoader] = None,
-                 persistent_memory: Optional[PersistentMemory] = None) -> None:
+                 persistent_memory: Optional[PersistentMemory] = None,
+                 *, context_window: Optional[int] = None) -> None:
         """Initialize ContextBuilder.
 
         Args:
@@ -269,11 +272,13 @@ class ContextBuilder:
             memory: Workspace memory.
             skills_loader: Skills loader (auto-created if not provided).
             persistent_memory: PersistentMemory instance for cross-session recall.
+            context_window: Resolved model window for sizing the discovery catalog.
         """
         self.registry = registry
         self.memory = memory
         self.skills_loader = skills_loader or SkillsLoader()
         self._persistent_memory = persistent_memory
+        self._context_window = context_window
 
     def build_system_prompt(self, user_message: str = "") -> str:
         """Build system prompt.
@@ -309,9 +314,10 @@ class ContextBuilder:
         except Exception:  # noqa: BLE001
             routing = ""
 
-        from src.agent.tool_loading import DeferredToolRegistry
+        from src.agent.tool_loading import DeferredToolRegistry, loading_policy
 
         tool_discovery = "Available tools and their full argument contracts are supplied with this request's tool definitions."
+        skill_description_limit = None
         if isinstance(self.registry, DeferredToolRegistry):
             tool_discovery = (
                 "The complete available-tool catalog follows. Only loaded tools have full schemas "
@@ -321,13 +327,16 @@ class ContextBuilder:
                 "No catalog entry is hidden by search or ranking.\n\n"
                 + self.registry.catalog()
             )
+            if self._context_window is not None and self._context_window <= _COMPACT_SKILL_CATALOG_WINDOW:
+                # Keep discovery hints within the same cap as tool hints to leave room for results.
+                skill_description_limit = loading_policy()["catalog_description_chars"]
 
         return _SYSTEM_PROMPT.format(
             tool_descriptions=tool_discovery,
             tool_count=len(self.registry._tools),
             skill_count=len(self.skills_loader.skills),
             data_source_count=self._count_data_sources(),
-            skill_descriptions=self.skills_loader.get_descriptions(),
+            skill_descriptions=self.skills_loader.get_descriptions(max_description_chars=skill_description_limit),
             memory_section=memory_section,
             strategy_discovery_routing=routing,
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M UTC"),

@@ -449,8 +449,10 @@ class AgentLoop(ToolCallLifecycle):
             ),
         )
 
-        context = ContextBuilder(self.registry, self.memory,
-                                  persistent_memory=self._persistent_memory)
+        context = ContextBuilder(
+            self.registry, self.memory, persistent_memory=self._persistent_memory,
+            context_window=self._context_budget([]).window,
+        )
         goal_context, active_goal_id = get_current_goal_context(session_id) if session_id else ("", None)
         llm_user_message = user_message
         if goal_context:
