@@ -28,6 +28,14 @@ class BaseTool(ABC):
     deterministic: bool = False
     # Mutable tools may replay compacted results when opted in, subject to explicit freshness requests.
     replay_after_compaction: bool = False
+    # A successful non-readonly call clears the whole readonly replay cache,
+    # since it may have changed what a readonly call would now read (a write
+    # to a factor file, a config). Default True preserves that for any tool
+    # that could plausibly touch workspace/run_dir state. A non-readonly tool
+    # with no such relationship (e.g. remember, which only touches
+    # ~/.vibe-trading/memory/) opts out so it doesn't force unrelated readonly
+    # results to be re-fetched after compaction.
+    invalidates_readonly_cache: bool = True
 
     @classmethod
     def check_available(cls) -> bool:

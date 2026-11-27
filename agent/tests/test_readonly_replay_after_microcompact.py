@@ -546,3 +546,47 @@ def test_without_a_write_the_lost_result_is_restored() -> None:
 
     assert registry.execute_calls == 1
     assert "_vibe_replay" in messages[-1]["content"]
+
+
+class _ReadAndRememberRegistry:
+    """factor_analysis is readonly; remember mutates only cross-session
+    memory, unrelated to anything factor_analysis reads."""
+
+    def __init__(self):
+        self.execute_calls = 0
+        self.policy = ToolPolicy.from_config(get_env_config())
+
+    def get(self, name):
+        return SimpleNamespace(
+            is_readonly=(name == "factor_analysis"), repeatable=False,
+            deterministic=False, replay_after_compaction=False,
+            invalidates_readonly_cache=(name != "remember"),
+        )
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
+
+    def execute(self, name, args):
+        self.execute_calls += 1
+        return '{"status":"ok"}'
+
+
+def test_an_unrelated_remember_call_does_not_force_a_readonly_result_to_rerun() -> None:
+    """remember() mutates ~/.vibe-trading/memory/, not the workspace a
+    readonly tool reads -- it must not blow away the whole replay cache.
+    """
+    registry = _ReadAndRememberRegistry()
+    loop = _loop(registry)
+    read = {"factor_csv": "factor.csv"}
+    loop.tools.process([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), 1)
+    loop.tools.process(
+        [SimpleNamespace(name="remember", arguments={"action": "save", "content": "note"}, id="m1")],
+        _Context(), [], _Trace(), 2,
+    )
+    loop.replay._unblock_lost_readonly_results([], {loop.replay._identical_call_key("factor_analysis", read)})
+
+    messages = []
+    loop.tools.process([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), 3)
+
+    assert registry.execute_calls == 2  # factor_analysis once, remember once -- no second factor_analysis run
+    assert "_vibe_replay" in messages[-1]["content"]

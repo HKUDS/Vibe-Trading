@@ -148,7 +148,7 @@ async function copyText(text: string): Promise<boolean> {
   return copied;
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, className }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(async () => {
     if (await copyText(text)) {
@@ -159,11 +159,13 @@ function CopyButton({ text }: { text: string }) {
     toast.error(i18n.t("messageBubble.copyFailed"));
   }, [text]);
   const label = copied ? i18n.t("messageBubble.copied") : i18n.t("messageBubble.copy");
+  const placementClassName = className
+    ?? "absolute top-2 end-2 bg-muted/80 hover:bg-muted opacity-0 group-hover:opacity-100";
 
   return (
     <button
       onClick={handleCopy}
-      className={`absolute top-2 end-2 p-1.5 rounded-md bg-muted/80 hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity`}
+      className={`${placementClassName} p-1.5 rounded-md text-muted-foreground hover:text-foreground focus-visible:opacity-100 transition-opacity`}
       aria-label={label}
       title={label}
     >
@@ -208,35 +210,41 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
       ?? (meta?.attachment ? [meta.attachment] : []);
     return (
       <div className="flex justify-end group">
-        <div dir="auto" className="max-w-[72%] max-h-[40vh] overflow-y-auto break-words rounded-[18px] bg-muted px-4 py-3 text-[15px] text-foreground leading-relaxed whitespace-pre-wrap">
-          {meta && (attachments.length > 0 || meta.swarmMode || meta.goalMode) && (
-            <div className="mb-1.5 flex flex-wrap justify-end gap-1.5 text-[10px] leading-none text-muted-foreground">
-              {attachments.map((attachment, index) => (
-                <span
-                  key={`${attachment.filename}-${index}`}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground"
-                  title={i18n.t("agent.attachmentChip" as never)}
-                >
-                  <Paperclip className="h-3 w-3 shrink-0" />
-                  <span className="sr-only">{i18n.t("agent.attachmentChip" as never)}: </span>
-                  <span className="truncate">{attachment.filename}</span>
-                </span>
-              ))}
-              {meta.swarmMode && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
-                  <Users className="h-3 w-3" />
-                  {i18n.t("agent.swarmModeChip" as never)}
-                </span>
-              )}
-              {meta.goalMode && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
-                  <Target className="h-3 w-3" />
-                  {i18n.t("agent.goalModeChip" as never)}
-                </span>
-              )}
-            </div>
-          )}
-          {msg.content}
+        <div className="relative max-w-[72%]">
+          <div dir="auto" className="max-h-[40vh] overflow-y-auto break-words rounded-[18px] bg-muted px-4 py-3 pe-10 text-[15px] text-foreground leading-relaxed whitespace-pre-wrap">
+            {meta && (attachments.length > 0 || meta.swarmMode || meta.goalMode) && (
+              <div className="mb-1.5 flex flex-wrap justify-end gap-1.5 text-[10px] leading-none text-muted-foreground">
+                {attachments.map((attachment, index) => (
+                  <span
+                    key={`${attachment.filename}-${index}`}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground"
+                    title={i18n.t("agent.attachmentChip" as never)}
+                  >
+                    <Paperclip className="h-3 w-3 shrink-0" />
+                    <span className="sr-only">{i18n.t("agent.attachmentChip" as never)}: </span>
+                    <span className="truncate">{attachment.filename}</span>
+                  </span>
+                ))}
+                {meta.swarmMode && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
+                    <Users className="h-3 w-3" />
+                    {i18n.t("agent.swarmModeChip" as never)}
+                  </span>
+                )}
+                {meta.goalMode && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-background/60 px-2 py-1 text-muted-foreground">
+                    <Target className="h-3 w-3" />
+                    {i18n.t("agent.goalModeChip" as never)}
+                  </span>
+                )}
+              </div>
+            )}
+            {msg.content}
+          </div>
+          <CopyButton
+            text={msg.content}
+            className="absolute end-1.5 top-1.5 bg-background/70 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+          />
         </div>
       </div>
     );

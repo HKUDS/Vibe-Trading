@@ -117,6 +117,7 @@ use a broker sandbox or local simulation. See each profile's notes and the
 | `okx-live-trade` | okx | live | broker_sdk | write-enabled | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | `orders.place.requires_mandate` | mandate required |
 | `okx-paper-sdk` | okx | paper | broker_sdk | read-only | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | none declared | disabled (read-only) |
 | `okx-paper-trade` | okx | paper | broker_sdk | write-enabled | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | `orders.place` | no mandate declared |
+| `openalgo-live-rest-readonly` | openalgo | live | broker_sdk | read-only | `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | none declared | disabled (read-only) |
 | `robinhood-live-mcp` | robinhood | live | remote_mcp | write-enabled | `account.read`, `orders.read`, `positions.read`, `quotes.read` | remote_mcp | `orders.place.requires_mandate`, `runner.manage.requires_mandate` | mandate required |
 | `robinhood-live-mcp-readonly` | robinhood | live | remote_mcp | read-only | `account.read`, `positions.read`, `quotes.read` | remote_mcp | none declared | disabled (read-only) |
 | `scalable-live-mcp-readonly` | scalable | live | remote_mcp | read-only | `quotes.read` | remote_mcp | none declared | disabled (read-only) |
@@ -179,7 +180,11 @@ MT5 candidate.
 If several broker aliases match, specify the exact native symbol (for example,
 `EURUSDm`) or configure `symbol_suffix`; search never chooses an alias arbitrarily
 or substitutes a web-search result. Backtest sandboxes receive only a validated
-`terminal_path` and positive finite `timeout`, not account credentials.
+`terminal_path`, positive finite `timeout` and short plain-token
+`symbol_suffix`, not account credentials. The backtest loader uses
+`symbol_suffix` only to pick the exact match among same-base broker symbols
+(for example `XAUUSDm` over `XAUUSD247m`); with no configured suffix, or no
+exact match, it still refuses the ambiguous request.
 
 Then:
 

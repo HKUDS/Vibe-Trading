@@ -39,7 +39,7 @@ def _recorded_results(source: Path, thread_path: Path) -> Iterator[tuple[dict, s
     messages_path = safe_path("messages.json", source)
     if messages_path.is_file():
         calls = {}
-        for message in json.loads(messages_path.read_text()):
+        for message in json.loads(messages_path.read_text(encoding="utf-8")):
             for call in message.get("tool_calls", []):
                 calls[call["id"]] = call.get("function", {})
             if message.get("role") == "tool":
@@ -90,7 +90,7 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str], 
     if inherited.is_file():
         # A bad inherited index costs only the inherited part, never this task's own observations.
         try:
-            index = json.loads(inherited.read_text())
+            index = json.loads(inherited.read_text(encoding="utf-8"))
             if not isinstance(index, dict):
                 raise ValueError("not an evidence index")
             gaps = index.get("unavailable", [])
@@ -100,7 +100,7 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str], 
             if "audit_file" in index:
                 # A selected handoff indexes only what its task chose; the audit keeps everything.
                 ref = index["audit_file"]
-                raw = safe_path(ref["path"], source).read_text()
+                raw = safe_path(ref["path"], source).read_text(encoding="utf-8")
                 if hashlib.sha256(raw.encode()).hexdigest() != ref["sha256"]:
                     raise ValueError("Inherited audit index changed")
                 listed = json.loads(raw).get("observations", [])
@@ -114,7 +114,7 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str], 
         for entry in listed:
             try:
                 path = safe_path(entry["path"], source)
-                raw = path.read_text()
+                raw = path.read_text(encoding="utf-8")
                 if hashlib.sha256(raw.encode()).hexdigest() != entry["sha256"]:
                     raise ValueError("Inherited evidence file changed")
                 found.append(({key: entry[key] for key in _ENTRY_FIELDS if key in entry}, raw))
@@ -171,7 +171,7 @@ def _observations(source: Path, agent_id: str, task_id: str, errors: list[str], 
                 path = safe_path(relative, source)
                 if canonical and not path.is_file():
                     path = safe_path(f"workspace/{relative}", source)
-                raw = path.read_text()
+                raw = path.read_text(encoding="utf-8")
                 if hashlib.sha256(raw.encode()).hexdigest() != digest:
                     raise ValueError("Source observation file changed")
             except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -236,7 +236,7 @@ def _attributed_files(
     source: Path, receipt: Path, task_id: str, errors: list[str],
 ) -> dict[str, tuple[str | None, str | None, tuple[int, int]]]:
     """Read the sealed receipt and list gaps for visible files it cannot authorize."""
-    data = json.loads(receipt.read_text())
+    data = json.loads(receipt.read_text(encoding="utf-8"))
     if data["sealed"] is not True:
         errors.append(f"{task_id}: workspace write receipt was not sealed")
         return {}
@@ -347,7 +347,7 @@ def _copy_upstream(run_dir: Path, task_ids, root: Path, name: str, *, tag: bool)
             try:
                 inherited_failures = safe_path(_FAILED_CALLS_PATH, source)
                 if inherited_failures.is_file():
-                    records = json.loads(inherited_failures.read_text())
+                    records = json.loads(inherited_failures.read_text(encoding="utf-8"))
                     if not isinstance(records, list) or any(
                         not isinstance(record, dict) or record.get("status") != "failed" for record in records
                     ):
@@ -639,7 +639,7 @@ def selected_inputs(destination: Path) -> dict | None:
     path = safe_path("upstream/index.json", destination)
     if not path.is_file():
         return None
-    index = json.loads(path.read_text())
+    index = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(index, dict) or "audit_file" not in index:
         return None
     root = destination.resolve()

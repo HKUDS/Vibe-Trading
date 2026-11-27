@@ -8,6 +8,26 @@ async function loadApiModule() {
 
 describe("generated report download", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  it("downloads OOS equity CSV with bearer authentication", async () => {
+    vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "research-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
+    const fetch = vi.fn().mockResolvedValue(new Response("return,equity\n0.01,101\n", { headers: { "content-type": "text/csv" } }));
+    vi.stubGlobal("fetch", fetch);
+    const { api } = await loadApiModule();
+    const blob = await api.downloadResearchLabOosEquity("job/1");
+    expect(fetch).toHaveBeenCalledWith("/api/research-lab/jobs/job%2F1/report?format=oos_equity_csv", expect.objectContaining({ headers: { Authorization: "Bearer research-key" } }));
+    expect(await blob.text()).toBe("return,equity\n0.01,101\n");
+  });
+
+  it("downloads walk-forward fold audit CSV with bearer authentication", async () => {
+    vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "research-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
+    const fetch = vi.fn().mockResolvedValue(new Response("phase,fold\nvalidation,1\n", { headers: { "content-type": "text/csv" } }));
+    vi.stubGlobal("fetch", fetch);
+    const { api } = await loadApiModule();
+    const blob = await api.downloadResearchLabFoldSummary("job/1");
+    expect(fetch).toHaveBeenCalledWith("/api/research-lab/jobs/job%2F1/report?format=folds_csv", expect.objectContaining({ headers: { Authorization: "Bearer research-key" } }));
+    expect(await blob.text()).toBe("phase,fold\nvalidation,1\n");
+  });
+
   it("downloads PDF bytes with bearer authentication and keeps the key out of the URL", async () => {
     vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "report-test-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
     const fetch = vi.fn().mockResolvedValue(new Response("%PDF-contents", { headers: { "content-type": "application/pdf" } }));
@@ -270,5 +290,19 @@ describe("API failure recovery", () => {
     await vi.advanceTimersByTimeAsync(1000);
     await pending;
     expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe("NIFTY 100 Alpha Zoo requests", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(["bench", "compare"] as const)("sends nifty100 unchanged to /alpha/%s", async (kind) => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", job_id: "offline-fixture" }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetch);
+    const { api } = await loadApiModule();
+    const common = { universe: "nifty100", period: "2021-2024" };
+    if (kind === "bench") await api.createAlphaBench({ ...common, zoo: "alpha101", top: 5 });
+    else await api.createAlphaCompare({ ...common, alpha_ids: ["alpha101_001", "alpha101_002"], sort: "ir" });
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/alpha/${kind}$`)), expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(fetch.mock.calls[0][1].body as string)).toMatchObject(common);
   });
 });

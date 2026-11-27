@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { ResearchLab } from "../ResearchLab";
 
-const mock = vi.hoisted(() => ({getResearchLabCatalog:vi.fn(),startResearchLabJob:vi.fn(),getResearchLabJob:vi.fn()}));
+const mock = vi.hoisted(() => ({getResearchLabCatalog:vi.fn(),startResearchLabJob:vi.fn(),getResearchLabJob:vi.fn(),downloadResearchLabOosEquity:vi.fn(),downloadResearchLabFoldSummary:vi.fn()}));
 vi.mock("@/lib/api",()=>({api:mock}));
 const catalog={runs:[{id:"baseline",codes:["AAPL.US"],start_date:"2026-01-01",end_date:"2026-06-01",has_prices:true,has_trace:false,parameters:{fast:10,slow:40}},
   {id:"research-run",codes:[],has_prices:false,has_trace:true,parameters:{}}],
@@ -13,6 +13,8 @@ beforeEach(()=>{
   mock.getResearchLabCatalog.mockResolvedValue(catalog);
   mock.startResearchLabJob.mockResolvedValue({id:"job1",action:"factor_audit",status:"completed",result:{kind:"factor_audit",count:1,finding_count:0,rows:[{id:"gtja191_149",minimum_bars:253,policy:"conditional_sample",valid:true}]}});
 });
+
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 it("submits real cost scenarios from a saved baseline",async()=>{
   render(<ResearchLab/>,{wrapper:MemoryRouter});
@@ -79,4 +81,30 @@ it("localizes an empty parameter choice", async()=>{
   fireEvent.click(screen.getByRole("button",{name:"Run study"}));
   expect(await screen.findByRole("alert")).toHaveTextContent("Enter a value for every choice.");
   expect(mock.startResearchLabJob).not.toHaveBeenCalled();
+});
+
+it("downloads restored walk-forward CSV exports and hides them for other reports", async()=>{
+  history.replaceState(null,"","/?job=walk-forward");
+  mock.getResearchLabJob.mockResolvedValue({id:"walk-forward",action:"walk_forward",status:"completed",request:{},
+    result:{kind:"walk_forward",oos_total_return:0.1,holdout:null,folds:[]}});
+  const csv=new Blob(["return,equity\n0.01,101\n"],{type:"text/csv"});
+  const foldsCsv=new Blob(["phase,fold\nvalidation,1\n"],{type:"text/csv"});
+  mock.downloadResearchLabOosEquity.mockResolvedValue(csv);
+  mock.downloadResearchLabFoldSummary.mockResolvedValue(foldsCsv);
+  const createObjectURL=vi.fn(()=>"blob:research-export");
+  vi.stubGlobal("URL",class extends URL{static createObjectURL=createObjectURL;static revokeObjectURL=vi.fn();});
+  const click=vi.spyOn(HTMLAnchorElement.prototype,"click").mockImplementation(()=>{});
+  render(<ResearchLab/>,{wrapper:MemoryRouter});
+
+  fireEvent.click(await screen.findByRole("button",{name:"OOS CSV"}));
+  await waitFor(()=>expect(mock.downloadResearchLabOosEquity).toHaveBeenCalledWith("walk-forward"));
+  expect(createObjectURL).toHaveBeenCalledWith(csv);
+  fireEvent.click(screen.getByRole("button",{name:"Folds CSV"}));
+  await waitFor(()=>expect(mock.downloadResearchLabFoldSummary).toHaveBeenCalledWith("walk-forward"));
+  expect(createObjectURL).toHaveBeenCalledWith(foldsCsv);
+  expect(click).toHaveBeenCalledTimes(2);
+
+  fireEvent.click(screen.getByRole("tab",{name:"Factor contracts"}));
+  expect(screen.queryByRole("button",{name:"OOS CSV"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("button",{name:"Folds CSV"})).not.toBeInTheDocument();
 });

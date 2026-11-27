@@ -67,6 +67,16 @@ _TRANSIENT_WINERRORS = (5, 32)  # ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION
 _REPLACE_ATTEMPTS = 6
 _REPLACE_BACKOFF = (0.025, 0.05, 0.1, 0.2, 0.4)  # seconds; len == attempts - 1
 
+# Marker a foreign process leaves in a run directory to ask the owning
+# process to stop the run. The active-run index (src/swarm/runtime.py) is
+# process-local, so a separate `--swarm-cancel` process cannot reach it;
+# this file is the only channel between the two processes. The owning
+# runtime polls for it between layers (and in-flight workers see it through
+# _LayerStop), setting its in-memory cancel event when it appears, so a
+# cross-process request follows the same cooperative cancellation contract
+# as an in-process one.
+CANCEL_REQUESTED_FILENAME = "cancel.request"
+
 
 def _is_transient_windows_error(exc: OSError) -> bool:
     """True for the Windows access/sharing race on os.replace."""
@@ -190,7 +200,7 @@ class SwarmStore:
         run = self.load_run(run_id)
         if run is None or run.status not in {RunStatus.pending, RunStatus.running}:
             return False
-        request = run_dir / "cancel.request"
+        request = run_dir / CANCEL_REQUESTED_FILENAME
         try:
             with request.open("x"):
                 pass
@@ -213,6 +223,23 @@ class SwarmStore:
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         self._atomic_write(rd / "run.json", run.model_dump_json(indent=2))
+
+    def cancel_requested(self, run_id: str) -> bool:
+        """Check for a regular cancellation marker without following symlinks.
+
+        Args:
+            run_id: ID of the run whose owner is polling for cancellation.
+
+        Returns:
+            True if a regular marker exists in a non-symlinked run directory. Missing,
+            invalid or unreadable paths return False.
+        """
+        try:
+            run_dir = self.run_dir(run_id)
+            marker = run_dir / CANCEL_REQUESTED_FILENAME
+            return not run_dir.is_symlink() and not marker.is_symlink() and marker.is_file()
+        except (OSError, ValueError):
+            return False
 
     def list_runs(self, limit: int = 50) -> list[SwarmRun]:
         """List runs by descending creation time.

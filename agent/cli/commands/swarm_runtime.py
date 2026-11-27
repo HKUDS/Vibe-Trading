@@ -640,6 +640,7 @@ def cmd_swarm_cancel(run_id: str) -> int:
     Returns:
         Zero if the request is recorded or already queued, or one if it cannot be requested.
     """
+    from src.swarm.runtime import cancel_indexed_run
     from src.swarm.store import SwarmStore
 
     store = SwarmStore(base_dir=common.SWARM_DIR)
@@ -649,6 +650,7 @@ def cmd_swarm_cancel(run_id: str) -> int:
         common.console.print(f"[red]{common.rich_escape(str(exc))}[/red]")
         return 1
     if accepted:
+        cancel_indexed_run(run_id)
         common.console.print(f"[yellow]Cancellation requested: {common.rich_escape(run_id)}[/yellow]")
         return 0
     common.console.print(f"[red]Run {common.rich_escape(run_id)} not found or already finished[/red]")

@@ -22,7 +22,19 @@ Progress = Callable[[dict], None]
 
 
 def cost_sensitivity(request: CostRequest, root: Path, progress: Progress) -> dict:
-    """Re-execute the same strategy and price inputs under declared costs."""
+    """Re-execute the same strategy and price inputs under declared costs.
+
+    Args:
+        request: Source run and named execution-cost scenarios.
+        root: Destination for the frozen snapshot and trial artifacts.
+        progress: Callback receiving scenario progress.
+
+    Returns:
+        Measured scenario metrics, ranking, break-even brackets and input provenance.
+
+    Raises:
+        ValueError: If source inputs or a trial cannot be validated.
+    """
     source = source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api))
     config, manifest, _, source_hash = freeze_run(source, root)
     rows = []
@@ -36,7 +48,10 @@ def cost_sensitivity(request: CostRequest, root: Path, progress: Progress) -> di
             "extra_slippage_bps": scenario.extra_slippage_bps,
         }
         measured = trial(root, f"cost-{index}", settings, manifest)
-        rows.append({**scenario.model_dump(), **measured["metrics"], "run_dir": measured["run_dir"]})
+        row = {**scenario.model_dump(), **measured["metrics"], "run_dir": measured["run_dir"]}
+        if measured.get("benchmark") is not None:
+            row["benchmark"] = measured["benchmark"]
+        rows.append(row)
     brackets = []
     # These are measured sign-change brackets, never interpolated claims of
     # an exact break-even. Position sizes and fills can change with costs.
@@ -71,9 +86,20 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
     Every trial uses the ordinary execution engine. Test folds start flat and
     liquidate at their end, so fold boundary costs are included. A reserved
     final holdout is never included in any training or validation fold.
+
+    Args:
+        request: Source run, candidates, objective and fold boundaries.
+        root: Destination for the sealed plan, snapshot and trial artifacts.
+        progress: Callback receiving training and evaluation progress.
+
+    Returns:
+        Frozen fold selections, OOS metrics and optional reserved holdout results.
+
+    Raises:
+        ValueError: If inputs, trial calendars, scores or sealed artifacts are invalid.
     """
     source = source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api))
-    config, manifest, calendar, code_hash = freeze_run(source, root)
+    config, manifest, calendar, code_hash = freeze_run(source, root, use_evaluation_calendar=True)
     if config.get("engine", "daily") != "daily":
         raise ValueError("walk-forward parameter selection currently requires a daily/bar execution engine")
     limit = len(calendar) - request.holdout_bars
@@ -98,6 +124,22 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
     completed = 0
     defaults = constructor_defaults((manifest.parent / "signal_engine.py").read_text())
     baseline_parameters = {**defaults, **config.get("signal_parameters", {})}
+    trial_config = dict(config)
+    trial_config.pop("warmup_bars", None)
+
+    def evaluate(name: str, phase: str, start: int, stop: int, parameters: dict) -> dict:
+        window = calendar[start:stop]
+        # Keep the source input start for indicators. Both phases score only
+        # their sealed evaluation window.
+        settings = {
+            **trial_config,
+            "end_date": window[-1].isoformat(),
+            "evaluation_start_date": window[0].isoformat(),
+        }
+        measured = trial(root, name, settings, manifest, parameters=parameters)
+        if not measured["equity"].index.equals(window):
+            raise ValueError(f"{phase} trial did not evaluate exactly the sealed calendar window")
+        return measured
 
     def fit_and_test(number: int, boundary: int, end: int, holdout: bool = False):
         nonlocal completed
@@ -108,19 +150,9 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
             progress(
                 {"phase": "training", "completed": completed, "total": count, "fold": number, "label": candidate.name}
             )
-            settings = {
-                **config,
-                "start_date": calendar[0].isoformat(),
-                "end_date": calendar[boundary - 1].isoformat(),
-                "evaluation_start_date": calendar[start].isoformat(),
-                "warmup_bars": 0,
-            }
-            measured = trial(
-                root,
+            measured = evaluate(
                 f"{'holdout' if holdout else 'fold'}-{number}-train-{index}",
-                settings,
-                manifest,
-                parameters=parameters,
+                "training", start, boundary, parameters,
             )
             score = measured["metrics"].get(request.objective)
             if score is None or not np.isfinite(score):
@@ -159,27 +191,15 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
                 "label": chosen["name"],
             }
         )
-        settings = {
-            **config,
-            "start_date": calendar[0].isoformat(),
-            "end_date": calendar[end - 1].isoformat(),
-            "evaluation_start_date": calendar[boundary].isoformat(),
-            "warmup_bars": 0,
-        }
-        measured = trial(
-            root,
+        measured = evaluate(
             f"{'holdout' if holdout else 'fold'}-{number}-test",
-            settings,
-            manifest,
-            parameters=chosen["parameters"],
+            "test", boundary, end, chosen["parameters"],
         )
         if digest(selection_path) != selection_hash or digest(manifest.parent / "signal_engine.py") != code_hash:
             raise ValueError("selected parameters or strategy changed during the frozen test")
         returns = period_returns(measured["equity"]["equity"], float(config.get("initial_cash", 1_000_000)))
         if returns.isna().any() or not np.isfinite(returns).all():
             raise ValueError("OOS equity contains unobserved or non-finite returns")
-        if len(returns) != end - boundary or not returns.index.equals(calendar[boundary:end]):
-            raise ValueError("test engine did not evaluate exactly the sealed calendar window")
         completed += 1
         return {
             **selection,

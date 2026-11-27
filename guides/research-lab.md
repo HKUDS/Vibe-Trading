@@ -14,7 +14,16 @@ them. No model, live broker or price-provider call is part of a study.
 
 Run a backtest first, then select its saved run. Its run-card manifest must
 still match the strategy and every exported OHLCV snapshot. A changed or
-missing file is refused; rerun that backtest to create a new baseline.
+missing file is refused; rerun that backtest to create a new baseline. Replays
+preserve the precision of saved prices, including in narrower trial windows.
+
+Market-engine backtests also save the opening and closing prices of the external
+benchmark they used. Research Lab replays those prices separately from the
+portfolio. It selects the saved bars in each trial window without rebuilding
+weekly or monthly bars. A trial with a declared external benchmark fails if its evaluation window does
+not contain enough matching benchmark bars. Older runs without the reference file still replay
+locally, but cannot verify the original external benchmark. Rerun the baseline
+to capture it. The cost report records the benchmark used by each trial.
 
 ```bash
 vibe-trading research-lab costs RUN_ID --fee-multipliers 1 2 3 --slippage-bps 0 5 --json
@@ -47,6 +56,10 @@ Sharpe or return, with input-order tie breaking. The selection and plan are
 written and hashed before testing. Both the supplied data map and trial-local snapshot files are truncated
 before the strategy runs, so neither supplies later prices to a training trial. Prior prices remain
 available for indicator warmup while execution begins at the evaluated window.
+The source run's manifested equity dates define the evaluation calendar. Training covers
+`train_bars` of that calendar, with earlier prices available for indicators. Every training
+candidate and test fold must return equity for exactly its planned dates. Legacy runs without
+a manifested equity artifact can use the price calendar when they declare no warm-up boundary.
 
 Every test starts flat and pays the engine's entry and liquidation costs.
 OOS returns are compounded across test windows, including each first bar.
@@ -98,7 +111,10 @@ provider-usage budget and elapsed-time bound. Run those prompts through the
 normal Agent first, then evaluate the saved artifacts. The verifier itself
 never runs a model, fetches prices, or rewrites a prompt to fit a case.
 `bindings.json` is an array of `case_id`, `run_dir`, optional `trace_dir` objects;
-each task must have its own corresponding saved run. Web evaluates a selected
+each task must have its own corresponding saved run. The batch reports an
+`evaluation_status` alongside `passed` and the individual results. The CLI
+exits 0 when every case passes, 2 when coverage is incomplete but no case failed,
+and 1 if any case failed or has an invalid artifact. Web evaluates a selected
 saved run and task, displaying every verdict and coverage gap.
 
 Numeric expectations read bounded JSON fields or CSV rows. Missing
@@ -109,10 +125,12 @@ reported as live Agent performance. See the [harness schema](../agent/evals/harn
 
 ## API and saved reports
 
-- `GET /api/research-lab/catalog`: available runs, parameters and task prompts.
+- `GET /api/research-lab/catalog`: available runs, parameters and task prompts. A run with malformed saved metadata is skipped without hiding other runs.
 - `POST /api/research-lab/jobs`: `{ "action": "cost_sensitivity|walk_forward|factor_audit|replay", "request": {...} }`.
 - `GET /api/research-lab/jobs/{id}`: durable status, progress, request and result.
 - `GET /api/research-lab/jobs/{id}/report`: completed JSON report.
+- `GET /api/research-lab/jobs/{id}/report?format=oos_equity_csv`: the exact per-bar `return` and compounded `equity` produced by a completed walk-forward job. This is validation OOS only and excludes the separately reported holdout. Other job kinds return 422 instead of a generic file download. The Web report offers the same artifact as **OOS CSV** alongside the unchanged JSON download.
+- `GET /api/research-lab/jobs/{id}/report?format=folds_csv`: a fold-level audit table generated from the same completed JSON report, so existing completed jobs do not need to rerun. Each validation or holdout row pairs the selected candidate and parameters with its training and test boundaries, plan, selection, strategy and input-manifest hashes, and available test metrics. The `phase` column keeps holdout separate from validation OOS. Missing optional metrics remain empty; non-finite values or mismatched plan hashes are rejected. The Web report exposes this as **Folds CSV** without changing either the JSON or OOS equity export.
 
 All routes use application authentication; submission uses settings-write
 protection. The API admits two simultaneous workers. Saved jobs live under the

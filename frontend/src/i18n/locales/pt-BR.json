@@ -1146,6 +1146,7 @@
         "ca_equity": "Ações do Canadá",
         "taiwan_equity": "Ações de Taiwan",
         "vietnam_equity": "Ações do Vietnã",
+        "europe_equity": "Ações europeias",
         "ar_equity": "Ações da Argentina",
         "br_equity": "Ações do Brasil (B3)",
         "uk_equity": "Ações do Reino Unido",
@@ -1520,6 +1521,7 @@
         "uk_equity": "Ações do Reino Unido",
         "taiwan_equity": "Ações de Taiwan",
         "vietnam_equity": "Ações do Vietnã",
+        "europe_equity": "Ações europeias",
         "other": "Outro"
       }
     },
@@ -1799,7 +1801,10 @@
       "entry_cost_return": "Custo de entrada / nocional das ações",
       "higher": "Maior",
       "lower": "Menor",
-      "equal": "Igual"
+      "equal": "Igual",
+      "scenarioBasis": "Ambas as estratégias usam a solicitação concluída e a mesma grade de preço × volatilidade. O delta é estratégia menos base, apenas descritivo.",
+      "deltaGrid": "Diferença de P&L",
+      "gridCapped": "As grades de comparação usam no máximo {{count}} pontos de preço."
     }
   },
   "alphaZoo": {
@@ -1901,6 +1906,7 @@
     "universeOption": {
       "csi300": "CSI 300 (China A)",
       "sp500": "S&P 500 (EUA)",
+      "nifty100": "NIFTY 100 (Índia)",
       "btc-usdt": "BTC-USDT (criptomoeda)",
       "equity_cn": "Ações A da China",
       "equity_us": "Ações dos EUA",
@@ -2818,6 +2824,8 @@
     "failed": "Falhou",
     "report": "Relatório de pesquisa",
     "download": "Baixar JSON",
+    "downloadOosCsv": "CSV do patrimônio fora da amostra",
+    "downloadFoldsCsv": "CSV de auditoria de folds",
     "scenario": "Cenário",
     "return": "Retorno",
     "drawdown": "Rebaixamento",

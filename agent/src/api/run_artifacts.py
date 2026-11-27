@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -129,7 +130,9 @@ def build_run_preview(run_dir: Path) -> Dict[str, Any]:
         else []
     )
     return {
-        "metrics": metrics.model_dump(mode="json") if metrics else None,
+        # Through the JSON encoder so a non-finite metric becomes null, as in
+        # the run detail response, instead of failing the JSON response.
+        "metrics": json.loads(metrics.model_dump_json()) if metrics else None,
         "equity_curve": equity_curve_from_rows(equity_rows),
         "report_worthy": is_report_worthy(run_dir, names),
     }

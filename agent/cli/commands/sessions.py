@@ -22,7 +22,7 @@ def cmd_sessions() -> None:
     table.add_column("Updated", width=20)
 
     for s in sessions:
-        messages = store.get_messages(s.session_id)
+        messages = store.get_messages(s.session_id, limit=None)
         sc = "green" if s.status.value == "active" else "dim"
         table.add_row(
             s.session_id,

@@ -76,6 +76,8 @@ with `--host` / `--port`.
 `cancel_swarm(run_id)` requests cooperative cancellation from the process
 running the swarm. Poll `get_swarm_status` for the final run state.
 
+`paper_trade_step` accepts optional caller order IDs and a `cancel_schedule` for single-day cn_a 5m orders-mode research. A cancellation stops future model fills as `pending_cancel` and settles at day end; it does not cancel broker orders or open an interactive session. See the [paper cancellation contract and timing](../agent/src/tools/paper_trade/README.md#caller-cancellation-pt-v14). Missing/null fields retain earlier result versions.
+
 `web_search` tries its existing Sogou and Bing China fallbacks when ddgs returns
 no results or fails. Set `VIBE_TRADING_SEARCH_BING_FALLBACK=0` to disable both.
 This chain returns an empty result only when its enabled sources finish without

@@ -1104,6 +1104,7 @@
         "ca_equity": "Kanada hisseleri",
         "taiwan_equity": "Tayvan Hisseleri",
         "vietnam_equity": "Vietnam hisseleri",
+        "europe_equity": "Avrupa hisseleri",
         "crypto": "Kripto",
         "futures": "Vadeli işlemler",
         "fund": "Fonlar",
@@ -1453,7 +1454,8 @@
         "br_equity": "Brezilya hisseleri",
         "uk_equity": "Birleşik Krallık hisseleri",
         "taiwan_equity": "Tayvan Hisseleri",
-        "vietnam_equity": "Vietnam hisseleri"
+        "vietnam_equity": "Vietnam hisseleri",
+        "europe_equity": "Avrupa hisseleri"
       }
     },
     "attribution": "Getiri ayrıştırması",
@@ -1759,7 +1761,10 @@
       "entry_cost_return": "Giriş maliyeti / hisse nominali",
       "higher": "Daha yüksek",
       "lower": "Daha düşük",
-      "equal": "Eşit"
+      "equal": "Eşit",
+      "scenarioBasis": "İki strateji de tamamlanmış isteği ve aynı spot × oynaklık ızgarasını kullanır. Fark, strateji eksi temeldir ve yalnızca açıklayıcıdır.",
+      "deltaGrid": "Kâr/zarar farkı",
+      "gridCapped": "Karşılaştırma ızgaraları en fazla {{count}} spot noktası kullanır."
     }
   },
   "alphaZoo": {
@@ -1861,6 +1866,7 @@
     "universeOption": {
       "csi300": "CSI 300 (Çin A hisseleri)",
       "sp500": "S&P 500 (ABD)",
+      "nifty100": "NIFTY 100 (Hindistan)",
       "btc-usdt": "BTC-USDT (Kripto)",
       "equity_cn": "Çin A hisseleri",
       "equity_us": "ABD hisseleri",
@@ -2818,6 +2824,8 @@
     "failed": "Başarısız",
     "report": "Araştırma raporu",
     "download": "JSON indir",
+    "downloadOosCsv": "Örneklem dışı portföy değeri CSV",
+    "downloadFoldsCsv": "Fold denetimi CSV",
     "scenario": "Senaryo",
     "return": "Getiri",
     "drawdown": "Düşüş",

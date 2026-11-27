@@ -10,7 +10,6 @@ import pytest
 from src.research_lab import service
 from src.api.research_lab_routes import register_research_lab_routes
 from src.tools.research_lab_tool import ResearchLabTool
-from tests.module_os_helpers import patch_module_os
 
 
 @pytest.fixture
@@ -40,11 +39,7 @@ def test_audit_job_and_tool_keep_full_report_and_bounded_response(isolated, monk
 
 def test_interrupted_worker_does_not_remain_running(isolated, monkeypatch):
     state = service.create_job("factor_audit", {})
-
-    def missing(pid, signal):
-        raise ProcessLookupError()
-
-    patch_module_os(monkeypatch, service, kill=missing)
+    monkeypatch.setattr(service, "pid_is_running", lambda pid: False)
     assert service.get_job(state["id"])["status"] == "failed"
     assert "interrupted" in service.get_job(state["id"])["error"]
 
@@ -54,11 +49,11 @@ def test_poll_does_not_overwrite_completion_when_worker_exits(isolated, monkeypa
     path = service.job_root(state["id"]) / "study.json"
     completed = {**state, "status": "completed", "result": {"kind": "factor_audit", "count": 0}}
 
-    def finish_before_exit(pid, signal):
+    def finish_before_exit(pid):
         service._write(path, completed)
-        raise ProcessLookupError()
+        return False
 
-    patch_module_os(monkeypatch, service, kill=finish_before_exit)
+    monkeypatch.setattr(service, "pid_is_running", finish_before_exit)
     assert service.get_job(state["id"]) == completed
     assert json.loads(path.read_text()) == completed
 
@@ -86,10 +81,7 @@ def test_report_survives_interruption_before_final_status(isolated, monkeypatch)
     assert json.loads((root / "report.json").read_text()) == report
     assert service.get_job(identifier)["status"] == "running"
 
-    def missing(pid, signal):
-        raise ProcessLookupError()
-
-    patch_module_os(monkeypatch, service, kill=missing)
+    monkeypatch.setattr(service, "pid_is_running", lambda pid: False)
     app = FastAPI()
     register_research_lab_routes(app, lambda: None, lambda: None)
     with TestClient(app) as client:
@@ -114,6 +106,63 @@ def test_catalog_includes_research_runs_without_backtest_config(isolated):
     row = service.catalog()["runs"][0]
     assert row["id"] == "research-run"
     assert row["has_trace"] and not row["has_prices"]
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [None, [{"codes": ["AAPL.US"]}], {"codes": "AAPL.US"}, {"codes": [42]}, {"signal_parameters": ["fast", 8]}],
+)
+def test_catalog_http_keeps_valid_runs_beside_malformed_metadata(isolated, malformed):
+    broken = isolated / "zz-broken-run"
+    broken.mkdir()
+    broken_config = broken / "config.json"
+    broken_config.write_text(json.dumps(malformed), encoding="utf-8")
+    (broken / "req.json").write_text('{"prompt":"another task"}', encoding="utf-8")
+    valid = isolated / "backtest-run"
+    valid.mkdir()
+    (valid / "config.json").write_text(
+        '{"codes":["AAPL.US"],"start_date":"2026-10-01","signal_parameters":{"fast":8}}', encoding="utf-8"
+    )
+    replay = isolated / "replay-run"
+    replay.mkdir()
+    (replay / "req.json").write_text('{"prompt":"saved task"}', encoding="utf-8")
+    (replay / "thread.jsonl").write_text("{}\n", encoding="utf-8")
+    before = broken_config.read_bytes()
+
+    app = FastAPI()
+    register_research_lab_routes(app, lambda: None, lambda: None)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/research-lab/catalog")
+
+    assert response.status_code == 200, response.text
+    rows = {row["id"]: row for row in response.json()["runs"]}
+    assert set(rows) == {"backtest-run", "replay-run"}
+    assert rows["backtest-run"]["codes"] == ["AAPL.US"]
+    assert rows["backtest-run"]["parameters"] == {"fast": 8}
+    assert rows["replay-run"]["has_trace"] and not rows["replay-run"]["has_prices"]
+    assert broken_config.read_bytes() == before
+
+
+def test_catalog_checks_parameters_after_applying_saved_overrides(isolated, monkeypatch):
+    monkeypatch.setattr(service, "constructor_defaults", lambda _source: {"threshold": float("nan")})
+
+    paths = {}
+    for name, parameters in (("default-only", {}), ("saved-override", {"threshold": 0.5})):
+        root = isolated / name
+        (root / "code").mkdir(parents=True)
+        (root / "code/signal_engine.py").write_text("# synthetic strategy\n", encoding="utf-8")
+        config = root / "config.json"
+        config.write_text(json.dumps({"codes": ["AAPL.US"], "signal_parameters": parameters}), encoding="utf-8")
+        paths[config] = config.read_bytes()
+    replay = isolated / "replay"
+    replay.mkdir()
+    (replay / "req.json").write_text('{"prompt":"saved task"}', encoding="utf-8")
+
+    rows = {row["id"]: row for row in service.catalog()["runs"]}
+    assert set(rows) == {"saved-override", "replay"}
+    assert rows["saved-override"]["parameters"] == {"threshold": 0.5}
+    assert rows["replay"]["parameters"] == {}
+    assert all(path.read_bytes() == content for path, content in paths.items())
 
 
 def test_http_authentication_submission_and_report_recovery(isolated, monkeypatch):
@@ -162,6 +211,39 @@ def test_cli_parameter_grid_and_replay_case_listing(capsys):
         parameter_candidates(["x=1,2,3,4", "y=1,2,3,4"])
     assert dispatch(argparse.Namespace(lab_command="cases")) == 0
     assert len(json.loads(capsys.readouterr().out)["cases"]) >= 21
+
+
+@pytest.mark.parametrize(
+    ("raw_content", "expected_fragment"),
+    [
+        (json.dumps([{"case_id": "research.example"}]), "binding[0].run_dir"),
+        (json.dumps([{"case_id": "research.example", "run_dir": "/tmp/run"}, None]), "binding[1]"),
+        (json.dumps({"case_id": "research.example", "run_dir": "/tmp/run"}), "JSON array"),
+        ("{not valid json", ""),
+    ],
+)
+def test_cli_replay_bindings_malformed_input_emits_json_error(tmp_path, capsys, raw_content, expected_fragment):
+    from src.research_lab.cli import dispatch
+    import argparse
+
+    bindings_file = tmp_path / "bindings.json"
+    bindings_file.write_text(raw_content, encoding="utf-8")
+    code = dispatch(
+        argparse.Namespace(
+            lab_command="replay",
+            bindings=bindings_file,
+            run_dir=None,
+            case_ids=None,
+            trace_dir=None,
+            json=True,
+        )
+    )
+    assert code == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert isinstance(payload["error"], str) and payload["error"]
+    if expected_fragment:
+        assert expected_fragment in payload["error"]
 
 
 def test_catalog_does_not_read_an_escaping_strategy(isolated):

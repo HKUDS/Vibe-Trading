@@ -17,6 +17,7 @@ from typing import Any
 from src.config.paths import get_runs_dir
 from src.research_lab.execution import constructor_defaults, source_run
 from src.research_lab.models import REQUEST_MODELS
+from src.utils.process import pid_is_running
 
 
 def _write(path: Path, payload: dict) -> None:
@@ -34,7 +35,11 @@ def job_root(job_id: str) -> Path:
 
 
 def catalog() -> dict:
-    """List reusable run inputs, constructor parameters and replay tasks."""
+    """List reusable run inputs, constructor parameters and replay tasks.
+
+    Returns:
+        Valid run summaries and supported replay cases, omitting malformed run metadata.
+    """
     from evals.harness.suite import list_cases
     from evals.harness.artifacts import thread_directory
 
@@ -52,29 +57,34 @@ def catalog() -> dict:
                 ):
                     continue
                 config = json.loads((root / "config.json").read_text()) if (root / "config.json").is_file() else {}
+                if not isinstance(config, dict):
+                    continue
                 if not config and not (root / "req.json").is_file():
                     continue
+                codes = config.get("codes", [])
+                parameters = config.get("signal_parameters", {})
+                if not isinstance(codes, list) or not all(isinstance(code, str) for code in codes):
+                    continue
+                if not isinstance(parameters, dict):
+                    continue
                 signal = root / "code/signal_engine.py"
-                rows.append(
-                    {
-                        "id": root.name,
-                        "codes": config.get("codes", []),
-                        "start_date": config.get("start_date"),
-                        "end_date": config.get("end_date"),
-                        "has_prices": bool(config.get("codes"))
-                        and (root / "run_card.json").is_file()
-                        and all(
-                            (root / f"artifacts/ohlcv_{code.removeprefix('local:')}.csv").is_file()
-                            for code in config.get("codes", [])
-                        ),
-                        "has_trace": (thread_directory(root) / "thread.jsonl").is_file(),
-                        "parameters": {
-                            **(constructor_defaults(signal.read_text()) if signal.is_file() else {}),
-                            **config.get("signal_parameters", {}),
-                        },
-                    }
-                )
-            except (OSError, ValueError, SyntaxError):
+                row = {
+                    "id": root.name,
+                    "codes": codes,
+                    "start_date": config.get("start_date"),
+                    "end_date": config.get("end_date"),
+                    "has_prices": bool(codes)
+                    and (root / "run_card.json").is_file()
+                    and all((root / f"artifacts/ohlcv_{code.removeprefix('local:')}.csv").is_file() for code in codes),
+                    "has_trace": (thread_directory(root) / "thread.jsonl").is_file(),
+                    "parameters": {
+                        **(constructor_defaults(signal.read_text()) if signal.is_file() else {}),
+                        **parameters,
+                    },
+                }
+                json.dumps(row, ensure_ascii=False, allow_nan=False).encode("utf-8")
+                rows.append(row)
+            except (OSError, TypeError, ValueError, SyntaxError):
                 continue
             if len(rows) >= 200:
                 break
@@ -107,36 +117,42 @@ def create_job(action: str, payload: dict[str, Any]) -> dict:
 
 
 def get_job(identifier: str) -> dict:
-    """Read progress and the completed report without starting any work."""
+    """Read progress and the completed report without starting any work.
+
+    Args:
+        identifier: Generated research job ID.
+
+    Returns:
+        Latest job state, recovering a saved report or marking a dead owner interrupted.
+
+    Raises:
+        ValueError: If the identifier is invalid or its study record is missing or malformed.
+        OSError: If a job record cannot be read or its recovered state cannot be saved.
+    """
     path = job_root(identifier) / "study.json"
     if not path.is_file():
         raise ValueError("research job not found")
     state = json.loads(path.read_text())
-    if state["status"] in {"pending", "running"}:
-        try:
-            os.kill(state["owner_pid"], 0)
-        except ProcessLookupError:
-            latest = json.loads(path.read_text())
-            if latest["status"] not in {"pending", "running"} or latest["owner_pid"] != state["owner_pid"]:
-                return latest
-            state = latest
-            report_path = path.with_name("report.json")
-            # The worker commits the report before updating the job status.
-            if state["status"] == "running" and report_path.is_file():
-                state.update(
-                    status="completed",
-                    result=json.loads(report_path.read_text(encoding="utf-8")),
-                    finished_at=datetime.fromtimestamp(report_path.stat().st_mtime, timezone.utc).isoformat(),
-                )
-            else:
-                state.update(
-                    status="failed",
-                    error="Research worker was interrupted; start a new job to rerun the saved request.",
-                    finished_at=datetime.now(timezone.utc).isoformat(),
-                )
-            _write(path, state)
-        except PermissionError:
-            pass
+    if state["status"] in {"pending", "running"} and not pid_is_running(state["owner_pid"]):
+        latest = json.loads(path.read_text())
+        if latest["status"] not in {"pending", "running"} or latest["owner_pid"] != state["owner_pid"]:
+            return latest
+        state = latest
+        report_path = path.with_name("report.json")
+        # The worker commits the report before updating the job status.
+        if state["status"] == "running" and report_path.is_file():
+            state.update(
+                status="completed",
+                result=json.loads(report_path.read_text(encoding="utf-8")),
+                finished_at=datetime.fromtimestamp(report_path.stat().st_mtime, timezone.utc).isoformat(),
+            )
+        else:
+            state.update(
+                status="failed",
+                error="Research worker was interrupted; start a new job to rerun the saved request.",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+            )
+        _write(path, state)
     return state
 
 

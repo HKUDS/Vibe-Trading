@@ -74,19 +74,20 @@ const ZOO_CARDS: ZooCard[] = [
 ];
 
 // Benchmarkable data universes (bench + compare): each one needs a panel loader
-// on the backend, so there is no Korea/India entry — the KRX factor capability
-// is a metadata universe, not a benchmark universe.
+// on the backend. NIFTY 100 represents NSE equities; Korea remains metadata-only.
 const UNIVERSE_OPTIONS = [
   { value: "csi300" },
   { value: "sp500" },
+  { value: "nifty100" },
   { value: "btc-usdt" },
 ];
 
 // Metadata universe -> the benchmark universe whose panel represents it. Markets
-// without a panel (equity_in, equity_kr, futures) are intentionally absent.
+// without a panel (equity_hk, equity_kr, futures) are intentionally absent.
 const BENCH_UNIVERSE_FOR_METADATA: Record<string, string> = {
   equity_cn: "csi300",
   equity_us: "sp500",
+  equity_in: "nifty100",
   crypto: "btc-usdt",
 };
 
@@ -153,6 +154,12 @@ function BrowseView() {
   const setVisibleCount = (update: number | ((n: number) => number)) => setDraft((d) => ({ ...d, visibleCount: typeof update === "function" ? update(d.visibleCount) : update }));
   const [total, setTotal] = useState(0);
   const toggleSelected = (id: string) => setDraft((d) => ({ ...d, selected: d.selected.includes(id) ? d.selected.filter((v) => v !== id) : [...d.selected, id] }));
+
+  const selectedAlpha = selected.size === 1 ? alphas.find((a) => selected.has(a.id)) : undefined;
+  // Retain the existing US/CN preference for factors that support several markets.
+  const selectedBenchUniverse = selectedAlpha?.universe.includes("equity_us") ? "sp500"
+    : selectedAlpha?.universe.includes("equity_cn") ? "csi300"
+    : selectedAlpha?.universe.includes("equity_in") ? "nifty100" : "csi300";
 
   const compareHref =
     selected.size >= 2
@@ -332,7 +339,7 @@ function BrowseView() {
           {selected.size >= 2 ? ` (${selected.size})` : ""}
         </Link>
         <Link
-          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(alphas.find((a) => a.id === [...selected][0])?.zoo ?? "alpha101")}&universe=${alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_us") ? "sp500" : "csi300"}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
+          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(selectedAlpha?.zoo ?? "alpha101")}&universe=${selectedBenchUniverse}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
         >
           <Play className="h-3.5 w-3.5" aria-hidden="true" /> {selected.size ? i18n.t("analysis.evaluateSelected", { count: selected.size }) : i18n.t("alphaZoo.runBenchmark")}
@@ -511,8 +518,8 @@ function DetailView({ alphaId }: DetailProps) {
   const formulaLatex = (meta["formula_latex"] as string | undefined) || "";
   const nickname = (meta["nickname"] as string | undefined) || "";
   // An alpha's metadata universes (equity_us, equity_kr, ...) are not bench
-  // universes; only the three names with panel loaders are. Translate, and drop
-  // the prefill when the alpha's markets have no benchmark panel (Korea, India)
+  // universes; translate only names with panel loaders, and drop
+  // the prefill when the alpha's markets have no benchmark panel (e.g. Korea)
   // rather than handing BenchView a value its selector cannot hold.
   const benchUniverse = (((meta["universe"] as string[] | undefined) || [])
     .map((u) => BENCH_UNIVERSE_FOR_METADATA[u])

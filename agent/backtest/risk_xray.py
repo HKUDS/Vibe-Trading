@@ -392,15 +392,16 @@ def _correlation(returns: pd.DataFrame, port: pd.Series) -> dict[str, Any]:
         }
     corr = returns.corr().to_numpy(dtype=float)
     n = corr.shape[0]
-    off_diag = [abs(corr[i, j]) for i in range(n) for j in range(i + 1, n)]
-    avg_pairwise = float(np.mean(off_diag)) if off_diag else None
+    # A flat holding has undefined correlations; it must not hide valid pairs.
+    pairs = [
+        (i, j) for i in range(n) for j in range(i + 1, n)
+        if math.isfinite(corr[i, j])
+    ]
+    avg_pairwise = float(np.mean([abs(corr[i, j]) for i, j in pairs])) if pairs else None
 
     max_pair = None
-    if off_diag:
-        i, j = max(
-            ((i, j) for i in range(n) for j in range(i + 1, n)),
-            key=lambda pair: abs(corr[pair[0], pair[1]]),
-        )
+    if pairs:
+        i, j = max(pairs, key=lambda pair: abs(corr[pair[0], pair[1]]))
         max_pair = {
             "symbols": [str(returns.columns[i]), str(returns.columns[j])],
             "corr": _finite(float(corr[i, j])),

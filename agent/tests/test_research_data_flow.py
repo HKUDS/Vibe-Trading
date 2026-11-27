@@ -204,6 +204,53 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     assert prepare_handoff(tmp_path, risk, risk_dir) == note
 
 
+@pytest.mark.parametrize("locale_codec", ["gbk", "cp1252"])
+@pytest.mark.parametrize("canonical", [False, True], ids=["legacy", "child-thread"])
+def test_handoff_reads_utf8_evidence_under_a_non_utf8_locale(tmp_path, monkeypatch, locale_codec, canonical):
+    # Windows without UTF-8 mode decodes a read that names no encoding with the
+    # ANSI code page, while the worker writes every artifact as UTF-8.
+    read_text = Path.read_text
+
+    def read_with_locale(self, encoding=None, errors=None, **kwargs):
+        return read_text(self, encoding or locale_codec, errors, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_with_locale)
+    store = TaskStore(tmp_path)
+    source_task = SwarmTask(id="bull", agent_id="bull", prompt_template="research")
+    risk = SwarmTask(id="risk", agent_id="risk", prompt_template="risk", input_from={"bull": "bull"})
+    pm = SwarmTask(id="pm", agent_id="pm", prompt_template="decision", input_from={"risk": "risk"})
+    for task in (source_task, risk, pm):
+        store.save_task(task)
+    source = agent_artifact_dir(tmp_path, "bull", "bull")
+    source.mkdir(parents=True)
+    raw = json.dumps({"600519.SH": [{"trade_date": "2026-11-12", "name": "贵州茅台", "close": 1500.0}]},
+                     ensure_ascii=False)
+    result_root = source / "workspace" if canonical else source
+    result_root.mkdir(exist_ok=True)
+    receipt = persist_calculation_result(raw, result_root, roots=FileRoots.from_config(get_env_config().api))
+    call = {"id": "q1", "function": {
+        "name": "get_market_data", "arguments": '{"codes":["600519.SH"]}'}}
+    if canonical:
+        thread = ThreadLog(node_thread(tmp_path, "bull", "bull"))
+        thread.append("assistant", "turn-1", content="先看行情", phase="commentary", tool_calls=[call])
+        thread.append("tool_result", "turn-1", name="get_market_data", tool_call_id="q1",
+                      content=receipt, status="ok")
+    else:
+        messages = [{"role": "assistant", "content": "先看行情", "tool_calls": [call]},
+                    {"role": "tool", "tool_call_id": "q1", "content": receipt}]
+        (source / "messages.json").write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
+    # Both canonical and legacy direct reads, plus transitive upstream indexes.
+    for task in (risk, pm):
+        task_dir = agent_artifact_dir(tmp_path, task.agent_id, task.id)
+        prepare_handoff(tmp_path, task, task_dir)
+        index = json.loads((task_dir / "upstream/index.json").read_text(encoding="utf-8"))
+        assert index["unavailable"] == []
+        [entry] = index["observations"]
+        assert entry["source_task"] == "bull"
+        copied = json.loads((task_dir / entry["path"]).read_text(encoding="utf-8"))
+        assert copied["600519.SH"][0]["name"] == "贵州茅台"
+
+
 def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path):
     from src.product.result_artifacts import deliver_tool_result
     from src.agent.tools import ToolRegistry

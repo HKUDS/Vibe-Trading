@@ -36,7 +36,7 @@ describe("MessageBubble", () => {
 
   describe("user messages", () => {
     it("renders user content in the bounded neutral bubble without an avatar or timestamp", () => {
-      const { container } = render(
+      render(
         <MessageBubble msg={makeMsg({ type: "user", content: "Hello agent!" })} />,
       );
       const bubble = screen.getByText("Hello agent!");
@@ -53,7 +53,20 @@ describe("MessageBubble", () => {
       );
       expect(bubble).not.toHaveClass("rounded-tr-sm");
       expect(screen.queryByText("14:30")).not.toBeInTheDocument();
-      expect(container.querySelector("svg")).toBeNull();
+      expect(bubble.querySelector("svg")).toBeNull();
+    });
+
+    it("copies the prompt to the clipboard and announces success", async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageBubble msg={makeMsg({ type: "user", content: "Copy this prompt" })} />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Copy" }));
+
+      expect(await navigator.clipboard.readText()).toBe("Copy this prompt");
+      expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("Copied");
     });
 
     it("renders safe request metadata without exposing an attachment path", () => {

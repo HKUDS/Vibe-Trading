@@ -84,6 +84,14 @@ Japanese backtest execution rules are not implemented. An unknown public venue
 returns `unsupported_market`, never an A-share fallback. Resolve the symbol or
 report the unsupported coverage instead of changing transports.
 
+European listings in Yahoo's suffix form (`SAP.DE` Xetra, `MC.PA` Euronext
+Paris, `ASML.AS` Euronext Amsterdam, `ENI.MI` Borsa Italiana, `NESN.SW` SIX,
+`PKO.WA` Warsaw), UCITS ETFs included, route as `europe_equity` through Yahoo
+then yfinance. Each venue's declared currency is required: EUR for
+.DE/.PA/.AS/.MI, CHF for .SW, PLN for .WA; a line quoted in another currency is
+refused. This is data coverage; European backtest execution rules are not
+implemented.
+
 ## Source Overview
 
 Every name here is a registered OHLCV/backtest source in `VALID_SOURCES`.
@@ -94,7 +102,7 @@ per-source skill.
 |--------|---------|----------------|---------|-------|
 | tushare | A-shares, funds, futures, macro | Yes (`TUSHARE_TOKEN`) | China network | tushare |
 | akshare | A-shares, US, HK, futures, macro, forex | No | Unrestricted | akshare |
-| yfinance | US, HK, Japan (.T), Canada (TSX/TSXV) stocks, ETFs | No | Needs Yahoo access | yfinance |
+| yfinance | US, HK, Japan (.T), Canada (TSX/TSXV), Europe (.DE/.PA/.AS/.MI/.SW/.WA) stocks, ETFs | No | Needs Yahoo access | yfinance |
 | okx | Crypto (OKX exchange) | No | Needs okx.com access | okx-market |
 | nobitex | Crypto, IRT/Toman-quoted pairs (BTC-IRT, USDT-IRT — Iran market premium) | No | Needs apiv2.nobitex.ir access | data-routing (explicit `*IRT` routing only) |
 | wallex | Crypto, TMN/Toman-quoted pairs (USDT-TMN, BTC-TMN — Iran market premium) | No | Needs api.wallex.ir access | data-routing (explicit `*TMN` routing only; truly serves 1m/1h/1d) |

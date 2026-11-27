@@ -256,8 +256,12 @@ class ToolReplay:
                 self._readonly_replay_cache[cache_key] = result
         # Its payload is visible again, so nothing is waiting to be restored.
         self._readonly_replay_ready.discard(cache_key)
-        # Writes invalidate previously cached reads.
-        if update_memory and not self._is_tool_readonly(tc.name):
+        # Unrelated mutations may opt out; workspace writes still invalidate reads.
+        if (
+            update_memory
+            and not self._is_tool_readonly(tc.name)
+            and getattr(tool_def, "invalidates_readonly_cache", True)
+        ):
             self._readonly_replay_cache.clear()
             self._readonly_replay_ready.clear()
             self._readonly_replay_protected.clear()

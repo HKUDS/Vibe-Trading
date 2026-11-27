@@ -186,6 +186,7 @@ def compute_received_state_hash(
     path_model: str = DEFAULT_PATH_MODEL,
     fill_model: str = DEFAULT_FILL_MODEL,
     order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
+    cancel_schedule: list[dict[str, str]] | None = None,
 ) -> str:
     """Hash the AM-4-1 coverage object plus any non-default pt-v1.2 field.
 
@@ -222,6 +223,8 @@ def compute_received_state_hash(
             coverage[key] = value
     if fill_model == "volume_share" or order_volume_ratio != DEFAULT_ORDER_VOLUME_RATIO:
         coverage["order_volume_ratio"] = order_volume_ratio
+    if cancel_schedule is not None:
+        coverage["cancel_schedule"] = cancel_schedule
     return state_hash(coverage)
 
 
@@ -233,6 +236,7 @@ def engine_fingerprint(
     bar_fingerprint: str = "",
     rules_version: str | None = None,
     order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
+    cancel_schedule: list[dict[str, str]] | None = None,
 ) -> str:
     """D3: ``sha256(JCS({interval, path_model, fill_model, rules_version,
     bar_fingerprint}))`` as lowercase hex.
@@ -263,6 +267,8 @@ def engine_fingerprint(
     }
     if fill_model == "volume_share":
         parameters["order_volume_ratio"] = order_volume_ratio
+    if cancel_schedule is not None:
+        parameters["cancel_schedule"] = cancel_schedule
     return state_hash(parameters)
 
 

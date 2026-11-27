@@ -49,12 +49,19 @@ is read.
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Sequence
 
 from . import volume_policy
-from .order_lifecycle import (
-    _ACTIVE_STATUSES, OrderBook, OrderRequest, OrderState, assign_ids)
+from .cancellation import (
+    CALLER_CANCEL_REASON,
+    CancelRequest,
+    apply_cancel,
+    assign_order_ids,
+)
+from .order_lifecycle import _ACTIVE_STATUSES, OrderBook, OrderState
 from .rules import money, quantize_money
 from .schema import CANCELED_REASON_CODE, CanceledOrder, Order, SessionEvent
 
@@ -66,17 +73,6 @@ __all__ = ["VOLUME_CAP_REASON", "match_orders_5m"]
 #: pt-v1.3 residual-cancel token for a market order clipped by its volume cap.
 #: Deliberately NOT a member of the frozen ``REASON_CODES`` vocabulary.
 VOLUME_CAP_REASON = "canceled_after_volume_cap"
-
-
-def _request(order: Order) -> OrderRequest:
-    limit = money(order.limit) if order.limit is not None else None
-    return OrderRequest(
-        symbol=order.symbol,
-        side=order.side,
-        qty=money(order.qty),
-        order_type="limit" if limit is not None else "market",
-        limit_price=limit,
-    )
 
 
 def _limit_fill_price(order: Order, ref: Decimal, bar: Any, *, first_bar: bool) -> Decimal | None:
@@ -105,19 +101,38 @@ def _residual(state: OrderState) -> Decimal:
     return state.request.qty - state.filled_qty
 
 
+def _reject_order(
+    session: "_MatchSession",
+    day: "DayPlan",
+    order: Order,
+    order_id: str,
+    code: str,
+    detail: str,
+    *,
+    cancel_qty: float | None = None,
+) -> None:
+    session._reject(day, order, code, detail, cancel_qty=cancel_qty)
+    if session.cancel_schedule is not None:
+        session.rejected[-1] = replace(session.rejected[-1], order_id=order_id)
+        session.canceled[-1] = replace(session.canceled[-1], order_id=order_id)
+
+
 def _cancel_volume_residual(
     session: "_MatchSession", day: "DayPlan", book: OrderBook, order_id: str, order: Order
 ) -> None:
     state = book.cancel_order(order_id, VOLUME_CAP_REASON)
     residual = _residual(state)
-    session.canceled.append(CanceledOrder(
-        trade_date=day.date,
-        symbol=order.symbol,
-        side=order.side,
-        qty=float(residual),
-        reason_code=VOLUME_CAP_REASON,
-        detail=f"volume cap reached; residual {residual} canceled",
-    ))
+    session.canceled.append(
+        CanceledOrder(
+            trade_date=day.date,
+            symbol=order.symbol,
+            side=order.side,
+            qty=float(residual),
+            reason_code=VOLUME_CAP_REASON,
+            detail=f"volume cap reached; residual {residual} canceled",
+            order_id=order_id if session.cancel_schedule is not None else None,
+        )
+    )
 
 
 def _cancel_unfilled(
@@ -127,15 +142,30 @@ def _cancel_unfilled(
     for state in book.settle_day():
         order = by_id[state.order_id]
         gate = price_limit_cancels.get(state.order_id)
-        session.canceled.append(CanceledOrder(
-            trade_date=day.date,
-            symbol=order.symbol,
-            side=order.side,
-            qty=float(_residual(state)),
-            reason_code=CANCELED_REASON_CODE,
-            detail=(f"market order canceled: {gate[0]}; {gate[1]}" if gate
-                    else "unfilled day order canceled at session end"),
-        ))
+        caller_cancel = state.cancel_reason == CALLER_CANCEL_REASON
+        session.canceled.append(
+            CanceledOrder(
+                trade_date=day.date,
+                symbol=order.symbol,
+                side=order.side,
+                qty=float(_residual(state)),
+                reason_code=(
+                    CALLER_CANCEL_REASON if caller_cancel else CANCELED_REASON_CODE
+                ),
+                detail=(
+                    "caller cancel confirmed at session end"
+                    if caller_cancel
+                    else (
+                        f"market order canceled: {gate[0]}; {gate[1]}"
+                        if gate
+                        else "unfilled day order canceled at session end"
+                    )
+                ),
+                order_id=(
+                    state.order_id if session.cancel_schedule is not None else None
+                ),
+            )
+        )
 
 
 def match_orders_5m(
@@ -143,8 +173,7 @@ def match_orders_5m(
 ) -> tuple[OrderState, ...]:
     if not orders:
         return ()
-    requests = [_request(order) for order in orders]
-    states = assign_ids(requests)
+    states = assign_order_ids(orders)
     by_id = dict(zip(states, orders, strict=True))
     book = OrderBook(states)
 
@@ -157,7 +186,7 @@ def match_orders_5m(
         gate = session._day_gate(day, order)
         if gate is not None:
             book.reject(order_id, gate[0])
-            session._reject(day, order, *gate)
+            _reject_order(session, day, order, order_id, *gate)
             continue
         book.activate(order_id)
         active.append(order_id)
@@ -175,9 +204,14 @@ def match_orders_5m(
             for order_id in order_ids:
                 order = by_id[order_id]
                 book.reject(order_id, "suspended")
-                session._reject(
-                    day, order, "suspended",
-                    f"no 5m continuous bars for {symbol} on {day.date}")
+                _reject_order(
+                    session,
+                    day,
+                    order,
+                    order_id,
+                    "suspended",
+                    f"no 5m continuous bars for {symbol} on {day.date}",
+                )
             continue
         if volume_share:
             # A market order's cap is computed ONCE from the full continuous-
@@ -199,8 +233,14 @@ def match_orders_5m(
         for timestamp, bar in bars.iterrows():
             timeline.setdefault(timestamp, {})[symbol] = bar
 
+    cancel_by_time: dict[datetime, list[CancelRequest]] = {}
+    for request in session.cancel_schedule or ():
+        timeline.setdefault(request.timestamp, {})
+        cancel_by_time.setdefault(request.timestamp, []).append(request)
     seen_live: set[str] = set()
     for timestamp in sorted(timeline):
+        for request in cancel_by_time.get(timestamp, ()):
+            session.cancel_results.append(apply_cancel(book, request))
         matching_bars: dict[str, tuple[Any, Decimal, bool]] = {}
         for symbol, bar in timeline[timestamp].items():
             if float(bar["volume"]) <= 0:
@@ -266,9 +306,17 @@ def match_orders_5m(
                     # bar can match it, or it expires at session end.
                     continue
                 book.reject(order_id, code)
-                session._reject(
-                    day, order, code, detail,
-                    cancel_qty=float(_residual(state)) if state.filled_qty > 0 else None)
+                _reject_order(
+                    session,
+                    day,
+                    order,
+                    order_id,
+                    code,
+                    detail,
+                    cancel_qty=(
+                        float(_residual(state)) if state.filled_qty > 0 else None
+                    ),
+                )
                 continue
             if volume_share and order.limit is None and cap <= 0:
                 # Band/limit checks have passed; cancel at this first live bar
@@ -281,6 +329,8 @@ def match_orders_5m(
             else:
                 fill = book.fill(order_id, money(order.qty), price)
             session._fill(day.date, order, float(price), fill.qty)
+            if session.cancel_schedule is not None:
+                session.fills[-1] = replace(session.fills[-1], order_id=order_id)
             if volume_share and order.limit is None and _residual(state) > 0:
                 # The session-volume basis is fixed for the day, so a market
                 # order's residual can never be matched later.

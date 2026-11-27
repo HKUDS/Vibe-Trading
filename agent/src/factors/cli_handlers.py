@@ -85,11 +85,8 @@ def _load_cli_env() -> None:
     except Exception:
         pass
 
-# Benchmarkable data universes: every name here must have a panel loader in
-# ``src.tools.alpha_bench_tool._UNIVERSE_TAG``. There is no KRX (or NSE/BSE)
-# panel yet, so Korea/India are deliberately absent — ``alpha bench`` would
-# fail at universe load, not produce a Korean benchmark.
-_UNIVERSE_CHOICES = ["csi300", "sp500", "btc-usdt"]
+# Cross-sectional benchmark universes with a panel loader.
+_UNIVERSE_CHOICES = ["csi300", "sp500", "nifty100"]
 
 # Per-row fields that only ``bench_runner_strict`` produces. They are the
 # statistics ``categorise_strict`` actually gates on, so a strict run that
@@ -117,6 +114,7 @@ _LIST_UNIVERSE_CHOICES = [
 _LIST_UNIVERSE_ALIASES = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
+    "nifty100": "equity_in",
     "btc-usdt": "crypto",
 }
 
@@ -1084,7 +1082,7 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         "--universe",
         default="csi300",
         choices=_UNIVERSE_CHOICES,
-        help=f"Universe (default: csi300; one of {', '.join(_UNIVERSE_CHOICES)})",
+        help=f"Universe (NIFTY 100: nifty100; default: csi300; one of {', '.join(_UNIVERSE_CHOICES)})",
     )
     p_bench.add_argument(
         "--period",
@@ -1162,7 +1160,7 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         "--universe",
         default="csi300",
         choices=_UNIVERSE_CHOICES,
-        help=f"Universe (default: csi300; one of {', '.join(_UNIVERSE_CHOICES)})",
+        help=f"Universe (NIFTY 100: nifty100; default: csi300; one of {', '.join(_UNIVERSE_CHOICES)})",
     )
     p_compare.add_argument(
         "--period",

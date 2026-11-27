@@ -65,6 +65,8 @@ _CANONICAL_SYMBOL_RE = re.compile(
     r"(?-i:US\.[A-Z][A-Z0-9&-]{0,19})|"
     # Keep routed suffixes in sync with test_market_identity_parity.
     r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V|BA|SA|L|VN)|"
+    # Keep European venue suffixes case-sensitive so source URLs are not symbols.
+    r"(?-i:[A-Z0-9][A-Z0-9&-]{0,19}\.(?:DE|PA|AS|MI|SW|WA))|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"[A-Z]{2,15}(?:" + "|".join(_JOINED_CRYPTO_QUOTE_SUFFIXES) + r")|"
     r"\^[A-Z0-9&.\-]{1,20}|"
@@ -155,6 +157,12 @@ _LISTING_MARKETS = {
     ".VN": ("hose", "VND"),
     ".TW": ("twse", "TWD"),
     ".TWO": ("tpex", "TWD"),
+    ".DE": ("xetra", "EUR"),
+    ".PA": ("euronext_paris", "EUR"),
+    ".AS": ("euronext_amsterdam", "EUR"),
+    ".MI": ("borsa_italiana", "EUR"),
+    ".SW": ("six", "CHF"),
+    ".WA": ("gpw", "PLN"),
 }
 _BARE_FX_RE = re.compile(r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$")
 _YAHOO_FX_RE = re.compile(r"^[A-Z]{6}=X$")
