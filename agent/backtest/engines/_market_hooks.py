@@ -159,6 +159,11 @@ _MARKET_PATTERNS = [
     # suffixes verbatim. The class stays broad to admit lettered ETF codes
     # (00400A.TW); the anchored ``TWO?`` keeps ``.TO`` (Canada) out of this rule.
     (re.compile(r"^[A-Z0-9]+\.TWO?$", re.I), "taiwan_equity"),
+    # European venues in Yahoo's suffix spelling: Xetra (SAP.DE), Euronext
+    # Paris (MC.PA) and Amsterdam (ASML.AS), Borsa Italiana (ENI.MI), SIX
+    # (NESN.SW) and Warsaw (PKO.WA). One market, three currencies: the venue
+    # table below decides each line's currency.
+    (re.compile(r"^[A-Z0-9&.\-]+\.(DE|PA|AS|MI|SW|WA)$", re.I), "europe_equity"),
     (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USDT$", re.I), "crypto"),
     (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+/USDT$", re.I), "crypto"),
     # USD-M perpetuals in their documented BASE-USDT-PERP spelling
@@ -292,6 +297,9 @@ _MARKET_CURRENCY = {
     "uk_equity": "GBP",
     "vietnam_equity": "VND",
     "taiwan_equity": "TWD",
+    # Euro-area venues; SIX and Warsaw lines are resolved per venue by
+    # europe_venue_currency().
+    "europe_equity": "EUR",
     # Every crypto pattern in _MARKET_PATTERNS is USDT-quoted, and USDT is
     # carried at its USD peg. This is the one approximation in the table: a
     # depeg would make a crypto+US book wrong by the depeg amount, which is
@@ -327,6 +335,19 @@ _HK_COUNTER_CURRENCY_RANGES: tuple[tuple[int, int, str], ...] = (
 )
 _HK_CODE = re.compile(r"^(\d{3,5})\.HK$", re.I)
 
+# The European market spans three currencies, so the venue suffix decides.
+# Every line on a venue is held to that venue's currency by the loaders
+# (backtest.loaders.base._SINGLE_CURRENCY_VENUES); a USD-quoted ETF line on
+# Euronext or SIX is refused there rather than booked in EUR/CHF.
+_EUROPE_VENUE_CURRENCY: dict[str, str] = {
+    "DE": "EUR",
+    "PA": "EUR",
+    "AS": "EUR",
+    "MI": "EUR",
+    "SW": "CHF",
+    "WA": "PLN",
+}
+
 
 def hk_counter_currency(code: str) -> str | None:
     """Return the currency HKEX's code allocation assigns to a ``.HK`` code.
@@ -352,6 +373,22 @@ def hk_counter_currency(code: str) -> str | None:
     )
 
 
+def europe_venue_currency(code: str) -> str | None:
+    """Return the currency a European venue suffix settles in.
+
+    Args:
+        code: Ticker / symbol string, optionally ``local:``-prefixed.
+
+    Returns:
+        ``"EUR"``, ``"CHF"`` or ``"PLN"`` for a routed European listing,
+        ``None`` for anything else.
+    """
+    symbol = strip_local_prefix(code).strip()
+    if matched_market(symbol) != "europe_equity":
+        return None
+    return _EUROPE_VENUE_CURRENCY[symbol.rpartition(".")[2].upper()]
+
+
 def code_currency(code: str) -> str:
     """Return the supported settlement-currency contract for a symbol.
 
@@ -369,6 +406,8 @@ def code_currency(code: str) -> str:
     market = _detect_market(code)
     if market == "hk_equity":
         return hk_counter_currency(code) or _MARKET_CURRENCY[market]
+    if market == "europe_equity":
+        return europe_venue_currency(code) or _MARKET_CURRENCY[market]
     if market in _MARKET_CURRENCY:
         return _MARKET_CURRENCY[market]
     if market == "forex":

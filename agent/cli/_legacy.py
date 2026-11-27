@@ -2889,7 +2889,11 @@ def cmd_swarm_cancel(run_id: str) -> None:
     # reachable through the process-wide active-run index -- a fresh
     # SwarmRuntime instance never saw it start. Mirrors the fallback
     # src/api/swarm_routes.py's cancel endpoint already uses.
-    if runtime.cancel_run(run_id) or cancel_indexed_run(run_id):
+    # Neither reaches a run owned by a *different* process: the index is
+    # process-local. A separate `--swarm-cancel` process therefore falls
+    # back to a durable marker in the run dir (store.request_cancel);
+    # the owning runtime polls for it between layers.
+    if runtime.cancel_run(run_id) or cancel_indexed_run(run_id) or store.request_cancel(run_id):
         console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")
     else:
         console.print(f"[red]Run {run_id} not found or already finished[/red]")

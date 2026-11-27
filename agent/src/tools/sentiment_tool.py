@@ -20,6 +20,9 @@ from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
+# ASCII punctuation plus curly quotes and the ellipsis character.
+_EDGE_PUNCTUATION = ".,;:!?\"'()[]{}“”‘’…"
+
 # ── Lexicon (subset, extensible) ─────────────────────────────────────────────
 _POSITIVE: frozenset[str] = frozenset({
     "beat", "beats", "bullish", "buy", "cheap", "crush", "crushed",
@@ -51,8 +54,14 @@ _NEGATIVE: frozenset[str] = frozenset({
 
 
 def _tokenize(text: str) -> list[str]:
-    """Lowercase, split, and strip common punctuation from each token."""
-    stripped = [tok.strip(".,;:!?\"'()[]{}") for tok in text.split()]
+    """Lowercase, split, and strip common punctuation from each token.
+
+    Em and en dashes separate words like spaces do. Typographic quotes and
+    the ellipsis character are stripped like their ASCII forms. ASCII hyphens
+    are left alone, so compounds such as "short-term" stay unscored.
+    """
+    spaced = text.replace("—", " ").replace("–", " ")
+    stripped = [tok.strip(_EDGE_PUNCTUATION) for tok in spaced.split()]
     return [tok.lower() for tok in stripped if tok and tok.isalpha()]
 
 

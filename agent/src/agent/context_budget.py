@@ -44,7 +44,8 @@ COLLAPSE_FRACTION = 0.9
 MIN_CONVERSATION_TOKENS = 8_000
 
 _LIMIT_RE = re.compile(
-    r"(?:maximum context length|context length|context window|token limit|maximum of)"
+    r"(?:maximum context length|context length|context window|token limit|maximum of"
+    r"|maximum number of tokens allowed)"
     r"\D{0,40}?(\d[\d,]{3,})",
     re.IGNORECASE,
 )

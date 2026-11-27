@@ -1078,7 +1078,7 @@ class BaseEngine(ABC):
         # at its first traded open in the window, as the strategy can.
         basket_ret = _basket_entry_returns(close_df, data_map, list(ret_df.columns))
         bench_ret = basket_ret.mean(axis=1) if basket_ret.shape[1] > 0 else pd.Series(0.0, index=dates)
-        from backtest.benchmark import default_benchmark, resolve_benchmark
+        from backtest.benchmark import benchmark_from_prices, default_benchmark, resolve_benchmark
 
         basket_codes = list(ret_df.columns)
         basket_label = (
@@ -1089,20 +1089,28 @@ class BaseEngine(ABC):
         external_equity = None
         requested = config.get("benchmark")
         source = config.get("source", "yfinance")
-        ticker = default_benchmark(basket_codes, source) if requested == "auto" else requested
+        frozen = bool(config.get("frozen_data_manifest"))
+        reference = getattr(loader, "benchmark_input", None) if frozen else None
+        ticker = requested
+        if requested == "auto":
+            ticker = reference.ticker if reference is not None else default_benchmark(basket_codes, source)
+        benchmark_to_save = None
         reason = "no default benchmark for the evaluated symbols" if requested == "auto" else "no benchmark requested"
         if ticker:
-            # The benchmark may fetch bars after the strategy's loader scope has ended.
-            with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
-                result = resolve_benchmark(
-                    strategy_codes=basket_codes,
-                    source="local" if config.get("frozen_data_manifest") else source,
-                    explicit=ticker,
-                    start_date=config.get("start_date", ""),
-                    end_date=config.get("end_date", ""),
-                    interval=interval,
-                    loader=loader if source != "auto" or config.get("frozen_data_manifest") else None,
-                )
+            if reference is not None:
+                result = benchmark_from_prices(reference.ticker, reference.prices)
+            else:
+                # The benchmark may fetch bars after the strategy's loader scope has ended.
+                with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
+                    result = resolve_benchmark(
+                        strategy_codes=basket_codes,
+                        source="local" if frozen else source,
+                        explicit=ticker,
+                        start_date=config.get("start_date", ""),
+                        end_date=config.get("end_date", ""),
+                        interval=interval,
+                        loader=loader if source != "auto" or frozen else None,
+                    )
             external_equity = result.normalized_equity_over(dates) if result is not None else None
             if result is not None and external_equity is not None:
                 bench_ret = result.returns_over(dates)
@@ -1111,6 +1119,10 @@ class BaseEngine(ABC):
                     "benchmark_ticker": result.ticker,
                     "benchmark_return": float(external_equity.iloc[-1]) - 1.0,
                 }
+                if not frozen or reference is not None:
+                    benchmark_to_save = result
+            elif reference is not None:
+                raise ValueError(f"frozen benchmark {ticker!r} lacks usable prices in the evaluation window")
             else:
                 reason = f"benchmark {ticker!r} could not be resolved over the evaluation window"
         benchmark_warning = (
@@ -1256,8 +1268,20 @@ class BaseEngine(ABC):
             target_pos, m, valid_codes,
         )
 
+        benchmark_input = None
+        if benchmark_to_save is not None:
+            from backtest.frozen import BENCHMARK_PRICE_ARTIFACT, write_benchmark_prices
+
+            prices = benchmark_to_save.input_prices()
+            write_benchmark_prices(run_dir / BENCHMARK_PRICE_ARTIFACT, prices)
+            benchmark_input = {"ticker": benchmark_to_save.ticker, "path": BENCHMARK_PRICE_ARTIFACT}
+            if prices.index.tz is not None:
+                benchmark_input["timezone"] = str(prices.index.tz)
+
         # 9. Trust Layer run card
         card_warnings = list(config.get("content_filter_warnings") or [])
+        if frozen and requested and reference is None:
+            card_warnings.append("No frozen benchmark prices were saved; the original benchmark is not verified.")
         if config.get("_run_card_caliber_warning"):
             card_warnings.append(config["_run_card_caliber_warning"])
         if config.get("_run_card_annualisation_warning"):
@@ -1276,6 +1300,7 @@ class BaseEngine(ABC):
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
             warnings=card_warnings or None,
+            benchmark_input=benchmark_input,
             tool_traces=[
                 {
                     "tool": "backtest",
