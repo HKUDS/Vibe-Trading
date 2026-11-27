@@ -73,6 +73,10 @@
 
 ## 📰 News
 
+- **2026-11-27** 🛠️ **NIFTY 100 benchmarks and backtest fixes** — Alpha Zoo can benchmark and compare factors on the NIFTY 100. Historical tests use current constituents, which introduces survivorship bias. [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
+  Web chat can copy user prompts. When several MT5 broker symbols match, the backtest loader uses the configured suffix to pick an exact match. [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
+  Backtest previews show an overflowed annual return as `null`. Research Lab cost-sensitivity studies omit that metric and still report the other results. **Merged into `main`.** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
+
 - **2026-11-26** 🛠️ **Options comparison exports and Research Lab replay fixes** — Options Lab can export a comparison of two saved strategies as JSON or CSV, including both P&L series and the difference from the baseline strategy. [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
   Research Lab preserves saved price precision when replaying the full frozen dataset or a shorter window. A malformed run configuration no longer prevents other runs from appearing in the catalog. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   Batch replay distinguishes incomplete evidence from failed checks and returns a JSON error for malformed `--bindings` files. FRED request errors redact the API key. **Merged into `main`.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
@@ -80,11 +84,11 @@
 - **2026-11-25** 🛠️ **Walk-forward audits and scheduled paper-trade cancellations** — Research Lab can export each walk-forward validation fold and the optional holdout to CSV with the selected parameters and test metrics. In the 5-minute China A-share paper replay, a scheduled cancellation stops the remaining quantity from matching while preserving earlier fills and fees. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   When Gemini reports an input token limit error, the agent can compact its context and retry. Saving a memory preserves unrelated cached reads. Headline scoring recognizes sentiment words next to typographic quotes, em and en dashes, and ellipses. **Merged into `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
-- **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
-  Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
 - **2026-11-23** 🛠️ **Replayable research and broader market coverage** — Research Lab preserves the original external benchmark prices for frozen replays and exports walk-forward out-of-sample equity as CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   Options Lab compares two saved strategies on the same spot-price and implied-volatility grid. Symbol search and market data now cover equities and ETFs from six European exchanges via Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
