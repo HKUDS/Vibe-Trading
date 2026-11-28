@@ -176,6 +176,9 @@ def write_run_card(
     artifact_refs: Sequence[Mapping[str, Any]] | None = None,
     tool_traces: Sequence[Mapping[str, Any]] | None = None,
     benchmark_input: Mapping[str, str] | None = None,
+    calendar_timezones: Mapping[str, str] | None = None,
+    calendar_timezone_groups: Mapping[str, int] | None = None,
+    unsupported_calendar_timezones: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Write JSON and Markdown run cards for a backtest run.
 
@@ -193,6 +196,9 @@ def write_run_card(
             before serialization.
         benchmark_input: Ticker and artifact path for the reference prices used
             by this run, with a source timezone when applicable.
+        calendar_timezones: Source timezones keyed by price or equity artifact path.
+        calendar_timezone_groups: Instrument groups sharing the original timezone.
+        unsupported_calendar_timezones: Artifacts whose timezone cannot be replayed.
 
     Returns:
         The run card payload written to ``run_card.json``.
@@ -222,6 +228,12 @@ def write_run_card(
         "model_provenance": model_provenance,
         "artifacts": _list_artifacts(run_dir),
     }
+    if calendar_timezone_groups is not None:
+        card["calendar_timezone_groups"] = dict(calendar_timezone_groups)
+    if unsupported_calendar_timezones:
+        card["unsupported_calendar_timezones"] = list(unsupported_calendar_timezones)
+    if calendar_timezones:
+        card["calendar_timezones"] = dict(calendar_timezones)
     if benchmark_input is not None:
         card["benchmark_input"] = dict(benchmark_input)
     if config.get("engine", "daily") == "daily":

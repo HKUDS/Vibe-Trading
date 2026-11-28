@@ -270,7 +270,18 @@ class BacktestConfigSchema(BaseModel):
             raise ValueError(
                 "rebalance_mask requires position_adjustment='rebalance'"
             )
-        if pd.Timestamp(self.start_date) > pd.Timestamp(self.end_date):
+        start, end = pd.Timestamp(self.start_date), pd.Timestamp(self.end_date)
+        if self.frozen_data_manifest and (start.tz is None) != (end.tz is None):
+            # Walk-forward keeps a date-only input start and uses an exact,
+            # offset-bearing bar for its cutoff. Compare that date in the
+            # cutoff's local calendar, without discarding an instant boundary.
+            if start.tz is None and len(self.start_date) == 10:
+                start = start.tz_localize(end.tz)
+            elif end.tz is None and len(self.end_date) == 10:
+                end = (end + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)).tz_localize(
+                    start.tz
+                )
+        if start > end:
             raise ValueError(
                 f"start_date ({self.start_date}) must be <= end_date ({self.end_date})"
             )
@@ -2141,7 +2152,10 @@ def fetch_data_map(config: dict, *, roots: FileRoots) -> DataFetchResult:
         reference = load_frozen_benchmark(manifest_path, manifest, config)
         return DataFetchResult(
             frames, list(frames), config.get("source", "auto"),
-            _AutoLoader(frames, name="local", benchmark_input=reference),
+            _AutoLoader(
+                frames, name="local", benchmark_input=reference,
+                calendar_timezone_groups=manifest.get("calendar_timezone_groups"),
+            ),
             manifest.get("sources", [config.get("source", "auto")]), manifest.get("caliber_warning"),
         )
     with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
@@ -2348,6 +2362,7 @@ class _AutoLoader:
         name: str | None = None,
         *,
         benchmark_input: "FrozenBenchmarkInput | None" = None,
+        calendar_timezone_groups: dict | None = None,
     ) -> None:
         """Wrap a fetched snapshot.
 
@@ -2358,10 +2373,12 @@ class _AutoLoader:
             name: Source name of ``inner``. When ``None`` the adapter exposes no
                 ``name``: a bare snapshot does not stand for any one source.
             benchmark_input: Optional separate reference, never returned by fetch.
+            calendar_timezone_groups: Original timezone equality groups for a frozen snapshot.
         """
         self._data = data_map
         self._inner = inner
         self.benchmark_input = benchmark_input
+        self.calendar_timezone_groups = calendar_timezone_groups
         if name is not None:
             self.name = name
 
