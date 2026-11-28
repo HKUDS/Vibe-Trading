@@ -8,6 +8,7 @@ from cli.commands.parser import build_parser
 
 
 SNAPSHOT = Path(__file__).with_name("fixtures") / "cli_parser_help_snapshot.json"
+REPO_ROOT = str(Path(__file__).resolve().parents[2])
 
 
 def _describe(action) -> dict:
@@ -25,7 +26,8 @@ def _describe(action) -> dict:
         "metavar": action.metavar if action.metavar is None or isinstance(action.metavar, str) else list(action.metavar),
         "nargs": action.nargs,
         "const": repr(action.const),
-        "default": repr(action.default),
+        # dev/setup default to the checkout's frontend; pin it relative to the repo.
+        "default": repr(action.default).replace(REPO_ROOT, "<repo>"),
         "type": getattr(action.type, "__name__", repr(action.type)) if action.type is not None else None,
         "choices": list(choices) if choices is not None else None,
         # A positional's requiredness follows from nargs; 3.13 changed what argparse

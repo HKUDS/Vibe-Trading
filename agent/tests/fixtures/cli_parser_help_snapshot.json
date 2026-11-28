@@ -4303,7 +4303,7 @@
    {
     "choices": null,
     "const": "None",
-    "default": "'/Users/wuhaozhe/PythonProject/Vibe-Trading-merge-main/frontend'",
+    "default": "'<repo>/frontend'",
     "dest": "frontend_dir",
     "help": "Path to the frontend directory (default: <repo>/frontend)",
     "kind": "_StoreAction",
@@ -8581,7 +8581,7 @@
    {
     "choices": null,
     "const": "None",
-    "default": "'/Users/wuhaozhe/PythonProject/Vibe-Trading-merge-main/frontend'",
+    "default": "'<repo>/frontend'",
     "dest": "frontend_dir",
     "help": "Path to the frontend directory (default: <repo>/frontend)",
     "kind": "_StoreAction",
