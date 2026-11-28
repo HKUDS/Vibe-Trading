@@ -118,7 +118,7 @@ _VALID_UNIVERSES = {
 # Ranking metrics for /alpha/compare — keep in sync with
 # ``src.factors.compare_runner.SORT_KEYS`` (kept local to avoid a heavy import).
 _VALID_SORTS = {"ir", "ic_mean", "ic_positive_ratio", "ic_count"}
-_BENCH_UNIVERSES = {"csi300", "sp500", "btc-usdt"}
+_BENCH_UNIVERSES = {"csi300", "sp500", "nifty100", "btc-usdt"}
 
 
 def _now_iso() -> str:
@@ -159,7 +159,12 @@ class BenchRequest(BaseModel):
 
     zoo: str = Field(..., min_length=1, max_length=64)
     request_id: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
-    universe: str = Field(..., min_length=1, max_length=64)
+    universe: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Benchmark panel: csi300, sp500, nifty100 (NIFTY 100, NSE), or btc-usdt",
+    )
     period: str = Field(..., min_length=4, max_length=32)
     top: int = Field(20, ge=1, le=500)
     alpha_id: str | None = Field(None, pattern=r"^[a-z][a-z0-9]+_[a-z0-9_]{1,64}$")
@@ -188,7 +193,12 @@ class CompareRequest(BaseModel):
 
     alpha_ids: list[str] = Field(..., min_length=2, max_length=50)
     request_id: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
-    universe: str = Field(..., min_length=1, max_length=64)
+    universe: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Benchmark panel: csi300, sp500, nifty100 (NIFTY 100, NSE), or btc-usdt",
+    )
     period: str = Field(..., min_length=4, max_length=32)
     sort: str = Field("ir", min_length=1, max_length=32)
 
@@ -410,11 +420,32 @@ def register_alpha_routes(
         registry = get_default_registry()
         configured = bool(get_env_config().data.tushare_token.strip())
         installed = importlib.util.find_spec("tushare") is not None
-        return {"universes": {
-            "csi300": {"ready": configured and installed, "reason": "tushare_ready" if configured and installed else "tushare_token_missing" if not configured else "tushare_dependency_missing"},
-            "sp500": {"ready": True, "reason": "public_data"},
-            "btc-usdt": {"ready": False, "reason": "single_asset"},
-        }, "zoo_counts": {zoo: len(registry.list(zoo=zoo)) for zoo in sorted(_VALID_ZOOS)}}
+        return {
+            "universes": {
+                "csi300": {
+                    "ready": configured and installed,
+                    "reason": (
+                        "tushare_ready"
+                        if configured and installed
+                        else (
+                            "tushare_token_missing"
+                            if not configured
+                            else "tushare_dependency_missing"
+                        )
+                    ),
+                },
+                "sp500": {"ready": True, "reason": "public_data"},
+                "nifty100": {
+                    "ready": True,
+                    "reason": "public_data",
+                    "description": "NIFTY 100 (NSE), current constituents; survivorship-biased. Source availability is checked at run time.",
+                },
+                "btc-usdt": {"ready": False, "reason": "single_asset"},
+            },
+            "zoo_counts": {
+                zoo: len(registry.list(zoo=zoo)) for zoo in sorted(_VALID_ZOOS)
+            },
+        }
 
     @app.get("/alpha/bench/{job_id}", dependencies=[Depends(require_auth)])
     async def bench_snapshot(job_id: str):
@@ -443,7 +474,12 @@ def register_alpha_routes(
                 detail=f"unknown theme {theme!r}; expected one of {sorted(_VALID_THEMES)}",
             )
         if universe is not None:
-            _ALIAS = {"csi300": "equity_cn", "sp500": "equity_us", "btc-usdt": "crypto"}
+            _ALIAS = {
+                "csi300": "equity_cn",
+                "sp500": "equity_us",
+                "nifty100": "equity_in",
+                "btc-usdt": "crypto",
+            }
             universe = _ALIAS.get(universe, universe)
         if universe is not None and universe not in _VALID_UNIVERSES:
             raise HTTPException(

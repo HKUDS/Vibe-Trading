@@ -565,7 +565,7 @@ _LOADER_TREE_RE = re.compile(
 )
 # The six READMEs each carry a repo-tree line that both COUNTS and NAMES the
 # loaders. Nothing pinned it, so it drifted: it read "24 sources" and omitted
-# nobitex, wallex and tickerall while the registry held 27. The count tests
+# several loaders while the registry held 27. The count tests
 # only proved the READMEs agreed with each other, and they agreed while all six
 # were wrong — the same failure mode the broker pin above was added for.
 #

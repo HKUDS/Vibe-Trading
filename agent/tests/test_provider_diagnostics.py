@@ -9,7 +9,7 @@ import json
 import os
 from unittest.mock import patch
 
-from src.providers.registry import get_provider_capabilities
+from src.providers.registry import get_provider_capabilities, provider_names
 from src.providers.llm import build_llm, provider_diagnostics
 
 
@@ -68,29 +68,11 @@ def test_provider_capabilities_are_provider_specific() -> None:
     assert openrouter.send_reasoning_content is False
 
 
-def test_spark_capabilities_use_generic_openai_path() -> None:
-    """iFlytek Spark rides the plain OpenAI-compatible path; iflytek is an alias."""
-    spark = get_provider_capabilities("spark", "4.0Ultra")
-
-    assert spark.name == "spark"
-    assert spark.api_key_env == "SPARK_API_KEY"
-    assert spark.base_url_env == "SPARK_BASE_URL"
-    assert spark.capture_reasoning is False
-    assert spark.send_reasoning_content is False
-    assert spark.openrouter_reasoning_body is False
-    assert get_provider_capabilities("iflytek", "4.0Ultra") is spark
-
-
-def test_novita_capabilities_use_generic_openai_path() -> None:
-    """Novita AI rides the plain OpenAI-compatible path with no capability flags."""
-    novita = get_provider_capabilities("novita", "moonshotai/kimi-k3")
-
-    assert novita.name == "novita"
-    assert novita.api_key_env == "NOVITA_API_KEY"
-    assert novita.base_url_env == "NOVITA_BASE_URL"
-    assert novita.capture_reasoning is False
-    assert novita.send_reasoning_content is False
-    assert novita.openrouter_reasoning_body is False
+def test_retired_presets_are_absent_from_provider_lookup() -> None:
+    retired = {"novita", "spark", "iflytek"}
+    assert provider_names().isdisjoint(retired)
+    for name in retired:
+        assert get_provider_capabilities(name).name == "openai"
 
 
 def test_reasoning_effort_extra_body_is_openrouter_only() -> None:

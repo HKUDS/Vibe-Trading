@@ -292,3 +292,17 @@ describe("API failure recovery", () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 });
+
+describe("NIFTY 100 Alpha Zoo requests", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(["bench", "compare"] as const)("sends nifty100 unchanged to /alpha/%s", async (kind) => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", job_id: "offline-fixture" }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetch);
+    const { api } = await loadApiModule();
+    const common = { universe: "nifty100", period: "2021-2024" };
+    if (kind === "bench") await api.createAlphaBench({ ...common, zoo: "alpha101", top: 5 });
+    else await api.createAlphaCompare({ ...common, alpha_ids: ["alpha101_001", "alpha101_002"], sort: "ir" });
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/alpha/${kind}$`)), expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(fetch.mock.calls[0][1].body as string)).toMatchObject(common);
+  });
+});

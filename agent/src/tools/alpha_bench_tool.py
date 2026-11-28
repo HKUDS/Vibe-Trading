@@ -67,6 +67,22 @@ _SP500_MIN_SECTOR_COVERAGE = 0.9
 # allows ~200 calls/min; 4 workers stays well under that with a 300-name list.
 _CSI300_FETCH_WORKERS = 4
 
+_NIFTY100_SIZE = 100
+# Only these fixed reasons may leave the constituent-download boundary.
+_NIFTY100_FAILURE_REASONS = (
+    "request timed out",
+    "HTTP request failed",
+    "connection failed",
+    "request failed",
+    "invalid constituent data",
+    "constituent source failed",
+)
+_NIFTY100_MIN_SECTOR_COVERAGE = _SP500_MIN_SECTOR_COVERAGE  # same 90% gate as sp500
+_NIFTY100_CONSTITUENT_URLS = (
+    "https://archives.nseindia.com/content/indices/ind_nifty100list.csv",
+    "https://www.niftyindices.com/IndexConstituent/ind_nifty100list.csv",
+)
+
 
 # ---------------------------------------------------------------------------
 # Universe + period parsing
@@ -80,6 +96,7 @@ _PERIOD_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})$")
 _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
+    "nifty100": "equity_in",
 }
 
 
@@ -114,8 +131,8 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500``. ``btc-usdt`` is single-asset and
-            rejected before cache or data access.
+        universe: ``csi300`` | ``sp500`` | ``nifty100``. ``btc-usdt`` is
+            single-asset and rejected before cache or data access.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
             ``~/.vibe-trading/cache/`` if the same universe+period was fetched
@@ -128,7 +145,7 @@ def _load_universe_panel(
     if universe == "btc-usdt":
         raise ValueError(
             "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
-            "Supported bench universes: csi300, sp500."
+            "Supported bench universes: csi300, sp500, nifty100."
         )
     if universe not in _UNIVERSE_TAG:
         raise ValueError(
@@ -148,6 +165,8 @@ def _load_universe_panel(
         panel = _load_csi300_panel(start, end)
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
+    elif universe == "nifty100":
+        panel = _load_nifty100_panel(start, end)
     else:  # pragma: no cover — guarded above
         raise ValueError(f"unhandled universe {universe!r}")
 
@@ -614,6 +633,285 @@ def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("sp500 Wikipedia fetch failed: %s", exc)
     return [], {}
+
+
+def _fetch_nifty100_constituents() -> tuple[list[str], dict[str, Any]]:
+    """Read the current official roster, with an explicitly labelled mirror fallback.
+
+    Returns:
+        Project-style NSE symbols and source/retrieval evidence. The CSV has no
+        membership effective date: retrieval time must not imply point-in-time
+        membership. No hand-picked or stale subset is substituted.
+
+    Raises:
+        RuntimeError: Both official endpoints fail transport or roster validation.
+    """
+    import io
+
+    import requests
+
+    failures: list[dict[str, str]] = []
+    for url in _NIFTY100_CONSTITUENT_URLS:
+        try:
+            response = requests.get(
+                url,
+                headers={"User-Agent": "Vibe-Trading/0.1 (NIFTY 100 research bench)"},
+                timeout=20,
+            )
+            response.raise_for_status()
+            raw = response.content
+            table = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+            table.columns = table.columns.str.strip()
+            if "Symbol" not in table.columns:
+                raise ValueError("Official roster is missing the Symbol column")
+            codes = []
+            for value in table["Symbol"]:
+                symbol = value.strip().upper()
+                # Existing India loaders use .NS verbatim; preserve '&' and '-'.
+                symbol = symbol.removesuffix(".NS")
+                if not re.fullmatch(r"[A-Z0-9][A-Z0-9&-]*", symbol):
+                    raise ValueError("Official roster contains an invalid NSE symbol")
+                codes.append(f"{symbol}.NS")
+            if len(codes) != _NIFTY100_SIZE or len(set(codes)) != _NIFTY100_SIZE:
+                raise ValueError("Expected 100 distinct NIFTY 100 symbols")
+            if (
+                "Series" in table
+                and not table["Series"].str.strip().str.upper().eq("EQ").all()
+            ):
+                raise ValueError("Official roster contains a non-EQ series")
+            industries = {}
+            if "Industry" in table:
+                for code, value in zip(codes, table["Industry"]):
+                    label = value.strip()
+                    if label.casefold() not in {
+                        "",
+                        "nan",
+                        "n/a",
+                        "na",
+                        "none",
+                        "null",
+                        "unknown",
+                    }:
+                        industries[code] = label
+            retrieved_at = datetime.now(timezone.utc).isoformat()
+            return codes, {
+                "constituent_source": url,
+                "constituent_source_date": retrieved_at[:10],
+                "constituent_date_basis": "retrieval date, not membership effective date",
+                "constituent_effective_date": None,
+                "constituent_retrieved_at": retrieved_at,
+                "constituent_sha256": hashlib.sha256(raw).hexdigest(),
+                "constituent_count": len(codes),
+                "constituent_fallback_used": bool(failures),
+                "constituent_fallback_policy": "official NSE Indices mirror; never a subset",
+                "constituent_fetch_failures": failures,
+                "constituent_industries": industries,
+                "constituent_industry_column_present": "Industry" in table,
+            }
+        except Exception as exc:  # noqa: BLE001 — untrusted source/parser boundary
+            # Never serialize exception text, URLs, response bodies or type names.
+            if isinstance(exc, requests.Timeout):
+                reason = "request timed out"
+            elif isinstance(exc, requests.HTTPError):
+                reason = "HTTP request failed"
+            elif isinstance(exc, requests.ConnectionError):
+                reason = "connection failed"
+            elif isinstance(exc, requests.RequestException):
+                reason = "request failed"
+            elif isinstance(exc, ValueError):
+                reason = "invalid constituent data"
+            else:
+                reason = "constituent source failed"
+            failures.append({"source": url, "error": reason})
+            logger.warning("nifty100 constituent source %s failed: %s", url, reason)
+    raise RuntimeError(
+        "NIFTY 100 constituents unavailable from both official sources; "
+        "no substitute universe was loaded: "
+        + "; ".join(item["error"] for item in failures)
+    )
+
+
+def _attach_nifty100_context(
+    panel: dict[str, Any], constituent_meta: dict[str, Any]
+) -> dict[str, Any]:
+    """Attach current NSE Industry tags and explicitly approximate VWAP.
+
+    Args:
+        panel: Fresh observed price matrices, optionally with provider VWAP.
+            OHLC values are never filled or changed.
+        constituent_meta: Official CSV evidence and normalized Industry mapping.
+
+    Returns:
+        Classification coverage/provenance and VWAP derivation metadata. Sector
+        labels are constant over the panel and are not historical memberships.
+        Existing provider VWAP cells take precedence; missing cells use OHLC4
+        only when all four observed prices are available.
+    """
+    close = panel["close"]
+    industries = constituent_meta.get("constituent_industries", {})
+    labels = [industries.get(str(code), "") for code in close.columns]
+    coverage = sum(bool(label) for label in labels) / len(labels)
+    sector_attached = coverage >= _NIFTY100_MIN_SECTOR_COVERAGE
+    if sector_attached:
+        panel["sector"] = pd.DataFrame(
+            np.repeat(
+                np.array([label or "UNKNOWN" for label in labels], dtype=object)[
+                    None, :
+                ],
+                len(close.index),
+                axis=0,
+            ),
+            index=close.index,
+            columns=close.columns,
+        )
+    else:
+        logger.warning(
+            "nifty100: sector coverage %.1f%% below %.0f%%; sector-dependent alphas will skip",
+            coverage * 100,
+            _NIFTY100_MIN_SECTOR_COVERAGE * 100,
+        )
+
+    provided = panel.get("vwap")
+    provided_count = int(provided.notna().sum().sum()) if provided is not None else 0
+    derived_count = 0
+    if all(field in panel for field in ("open", "high", "low", "close")):
+        # Ordinary addition propagates NaNs: never average only available fields.
+        approximate = (panel["open"] + panel["high"] + panel["low"] + close) / 4.0
+        panel["vwap"] = (
+            provided.combine_first(approximate) if provided is not None else approximate
+        )
+        derived_count = int(panel["vwap"].notna().sum().sum()) - provided_count
+    vwap_count = int(panel["vwap"].notna().sum().sum()) if "vwap" in panel else 0
+    source = (
+        "provider_with_ohlc4_fallback"
+        if provided_count and derived_count
+        else (
+            "ohlc4_approximation"
+            if derived_count
+            else "shared_loader_provided" if provided_count else None
+        )
+    )
+    return {
+        "sector_source": (
+            constituent_meta["constituent_source"] if sector_attached else None
+        ),
+        "sector_source_column": "Industry" if sector_attached else None,
+        "sector_source_date": (
+            constituent_meta["constituent_source_date"] if sector_attached else None
+        ),
+        "sector_source_sha256": (
+            constituent_meta["constituent_sha256"] if sector_attached else None
+        ),
+        "sector_classification": "NSE Industry" if sector_attached else None,
+        "sector_point_in_time": False,
+        "sector_coverage": coverage,
+        "sector_covered_instruments": sum(bool(label) for label in labels),
+        "sector_total_instruments": len(labels),
+        "sector_coverage_threshold": _NIFTY100_MIN_SECTOR_COVERAGE,
+        "sector_group_count": len({label for label in labels if label}),
+        "sector_unknown_symbols": [
+            str(code) for code, label in zip(close.columns, labels) if not label
+        ],
+        "vwap_source": source,
+        "field_sources": {"vwap": source} if source else {},
+        "vwap_formula": "(open + high + low + close) / 4" if derived_count else None,
+        "vwap_approximation": bool(derived_count),
+        "vwap_approximation_is_exchange_observation": False,
+        "vwap_provided_cells": provided_count,
+        "vwap_approximate_cells": derived_count,
+        "vwap_missing_cells": close.size - vwap_count,
+        "vwap_note": "OHLC4 fallback is calculated, not observed exchange VWAP; provided values are not independently exchange-verified.",
+    }
+
+
+def _load_nifty100_panel(start: str, end: str) -> dict[str, Any]:
+    """Load current NIFTY 100 members through the shared India price infrastructure.
+
+    Args:
+        start: Inclusive research start, following the shared loader contract.
+        end: Research end, passed unchanged to the shared loader.
+
+    Returns:
+        Observed wide OHLCV frames plus provenance and survivorship metadata.
+        Gaps remain NaN. Current NSE Industry labels use the shared coverage gate;
+        missing VWAP uses explicitly labelled OHLC4, never filled OHLC prices.
+
+    Raises:
+        RuntimeError: Constituents are unavailable or fewer than two prices load.
+    """
+    from src.market_data import fetch_market_data, get_loader
+
+    codes, constituent_meta = _fetch_nifty100_constituents()
+    response = fetch_market_data(
+        codes=codes,
+        start_date=start,
+        end_date=end,
+        source="auto",
+        include_provenance=True,
+        as_frames=True,
+        loader_resolver=get_loader,
+    )
+    unexpected = {code for code in response if not code.startswith("_")} - set(codes)
+    if unexpected:
+        raise RuntimeError(
+            "Shared loader returned instruments outside the NIFTY 100 request"
+        )
+    fetched = {
+        code: response[code]
+        for code in codes
+        if isinstance(response.get(code), pd.DataFrame)
+        and "close" in response[code]
+        and response[code]["close"].notna().any()
+    }
+    missing = sorted(set(codes) - set(fetched) | set(response.get("_unresolved", [])))
+    panel = _wide_from_fetched(fetched, include_amount=False)
+    if "close" not in panel or panel["close"].shape[1] < 2:
+        raise RuntimeError(
+            "NIFTY 100 price loading produced fewer than two usable instruments"
+        )
+    provided_vwap = {
+        code: frame["vwap"] for code, frame in fetched.items() if "vwap" in frame
+    }
+    if provided_vwap:
+        panel["vwap"] = (
+            pd.concat(provided_vwap, axis=1)
+            .reindex(
+                index=panel["close"].index,
+                columns=panel["close"].columns,
+            )
+            .astype(float)
+        )
+    context_meta = _attach_nifty100_context(panel, constituent_meta)
+    provenance = response.get("_provenance", {})
+    panel["_meta"] = {
+        **constituent_meta,
+        "universe": "nifty100",
+        "universe_tag": "equity_in",
+        "currency": "INR",
+        "requested_instruments": len(codes),
+        "fetched_instruments": len(fetched),
+        "missing_instruments": missing,
+        "data_diagnostics": response.get("_diagnostics", {}),
+        "price_provenance": provenance,
+        "price_sources": sorted({item["source"] for item in provenance.values()}),
+        "missing_observations": {
+            field: {str(code): int(count) for code, count in frame.isna().sum().items()}
+            for field, frame in panel.items()
+        },
+        "missing_fields": [
+            field
+            for field in ("open", "high", "low", "close", "volume")
+            if field not in panel
+        ],
+        "survivorship_bias": True,
+        "point_in_time_membership": False,
+        "degraded": bool(missing) or constituent_meta["constituent_fallback_used"],
+        **context_meta,
+    }
+    logger.warning(
+        "NIFTY 100 uses current constituents; historical results are survivorship-biased"
+    )
+    return panel
 
 
 def _wide_from_fetched(
@@ -1465,7 +1763,7 @@ class AlphaBenchTool(BaseTool):
             "universe": {
                 "type": "string",
                 "description": (
-                    "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+                    "csi300 | sp500 | nifty100. btc-usdt is single-asset and is rejected before "
                     "data loading. Alphas requiring fund:* SEC filings need sp500; "
                     "elsewhere they are excluded."
                 ),
@@ -1496,7 +1794,9 @@ class AlphaBenchTool(BaseTool):
                 "description": "Stage recorded in the factor-research contract.",
             },
             "research_mode": {
-                "type": "string", "enum": list(RESEARCH_MODES), "default": "explore",
+                "type": "string",
+                "enum": list(RESEARCH_MODES),
+                "default": "explore",
                 "description": "Declared research mode; metadata only, does not enforce locked evaluation.",
             },
             "output_dir": {

@@ -146,8 +146,7 @@ class MarketDataTool(BaseTool):
                     "(US/global). india_broker: "
                     "read-only Shoonya/Dhan bars for .NS/.BO. mt5: forex/metals "
                     "from a local MetaTrader 5 terminal (Windows; e.g. EUR/USD, "
-                    "XAUUSD.FX); tickerall: the same feed hosted, no terminal, "
-                    "any OS. local: your own CSV/Parquet/DuckDB files."
+                    "XAUUSD.FX). local: your own CSV/Parquet/DuckDB files."
                 ),
                 "default": "auto",
             },

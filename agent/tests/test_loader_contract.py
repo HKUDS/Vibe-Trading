@@ -37,7 +37,6 @@ CONTRACT_SUITES = {
     "sina": "test_sina_loader.py",
     "stooq": "test_stooq_loader.py",
     "tencent": "test_tencent_loader.py",
-    "tickerall": "test_tickerall_loader.py",
     "tiingo": "test_tiingo_loader.py",
     "tushare": "test_tushare_loader.py",
     "wallex": "test_wallex_loader.py",
