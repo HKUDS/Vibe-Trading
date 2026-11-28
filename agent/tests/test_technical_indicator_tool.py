@@ -67,14 +67,10 @@ class TestRSI:
         close = pd.Series([100.0, 101.0], dtype=float)
         assert _compute_rsi(close, 14) is None
 
-    def test_rsi_uses_wilder_ewm_not_rolling_mean(self):
-        """Regression (sibling divergence): the docstring promises Wilder
-        smoothing, which is Wilder's exponential method, not a plain rolling
-        mean of gains/losses -- a materially different, well-known-distinct
-        technique. Classic 15-bar Wilder worked example: seeded avg_gain/
-        avg_loss over the first 14 deltas gives RSI approx 71.80. A rolling-mean
-        implementation gives approx 70.46 for the same input -- close enough to
-        look plausible, far enough to be wrong.
+    def test_rsi_uses_wilder_sma_seed_and_recursive_smoothing(self):
+        """Classic 15-bar Wilder worked example: initial seed is the simple
+        mean of the first 14 deltas (RSI ~= 70.4641), distinguishing true Wilder
+        smoothing from pandas' adjusted EWM (adjust=True -> ~= 71.8024).
         """
         close = pd.Series(
             [
@@ -96,17 +92,15 @@ class TestRSI:
             ]
         )
         rsi = _compute_rsi(close, period=14)
-        assert rsi == pytest.approx(71.8024, abs=0.01)
-        assert rsi != pytest.approx(70.4641, abs=0.01)
+        assert rsi == pytest.approx(70.4641, abs=0.01)
+        assert rsi != pytest.approx(71.8024, abs=0.01)
 
-    def test_rsi_matches_sibling_wilder_implementations(self):
-        """Regression: must agree with the Wilder-EWM RSI already used
-        elsewhere in this codebase (shadow_account/extractor.py,
-        shadow_account/scanner.py, skills/technical-basic/
-        example_signal_engine.py -- all three implement the identical
-        formula below), on a series that crosses both the 30 and 70
-        thresholds a rolling-mean implementation would place differently.
+    def test_rsi_matches_shadow_account_wilder_implementation(self):
+        """Short mixed-gain/loss series must match shadow_account.indicators.compute_rsi
+        and diverge from the former adjusted-EWM calculation (~18.82 vs ~28.98).
         """
+        from src.shadow_account.indicators import compute_rsi as shadow_rsi
+
         close = pd.Series(
             [
                 float(x)
@@ -136,19 +130,22 @@ class TestRSI:
             ]
         )
         period = 14
-
-        def sibling_rsi(close: pd.Series, period: int) -> float:
-            delta = close.diff()
-            gain = delta.clip(lower=0)
-            loss = (-delta).clip(lower=0)
-            avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-            avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
-            rs = avg_gain / avg_loss
-            return float((100 - 100 / (1 + rs)).iloc[-1])
-
         rsi = _compute_rsi(close, period=period)
-        assert rsi == pytest.approx(sibling_rsi(close, period), abs=1e-9)
-        assert rsi == pytest.approx(18.8237, abs=0.01)
+        expected = float(shadow_rsi(close, period=period).iloc[-1])
+        assert rsi == pytest.approx(expected, abs=1e-9)
+        assert rsi == pytest.approx(28.9835, abs=0.01)
+        assert rsi != pytest.approx(18.8237, abs=0.01)
+
+    def test_rsi_missing_prices_and_empty(self):
+        assert _compute_rsi(pd.Series(dtype=float), period=14) is None
+        trailing_nan = pd.Series([100.0, 101.0, 102.0, 103.0, 104.0, float("nan")])
+        assert _compute_rsi(trailing_nan, period=4) is None
+        insufficient_after_gap = pd.Series([100.0, float("nan"), 101.0, 102.0, 103.0])
+        assert _compute_rsi(insufficient_after_gap, period=4) is None
+        interior_gap_with_enough_deltas = pd.Series(
+            [100.0, 101.0, float("nan"), 102.0, 103.0, 104.0, 105.0]
+        )
+        assert _compute_rsi(interior_gap_with_enough_deltas, period=4) == pytest.approx(100.0)
 
 
 class TestVolume:
@@ -188,6 +185,15 @@ class TestBollinger:
         result = _compute_bollinger(close, period=20)
         assert result is not None
         assert result["upper"] > result["middle"] > result["lower"]
+
+    def test_bollinger_uses_population_std_fixture(self):
+        """Fixed 20-bar linear fixture distinguishes ddof=0 (upper=22.03, lower=-1.033)
+        from the previous ddof=1 sample std (upper=22.33).
+        """
+        close = pd.Series(range(1, 21), dtype=float)
+        result = _compute_bollinger(close, period=20, num_std=2.0)
+        assert result == {"upper": 22.03, "middle": 10.5, "lower": -1.033}
+        assert result["upper"] != 22.33
 
     def test_bollinger_flat(self):
         """Flat prices → bands collapse to the same value."""
@@ -610,3 +616,34 @@ class TestLoaderPayloadShapes:
         assert result["ok"] is True
         assert result["indicators"]["rsi_14"] is not None
         assert result["latest_date"] == "2026-01-30"
+
+    def test_tool_and_strategy_entrypoints_match_corrected_indicators(self, monkeypatch):
+        """Both TechnicalIndicatorTool.execute and StrategyContext consume the
+        Wilder-seeded RSI and ddof=0 Bollinger calculations.
+        """
+        from src.tools.paper_trade.strategy_exec import StrategyContext
+
+        prices = [
+            100.0, 101.0, 102.5, 104.0, 103.5, 105.0, 106.5,
+            108.0, 107.5, 109.0, 110.5, 109.5, 108.0, 106.0,
+            103.5, 101.0, 98.0, 95.5, 93.0, 90.5, 88.0,
+        ]
+        close = pd.Series(prices, index=pd.date_range("2026-01-01", periods=len(prices), freq="D"))
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: {"AAPL": pd.DataFrame({"close": close})},
+        )
+        result = json.loads(TechnicalIndicatorTool().execute(symbol="AAPL"))
+        assert result["ok"] is True
+        assert result["indicators"]["rsi_14"] == pytest.approx(28.9835, abs=0.01)
+        expected_bb = _compute_bollinger(close)
+        assert result["indicators"]["bollinger"] == expected_bb
+
+        ctx = StrategyContext(
+            account_state=None,  # type: ignore[arg-type]
+            trade_date="2026-02-01",
+            symbols=("AAPL",),
+            _frames={"AAPL": pd.DataFrame({"close": close})},
+        )
+        assert ctx.rsi(close) == pytest.approx(result["indicators"]["rsi_14"], abs=1e-9)
+        assert ctx.bollinger(close) == expected_bb

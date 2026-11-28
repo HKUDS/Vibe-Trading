@@ -18,6 +18,7 @@ import pandas as pd
 
 from src.agent.tools import BaseTool
 from src.market_data import fetch_market_data
+from src.shadow_account.indicators import compute_rsi as _compute_wilder_rsi
 from src.tools.market_data_tool import _canonicalize_interval
 
 logger = logging.getLogger(__name__)
@@ -174,23 +175,27 @@ def _compute_ema(close: pd.Series, period: int) -> float | None:
 def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> float | None:
     """Relative Strength Index (Wilder smoothing) over *period* bars.
 
-    Matches the Wilder-EWM convention already used for RSI elsewhere in this
-    codebase (``shadow_account/extractor.py``, ``shadow_account/scanner.py``,
-    ``skills/technical-basic/example_signal_engine.py``): a plain rolling mean
-    of gains/losses is a materially different, non-Wilder technique and used
-    to diverge from those siblings by several RSI points on ordinary data.
+    Delegates to :func:`src.shadow_account.indicators.compute_rsi` so tool and
+    strategy callers share the exact SMA-seeded Wilder average and recursive
+    smoothing:
+
+    - **Insufficient warmup**: fewer than ``period + 1`` bars (or fewer than
+      ``period`` valid price deltas) returns ``None``.
+    - **Missing prices**: ``NaN`` prices yield ``NaN`` deltas and leave the
+      corresponding bar as ``None`` without corrupting recursive state; if the
+      latest delta is ``NaN`` (trailing or immediately prior missing bar),
+      returns ``None``.
+    - **Zero losses**: positive average gain with zero average loss evaluates
+      to ``100.0``.
+    - **Flat prices**: zero gain and zero loss after warmup returns ``100.0``
+      for tool output continuity (no downward pressure).
     """
-    if len(close) < period + 1:
+    if close.empty:
         return None
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean().iloc[-1]
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean().iloc[-1]
-    if avg_loss == 0:
-        return 100.0
-    rs = avg_gain / avg_loss
-    return float(100.0 - (100.0 / (1.0 + rs)))
+    rsi = _compute_wilder_rsi(close, period=period, flat_value=100.0).iloc[-1]
+    if pd.isna(rsi):
+        return None
+    return float(rsi)
 
 
 def _round_keeping_precision(value: float, min_decimals: int, reference: float | None = None) -> float:
@@ -248,13 +253,15 @@ def _compute_bollinger(
     period: int = _BB_PERIOD,
     num_std: float = _BB_STD,
 ) -> dict[str, float | None] | None:
-    """Bollinger Bands: upper, middle (SMA), lower."""
+    """Bollinger Bands: upper, middle (SMA), lower using population std (ddof=0)."""
     if len(close) < period:
         return None
     sma = close.rolling(window=period).mean()
-    std = close.rolling(window=period).std()
+    std = close.rolling(window=period).std(ddof=0)
     middle = float(sma.iloc[-1])
     spread = num_std * float(std.iloc[-1])
+    if not (math.isfinite(middle) and math.isfinite(spread)):
+        return None
     return {
         "upper": _round_keeping_precision(middle + spread, 2, reference=middle),
         "middle": _round_keeping_precision(middle, 2, reference=middle),
