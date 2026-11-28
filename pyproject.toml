@@ -302,6 +302,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-socket>=0.7.0",
+    "setuptools>=61",
     "ruff>=0.9,<1",
 ]
 
