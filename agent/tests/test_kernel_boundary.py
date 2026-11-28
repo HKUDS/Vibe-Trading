@@ -85,9 +85,13 @@ def _standalone_turn():
             root = fullname.partition(".")[0]
             if root in sys.stdlib_module_names or fullname in {"src", "src.kernel"}:
                 return None
-            if not fullname.startswith("src.kernel."):
+            if fullname.startswith("src.kernel."):
+                return None
+            if root == "src":
                 raise AssertionError(f"Standalone turn tried to load {fullname}")
-            return None
+            # Anything else is absent here: a guarded stdlib probe (Python 3.11's copy.py
+            # tries org.python.core) moves on, while an unguarded kernel import still fails.
+            raise ModuleNotFoundError(f"Standalone turn has no {fullname}", name=fullname)
 
     sys.meta_path.insert(0, KernelOnly())
     sys.path.insert(0, str(KERNEL.parents[1]))

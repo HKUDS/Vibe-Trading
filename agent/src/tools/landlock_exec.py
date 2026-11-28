@@ -1,6 +1,6 @@
 """Run one command under a Landlock ruleset (Linux >= 5.13, no privilege needed).
 
-Usage: ``python -I landlock_exec.py <spec-json> <argv...>``. The freshly started, single-threaded
+Usage: ``python -I landlock_exec.py <spec-file> <argv...>`` (the file is read, then deleted). The freshly started, single-threaded
 interpreter restricts itself and then execs ``argv``, so the restriction holds for the command
 and everything it starts. It is never applied from a ``preexec_fn``, which is unsafe in the
 multi-threaded server (see ``src/core/runner.py``). Run with ``-I`` so a file in the command's
@@ -87,14 +87,24 @@ def main(argv):
     """Restrict this process as the spec says, then exec the command.
 
     Args:
-        argv: ``[spec_json, program, *args]``.
+        argv: ``[spec_file, program, *args]``.
     """
     if len(argv) < 2:
-        _fail("usage: landlock_exec.py <spec-json> <argv...>")
+        _fail("usage: landlock_exec.py <spec-file> <argv...>")
     if not sys.platform.startswith("linux"):
         # The syscall numbers below mean something else on other kernels.
         _fail("Landlock is Linux-only")
-    spec, command = json.loads(argv[0]), argv[1:]
+    try:
+        with open(argv[0], encoding="utf-8") as handle:
+            spec = json.load(handle)
+    except (OSError, ValueError) as exc:
+        _fail(f"cannot read the ruleset spec: {exc}")
+    finally:
+        try:
+            os.unlink(argv[0])
+        except OSError:
+            pass
+    command = argv[1:]
     libc = ctypes.CDLL(None, use_errno=True)
     abi = libc.syscall(_CREATE_RULESET, None, 0, _CREATE_RULESET_VERSION)
     if abi < 1:

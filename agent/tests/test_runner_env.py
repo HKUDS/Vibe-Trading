@@ -525,7 +525,9 @@ def _landlock_spec(monkeypatch, tmp_path: Path, *, cwd: Path) -> dict:
     argv = runner_mod._landlock_confined(["python", "entry.py"], run_dir=run_dir, cwd=cwd,
                                          sandbox_home=None, real_home=None)
     assert argv[1:3] == ["-I", str(sandbox.LANDLOCK_EXEC)] and argv[-2:] == ["python", "entry.py"]
-    return json.loads(argv[3])
+    spec = json.loads(Path(argv[3]).read_text())
+    Path(argv[3]).unlink()
+    return spec
 
 
 def test_landlock_hides_the_runtime_root_from_generated_code_but_its_loader_paths(monkeypatch, tmp_path: Path) -> None:

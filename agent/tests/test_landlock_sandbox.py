@@ -58,7 +58,8 @@ def test_a_node_uses_landlock_when_bwrap_cannot_run(tmp_path, linux):
 
     assert node.backend == "landlock" and profile is None
     assert argv[:3] == [sys.executable, "-I", str(LANDLOCK_EXEC)] and argv[-3:] == ["/bin/sh", "-c", "echo hi"]
-    spec = json.loads(argv[3])
+    spec = json.loads(Path(argv[3]).read_text())
+    Path(argv[3]).unlink()
     assert str(workspace.resolve()) in spec["write"] and spec["net"] is False
 
 
@@ -105,9 +106,10 @@ def test_the_main_sandbox_refuses_when_neither_linux_backend_works(tmp_path, lin
 @pytest.mark.skipif(sys.platform.startswith("linux"), reason="checks the refusal on a non-Linux kernel")
 def test_the_launcher_refuses_off_linux_before_starting_anything(tmp_path):
     marker = tmp_path / "ran"
-    spec = json.dumps({"write": [str(tmp_path)], "net": True})
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({"write": [str(tmp_path)], "net": True}))
 
-    done = subprocess.run([sys.executable, "-I", str(LANDLOCK_EXEC), spec, "/bin/sh", "-c", f"touch {marker}"],
+    done = subprocess.run([sys.executable, "-I", str(LANDLOCK_EXEC), str(spec), "/bin/sh", "-c", f"touch {marker}"],
                           capture_output=True, text=True, timeout=30)
 
     assert done.returncode == 125 and "Linux-only" in done.stderr
@@ -153,3 +155,16 @@ def test_a_runtime_root_outside_tmp_shares_tmp(tmp_path, linux, monkeypatch):
     spec = _node(tmp_path).landlock_spec(tmp_path)
 
     assert str(shared.resolve()) in spec["write"] and spec["env"] == {}
+
+
+def test_a_large_spec_travels_in_a_file_not_an_argument():
+    # Linux refuses any single argument over 128 KiB; a readable-tree spec on a busy host exceeds it.
+    spec = {"read": [f"/data/{i:06d}" for i in range(20000)], "write": ["/tmp"], "net": True}
+
+    argv = sandbox.landlock_command(["/bin/sh", "-c", ":"], spec)
+
+    assert max(len(arg) for arg in argv) < 4096
+    try:
+        assert json.loads(Path(argv[3]).read_text()) == spec
+    finally:
+        Path(argv[3]).unlink()

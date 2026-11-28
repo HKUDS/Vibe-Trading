@@ -204,8 +204,11 @@ def test_task_tools_narrow_the_registry_and_prompt(tmp_path, monkeypatch, _works
                   _answer("Available observations have been retained."), seen=seen)
     assert result.status == "completed"
     assert _workspace == []  # The narrowed-out tool never ran.
-    assert '"fetch_records"' not in seen[0]["tools"] and '"read_file"' in seen[0]["tools"]
-    assert "Available Skills" not in seen[0]["messages"]
+    # Only this node's own requests: a swarm another test left running can reach the shared model double.
+    own = [request for request in seen if "Use assigned input." in request["messages"]]
+    assert own, seen
+    assert '"fetch_records"' not in own[0]["tools"] and '"read_file"' in own[0]["tools"]
+    assert "Available Skills" not in own[0]["messages"]
 
 
 # --- Selected handoff ------------------------------------------------------------------------------

@@ -17,6 +17,7 @@ import logging
 import platform
 import re
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -81,9 +82,14 @@ def landlock_command(argv: list[str], spec: dict) -> list[str]:
         spec: A spec from :func:`build_landlock_spec`.
 
     Returns:
-        The argv that applies the ruleset and then execs ``argv``.
+        The argv that applies the ruleset and then execs ``argv``. The spec travels in a
+        private temporary file the launcher reads and deletes: a spec that lists the
+        readable tree easily exceeds Linux's 128 KiB limit on one argument.
     """
-    return [sys.executable, "-I", str(LANDLOCK_EXEC), json.dumps(spec), *argv]
+    fd, path = tempfile.mkstemp(prefix="vibe-landlock-", suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(spec, handle)
+    return [sys.executable, "-I", str(LANDLOCK_EXEC), path, *argv]
 
 
 @functools.lru_cache(maxsize=None)
