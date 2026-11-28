@@ -118,6 +118,29 @@ def test_future_market_can_register_an_adapter_without_runner_changes() -> None:
     assert _fields(contract)["close"]["source"] == "new-feed"
 
 
+def test_nifty100_bench_reports_nse_market_identity() -> None:
+    panel = {
+        "close": pd.DataFrame(
+            {"RELIANCE.NS": [2900.0]}, index=pd.DatetimeIndex(["2026-01-02"])
+        ),
+        "_meta": {
+            "currency": "INR",
+            "price_sources": ["yfinance"],
+            "survivorship_bias": True,
+            "constituent_source": "NSE Indices official roster",
+        },
+    }
+
+    contract = build_availability_contract(panel, universe="nifty100")
+
+    assert contract["adapter"] == "in_equity"
+    assert contract["asset_class"] == "equity"
+    assert contract["venue"] == "XNSE"
+    assert contract["currency"] == "INR"
+    assert contract["timezone"] == "Asia/Kolkata"
+    assert contract["calendar"] == "NSE"
+
+
 def test_metadata_without_source_is_explicitly_unknown() -> None:
     panel = {
         "close": pd.DataFrame(
