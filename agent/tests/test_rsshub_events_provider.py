@@ -147,6 +147,17 @@ def test_default_lexicon_scorer_bounds() -> None:
     assert 0.0 <= default_lexicon_scorer("beat surge record", "") <= 1.0
 
 
+def test_default_lexicon_scorer_reads_typographic_punctuation() -> None:
+    # Same tokenizer gap as the sentiment tool (#2362): news headlines use curly
+    # quotes, em/en dashes and "…" around lexicon words.
+    assert default_lexicon_scorer("Analysts turn “bullish” on chipmakers", "") == 1.0
+    assert default_lexicon_scorer("Earnings ‘beat’ estimates", "") == 1.0
+    assert default_lexicon_scorer("Shares surge—then plunge on recall", "") == -1 / 3
+    assert default_lexicon_scorer("Profit rose–a record", "Then a recall…") == 1 / 3
+    # ASCII-hyphenated compounds still do not score as their parts.
+    assert default_lexicon_scorer("short-term profit-taking", "") == 0.0
+
+
 # ── No-default-catalogue + per-symbol code formatting + loud failures ─────────
 
 
