@@ -379,3 +379,48 @@ def test_perpetual_fetch_rounds_funding_settlement_jitter(monkeypatch) -> None:
 
     assert frame["funding_rate"].tolist() == [0.0003, 0.0]
     assert frame["funding_settlement_time"].iloc[0] == pd.Timestamp("2024-01-01")
+
+
+def test_perpetual_cache_respects_current_bracket_request(monkeypatch, tmp_path) -> None:
+    from backtest.loaders import base
+    from backtest.loaders.ccxt_loader import DataLoader
+
+    monkeypatch.setattr(base, "loader_cache_enabled", lambda: True)
+    monkeypatch.setattr(base, "loader_cache_root", lambda: tmp_path)
+    exchange = _PerpetualExchange()
+    monkeypatch.setattr(
+        DataLoader, "_get_exchange", lambda self, instrument_type="spot": exchange
+    )
+    loader = DataLoader()
+    args = (["BTC-USDT-PERP"], "2024-01-01", "2024-01-01")
+    artifact = _make_bracket_artifact()
+    first = loader.fetch(
+        *args, interval="1H", bracket_artifacts={"BTC-USDT-PERP": artifact}
+    )
+    assert first["BTC-USDT-PERP"]["maintenance_bracket_version"].iloc[0] == artifact["content_hash"]
+    assert list(tmp_path.rglob("*.parquet")), "fixture must exercise an actual cache hit"
+    # Simulate an entry written by the old loader, with brackets in the cache.
+    base.loader_cache_put(
+        source="ccxt", symbol="BTC-USDT-PERP", timeframe="1H",
+        start_date="2024-01-01", end_date="2024-01-01", fields=None,
+        frame=first["BTC-USDT-PERP"],
+    )
+    calls = len(exchange.calls)
+
+    with pytest.raises(ValueError, match="requires a maintenance-bracket artifact"):
+        loader.fetch(*args, interval="1H", require_brackets=True)
+    with pytest.raises(ValueError, match="content_hash mismatch"):
+        loader.fetch(
+            *args, interval="1H",
+            bracket_artifacts={"BTC-USDT-PERP": {**artifact, "content_hash": "bad"}},
+        )
+    without = loader.fetch(*args, interval="1H")["BTC-USDT-PERP"]
+    assert "maintenance_brackets" not in without.columns
+    changed = _make_bracket_artifact(
+        brackets=[{**_DEFAULT_BRACKET_RECORDS[0], "maintenance_rate": 0.01}]
+    )
+    updated = loader.fetch(
+        *args, interval="1H", bracket_artifacts={"BTC-USDT-PERP": changed}
+    )
+    assert updated["BTC-USDT-PERP"]["maintenance_bracket_version"].iloc[0] == changed["content_hash"]
+    assert len(exchange.calls) == calls

@@ -203,6 +203,8 @@ Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trad
 
 In backtests with `allow_nonpositive_prices: true`, a separately loaded benchmark uses the same price policy as the strategy. Local benchmark data still comes only from the configured local source.
 
+For cached Binance USD-M perpetual data, maintenance brackets come from the current request and are validated on every fetch, including cache hits.
+
 ### Portfolio drawdown periods
 
 In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.

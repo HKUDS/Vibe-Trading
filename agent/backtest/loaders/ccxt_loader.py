@@ -295,12 +295,22 @@ class DataLoader:
                 ccxt_symbol, instrument_type = _parse_ccxt_symbol(code)
                 exchange = get_exchange(instrument_type)
                 artifact = (bracket_artifacts or {}).get(code)
+                brackets = None
+                if instrument_type == "swap":
+                    if require_brackets and artifact is None:
+                        raise ValueError(
+                            f"strict margin-risk fetch for {ccxt_symbol} requires a "
+                            "maintenance-bracket artifact"
+                        )
+                    if artifact is not None:
+                        brackets = _validate_bracket_artifact(
+                            artifact, expected_symbol=ccxt_symbol
+                        )
 
                 def fetch_frame():
                     if instrument_type == "swap":
                         return self._fetch_perpetual(
                             exchange, ccxt_symbol, timeframe, since_ms, end_ms,
-                            bracket_artifact=artifact, require_brackets=require_brackets,
                         )
                     return self._fetch_one(
                         exchange, ccxt_symbol, timeframe, since_ms, end_ms
@@ -316,6 +326,16 @@ class DataLoader:
                     fetch=fetch_frame,
                 )
                 if df is not None and not df.empty:
+                    if instrument_type == "swap":
+                        # Old cache entries may contain a previous caller's brackets.
+                        df = df.drop(
+                            columns=["maintenance_brackets", "maintenance_bracket_version"],
+                            errors="ignore",
+                        )
+                        if brackets is not None:
+                            records, version = brackets
+                            df["maintenance_brackets"] = json.dumps(records)
+                            df["maintenance_bracket_version"] = version
                     result[code] = df
             except Exception as exc:
                 if instrument_type == "swap" or code.strip().upper().endswith("-PERP"):
