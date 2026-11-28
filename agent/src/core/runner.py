@@ -76,26 +76,29 @@ def _resolve_sandbox_credentials() -> tuple[str, str] | None:
 
 
 #: Runtime-root entries a backtest's loaders read (the opt-in cache is also written).
-_LANDLOCK_READABLE = ("cache", "data-bridge")
+#: Runtime-root entries generated code must not read, beside the broker/auth credential paths
+#: (VT-001: .env, sessions, memory, the live mandate/audit ledger). Uploads, imports, data-bridge
+#: sources and the cache stay readable: backtests legitimately read the user's own data there.
+_LANDLOCK_HIDDEN = (".env", "sessions", "sessions.db", "sessions.db-wal", "sessions.db-shm", "memory", "live")
 _LANDLOCK_WARNED: list[str] = []
 
 
-def _landlock_confined(cmd: list[str], *, run_dir: Path, cwd: Path, sandbox_home: Path | None,
+def _landlock_confined(cmd: list[str], *, run_dir: Path, sandbox_home: Path | None,
                        real_home: Path | None) -> list[str]:
     """Wrap the backtest subprocess in Landlock where the kernel provides it (Linux).
 
     The UID drop needs CAP_SETUID, which the compose deployment's non-root ``vibe`` process never
     has, so on its own it silently does nothing there. Landlock needs no privilege: the child may
     write only its run directory, its ephemeral HOME, the temporary directory and the loader
-    cache, and may read nothing under the runtime root but the loader paths (``cache``,
-    ``data-bridge``) — not ``.env``, sessions, memory, the live ledger or broker credentials. The
+    cache, and may not read ``.env``, sessions, memory, the live ledger, dot files or broker
+    credentials under the runtime root; the user's own data there (uploads, imports, the files
+    data-bridge points at) stays readable, because backtests read it. The
     network stays open because the data loaders run in the same process. Where Landlock is
     unavailable the command runs as before, with a warning once on Linux.
 
     Args:
         cmd: The subprocess argv.
         run_dir: The run directory the backtest writes.
-        cwd: The subprocess working directory (the agent source tree).
         sandbox_home: The ephemeral HOME, if one was created.
         real_home: The server's HOME, whose ``.cache`` stays writable for library caches.
 
@@ -114,13 +117,9 @@ def _landlock_confined(cmd: list[str], *, run_dir: Path, cwd: Path, sandbox_home
             logger.warning("Backtest subprocess runs without Landlock: %s", reason)
         return cmd
     root = get_runtime_root().expanduser().resolve()
-    cwd = Path(cwd).resolve()
-    # A runtime root that holds the source tree itself (VIBE_TRADING_HOME pointed at a checkout)
-    # cannot be hidden whole, so only its credential paths are.
-    if cwd == root or cwd.is_relative_to(root):
-        hidden = {path.resolve() for path in enumerate_protected_runtime_paths(root)}
-    else:
-        hidden = {root}
+    hidden = {path.resolve() for path in enumerate_protected_runtime_paths(root)}
+    hidden.update(root / name for name in _LANDLOCK_HIDDEN)
+    hidden.update(path for path in root.glob(".*"))
     cache = root / "cache"
     cache.mkdir(parents=True, exist_ok=True)
     writable = [Path(run_dir), cache]
@@ -133,7 +132,7 @@ def _landlock_confined(cmd: list[str], *, run_dir: Path, cwd: Path, sandbox_home
         writable.append(real_home / ".cache")
     spec = build_landlock_spec(
         hidden=hidden, writable=[path for path in writable if path.exists()], network=True,
-        private_tmp=Path(run_dir) / ".tmp", readable=tuple(root / name for name in _LANDLOCK_READABLE),
+        private_tmp=Path(run_dir) / ".tmp",
     )
     return landlock_command(cmd, spec)
 
@@ -751,7 +750,7 @@ class Runner:
             errors="ignore",
         )
         try:
-            confined = _landlock_confined(cmd, run_dir=run_dir, cwd=effective_cwd,
+            confined = _landlock_confined(cmd, run_dir=run_dir,
                                           sandbox_home=sandbox_home, real_home=real_home)
             process = self._run_sandboxed(confined, run_kwargs)
         finally:
