@@ -382,13 +382,8 @@ def test_perpetual_fetch_rounds_funding_settlement_jitter(monkeypatch) -> None:
 
 
 def test_perpetual_cache_respects_current_bracket_request(monkeypatch, tmp_path) -> None:
-    import sys
-    from types import SimpleNamespace
-
     from backtest.loaders import base
     from backtest.loaders.ccxt_loader import DataLoader
-
-    monkeypatch.setitem(sys.modules, "ccxt", SimpleNamespace(NetworkError=ConnectionError))
 
     monkeypatch.setattr(base, "loader_cache_enabled", lambda: True)
     monkeypatch.setattr(base, "loader_cache_root", lambda: tmp_path)
