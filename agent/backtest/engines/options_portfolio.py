@@ -644,7 +644,14 @@ def run_options_backtest(
     pd.DataFrame(greeks_records).to_csv(out / "greeks.csv", index=False)
     pd.DataFrame([metrics]).to_csv(out / "metrics.csv", index=False)
 
+    from backtest.frozen import serialize_calendar_timezone
     from backtest.run_card import write_run_card
+
+    calendar_timezones = {
+        f"artifacts/ohlcv_{code}.csv": serialize_calendar_timezone(frame.index.tz)
+        for code, frame in data_map.items()
+        if frame.index.tz is not None
+    }
     write_run_card(
         run_dir,
         config,
@@ -652,6 +659,8 @@ def run_options_backtest(
         data_sources=[str(getattr(loader, "name", config.get("source", "")))],
         strategy_path=run_dir / "code" / "signal_engine.py",
         warnings=config.get("content_filter_warnings") or None,
+        calendar_timezones={path: zone for path, zone in calendar_timezones.items() if zone is not None},
+        unsupported_calendar_timezones=[path for path, zone in calendar_timezones.items() if zone is None],
         tool_traces=[
             {
                 "tool": "backtest",

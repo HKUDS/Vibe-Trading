@@ -238,3 +238,52 @@ def test_second_offset_does_not_break_ordinary_engine(tmp_path, offset):
     assert (root / "run_card.json").exists()
     with pytest.raises(ValueError, match="unsupported.*timezone|timezone.*unsupported"):
         freeze_run(root, tmp_path / "study")
+
+
+@pytest.mark.parametrize("start", ["2026-03-06", "2026-10-30"])
+def test_options_replay_preserves_local_calendar_and_trades(tmp_path, monkeypatch, start):
+    from backtest.engines.options_portfolio import run_options_backtest
+    from src.research_lab.execution import trial
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    dates = pd.date_range(start, periods=6, freq="D", tz="America/New_York")
+    root = tmp_path / "baseline"
+    (root / "code").mkdir(parents=True)
+    expiry = (dates[-1] + pd.Timedelta(days=30)).isoformat()
+    source = f'''class SignalEngine:
+    def generate(self, data_map):
+        frame = data_map["AAPL.US"]
+        if frame.index[0].hour != 0:
+            return []
+        leg = {{"type": "call", "strike": 100, "expiry": {expiry!r}, "qty": 1}}
+        return [
+            {{"date": str(frame.index[0].date()), "action": "open", "legs": [leg]}},
+            {{"date": str(frame.index[-2].date()), "action": "close", "legs": [leg]}},
+        ]
+'''
+    (root / "code/signal_engine.py").write_text(source)
+    config = {
+        "codes": ["AAPL.US"], "source": "local", "engine": "options", "interval": "1D",
+        "start_date": str(dates[0].date()), "end_date": str(dates[-1].date()),
+        "initial_cash": 10000,
+    }
+    (root / "config.json").write_text(json.dumps(config))
+    prices = pd.DataFrame(
+        {"open": 100., "high": 102., "low": 99., "close": 101., "volume": 10000.},
+        index=dates,
+    )
+    namespace = {}
+    exec(source, namespace)
+    run_options_backtest(
+        config, _AutoLoader({"AAPL.US": prices}, name="local"),
+        namespace["SignalEngine"](), root,
+    )
+    _, manifest, _, _ = freeze_run(root, tmp_path / "study")
+    measured = trial(tmp_path / "study", "replay", config, manifest)
+    replay = Path(measured["run_dir"])
+    original_trades = pd.read_csv(root / "artifacts/trades.csv")
+    assert len(original_trades) == 2
+    for name in ("trades.csv", "equity.csv", "greeks.csv"):
+        pd.testing.assert_frame_equal(
+            pd.read_csv(root / "artifacts" / name), pd.read_csv(replay / "artifacts" / name),
+        )
