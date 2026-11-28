@@ -8,12 +8,20 @@ while the run still reported success. The same omission affected
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
+import cli.commands.common as _cmd_common
+import cli.commands.execution as _cmd_execution
+import cli.commands.sessions as _cmd_sessions
+from tests.recording_helpers import seed_message
+
 from pathlib import Path
 
 import pytest
 
-from cli import _legacy
-from src.agent.trace import TraceWriter
+from src.session.thread import ThreadLog
 from src.goal import GoalStore
 from src.tools.goal_tool import StartResearchGoalTool
 
@@ -23,8 +31,8 @@ def sessions_dir(tmp_path, monkeypatch) -> Path:
     """Point the session store at a temp dir so tests never touch agent/sessions."""
     path = tmp_path / "sessions"
     path.mkdir()
-    monkeypatch.setattr(_legacy, "SESSIONS_DIR", path)
-    monkeypatch.setattr(_legacy, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(_cmd_common, "SESSIONS_DIR", path)
+    monkeypatch.setattr(_cmd_common, "RUNS_DIR", tmp_path / "runs")
     return path
 
 
@@ -36,8 +44,8 @@ def _capture_session_ids(monkeypatch) -> list:
         seen.append(kwargs.get("session_id"))
         return {"status": "success", "run_id": "r1", "run_dir": run_dir_override or "d"}
 
-    monkeypatch.setattr(_legacy, "_run_agent", fake_run_agent)
-    monkeypatch.setattr(_legacy, "_print_json_result", lambda result: None)
+    monkeypatch.setattr(_cmd_execution, "_run_agent", fake_run_agent)
+    monkeypatch.setattr(_cmd_execution, "_print_json_result", lambda result: None)
     return seen
 
 
@@ -48,15 +56,15 @@ def _capture_session_ids(monkeypatch) -> list:
 
 def test_goal_tool_fails_without_a_session_id() -> None:
     """Pin the reported symptom: no host session means every goal call errors."""
-    result = StartResearchGoalTool(default_session_id=None).execute(objective="x")
+    result = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id=None).execute(objective="x")
     assert '"session_id is required"' in result
 
 
 def test_cmd_run_injects_a_nonempty_session_id(sessions_dir, monkeypatch) -> None:
     seen = _capture_session_ids(monkeypatch)
-    monkeypatch.setattr(_legacy, "run_preflight", lambda console: [], raising=False)
+    monkeypatch.setattr("src.preflight.run_preflight", lambda console: [])
 
-    assert _legacy.cmd_run("backtest SPY", 5, json_mode=True) == _legacy.EXIT_SUCCESS
+    assert _cmd_execution.cmd_run("backtest SPY", 5, json_mode=True) == _cmd_common.EXIT_SUCCESS
 
     assert len(seen) == 1
     assert seen[0]
@@ -64,10 +72,10 @@ def test_cmd_run_injects_a_nonempty_session_id(sessions_dir, monkeypatch) -> Non
 
 def test_injected_session_id_makes_the_goal_tool_work(sessions_dir, tmp_path) -> None:
     """The end-to-end point of the fix: goals resolve instead of erroring."""
-    session_id = _legacy._ensure_session_id("backtest SPY")
+    session_id = _cmd_execution._ensure_session_id("backtest SPY")
     store = GoalStore(db_path=tmp_path / "goals.db")
 
-    result = StartResearchGoalTool(default_session_id=session_id, store=store).execute(
+    result = StartResearchGoalTool(roots=FileRoots.from_config(get_env_config().api), default_session_id=session_id, store=store).execute(
         objective="Backtest a 20/50-day moving average crossover on SPY"
     )
 
@@ -81,7 +89,7 @@ def test_injected_session_id_makes_the_goal_tool_work(sessions_dir, tmp_path) ->
 
 
 def test_ensure_session_id_persists_a_session_record(sessions_dir) -> None:
-    session_id = _legacy._ensure_session_id("a prompt used as the title")
+    session_id = _cmd_execution._ensure_session_id("a prompt used as the title")
 
     assert (sessions_dir / session_id / "session.json").exists()
 
@@ -97,17 +105,17 @@ def test_ensure_session_id_survives_an_unwritable_store(
 
     monkeypatch.setattr("src.session.store.SessionStore", _Boom)
 
-    assert _legacy._ensure_session_id("prompt")
+    assert _cmd_execution._ensure_session_id("prompt")
 
 
 def test_ensure_session_id_honours_an_explicit_id(sessions_dir) -> None:
-    assert _legacy._ensure_session_id("t", session_id="run-abc") == "run-abc"
+    assert _cmd_execution._ensure_session_id("t", session_id="run-abc") == "run-abc"
 
 
 def test_ensure_session_id_is_idempotent_for_a_known_id(sessions_dir) -> None:
     """Re-registering an existing session returns the id rather than raising."""
-    first = _legacy._ensure_session_id("t", session_id="run-abc")
-    second = _legacy._ensure_session_id("t", session_id="run-abc")
+    first = _cmd_execution._ensure_session_id("t", session_id="run-abc")
+    second = _cmd_execution._ensure_session_id("t", session_id="run-abc")
 
     assert first == second == "run-abc"
 
@@ -122,15 +130,14 @@ def test_cmd_continue_reuses_one_session_across_continuations(
 ) -> None:
     """Goals must accumulate across continuations, so the id has to be stable."""
     trace_dir = sessions_dir / "session-1"
-    writer = TraceWriter(trace_dir)
-    writer.write({"type": "start", "prompt": "q"})
-    writer.write({"type": "answer", "content": "a"})
-    writer.close()
+    writer = ThreadLog(trace_dir / "thread.jsonl")
+    writer.append("turn_start", "initial", prompt="q")
+    writer.append("assistant", "initial", content="a", phase="final")
 
     seen = _capture_session_ids(monkeypatch)
 
-    _legacy.cmd_continue("session-1", "first", 5, json_mode=True)
-    _legacy.cmd_continue("session-1", "second", 5, json_mode=True)
+    _cmd_execution.cmd_continue("session-1", "first", 5, json_mode=True)
+    _cmd_execution.cmd_continue("session-1", "second", 5, json_mode=True)
 
     assert seen[0]
     assert seen[0] == seen[1]
@@ -143,13 +150,12 @@ def test_cmd_continue_derives_an_id_for_a_plain_run(
 ) -> None:
     runs_dir = tmp_path / "runs"
     trace_dir = runs_dir / "run-x"
-    writer = TraceWriter(trace_dir)
-    writer.write({"type": "start", "prompt": "q"})
-    writer.close()
+    writer = ThreadLog(trace_dir / "thread.jsonl")
+    writer.append("turn_start", "initial", prompt="q")
 
     seen = _capture_session_ids(monkeypatch)
 
-    _legacy.cmd_continue("run-x", "follow up", 5, json_mode=True)
+    _cmd_execution.cmd_continue("run-x", "follow up", 5, json_mode=True)
 
     assert seen == ["run-run-x"]
 
@@ -167,12 +173,12 @@ def test_cmd_session_chat_passes_the_session_it_was_given(
 
     seen = _capture_session_ids(monkeypatch)
     replies = iter(["analyse AAPL", "q"])
-    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
-    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+    from cli import input as cli_input
 
-    _legacy.cmd_session_chat(session.session_id, 5)
+    monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
+    monkeypatch.setattr(cli_input, "make_session", lambda: None)
+
+    _cmd_sessions.cmd_session_chat(session.session_id, 5)
 
     assert seen == [session.session_id]
 
@@ -185,45 +191,40 @@ def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -
     store = SessionStore(base_dir=sessions_dir)
     session = Session(title="existing")
     store.create_session(session)
-    store.append_message(
-        Message(session_id=session.session_id, role="user", content="earlier question")
-    )
-    store.append_message(
-        Message(
+    seed_message(store, Message(session_id=session.session_id, role="user", content="earlier question"))
+    seed_message(store, Message(
             session_id=session.session_id,
             role="assistant",
             content="earlier answer",
-        )
-    )
+        ))
 
     seen = []
 
-    def fake_run_agent(prompt, history=None, **kwargs):
+    def fake_run_agent(prompt, **kwargs):
+        # History is replayed from the session by ``_run_agent`` itself, so a
+        # resumed chat passes the session id and nothing else of the past.
         seen.append(
             {
                 "prompt": prompt,
-                "history": list(history or []),
+                "history": kwargs.get("history"),
                 "session_id": kwargs.get("session_id"),
             }
         )
         return {"status": "success", "run_id": "r1", "run_dir": "d"}
 
-    monkeypatch.setattr(_legacy, "_run_agent", fake_run_agent)
+    monkeypatch.setattr(_cmd_execution, "_run_agent", fake_run_agent)
     replies = iter(["next question", "q"])
-    monkeypatch.setattr(_legacy, "_read_input", lambda _s: next(replies))
-    monkeypatch.setattr(_legacy, "_create_prompt_session", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_status_bar", lambda _stats: None)
-    monkeypatch.setattr(_legacy, "_print_result", lambda *a, **kw: None)
+    from cli import input as cli_input
 
-    _legacy.cmd_session_chat(session.session_id, 5)
+    monkeypatch.setattr(cli_input, "get_user_input", lambda session: next(replies))
+    monkeypatch.setattr(cli_input, "make_session", lambda: None)
+
+    _cmd_sessions.cmd_session_chat(session.session_id, 5)
 
     assert seen == [
         {
             "prompt": "next question",
-            "history": [
-                {"role": "user", "content": "earlier question"},
-                {"role": "assistant", "content": "earlier answer"},
-            ],
+            "history": None,
             "session_id": session.session_id,
         }
     ]

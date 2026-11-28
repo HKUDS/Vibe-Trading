@@ -7,6 +7,10 @@ year-horizon label, and a derived percent difference over percent-named fields.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -21,7 +25,7 @@ pytestmark = pytest.mark.unit
 def _ledger(
     tmp_path: Path, payload: dict, tool: str = "account_summary"
 ) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Report the figures.")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Report the figures.")
     ledger.ingest_tool_result(
         tool_name=tool,
         arguments={},

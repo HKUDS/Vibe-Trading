@@ -533,7 +533,7 @@ def test_only_the_live_environment_is_accepted():
 def test_vault_connection_supplies_host_and_key_and_cli_renders_books(
     monkeypatch, capsys
 ):
-    from cli import _legacy
+    from cli.commands import connectors
     from src.trading import connections
 
     class Vault:
@@ -558,14 +558,14 @@ def test_vault_connection_supplies_host_and_key_and_cli_renders_books(
             "holdings": "holdings_live",
         },
     )
-    assert _legacy.cmd_connector_positions(PROFILE, connection_id="openalgo-main") == 0
+    assert connectors.cmd_connector_positions(PROFILE, connection_id="openalgo-main") == 0
     output = capsys.readouterr().out
     assert (
         "net_positions" in output
         and "broker_books_unaggregated" in output
         and "live_broker" in output
     )
-    assert _legacy.cmd_connector_account(PROFILE, connection_id="openalgo-main") == 0
+    assert connectors.cmd_connector_account(PROFILE, connection_id="openalgo-main") == 0
     output = capsys.readouterr().out
     assert "available_cash" in output and "320.66" in output
     assert KEY not in output

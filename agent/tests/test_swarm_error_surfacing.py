@@ -13,6 +13,10 @@ Pre-fix: ``test_error_captured_*`` passes (capture was never broken);
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -30,7 +34,7 @@ from src.tools.swarm_tool import _format_result
 
 def _run(tmp_path: Path) -> SwarmRun:
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agent = SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0)
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="do x")
     run = SwarmRun(
@@ -58,7 +62,7 @@ def auth_failure(monkeypatch):
             error=f"LLM call failed at iteration 0: {exc}",
         )
 
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
 
 
 def test_error_captured_in_run_json(tmp_path, auth_failure):
@@ -88,6 +92,6 @@ def test_unset_model_runtime_error_surfaces(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
 
-    monkeypatch.setattr(rt, "run_worker", boom)
+    monkeypatch.setattr(rt, "run_node", boom)
     run = _run(tmp_path)
     assert "LANGCHAIN_MODEL_NAME" in json.dumps(mcp_server._run_to_dict(run))

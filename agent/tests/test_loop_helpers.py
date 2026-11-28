@@ -1,31 +1,33 @@
-"""Tests for AgentLoop pure helper functions (zero LLM dependency)."""
+"""Tests for AgentRuntime pure helper functions (zero LLM dependency)."""
 
 from __future__ import annotations
+
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
+import src.product.tool_results as _owner_tool_results
 
 import json
 import os
 from pathlib import Path
 
-from src.agent.loop import (
-    KEEP_RECENT,
-    COLLAPSE_PRESERVE_RECENT,
-    COLLAPSE_TEXT_MIN,
-    MICROCOMPACT_THRESHOLD,
-    estimate_tokens,
-    _microcompact,
-    _context_collapse,
-    _fix_tool_pairs,
-    _is_tool_success,
-    _normalize_tool_run_dir,
-    _archive_backtest_result,
-    _llm_timeout_seconds,
-    _stall_timeout_seconds,
-    _cleared_text,
-)
+import pytest
 
+from src.session.compaction_ops import KEEP_RECENT, COLLAPSE_PRESERVE_RECENT, COLLAPSE_TEXT_MIN, _microcompact, _context_collapse, _fix_tool_pairs, _cleared_text
+from src.session.context_budget import estimate_tokens
+from src.product.tool_results import _is_tool_success, _archive_backtest_result
+from src.tools._arguments import normalize_tool_run_dir
+from src.agent.tuning import _token_threshold, _llm_timeout_seconds, _stall_timeout_seconds
+
+
+MICROCOMPACT_THRESHOLD = int(_token_threshold() * 0.5)
 
 def _apply_microcompact_gate(messages: list, called_ok: set | None = None) -> None:
-    """Mirror AgentLoop layer-1 gate (``loop.py`` ~572-573)."""
+    """Mirror AgentRuntime layer-1 gate (``loop.py`` ~572-573)."""
     if estimate_tokens(messages) > MICROCOMPACT_THRESHOLD:
         unreadable = _microcompact(messages)
         if called_ok is not None:
@@ -395,24 +397,24 @@ class TestIsToolSuccess:
 
 
 # ---------------------------------------------------------------------------
-# _normalize_tool_run_dir
+# normalize_tool_run_dir
 # ---------------------------------------------------------------------------
 
 
 class TestNormalizeToolRunDir:
     def test_injects_memory_run_dir_when_missing(self) -> None:
         args = {"path": "config.json"}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == "/tmp/run_123"
 
     def test_resolves_relative_dot_to_memory_run_dir(self) -> None:
         args = {"run_dir": "."}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == str(Path("/tmp/run_123").resolve())
 
     def test_resolves_relative_child_to_memory_run_dir(self) -> None:
         args = {"run_dir": "risk_parity_run"}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == str((Path("/tmp/run_123") / "risk_parity_run").resolve())
 
     def test_preserves_absolute_run_dir(self) -> None:
@@ -424,7 +426,7 @@ class TestNormalizeToolRunDir:
         # ``memory_run_dir`` — defeating the point of the test.
         absolute_run_dir = os.path.abspath("/var/tmp/custom_run")
         args = {"run_dir": absolute_run_dir}
-        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        out = normalize_tool_run_dir(args, "/tmp/run_123")
         assert out["run_dir"] == absolute_run_dir
 
 
@@ -447,7 +449,7 @@ class TestArchiveBacktestResult:
         (source / "config.json").write_text("{}\n", encoding="utf-8")
 
         archived = _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(source)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(source)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert archived is True
@@ -484,13 +486,13 @@ class TestArchiveBacktestResult:
 
         first = _backtest("run-a", "extra.csv")
         assert _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(first)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(first)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
         assert (active / "artifacts" / "extra.csv").is_file()
 
         second = _backtest("run-b", None)
         assert _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(second)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(second)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         # run-a's file is gone; run-b's output is what the run reports.
@@ -531,7 +533,7 @@ class TestArchiveBacktestResult:
         )
 
         assert _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(source)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(source)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert victim.read_text(encoding="utf-8") == "keep me\n"
@@ -542,7 +544,7 @@ class TestArchiveBacktestResult:
         source.mkdir()
 
         archived = _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(source)}), str(tmp_path / "active")
+            json.dumps({"status": "ok", "run_dir": str(source)}), str(tmp_path / "active"), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert archived is False
@@ -567,7 +569,7 @@ class TestArchiveBacktestResult:
         monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(allowed))
 
         archived = _archive_backtest_result(
-            json.dumps({"status": "ok", "run_dir": str(outside)}), str(active)
+            json.dumps({"status": "ok", "run_dir": str(outside)}), str(active), roots=FileRoots.from_config(get_env_config().api)
         )
 
         assert archived is False
@@ -597,39 +599,109 @@ def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
     import os
     import time
 
-    import src.agent.loop as loop_module
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.agent.tools import ToolRegistry
 
-    agent = AgentLoop(registry=ToolRegistry(), llm=None)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=None)
     now = time.time()
     target = str(tmp_path / "plan.md")
     msg = f"please update {target}"
 
-    assert loop_module._TARGET_ACTION_RE.search(msg)
-    assert not loop_module._TARGET_ACTION_RE.search("what is the weather?")
+    assert _owner_tool_results._TARGET_ACTION_RE.search(msg)
+    assert not _owner_tool_results._TARGET_ACTION_RE.search("what is the weather?")
 
-    unwritten = agent._pending_write_directive(msg, now)
+    unwritten = agent._write_targets.pending(msg, now)
     assert "NOT been written" in unwritten and "plan.md" in unwritten
 
-    agent._record_written_target({"path": target})
-    assert agent._pending_write_directive(msg, now) == ""
+    agent._write_targets.record({"path": target})
+    assert agent._write_targets.pending(msg, now) == ""
 
     # A bash-style write (mtime newer than run start) also counts.
-    agent2 = AgentLoop(registry=ToolRegistry(), llm=None)
+    agent2 = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=None)
     p = tmp_path / "bash_plan.md"
     p.write_text("x", encoding="utf-8")
     os.utime(p, (now, now))
-    assert agent2._pending_write_directive(
+    assert agent2._write_targets.pending(
         f"please update {p}", now - 10,
     ) == ""
     # An old file not written this run still fires.
     old = tmp_path / "old_plan.md"
     old.write_text("x", encoding="utf-8")
     os.utime(old, (now - 100, now - 100))
-    assert "old_plan.md" in agent2._pending_write_directive(
+    assert "old_plan.md" in agent2._write_targets.pending(
         f"please update {old}", now - 10,
     )
+
+
+def test_relative_write_target_resolves_in_the_run_directory(tmp_path: Path, monkeypatch) -> None:
+    """A relative target is the file the run's tools write, not one in the server's cwd."""
+    import time
+
+    from src.agent.runtime import AgentRuntime
+    from src.agent.tools import ToolRegistry
+    from src.product.resources.memory import WorkspaceMemory
+
+    run_dir, server = tmp_path / "run", tmp_path / "server"
+    run_dir.mkdir()
+    server.mkdir()
+    monkeypatch.chdir(server)
+    agent = AgentRuntime(
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=None,
+        memory=WorkspaceMemory(run_dir=str(run_dir)),
+    )
+    started = time.time() - 1
+    msg = "Write research.md"
+
+    (server / "research.md").write_text("unrelated", encoding="utf-8")
+    assert "research.md" in agent._write_targets.pending(msg, started)
+    # bash leaves no write_file record; the fresh file in the run directory is the evidence.
+    (run_dir / "research.md").write_text("Computed research", encoding="utf-8")
+    assert agent._write_targets.pending(msg, started) == ""
+
+
+@pytest.mark.parametrize("call_dir", ["absolute", "relative"])
+def test_write_record_resolves_against_the_call_run_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call_dir: str,
+) -> None:
+    """The completion ledger records the file created by the tool call.
+
+    Args:
+        tmp_path: Root for the active and supplied run directories.
+        monkeypatch: Fixture for configuring allowed run roots.
+        call_dir: Whether the tool supplies an absolute or a relative run directory.
+    """
+    import time
+
+    from src.agent.runtime import AgentRuntime
+    from src.agent.tools import ToolRegistry
+    from src.product.resources.memory import WorkspaceMemory
+    from src.tools.write_file_tool import WriteFileTool
+    from tests.test_agent_loop_deterministic_cache import _drive
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    run_dir = tmp_path / "run"
+    other = tmp_path / "other" if call_dir == "absolute" else run_dir / "sub"
+    run_dir.mkdir()
+    other.mkdir()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(WriteFileTool(roots=registry.policy.file_roots))
+    agent = AgentRuntime(
+        registry=registry, llm=None, memory=WorkspaceMemory(run_dir=str(run_dir)),
+    )
+    started = time.time() - 1
+    supplied = str(other) if call_dir == "absolute" else "sub"
+
+    messages, _ = _drive(agent, "write_file", run_dir, [
+        {"path": "research.md", "run_dir": supplied, "content": "Computed research"},
+    ])
+    written = other / "research.md"
+
+    assert json.loads(messages[-1]["content"])["path"] == str(written.resolve())
+    assert written.read_text(encoding="utf-8") == "Computed research"
+    assert agent._write_targets.written_files == {str(written.resolve()).casefold()}
+    # The run's own research.md was not written, so the request is still pending.
+    assert "research.md" in agent._write_targets.pending("Write research.md", started)
+    assert agent._write_targets.pending(f"Write {written}", started) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +721,7 @@ def test_verification_ledger_extracts_calc_results() -> None:
             "expr": "85.4/108.8-1", "result": -0.2151, "result_exact": "-0.21507353",
         })},
     ]
-    from src.agent.loop import _verification_ledger
+    from src.product.verification import _verification_ledger
     ledger = _verification_ledger(messages)
     assert "calc 92.13/101.65-1 = -0.09365912" in ledger
     assert "calc 85.4/108.8-1 = -0.21507353" in ledger
@@ -665,7 +737,7 @@ def test_verification_ledger_skips_errors_and_other_tools() -> None:
         {"role": "tool", "name": "financial_rigor", "content": "not json at all"},
         {"role": "user", "content": "hello"},
     ]
-    from src.agent.loop import _verification_ledger
+    from src.product.verification import _verification_ledger
     assert _verification_ledger(messages) == ""
 
 
@@ -681,7 +753,7 @@ def test_verification_ledger_deduplicates_and_caps() -> None:
             "expr": "a/b", "result": 1.0, "result_exact": "1.0",
         })},
     ]
-    from src.agent.loop import _verification_ledger
+    from src.product.verification import _verification_ledger
     ledger = _verification_ledger(messages)
     assert ledger.count("calc a/b") == 1
 
@@ -704,7 +776,7 @@ def test_stall_timeout_seconds_default_and_override(monkeypatch) -> None:
 def test_tail_cut_index_counts_tool_call_arguments() -> None:
     """#tail-budget: a fat tool_call (empty content, huge arguments) must be
     pushed into the folded head, not counted as ~10 tokens in the tail."""
-    from src.agent.loop import _tail_cut_index  # new helper: absent on pre-fix code
+    from src.session.compaction_ops import _tail_cut_index  # new helper: absent on pre-fix code
 
     fat = "X" * 90_000  # ~22.5K tokens once arguments are counted
     body = [
@@ -727,7 +799,7 @@ def test_tail_cut_index_counts_tool_call_arguments() -> None:
 def test_tail_cut_index_counts_reasoning_content() -> None:
     """#tail-budget: a thinking-model turn's huge reasoning_content must be
     pushed into the folded head too, not counted as ~10 tokens in the tail."""
-    from src.agent.loop import _tail_cut_index
+    from src.session.compaction_ops import _tail_cut_index
 
     fat = "X" * 90_000  # ~22.5K tokens once reasoning_content is counted
     body = [
@@ -804,7 +876,7 @@ def test_context_collapse_stubs_args_for_fix_tool_pairs_stub_result() -> None:
     """#adversarial: layer-3's ``_fix_tool_pairs`` stub result marker must also
     count as 'result data gone' — a call that survived a layer-3 fold gets its
     huge arguments stubbed too, not only microcompact's ``[cleared]``."""
-    from src.agent.loop import _STUB_RESULT_CONTENT
+    from src.session.compaction_ops import _STUB_RESULT_CONTENT
 
     fat = "Y" * (COLLAPSE_TEXT_MIN * 3)
     call_msg = {
@@ -831,7 +903,7 @@ def test_context_collapse_stubs_args_for_fix_tool_pairs_stub_result() -> None:
 def test_msg_estimate_chars_counts_dict_arguments() -> None:
     """#adversarial: dict (non-string) arguments must count toward sizing,
     consistent with ``estimate_tokens``' full serialization gate."""
-    from src.agent.loop import _msg_estimate_chars
+    from src.session.compaction_ops import _msg_estimate_chars
 
     big_dict = {"q": "X" * 4000}
     msg = {
@@ -846,7 +918,7 @@ def test_msg_estimate_chars_counts_dict_arguments() -> None:
 def test_msg_estimate_chars_counts_reasoning_content() -> None:
     """#adversarial: reasoning_content must count toward sizing too, consistent
     with ``estimate_tokens``' full serialization gate."""
-    from src.agent.loop import _msg_estimate_chars
+    from src.session.compaction_ops import _msg_estimate_chars
 
     msg = {
         "role": "assistant",

@@ -5,39 +5,28 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from collections.abc import Collection
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+from src.product.tool_policy import ToolPolicy
+
+if TYPE_CHECKING:
+    from src.tools.path_utils import FileRoots
 
 logger = logging.getLogger(__name__)
 
 
 class BaseTool(ABC):
-    """Tool base class.
-
-    Attributes:
-        name: Unique tool identifier.
-        description: Tool description shown to the LLM.
-        parameters: Parameter definition in JSON Schema format.
-        repeatable: Whether the tool may be called more than once.
-        replay_after_compaction: Whether an exact successful readonly call may
-            restore its run-scoped result after compaction removed the visible
-            payload, even when the tool is otherwise repeatable. Tools opting
-            in must provide an explicit freshness argument when a caller needs
-            to bypass replay (for example ``no_cache=True``).
-    """
+    """Tool base class."""
 
     name: str = ""
     description: str = ""
     parameters: Dict[str, Any] = {}
     repeatable: bool = False
     is_readonly: bool = True
-    # Pure, side-effect-free computation: identical args always produce the
-    # same result, so the loop may serve repeated identical calls from cache
-    # instead of re-executing them (financial_rigor calc/verify, etc.).
+    # Cache identical calls only for pure, side-effect-free tools.
     deterministic: bool = False
-    # Mutable/read-through tools can stay repeatable during normal operation
-    # while opting into replay only when compaction has removed an exact prior
-    # successful result. The loop still bypasses replay for explicit freshness
-    # requests such as ``no_cache=True``.
+    # Mutable tools may replay compacted results when opted in, subject to explicit freshness requests.
     replay_after_compaction: bool = False
     # A successful non-readonly call clears the whole readonly replay cache,
     # since it may have changed what a readonly call would now read (a write
@@ -52,17 +41,30 @@ class BaseTool(ABC):
     def check_available(cls) -> bool:
         """Check if this tool's dependencies are met.
 
-        Override in subclasses to check for API keys, packages, etc.
-        Tools that return False are excluded from the registry.
+        Override in subclasses to check for API keys or packages.
+
+        Returns:
+            True when discovery can register the tool. The base implementation returns True.
         """
         return True
 
     @abstractmethod
     def execute(self, **kwargs: Any) -> str:
-        """Execute the tool and return a JSON string."""
+        """Execute the tool using its declared arguments.
+
+        Args:
+            **kwargs: Arguments defined by the concrete tool's parameter schema.
+
+        Returns:
+            A JSON string containing the tool result.
+        """
 
     def to_openai_schema(self) -> Dict[str, Any]:
-        """Convert to OpenAI function calling format."""
+        """Convert the tool definition to OpenAI function calling format.
+
+        Returns:
+            A function definition with the tool's name, description, and parameter schema.
+        """
         return {
             "type": "function",
             "function": {
@@ -73,32 +75,140 @@ class BaseTool(ABC):
         }
 
 
-class ToolRegistry:
-    """Tool registry."""
+class FileBoundTool:
+    """Tool whose filesystem checks use the host's file-root configuration.
 
-    def __init__(self) -> None:
+    Args:
+        roots: File roots authorized by the host.
+    """
+
+    def __init__(self, *, roots: FileRoots) -> None:
+        self.roots = roots
+
+
+def host_tool_name(tool: BaseTool, registered: Collection[str]) -> str:
+    """Validate a trusted host registration before adding it to either catalog.
+
+    Args:
+        tool: Read-only, non-trading tool supplied by the host.
+        registered: Existing tool names to check for collisions.
+
+    Returns:
+        The validated tool name with surrounding whitespace removed.
+
+    Raises:
+        TypeError: The supplied tool is not a BaseTool.
+        ValueError: The name is empty, already registered, or reserved for trading,
+            or the tool is marked as trading or is not read-only.
+    """
+    if not isinstance(tool, BaseTool):
+        raise TypeError("host tools must be BaseTool instances")
+    name = str(getattr(tool, "name", "")).strip()
+    if not name:
+        raise ValueError("host tools require a non-empty name")
+    if name in registered:
+        raise ValueError(f"host tool name collides with registered tool: {name}")
+    if bool(getattr(tool, "is_trading_tool", False)):
+        raise ValueError("host tools cannot be marked as trading tools")
+    if not bool(getattr(tool, "is_readonly", False)):
+        raise ValueError("host tools must be read-only")
+    if name.startswith(("trading_", "broker_", "mcp_live_")):
+        raise ValueError("host tools cannot use a reserved trading tool name")
+    if any(token in name.casefold() for token in ("place_order", "cancel_order")):
+        raise ValueError("host tools cannot use an order-entry name")
+    return name
+
+
+class ToolRegistry:
+    """Store tools and enforce policy at dispatch.
+
+    Args:
+        policy: Explicit tool policy used to validate execution arguments.
+
+    Raises:
+        TypeError: The supplied policy is not a ToolPolicy.
+    """
+
+    def __init__(
+        self, *, policy: ToolPolicy,
+    ) -> None:
+        if not isinstance(policy, ToolPolicy):
+            raise TypeError("ToolRegistry requires an explicit ToolPolicy")
+        self.policy = policy
         self._tools: Dict[str, BaseTool] = {}
         self._import_failures: Dict[str, str] = {}
         self._registration_failures: Dict[str, str] = {}
 
     def register(self, tool: BaseTool) -> None:
-        """Register a tool."""
+        """Register a tool by its declared name, replacing any entry with that name.
+
+        Args:
+            tool: Tool instance to store in the registry.
+        """
         self._tools[tool.name] = tool
 
+    def register_host_tool(self, tool: BaseTool) -> None:
+        """Register one explicitly supplied, non-trading host tool.
+
+        Host tools enter the registry through explicit registration.
+
+        Args:
+            tool: Read-only host tool with a unique, non-reserved name.
+
+        Raises:
+            TypeError: The supplied tool is not a BaseTool.
+            ValueError: The tool is ineligible or its name is empty, reserved, or already registered.
+        """
+        name = host_tool_name(tool, self._tools)
+        self._tools[name] = tool
+
+    def check_policy(self, name: str, params: Dict[str, Any]) -> tuple[bool, str, Dict[str, Any]]:
+        """Apply the mandatory registry policy before a hook or a tool can run.
+
+        Args:
+            name: Tool name to check against the active policy.
+            params: Candidate arguments for the tool call.
+
+        Returns:
+            Whether the call is allowed, the decision reason, and the policy-adjusted arguments.
+        """
+        return self.policy(name, params)
+
     def get(self, name: str) -> Optional[BaseTool]:
-        """Retrieve a tool by name."""
+        """Retrieve a tool by name.
+
+        Args:
+            name: Registered tool name to look up.
+
+        Returns:
+            The corresponding tool, or None when the name is absent.
+        """
         return self._tools.get(name)
 
     def get_definitions(self) -> List[Dict[str, Any]]:
-        """Return all tools in OpenAI function calling format."""
+        """List all tools in OpenAI function calling format.
+
+        Returns:
+            A function definition for each registered tool in registry order.
+        """
         return [t.to_openai_schema() for t in self._tools.values()]
 
     def record_import_failure(self, module_name: str, reason: str) -> None:
-        """Record a tool module that could not be imported during discovery."""
+        """Record a tool module that could not be imported during discovery.
+
+        Args:
+            module_name: Name of the module that failed to import.
+            reason: Diagnostic describing the import failure.
+        """
         self._import_failures[module_name] = reason
 
     def record_registration_failure(self, tool_name: str, reason: str) -> None:
-        """Record a discovered tool that could not be instantiated."""
+        """Record a discovered tool that could not be instantiated.
+
+        Args:
+            tool_name: Name of the tool that could not be registered.
+            reason: Diagnostic describing the registration failure.
+        """
         self._registration_failures[tool_name] = reason
 
     def _unavailable_reason(self, name: str) -> tuple[str, str] | None:
@@ -113,7 +223,16 @@ class ToolRegistry:
         return None
 
     def execute(self, name: str, params: Dict[str, Any]) -> str:
-        """Execute a tool and guarantee a valid JSON return value."""
+        """Check registry policy and invoke the named tool if allowed.
+
+        Args:
+            name: Tool name to look up and authorize.
+            params: Arguments to check before invoking the tool.
+
+        Returns:
+            The tool's JSON result, or a JSON error for missing tools, policy refusals,
+            or execution failures.
+        """
         tool = self._tools.get(name)
         if not tool:
             unavailable = self._unavailable_reason(name)
@@ -148,19 +267,10 @@ class ToolRegistry:
                 )
             return json.dumps(payload, ensure_ascii=False)
         try:
-            # The registry is shared by agent, Swarm and MCP execution. Keep
-            # explicit policy enforcement here so a direct/unoffered call
-            # cannot bypass it. Claude CLI retains its adapter defaults.
-            from src.providers.tool_policy import _deny_prefixes, screen_calls
-
-            if name.startswith(_deny_prefixes()):
-                return json.dumps({"status": "error", "skipped": True,
-                                   "error": f"{name} is disabled by the active tool policy"})
-            if name in {"bash", "background_run", "cancel_background"}:
-                accepted, notes = screen_calls([{"name": name, "arguments": params}], {name})
-                if notes:
-                    return json.dumps({"status": "error", "skipped": True, "error": notes[0]})
-                params = accepted[0]["arguments"]
+            # Enforce policy at the shared registry so direct or unoffered calls cannot bypass it.
+            allowed, reason, params = self.check_policy(name, params)
+            if not allowed:
+                return json.dumps({"status": "error", "skipped": True, "error": reason})
             return tool.execute(**params)
         except Exception as exc:
             logger.exception("Tool %s failed", name)
@@ -171,16 +281,29 @@ class ToolRegistry:
 
     @property
     def tool_names(self) -> List[str]:
+        """List tool names in registry order.
+
+        Returns:
+            A list of the currently registered names.
+        """
         return list(self._tools.keys())
 
     @property
     def import_failures(self) -> Dict[str, str]:
-        """Return a copy of module import failures captured during discovery."""
+        """Report module import failures captured during discovery.
+
+        Returns:
+            A copy of the mapping from failed module names to diagnostic messages.
+        """
         return dict(self._import_failures)
 
     @property
     def registration_failures(self) -> Dict[str, str]:
-        """Return a copy of tool instantiation failures captured during build."""
+        """Report tool instantiation failures captured during assembly.
+
+        Returns:
+            A copy of the mapping from failed tool names to diagnostic messages.
+        """
         return dict(self._registration_failures)
 
     def __len__(self) -> int:

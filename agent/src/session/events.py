@@ -1,45 +1,37 @@
-"""SSE event bus with support for last_event_id recovery and buffering.
-
-V5: Fixes the thread-safety issue caused by calling queue.put_nowait() on asyncio.Queue from a background thread.
-"""
-
+"""Live session event bus, SSE encoding and durable cursor identifiers."""
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import re
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+
+from src.kernel import events as vocabulary
 
 logger = logging.getLogger(__name__)
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 
 @dataclass
 class SSEEvent:
-    """Server-sent event.
-
-    Attributes:
-        event_id: Globally unique event ID used for last_event_id recovery.
-        event_type: Event type stored in the SSE ``event`` field.
-        data: Event payload.
-        session_id: Owning session ID.
-        timestamp: Event timestamp.
-    """
+    """Server-sent event."""
 
     event_id: Optional[str] = field(default_factory=lambda: uuid.uuid4().hex[:16])
     event_type: str = "message"
     data: Dict[str, Any] = field(default_factory=dict)
     session_id: str = ""
     timestamp: float = field(default_factory=time.time)
+    seq: Optional[int] = None
 
     def to_sse(self) -> str:
         """Format the event as an SSE text frame.
 
         Returns:
-            Text that conforms to the SSE specification.
+            An SSE frame with JSON data and an ID line when available.
         """
         payload = json.dumps(self.data, ensure_ascii=False)
         lines = []
@@ -54,26 +46,95 @@ class SSEEvent:
         return "\n".join(lines)
 
 
+class SubscriberQueue(asyncio.Queue):
+    """Subscriber queue that remembers whether it ever dropped an event.
+
+    Args:
+        maxsize: Maximum queue size. A nonpositive value gives an unbounded queue.
+    """
+
+    def __init__(self, maxsize: int = 0) -> None:
+        super().__init__(maxsize=maxsize)
+        self.overflowed = False
+
+
+def _mark_overflow(queue: asyncio.Queue) -> None:
+    if isinstance(queue, SubscriberQueue):
+        queue.overflowed = True
+
+
+def select_replay(
+    buffer: List[SSEEvent],
+    last_event_id: Optional[str] = None,
+    *,
+    replay_all: bool = False,
+) -> List[SSEEvent]:
+    """Choose the buffered events a reconnecting subscriber gets.
+
+    Args:
+        buffer: The session's buffered events, oldest first.
+        last_event_id: Last event ID the client received.
+        replay_all: Return the whole buffer when the last event ID is absent or no longer buffered.
+
+    Returns:
+        Events after the last event ID, or the full or empty buffer according to replay_all.
+    """
+    if not last_event_id:
+        return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
+    anchor = _buffer_anchor(buffer, last_event_id)
+    return buffer[anchor:] if anchor is not None else list(buffer) if replay_all else []
+
+
+def _buffer_anchor(buffer: List[SSEEvent], event_id: str) -> Optional[int]:
+    return next((index for index, event in enumerate(buffer, 1) if event.event_id == event_id), None)
+
+
+def select_buffered_live(
+    buffer: List[SSEEvent], cursor: Optional[int], last_event_id: Optional[str],
+    *, finished_live_ids: Optional[set[str]] = None,
+) -> List[SSEEvent]:
+    """Buffered live-only events a resuming client still needs.
+
+    Args:
+        buffer: The session's buffered events, oldest first.
+        cursor: Highest durable sequence already held by the client.
+        last_event_id: Last event ID received, preferred as an anchor when found in the buffer.
+        finished_live_ids: Additional live IDs already completed outside the buffer.
+
+    Returns:
+        Live-only events after the anchor, excluding starts and deltas for completed live IDs.
+    """
+    anchor = _buffer_anchor(buffer, last_event_id) if last_event_id else None
+    if anchor is None and cursor is not None:
+        anchor = max(
+            (index for index, event in enumerate(buffer, 1) if event.seq is not None and event.seq <= cursor),
+            default=0,
+        )
+    finished = {
+        event.data.get("live_id")
+        for event in buffer
+        if event.event_type == vocabulary.ITEM_COMPLETED and event.data.get("live_id")
+    }
+    finished.update(finished_live_ids or set())
+    return [
+        event for event in buffer[anchor:]
+        if event.seq is None
+        and not (
+            event.event_type in (vocabulary.ITEM_STARTED, vocabulary.ITEM_DELTA)
+            and event.data.get("live_id") in finished
+        )
+    ]
+
 class EventBus:
-    """Session-scoped event bus with subscribers and buffered events.
+    """Session-scoped live bus with subscribers and transient item events.
 
-    V5: Inject the asyncio event loop with ``set_loop()``, and use
-    ``call_soon_threadsafe`` in ``publish()`` to preserve thread safety.
-
-    Attributes:
-        max_buffer_size: Maximum number of buffered events per session.
+    Args:
+        max_buffer_size: Per-session retention limit for transient item events.
+        heartbeat_interval_s: Seconds without an event before a listener emits a heartbeat.
     """
 
     def __init__(self, max_buffer_size: int = 500, heartbeat_interval_s: float = 30.0) -> None:
-        """Initialize the event bus.
-
-        Args:
-            max_buffer_size: Maximum number of buffered events per session.
-            heartbeat_interval_s: Idle seconds before a subscriber is sent a
-                ``heartbeat`` frame. Also bounds how long a subscriber waiting
-                on an idle queue takes to notice a cross-thread publish when no
-                loop was injected via :meth:`set_loop`.
-        """
+        """Initialize the event bus."""
         self.max_buffer_size = max_buffer_size
         self.heartbeat_interval_s = heartbeat_interval_s
         self._buffers: Dict[str, List[SSEEvent]] = {}
@@ -86,7 +147,7 @@ class EventBus:
         """Set the asyncio event loop, usually during api_server startup.
 
         Args:
-            loop: asyncio event loop.
+            loop: Asyncio loop used to dispatch events to subscriber queues from other threads.
         """
         self._loop = loop
 
@@ -94,31 +155,27 @@ class EventBus:
         """Publish an event to a session channel in a thread-safe way.
 
         Args:
-            event: Event to publish.
+            event: Event carrying the destination session ID.
         """
         session_id = event.session_id
         with self._lock:
-            if session_id not in self._buffers:
-                self._buffers[session_id] = []
-            buffer = self._buffers[session_id]
-            buffer.append(event)
+            buffer = self._buffers.setdefault(session_id, [])
+            # Durable completions can be replayed from the thread.
+            if event.seq is None and event.event_type in vocabulary.ITEM_EVENT_TYPES:
+                buffer.append(event)
             if len(buffer) > self.max_buffer_size:
                 self._buffers[session_id] = buffer[-self.max_buffer_size:]
 
             queues = list(self._subscribers.get(session_id, []))
             listeners = list(self._listeners)
 
-        # Listeners run before the queues so a slow subscriber cannot delay
-        # them, and each is isolated: this is the SSE hot path, and a listener
-        # that raises must not cost the UI its event stream. A listener is
-        # expected to record or schedule, never to do I/O inline.
+        # A failing callback must never interrupt subscriber delivery.
         for listener in listeners:
             try:
                 listener(event)
             except Exception:
                 logger.exception("EventBus listener failed for %s", event.event_type)
 
-        # Safely enqueue onto the queue from inside the asyncio loop.
         for queue in queues:
             if self._loop and self._loop.is_running():
                 self._loop.call_soon_threadsafe(self._safe_put, queue, event)
@@ -126,30 +183,23 @@ class EventBus:
                 try:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
-                    pass
+                    _mark_overflow(queue)
 
     def add_listener(self, listener: Callable[[SSEEvent], None]) -> None:
-        """Register a callback invoked for every published event.
-
-        Unlike :meth:`subscribe`, which is per session and per SSE connection,
-        a listener sees every session — which is what a component that reacts
-        to runs it did not open needs.
+        """Register a callback that runs synchronously on the publisher thread.
 
         Args:
-            listener: Synchronous callback. It runs on the publishing thread,
-                so it must be cheap and must not raise; schedule any real work
-                elsewhere.
+            listener: Callback that receives each published event.
         """
         with self._lock:
             if listener not in self._listeners:
                 self._listeners.append(listener)
 
     def remove_listener(self, listener: Callable[[SSEEvent], None]) -> None:
-        """Unregister a callback added by :meth:`add_listener`.
+        """Unregister a callback, ignoring callbacks already absent.
 
         Args:
-            listener: The previously registered callback. Unknown callbacks
-                are ignored so teardown never has to check first.
+            listener: Previously registered callback to remove.
         """
         with self._lock:
             if listener in self._listeners:
@@ -157,15 +207,11 @@ class EventBus:
 
     @staticmethod
     def _safe_put(queue: asyncio.Queue, event: SSEEvent) -> None:
-        """Safely put an event onto a queue.
-
-        Args:
-            queue: asyncio queue.
-            event: SSE event.
-        """
+        """Safely put an event onto a queue."""
         try:
             queue.put_nowait(event)
         except asyncio.QueueFull:
+            _mark_overflow(queue)
             logger.warning("EventBus queue full, dropping %s event for session %s", event.event_type, event.session_id)
 
     def emit(
@@ -177,12 +223,12 @@ class EventBus:
         """Build and publish an event in one step.
 
         Args:
-            session_id: Session ID.
-            event_type: Event type.
-            data: Event payload.
+            session_id: Destination session ID.
+            event_type: Event name.
+            data: Payload, defaulting to an empty mapping.
 
         Returns:
-            The published SSEEvent.
+            The published SSE event.
         """
         event = SSEEvent(
             event_type=event_type,
@@ -199,77 +245,59 @@ class EventBus:
         *,
         replay_all: bool = False,
     ) -> List[SSEEvent]:
-        """Replay buffered session events for reconnect recovery.
+        """Replay buffered events after the last event ID, or the whole buffer for hydration.
 
         Args:
-            session_id: Session ID.
-            last_event_id: Last event ID received by the client.
-            replay_all: Return the buffered stream from the beginning when
-                ``last_event_id`` is absent. Used only for active run recovery;
-                completed history is loaded through REST.
+            session_id: Session whose transient buffer to read.
+            last_event_id: Last event ID acknowledged by the client.
+            replay_all: Whether to return the whole buffer when the anchor is absent.
 
         Returns:
-            List of events that should be replayed.
+            Buffered events after the anchor, or the full or empty buffer according to replay_all.
         """
         with self._lock:
-            return self._replay_locked(session_id, last_event_id, replay_all=replay_all)
+            return select_replay(
+                self._buffers.get(session_id, []), last_event_id, replay_all=replay_all
+            )
 
-    def _replay_locked(
-        self,
-        session_id: str,
-        last_event_id: Optional[str] = None,
-        *,
-        replay_all: bool = False,
-    ) -> List[SSEEvent]:
-        """Compute the replay list. Caller must already hold ``self._lock``."""
-        buffer = self._buffers.get(session_id, [])
-        if not last_event_id:
-            return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
-        found = False
-        result: List[SSEEvent] = []
-        for event in buffer:
-            if found:
-                result.append(event)
-            elif event.event_id == last_event_id:
-                found = True
-        if not found and replay_all:
-            return list(buffer)
-        return result
-
-    async def subscribe(
-        self,
-        session_id: str,
-        last_event_id: Optional[str] = None,
-        *,
-        replay_all: bool = False,
-    ) -> AsyncIterator[SSEEvent]:
-        """Subscribe to a session event stream asynchronously.
+    def attach(self, session_id: str) -> Tuple["SubscriberQueue", List[SSEEvent]]:
+        """Return a subscriber queue and its buffer snapshot taken under one lock.
 
         Args:
-            session_id: Session ID.
-            last_event_id: Last event ID received by the client for reconnect recovery.
-            replay_all: Replay all buffered events when no last event ID is
-                available. This is opt-in for active run hydration.
+            session_id: Session to subscribe to.
+
+        Returns:
+            A bounded subscriber queue and a copy of the current transient buffer.
+        """
+        queue = SubscriberQueue(maxsize=200)
+        with self._lock:
+            buffer = list(self._buffers.get(session_id, []))
+            self._subscribers.setdefault(session_id, []).append(queue)
+        return queue, buffer
+
+    def detach(self, session_id: str, queue: asyncio.Queue) -> None:
+        """Unregister a queue added by :meth:`attach`. Unknown queues are ignored.
+
+        Args:
+            session_id: Session the queue was attached to.
+            queue: Queue to unregister.
+        """
+        with self._lock:
+            subs = self._subscribers.get(session_id, [])
+            if queue in subs:
+                subs.remove(queue)
+
+    async def listen(self, session_id: str, queue: asyncio.Queue) -> AsyncIterator[SSEEvent]:
+        """Yield live events from an attached queue, with idle heartbeats.
+
+        Args:
+            session_id: Session ID for emitted heartbeats and queue cleanup.
+            queue: Queue registered with attach.
 
         Yields:
-            SSEEvent objects.
+            Queued events and idle heartbeats until the session is cleared or the listener closes.
         """
-        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=200)
-
-        # The replay snapshot and queue registration must happen under the
-        # same lock acquisition: otherwise a publish() landing between them
-        # would land in both the replay buffer and the live queue, and the
-        # subscriber would see that event delivered twice.
-        with self._lock:
-            replay_events = self._replay_locked(session_id, last_event_id, replay_all=replay_all)
-            if session_id not in self._subscribers:
-                self._subscribers[session_id] = []
-            self._subscribers[session_id].append(queue)
-
         try:
-            for event in replay_events:
-                yield event
-
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=self.heartbeat_interval_s)
@@ -281,26 +309,43 @@ class EventBus:
                         session_id=session_id,
                     )
                     continue
+                yield event
                 if event.event_type == "session_cleared":
-                    yield event
                     break
+        finally:
+            self.detach(session_id, queue)
+
+    async def subscribe(
+        self,
+        session_id: str,
+        last_event_id: Optional[str] = None,
+        *,
+        replay_all: bool = False,
+    ) -> AsyncIterator[SSEEvent]:
+        """Subscribe to a session event stream asynchronously.
+
+        Args:
+            session_id: Session to subscribe to.
+            last_event_id: Last event ID acknowledged by the client.
+            replay_all: Whether to replay the whole buffer when the anchor is absent.
+
+        Yields:
+            Selected buffered events followed by live events and idle heartbeats.
+        """
+        queue, buffer = self.attach(session_id)
+        try:
+            for event in select_replay(buffer, last_event_id, replay_all=replay_all):
+                yield event
+            async for event in self.listen(session_id, queue):
                 yield event
         finally:
-            with self._lock:
-                subs = self._subscribers.get(session_id, [])
-                if queue in subs:
-                    subs.remove(queue)
+            self.detach(session_id, queue)
 
     def clear(self, session_id: str) -> None:
         """Clear the buffered events and notify subscribers for a session.
 
-        Subscriber queues receive a ``session_cleared`` sentinel event so
-        they can break out of their ``while True`` loop instead of waiting
-        indefinitely on a cleared session. The subscriber list is then
-        dropped so future ``publish`` calls do not enqueue to dead queues.
-
         Args:
-            session_id: Session ID.
+            session_id: Session whose buffer and subscriber registrations are removed.
         """
         with self._lock:
             self._buffers.pop(session_id, None)
@@ -320,3 +365,50 @@ class EventBus:
                     queue.put_nowait(sentinel)
                 except asyncio.QueueFull:
                     pass
+
+
+# Rank of each event derived from one item, in emission order.
+_STARTED, _COMPLETED, _RUN = 0, 1, 2
+_DURABLE_SUFFIX = {_STARTED: "-started", _COMPLETED: "", _RUN: "-run"}
+_DURABLE_ID_RE = re.compile(r"item-([1-9][0-9]*)(-started|-run)?")
+
+
+
+def durable_event_id(seq: int, rank: int = _COMPLETED) -> str:
+    """Return the SSE id of an event derived from one thread item.
+
+    Args:
+        seq: Sequence number of the thread item.
+        rank: Event rank identifying the started, completed, or run event.
+
+    Returns:
+        The sequence-based SSE ID with the suffix for that rank.
+    """
+    return f"item-{seq}{_DURABLE_SUFFIX[rank]}"
+
+
+def cursor_from_event_id(event_id: Optional[str]) -> Optional[int]:
+    """Read the cursor a durable event id stands for.
+
+    Args:
+        event_id: Last event ID supplied by the client.
+
+    Returns:
+        The durable sequence, one less for a started event, or None for a missing or non-durable ID.
+    """
+    if not event_id:
+        return None
+    match = _DURABLE_ID_RE.fullmatch(event_id)
+    if match is None:
+        return None
+    seq = int(match.group(1))
+    return seq - 1 if match.group(2) == "-started" else seq
+
+
+def _event_key(event: SSEEvent) -> Tuple[int, int]:
+    rank = _COMPLETED
+    if event.event_type == vocabulary.ITEM_STARTED:
+        rank = _STARTED
+    elif event.event_type in vocabulary.RUN_EVENT_TYPES:
+        rank = _RUN
+    return (event.seq or 0, rank)

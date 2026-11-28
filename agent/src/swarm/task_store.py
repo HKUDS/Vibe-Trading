@@ -1,60 +1,41 @@
-"""Swarm multi-agent system — Task persistence and DAG algorithms.
-
-Each task is stored independently as tasks/task-{id}.json with full CRUD support.
-Provides DAG algorithms: dependency resolution, cycle detection, and topological layering.
-"""
+"""Swarm multi-agent system — Task persistence and DAG algorithms."""
 
 from __future__ import annotations
 
 import threading
 import uuid
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 
 from src.swarm.models import SwarmTask, TaskStatus
 
 
 class TaskStore:
-    """File-based persistence layer for tasks.
+    """Store task records under the current run's tasks directory.
 
-    Each task is stored at run_dir/tasks/task-{id}.json.
-
-    Attributes:
+    Args:
         run_dir: Root directory of the current run.
     """
 
     def __init__(self, run_dir: Path) -> None:
-        """Initialize TaskStore.
-
-        Args:
-            run_dir: Path to .swarm/runs/{run_id}/ directory.
-        """
+        """Initialize TaskStore."""
         self.run_dir = run_dir
         self._tasks_dir = run_dir / "tasks"
         self._tasks_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 
     def _task_path(self, task_id: str) -> Path:
-        """Return the file path for a task.
-
-        Args:
-            task_id: Task ID.
-
-        Returns:
-            Path to the task JSON file.
-        """
+        """Return the file path for a task."""
         return self._tasks_dir / f"task-{task_id}.json"
 
     def save_task(self, task: SwarmTask) -> None:
         """Save or overwrite task state.
 
         Args:
-            task: SwarmTask instance.
+            task: Current task record to persist under its ID.
         """
         path = self._task_path(task.id)
-        # self._lock is per instance, and resolve_dependencies() writes the same
-        # files without it; a shared ".tmp" name let one writer's rename consume
-        # another's unwritten temp file (#1536).
+        # Use a unique temp file so concurrent writers cannot consume each other’s writes (#1536).
         tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         with self._lock:
             tmp_path.write_text(task.model_dump_json(indent=2), encoding="utf-8")
@@ -64,10 +45,10 @@ class TaskStore:
         """Load a task by ID.
 
         Args:
-            task_id: Task ID.
+            task_id: ID of the task to load.
 
         Returns:
-            SwarmTask instance.
+            Task state from its persisted JSON record.
 
         Raises:
             FileNotFoundError: If the task file does not exist.
@@ -81,7 +62,7 @@ class TaskStore:
         """Load all tasks for the current run.
 
         Returns:
-            List of SwarmTask sorted by ID.
+            Task records in filename order.
         """
         tasks: list[SwarmTask] = []
         for path in sorted(self._tasks_dir.glob("task-*.json")):
@@ -96,12 +77,13 @@ class TaskStore:
         """Update task status and additional fields.
 
         Args:
-            task_id: Task ID.
-            status: New status.
-            **kwargs: Optional fields such as summary, error, completed_at, artifacts, etc.
+            task_id: ID of the task to update.
+            status: New task status.
+            **kwargs: Optional updates to known task fields such as summary, error, completed_at, or
+                artifacts. Unknown fields are ignored.
 
         Returns:
-            Updated SwarmTask instance.
+            Validated task record saved to disk.
         """
         task = self.load_task(task_id)
         updated_data = task.model_dump()
@@ -117,16 +99,12 @@ class TaskStore:
 def resolve_dependencies(tasks_dir: Path, completed_task_id: str) -> list[str]:
     """Remove a completed task ID from blocked_by in all downstream tasks.
 
-    Scans all task files under tasks_dir and removes completed_task_id from each
-    task's blocked_by list. If a task's blocked_by becomes empty and its status
-    is blocked, it is marked as newly unblocked (pending).
-
     Args:
-        tasks_dir: Path to the tasks/ directory.
+        tasks_dir: Path to the tasks directory.
         completed_task_id: ID of the just-completed task.
 
     Returns:
-        List of newly unblocked task IDs (blocked_by went from non-empty to empty).
+        IDs of blocked tasks moved to pending after their last dependency was removed.
     """
     newly_unblocked: list[str] = []
 
@@ -152,16 +130,21 @@ def resolve_dependencies(tasks_dir: Path, completed_task_id: str) -> list[str]:
 
 
 def validate_dag(tasks: list[SwarmTask]) -> None:
-    """DFS cycle detection to ensure the task DAG is acyclic.
+    """Validate task IDs, dependency references, cycles and upstream data bindings.
 
     Args:
-        tasks: List of SwarmTask.
+        tasks: Tasks and their declared dependencies.
 
     Raises:
-        ValueError: If a cycle is detected; message includes the cycle path.
+        ValueError: If a task ID repeats, a dependency is unknown, a cycle is detected (the
+            message includes the cycle path), or an input_from source is not an ancestor through
+            depends_on.
     """
     graph: dict[str, list[str]] = {t.id: list(t.depends_on) for t in tasks}
     all_ids = {t.id for t in tasks}
+    if len(all_ids) != len(tasks):
+        duplicates = sorted(tid for tid, count in Counter(t.id for t in tasks).items() if count > 1)
+        raise ValueError(f"Duplicate task ID(s) in DAG: {', '.join(duplicates)}")
 
     for task in tasks:
         for dep in task.depends_on:
@@ -175,14 +158,7 @@ def validate_dag(tasks: list[SwarmTask]) -> None:
     path: list[str] = []
 
     def dfs(node: str) -> None:
-        """DFS traversal to detect back edges.
-
-        Args:
-            node: Current node ID.
-
-        Raises:
-            ValueError: If a cycle is detected.
-        """
+        """DFS traversal to detect back edges."""
         color[node] = GRAY
         path.append(node)
 
@@ -203,19 +179,35 @@ def validate_dag(tasks: list[SwarmTask]) -> None:
         if color[tid] == WHITE:
             dfs(tid)
 
+    # Scheduling and resume invalidation follow depends_on, so a data source must be an ancestor
+    # there; otherwise its result is read while it runs or kept after it re-executes.
+    for task in tasks:
+        ancestors: set[str] = set()
+        pending = list(task.depends_on)
+        while pending:
+            source = pending.pop()
+            if source not in ancestors:
+                ancestors.add(source)
+                pending.extend(graph[source])
+        for key, source in task.input_tasks().items():
+            if source not in ancestors:
+                raise ValueError(
+                    f"Task '{task.id}' input_from '{key}' references '{source}', "
+                    "which is not upstream in the DAG; declare its depends_on path"
+                )
+
 
 def topological_layers(tasks: list[SwarmTask]) -> list[list[str]]:
-    """Kahn's algorithm topological layering; tasks in the same layer can run in parallel.
+    """Group the task DAG into layers that can run in parallel.
 
     Args:
-        tasks: List of SwarmTask (must be a valid acyclic DAG).
+        tasks: Tasks with valid dependency references.
 
     Returns:
-        List of layers in execution order; each layer contains task IDs that can
-        run in parallel.
+        List of layers in execution order, each containing task IDs that can run in parallel.
 
     Raises:
-        ValueError: If the DAG contains a cycle (topological sort cannot complete).
+        ValueError: If topological sorting cannot process every task.
     """
     in_degree: dict[str, int] = {t.id: 0 for t in tasks}
     dependents: dict[str, list[str]] = defaultdict(list)

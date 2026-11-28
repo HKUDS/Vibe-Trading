@@ -8,6 +8,10 @@ and no summary on any failure path or corrupt input.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import csv
 import json
 from dataclasses import dataclass, field
@@ -136,7 +140,7 @@ def _run_tool(run_dir: Path, result: _FakeRunResult) -> dict:
         patch("src.tools.backtest_tool.Runner") as runner_cls,
     ):
         runner_cls.return_value.execute.return_value = result
-        return json.loads(run_backtest(str(run_dir)))
+        return json.loads(run_backtest(str(run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
 
 # (a) summary matches the fixture run_card + equity exactly ------------------
@@ -299,7 +303,7 @@ def test_envelope_summary_matches_direct_build(summary_run_dir):
 def test_missing_config_error_envelope_has_no_summary(summary_run_dir):
     (summary_run_dir / "config.json").unlink()
 
-    envelope = json.loads(run_backtest(str(summary_run_dir)))
+    envelope = json.loads(run_backtest(str(summary_run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
     assert envelope["status"] == "error"
     assert "summary" not in envelope

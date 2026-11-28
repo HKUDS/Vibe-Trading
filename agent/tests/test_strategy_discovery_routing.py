@@ -15,15 +15,19 @@ network can affect the prompt. No wall-clock assertions.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import inspect
 import json
 import sys
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.memory import WorkspaceMemory
-from src.agent.skills import SkillsLoader
+from src.product.context import ContextBuilder
+from src.product.resources.memory import WorkspaceMemory
+from src.product.resources.skills import SkillsLoader
 from src.agent.tools import BaseTool, ToolRegistry
 
 try:
@@ -55,14 +59,14 @@ class _StubTool(BaseTool):
 
 
 def _registry_with(names) -> ToolRegistry:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for name in names:
         registry.register(_StubTool(name))
     return registry
 
 
 def _context_module():
-    from src.agent import context as context_mod
+    from src.product import context as context_mod
 
     return context_mod
 
@@ -81,7 +85,7 @@ requires_routing = pytest.mark.skipif(
     not _wiring_landed(),
     reason=(
         "waiting on sibling A+B: src.strategy_discovery.guard and/or the "
-        "src.agent.context Strategy Discovery routing wiring not landed yet (issue #969)"
+        "src.product.context Strategy Discovery routing wiring not landed yet (issue #969)"
     ),
 )
 

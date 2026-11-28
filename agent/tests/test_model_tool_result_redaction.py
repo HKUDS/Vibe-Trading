@@ -1,14 +1,18 @@
 """Credentials in shell-style results never reach model requests or caches."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 from types import SimpleNamespace
 
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-import src.swarm.worker as worker
+import src.swarm.node as worker
 from tests.test_agent_loop_deterministic_cache import _drive
 
 
@@ -33,13 +37,13 @@ class _CredentialResult(BaseTool):
 def test_main_model_context_and_deterministic_replay_are_scrubbed(tmp_path):
     secret = 'fixture-only-private-value'
     tool = _CredentialResult(secret)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=3)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
     agent.memory.run_dir = str(tmp_path)
     messages, records = _drive(agent, tool.name, tmp_path, [{}, {}])
     assert tool.calls == 1
-    assert secret not in json.dumps([messages, records, list(agent._called_identical.values())])
+    assert secret not in json.dumps([messages, records, list(agent.replay._called_identical.values())])
     for message in messages:
         payload = json.loads(message['content'])
         assert payload['data'] == {'close': 112.4, 'currency': 'USD'}
@@ -50,7 +54,7 @@ def test_main_model_context_and_deterministic_replay_are_scrubbed(tmp_path):
 def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, monkeypatch):
     secret = 'fixture-only-worker-private-value'
     tool = _CredentialResult(secret)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     seen = []
 
@@ -66,7 +70,8 @@ def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, 
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read evidence.',
                                   tools=[tool.name], max_iterations=3),
         task=SwarmTask(id='t', agent_id='analyst', prompt_template='Read the evidence.'),
@@ -75,7 +80,7 @@ def test_worker_model_request_and_persisted_conversation_are_scrubbed(tmp_path, 
     assert result.status == 'completed'
     assert len(seen) == 2
     assert secret not in json.dumps(seen)
-    persisted = next(tmp_path.rglob('messages.json')).read_text()
+    persisted = next(tmp_path.rglob('thread.jsonl')).read_text()
     assert secret not in persisted
     output = next(m for m in seen[1] if m['role'] == 'tool')
     payload = json.loads(output['content'])

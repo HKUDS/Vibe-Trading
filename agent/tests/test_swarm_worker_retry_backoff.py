@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from pathlib import Path
 from unittest.mock import patch
@@ -20,7 +24,7 @@ from src.swarm.store import SwarmStore
 
 
 def _runtime(tmp_path: Path) -> SwarmRuntime:
-    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"))
+    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"), policy=ToolPolicy.from_config(get_env_config()))
 
 
 def _agent(max_retries: int = 2) -> SwarmAgentSpec:
@@ -37,7 +41,7 @@ def _task() -> SwarmTask:
 
 
 def _run(runtime: SwarmRuntime, tmp_path: Path, cancel_event=None) -> WorkerResult:
-    return runtime._run_worker_with_retries(
+    return runtime._run_node_with_retries(
         agent_spec=_agent(),
         task=_task(),
         upstream_summaries={},
@@ -97,7 +101,7 @@ def test_failed_worker_waits_before_each_retry_and_reports_delay(
     ]
 
     with (
-        patch("src.swarm.runtime.run_worker", side_effect=results),
+        patch("src.swarm.runtime.run_node", side_effect=results),
         patch("src.swarm.runtime._worker_retry_delay_s", side_effect=[1.5, 3.0]),
         patch.object(
             runtime,
@@ -130,13 +134,13 @@ def test_cancellation_interrupts_backoff_without_starting_another_attempt(
     )
 
     with (
-        patch("src.swarm.runtime.run_worker", return_value=failed) as run_worker,
+        patch("src.swarm.runtime.run_node", return_value=failed) as run_node,
         patch("src.swarm.runtime._worker_retry_delay_s", return_value=10.0),
         patch("src.swarm.runtime._wait_for_worker_retry", return_value=True),
     ):
         result = _run(runtime, tmp_path, cancel_event=cancel_event)
 
-    assert run_worker.call_count == 1
+    assert run_node.call_count == 1
     assert result.status == "cancelled"
     assert result.error == "529 overloaded"
     assert result.summary == "provider overloaded"

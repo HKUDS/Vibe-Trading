@@ -1,5 +1,9 @@
 """Physical Word reports retain the association of headings and table values."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -59,7 +63,7 @@ def test_shipping_reader_keeps_document_body_order(tmp_path, monkeypatch, nodes)
         for child in reopened.element.body
         if child.tag.rsplit("}", 1)[-1] in {"p", "tbl"}
     ] == ["p" if kind == "p" else "tbl" for kind, _ in nodes]
-    result = json.loads(DocReaderTool().execute(file_path=str(path)))
+    result = json.loads(DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path=str(path)))
     assert result["status"] == "ok", result
     assert result["text"] == "\n".join(expected)
     assert result["paragraphs"] == paragraphs and result["tables"] == tables

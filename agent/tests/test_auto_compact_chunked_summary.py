@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
+import src.session.compaction_ops as _owner_context_compact
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from src.agent.loop import AgentLoop, _summary_chunks
+from src.agent.runtime import AgentRuntime
+from src.session.compaction_ops import _summary_chunks
 from src.agent.tools import ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at
 
 
 class _CompactionLLM:
@@ -24,13 +31,12 @@ class _CompactionLLM:
         return SimpleNamespace(content=self.responses.pop(0))
 
 
-def _build_agent(llm: Any) -> AgentLoop:
-    """Build an AgentLoop with the same lightweight registry pattern as loop tests."""
-    return AgentLoop(registry=ToolRegistry(), llm=llm, max_iterations=1)
+def _build_agent(llm: Any) -> AgentRuntime:
+    """Build an AgentRuntime with the same lightweight registry pattern as loop tests."""
+    return AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm, max_iterations=1)
 
 
 def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_request(tmp_path):
-    from src.agent import loop as loop_mod
     payload = "replayed evidence " + "x" * 9000
     call = {"role": "assistant", "content": "", "tool_calls": [
         {"id": "leased", "type": "function", "function": {"name": "probe", "arguments": "{}"}}]}
@@ -38,17 +44,17 @@ def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_reque
     messages = [{"role": "system", "content": "system"}, {"role": "user", "content": "old goal"},
                 call, result, *[{"role": "user", "content": "tail" + "t" * 30000} for _ in range(4)]]
     agent = _build_agent(_CompactionLLM(["Earlier work summarized."] * 10))
-    agent._readonly_replay_visibility_pending = {"leased"}
-    loop_mod._context_collapse(messages, preserve_tool_call_ids={"leased"})
+    agent.replay._readonly_replay_visibility_pending = {"leased"}
+    _owner_context_compact._context_collapse(messages, preserve_tool_call_ids={"leased"})
     assert result["content"] == payload
-    with_trace = TraceWriter(tmp_path / "trace")
+    with_trace = recorder_at(tmp_path / "trace")
     try:
-        agent._auto_compact(messages, tmp_path, with_trace)
+        agent._context_compactor.auto_compact(messages, tmp_path, with_trace)
         assert any(message.get("content") == payload for message in messages)
         assert any(any(tc.get("id") == "leased" for tc in message.get("tool_calls", [])) for message in messages)
-        assert agent._readonly_replay_visibility_pending == {"leased"}
-        agent._consume_readonly_replay_visibility(messages, with_trace, 1)
-        assert agent._readonly_replay_visibility_pending == set()
+        assert agent.replay._readonly_replay_visibility_pending == {"leased"}
+        agent.replay._consume_readonly_replay_visibility(messages, with_trace, 1)
+        assert agent.replay._readonly_replay_visibility_pending == set()
     finally:
         with_trace.close()
 
@@ -126,10 +132,10 @@ def test_auto_compact_folds_all_head_chunks_and_preserves_empty_update(
     messages = [{"role": "system", "content": "system prompt"}, *head_messages, *tail_messages]
     llm = _CompactionLLM(["summary-0", "", "summary-2"])
     agent = _build_agent(llm)
-    trace = TraceWriter(tmp_path / "trace")
+    trace = recorder_at(tmp_path / "trace")
 
     try:
-        agent._auto_compact(messages, tmp_path / "run", trace, iteration=7)
+        agent._context_compactor.auto_compact(messages, tmp_path / "run", trace, iteration=7)
     finally:
         trace.close()
 
@@ -141,13 +147,40 @@ def test_auto_compact_folds_all_head_chunks_and_preserves_empty_update(
     # The second response was empty; its predecessor must still be supplied to
     # the third fold and remain available after compaction.
     assert "summary-0" in llm.prompts[2]
-    assert agent._previous_summary == "summary-2"
+    assert agent._context_compactor.previous_summary == "summary-2"
 
     for marker in markers:
         assert sum(prompt.count(marker) for prompt in llm.prompts) == 1
 
     compact_entries = [
-        entry for entry in TraceWriter.read(tmp_path / "trace") if entry.get("type") == "compact"
+        entry for entry in records_at(tmp_path / "trace") if entry.get("type") == "compact"
     ]
     assert len(compact_entries) == 1
     assert compact_entries[0]["summary_chunks"] == len(llm.prompts)
+
+
+def test_compaction_reattaches_verified_result_from_folded_head(tmp_path):
+    """The handoff retains an exact calculation omitted by the model's summary."""
+    agent = _build_agent(_CompactionLLM(["Earlier work."]))
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "calc", "function": {"name": "financial_rigor", "arguments": "{}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "calc", "name": "financial_rigor",
+         "content": json.dumps({"status": "ok", "command": "calc", "expr": "1/8", "result_exact": "0.125"})},
+        {"role": "assistant", "content": "The calculation is complete."},
+        {"role": "user", "content": "Continue the analysis."},
+    ]
+    trace = recorder_at(tmp_path)
+    try:
+        agent._context_compactor.auto_compact(messages, tmp_path, trace)
+    finally:
+        trace.close()
+
+    assert "Earlier work." in messages[1]["content"]
+    assert "calc 1/8 = 0.125" in messages[1]["content"]
+    assert not any(message.get("role") == "tool" for message in messages)
+    assert [message["content"] for message in messages[2:]] == [
+        "The calculation is complete.", "Continue the analysis.",
+    ]

@@ -15,12 +15,14 @@ truncated, text. PDF/Excel add format-specific metadata (pages, sheets, ...).
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 from pathlib import Path
 from typing import Any, Callable
 
-from src.agent.progress import emit_progress
-from src.agent.tools import BaseTool
+from src.kernel.progress import emit_progress
+from src.agent.tools import BaseTool, FileBoundTool
 from src.security.scanner import with_security_warnings
 from src.tools.ocr import get_ocr_engine, get_ocr_install_hint
 from src.tools.path_utils import safe_document_path
@@ -424,7 +426,7 @@ _HANDLERS: dict[str, Callable[[Path], str]] = {
 }
 
 
-def read_document(file_path: str, pages: str = "", min_text_per_page: int = _MIN_TEXT_PER_PAGE) -> str:
+def read_document(file_path: str, pages: str = "", min_text_per_page: int = _MIN_TEXT_PER_PAGE, *, roots: FileRoots) -> str:
     """Read any supported document; dispatch by extension.
 
     Args:
@@ -438,7 +440,7 @@ def read_document(file_path: str, pages: str = "", min_text_per_page: int = _MIN
         plus format-specific metadata (total_pages, sheets, etc.).
     """
     try:
-        path = safe_document_path(file_path)
+        path = safe_document_path(file_path, roots=roots)
     except ValueError as exc:
         return _err(str(exc))
     if not path.exists():
@@ -462,7 +464,7 @@ def read_document(file_path: str, pages: str = "", min_text_per_page: int = _MIN
         return _err(f"{type(exc).__name__}: {exc}")
 
 
-class DocReaderTool(BaseTool):
+class DocReaderTool(FileBoundTool, BaseTool):
     """Universal document reader — PDF/Word/Excel/PowerPoint/images/text."""
 
     name = "read_document"
@@ -502,4 +504,5 @@ class DocReaderTool(BaseTool):
             file_path,
             kwargs.get("pages", ""),
             min_text_per_page=kwargs.get("min_text_per_page", _MIN_TEXT_PER_PAGE),
+            roots=self.roots,
         )

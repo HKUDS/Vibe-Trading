@@ -41,6 +41,18 @@ _PATH_TOKEN = re.compile(
 
 @dataclass
 class RailStep:
+    """Track the display state of one task or tool step in the terminal.
+
+    Args:
+        title: Display label for the step.
+        tool: Tool name associated with the step, if any.
+        args: Tool arguments available to the step renderer.
+        call_id: Identifier used to match progress and completion to the step.
+        status: Current display state.
+        lines: Detail lines shown beneath the step label.
+        started_at: Monotonic start time, defaulting to construction time.
+        duration_s: Recorded elapsed seconds, initially zero.
+    """
     title: str
     tool: str = ""
     args: Any = None
@@ -280,7 +292,12 @@ def _append_arg_text(line: Text, args: str, *, limit: int) -> None:
 
 
 class RailRunDashboard:
-    """Compatibility dashboard that renders agent events like Codex transcripts."""
+    """Render live agent events into a terminal run dashboard.
+
+    Args:
+        prompt: Prompt associated with the run.
+        max_iter: Configured maximum agent iterations.
+    """
 
     def __init__(self, prompt: str, max_iter: int) -> None:
         self.prompt = prompt
@@ -290,7 +307,6 @@ class RailRunDashboard:
         self.live: Any = None
         self.steps: list[RailStep] = []
         self.latest_text = ""
-        self.thinking_active = True
         self.completion_summary: str | None = None
         self.status: str = "running"
         self.thinking_verb = pick_thinking_verb()
@@ -311,14 +327,28 @@ class RailRunDashboard:
                 self.refresh()
 
     def close(self) -> None:
+        """Signal the background refresh ticker to stop."""
         self._ticker_stop.set()
 
     def refresh(self) -> None:
+        """Update the attached live display if one is present."""
         if self.live is not None:
             self.live.update(self.render())
 
     def handle_event(self, event_type: str, data: dict[str, Any]) -> None:
-        if event_type == "text_delta":
+        """Apply an agent event to the dashboard and refresh as needed.
+
+        Args:
+            event_type: Fallback event kind when the payload has no kind field.
+            data: Event payload carrying a delta, tool item, progress, usage, or compaction details.
+        """
+        kind = data.get("kind", event_type)
+        item = data.get("item") or {}
+        if kind in {"tool.started", "tool.completed", "tool.failed"}:
+            data = {**item, "tool": item.get("name"), "call_id": item.get("tool_call_id"), "preview": item.get("content")}
+        elif kind == "tool.progress":
+            data = data.get("progress") or {}
+        if kind == "text.delta":
             delta = _collapse_ws(data.get("delta"))
             if delta:
                 self.latest_text = (self.latest_text + delta).strip()[-500:]
@@ -326,12 +356,11 @@ class RailRunDashboard:
                 self.refresh()
             return
 
-        if event_type == "thinking_done":
-            self.thinking_active = False
+        if kind == "item.completed":
             self.refresh()
             return
 
-        if event_type == "llm_usage":
+        if kind == "run.usage":
             input_tokens = _coerce_int(data.get("input_tokens"))
             output_tokens = _coerce_int(data.get("output_tokens"))
             total_tokens = _coerce_int(data.get("total_tokens"))
@@ -343,8 +372,7 @@ class RailRunDashboard:
             self.refresh()
             return
 
-        if event_type == "tool_call":
-            self.thinking_active = False
+        if kind == "tool.started":
             tool = str(data.get("tool") or "tool")
             args = data.get("arguments") or {}
             call_id = str(data.get("call_id") or "")
@@ -358,7 +386,7 @@ class RailRunDashboard:
             self.refresh()
             return
 
-        if event_type == "tool_progress":
+        if kind == "tool.progress":
             tool = str(data.get("tool") or "")
             step = self._active_step(tool, call_id=str(data.get("call_id") or ""))
             pieces: list[str] = []
@@ -381,13 +409,7 @@ class RailRunDashboard:
                 self.refresh()
             return
 
-        if event_type == "tool_heartbeat":
-            tool = str(data.get("tool") or "")
-            self._active_step(tool, call_id=str(data.get("call_id") or ""))
-            self.refresh()
-            return
-
-        if event_type == "tool_result":
+        if kind in {"tool.completed", "tool.failed"}:
             tool = str(data.get("tool") or "")
             status = str(data.get("status") or "ok")
             step = self._active_step(tool, call_id=str(data.get("call_id") or ""))
@@ -403,7 +425,7 @@ class RailRunDashboard:
             self.refresh()
             return
 
-        if event_type == "compact":
+        if kind == "context.compacted":
             tokens = data.get("tokens_before", "?")
             self.steps.append(
                 RailStep(
@@ -418,6 +440,12 @@ class RailRunDashboard:
             self.refresh()
 
     def finish(self, result: dict[str, Any], elapsed: float | None = None) -> None:
+        """Finalize dashboard state and stop periodic refreshes.
+
+        Args:
+            result: Run result with status and optional content or reason.
+            elapsed: Optional elapsed seconds used to fill missing durations on active steps.
+        """
         self.status = str(result.get("status") or "done")
         for step in self.steps:
             if step.status == "active":
@@ -432,11 +460,16 @@ class RailRunDashboard:
             self.completion_summary = f"{self.status.title()}. {reason}"
         else:
             self.completion_summary = f"{self.status.title()}."
-        self.thinking_active = False
         self.refresh()
         self.close()
 
     def render(self) -> Group:
+        """Build the dashboard rows for the current terminal width.
+
+        Returns:
+            Rich Group containing recent step details and either ongoing activity or the completion
+            line.
+        """
         width = max(44, shutil.get_terminal_size((88, 24)).columns)
         detail_width = max(18, width - 7)
         rows: list[Text] = []
@@ -463,12 +496,7 @@ class RailRunDashboard:
     def _active_step(self, tool: str, call_id: str = "") -> RailStep:
         raw_tool = str(tool or "")
         raw_call_id = str(call_id or "")
-        # Concurrent calls to the same tool (the loop runs consecutive
-        # readonly tool calls in parallel) can have more than one step
-        # "active" at once with the same tool name. Matching on the call's
-        # own id -- always present on tool_call/tool_progress/tool_heartbeat/
-        # tool_result payloads -- keeps each event paired with the step it
-        # actually belongs to, instead of guessing by tool name and recency.
+        # Match by call ID because several active calls may share a tool name.
         if raw_call_id:
             for step in self.steps:
                 if step.call_id == raw_call_id:

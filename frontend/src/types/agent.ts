@@ -1,7 +1,13 @@
 /** Chat message types */
 export type AgentMessageType =
   | "user" | "thinking" | "tool_call" | "tool_result"
-  | "answer" | "error" | "run_complete" | "compact" | "swarm_status";
+  | "answer" | "error" | "run_complete" | "compact" | "swarm_status"
+  /** Text the agent wrote between steps, before its final answer. */
+  | "commentary"
+  /** A turn's end: how long it worked and how it ended. */
+  | "turn_status"
+  /** A marker in the conversation, such as earlier context being summarized. */
+  | "notice" | "plan" | "question" | "image";
 
 export type SwarmAgentDisplayStatus =
   | "waiting"
@@ -72,6 +78,9 @@ export interface AgentMessage {
   stage?: string;
   /** Shadow Account id if render_shadow_report fired in this turn (RunCompleteCard renders a "View Shadow Report" button). */
   shadowId?: string;
+  plan?: { plan_id?: string; steps: Array<{ step: string; status: string }> };
+  question?: { question_id: string; prompt: string; options: string[]; allow_free_text?: boolean };
+  images?: Array<{ path: string; mime_type?: string; alt?: string; download_url?: string }>;
 }
 
 /** Tool call tracking entry */

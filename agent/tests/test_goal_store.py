@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -165,6 +169,7 @@ def test_append_evidence_rejects_stale_expected_goal_id(tmp_path: Path) -> None:
 
     with pytest.raises(StaleGoalError):
         store.append_evidence(
+            roots=FileRoots.from_config(get_env_config().api),
             session_id="session-1",
             goal_id=new_goal.goal_id,
             expected_goal_id=old_goal.goal_id,
@@ -196,6 +201,7 @@ def test_cross_connection_stale_goal_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(StaleGoalError):
         first_store.append_evidence(
+            roots=FileRoots.from_config(get_env_config().api),
             session_id="session-1",
             goal_id=old_goal.goal_id,
             expected_goal_id=old_goal.goal_id,
@@ -294,6 +300,7 @@ def test_tool_call_id_alone_does_not_mark_evidence_verified(tmp_path: Path) -> N
     criterion = store.list_criteria(goal.goal_id)[0]
 
     evidence = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -319,6 +326,7 @@ def test_complete_goal_with_verified_evidence(tmp_path: Path, monkeypatch: pytes
     artifact = tmp_path / "nvda_momentum.txt"
     artifact.write_text("NVDA outperformed QQQ over the last 5 sessions.", encoding="utf-8")
     evidence = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -369,6 +377,7 @@ def test_completion_allows_mixed_verified_and_historical_evidence(
     )
     criterion = store.list_criteria(goal.goal_id)[0]
     old_evidence = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -380,6 +389,7 @@ def test_completion_allows_mixed_verified_and_historical_evidence(
     artifact = tmp_path / "nvda_momentum.txt"
     artifact.write_text("Verified NVDA momentum artifact.", encoding="utf-8")
     verified_evidence = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -427,6 +437,7 @@ def test_artifact_evidence_requires_allowed_path_and_hash(
     artifact.write_text("NVDA outperformed QQQ.", encoding="utf-8")
 
     missing_hash = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -437,6 +448,7 @@ def test_artifact_evidence_requires_allowed_path_and_hash(
         ),
     )
     traversal = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -461,6 +473,7 @@ def test_delete_session_goals_removes_ledger(tmp_path: Path) -> None:
     )
     criterion = store.list_criteria(goal.goal_id)[0]
     store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -484,6 +497,7 @@ def test_goal_snapshot_includes_claims_criteria_and_evidence(tmp_path: Path) -> 
     )
     criterion = store.list_criteria(goal.goal_id)[0]
     evidence = store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -515,6 +529,7 @@ def test_append_evidence_marks_linked_pending_criterion_covered(tmp_path: Path) 
     criterion = store.list_criteria(goal.goal_id)[0]
 
     store.append_evidence(
+        roots=FileRoots.from_config(get_env_config().api),
         session_id="session-1",
         goal_id=goal.goal_id,
         expected_goal_id=goal.goal_id,
@@ -537,6 +552,7 @@ def test_goal_snapshot_caps_evidence_but_reports_total_count(tmp_path: Path) -> 
     criterion = store.list_criteria(goal.goal_id)[0]
     for index in range(55):
         store.append_evidence(
+            roots=FileRoots.from_config(get_env_config().api),
             session_id="session-1",
             goal_id=goal.goal_id,
             expected_goal_id=goal.goal_id,
@@ -564,6 +580,7 @@ def test_append_evidence_is_safe_from_parallel_cli_or_api_calls(tmp_path: Path) 
 
     def append_note(index: int) -> str:
         return store.append_evidence(
+            roots=FileRoots.from_config(get_env_config().api),
             session_id="session-1",
             goal_id=goal.goal_id,
             expected_goal_id=goal.goal_id,

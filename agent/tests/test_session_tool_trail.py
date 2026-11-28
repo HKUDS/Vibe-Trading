@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -16,6 +20,8 @@ from src.session.events import EventBus
 from src.session.models import Attempt, Message, Session
 from src.session.service import SessionService
 from src.session.store import SessionStore
+from src.session.replay import project_turn
+from src.session.thread import ThreadLog
 
 
 class _DummyIndex:
@@ -29,6 +35,7 @@ class _DummyIndex:
 def _service(tmp_path: Path, monkeypatch) -> SessionService:
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -60,15 +67,24 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
         }
     ]
 
-    async def _run_with_agent(*args, **kwargs):
+    async def run_agent(attempt, *args, **kwargs):
         del args, kwargs
-        return {
-            "status": "success",
-            "content": "AAPL is trading near 195.",
-            "tool_trail": expected_trail,
-        }
+        # The display trail is projected from the turn's thread items.
+        thread = ThreadLog(
+            service.store.thread_path(attempt.session_id), clock=lambda: 1_785_342_400.0
+        )
+        thread.append("turn_start", attempt.attempt_id, prompt=attempt.prompt)
+        thread.append("user", attempt.attempt_id, content=attempt.prompt, llm_content=attempt.prompt)
+        thread.append("assistant", attempt.attempt_id, content=None, phase="commentary", tool_calls=[
+            {"id": "call-market-1", "type": "function",
+             "function": {"name": "get_market_data", "arguments": '{"symbol": "AAPL"}'}},
+        ])
+        thread.append("tool_result", attempt.attempt_id, tool_call_id="call-market-1",
+                      name="get_market_data", content="AAPL 195.00", status="ok", elapsed_ms=125)
+        thread.append("assistant", attempt.attempt_id, content="AAPL is trading near 195.", phase="final")
+        return {"status": "success", "content": "AAPL is trading near 195."}
 
-    monkeypatch.setattr(service, "_run_with_agent", _run_with_agent)
+    monkeypatch.setattr(service._factory, "run", run_agent)
     asyncio.run(service._run_attempt(session, attempt))
 
     monkeypatch.setattr(api_server, "_get_session_service", lambda: service)
@@ -76,26 +92,25 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
     response = client.get(f"/sessions/{session.session_id}/messages")
 
     assert response.status_code == 200
-    stored = service.store.get_messages(session.session_id)[0]
+    stored = service.store.get_messages(session.session_id)[-1]
     assert isinstance(stored, Message)
-    assert stored.tool_trail == expected_trail
+    assert project_turn(service.store.thread_log(session.session_id).read(), attempt.attempt_id).tool_results == expected_trail
     payload = response.json()
-    assert len(payload) == 1
-    metadata = payload[0].pop("metadata")
+    assert len(payload) == 2
+    assert payload[0]["role"] == "user"
+    assistant_payload = payload[-1]
+    metadata = assistant_payload.pop("metadata")
     assert metadata["status"] == "completed"
     assert isinstance(metadata["elapsed_ms"], int)
     assert metadata["elapsed_ms"] >= 0
-    assert payload == [
-        {
-            "message_id": stored.message_id,
-            "session_id": session.session_id,
-            "role": "assistant",
-            "content": "AAPL is trading near 195.",
-            "created_at": stored.created_at,
-            "linked_attempt_id": attempt.attempt_id,
-            "tool_trail": expected_trail,
-        }
-    ]
+    assert assistant_payload == {
+        "message_id": stored.message_id,
+        "session_id": session.session_id,
+        "role": "assistant",
+        "content": "AAPL is trading near 195.",
+        "created_at": stored.created_at,
+        "linked_attempt_id": attempt.attempt_id,
+    }
 
 
 @pytest.mark.parametrize(
@@ -117,27 +132,48 @@ def test_unfinished_attempt_keeps_its_tool_trail(
     service.store.create_attempt(attempt)
     trail = [
         {"tool": "get_financial_statements", "status": "ok", "arguments": {"code": "002555.SZ"},
-         "call_id": "call-1", "timestamp": 1_785_342_400_000},
+         "call_id": "call-1", "timestamp": 1_785_342_400_000, "preview": '{"ok": true}'},
         {"tool": "get_financial_statements", "status": "error", "arguments": {"code": "09999.HK"},
-         "call_id": "call-2", "timestamp": 1_785_342_401_000},
+         "call_id": "call-2", "timestamp": 1_785_342_400_000, "preview": '{"status": "error"}'},
     ]
 
-    async def _run_with_agent(*args, **kwargs):
+    async def run_agent(attempt, *args, **kwargs):
         del args, kwargs
-        return {"status": run_status, "reason": "no_progress: stopped", "tool_trail": trail}
+        thread = ThreadLog(
+            service.store.thread_path(attempt.session_id), clock=lambda: 1_785_342_400.0
+        )
+        thread.append("turn_start", attempt.attempt_id, prompt=attempt.prompt)
+        thread.append("user", attempt.attempt_id, content=attempt.prompt, llm_content=attempt.prompt)
+        thread.append("assistant", attempt.attempt_id, content=None, phase="commentary", tool_calls=[
+            {"id": "call-1", "type": "function",
+             "function": {"name": "get_financial_statements", "arguments": '{"code": "002555.SZ"}'}},
+            {"id": "call-2", "type": "function",
+             "function": {"name": "get_financial_statements", "arguments": '{"code": "09999.HK"}'}},
+        ])
+        thread.append("tool_result", attempt.attempt_id, tool_call_id="call-1",
+                      name="get_financial_statements", content='{"ok": true}', status="ok")
+        thread.append("tool_result", attempt.attempt_id, tool_call_id="call-2",
+                      name="get_financial_statements", content='{"status": "error"}', status="error")
+        return {"status": run_status, "reason": "no_progress: stopped"}
 
-    monkeypatch.setattr(service, "_run_with_agent", _run_with_agent)
+    monkeypatch.setattr(service._factory, "run", run_agent)
     asyncio.run(service._run_attempt(session, attempt))
 
-    stored = service.store.get_messages(session.session_id)[0]
+    stored = service.store.get_messages(session.session_id)[-1]
     assert stored.metadata["status"] == attempt_status
-    assert stored.tool_trail == trail
+    assert project_turn(service.store.thread_log(session.session_id).read(), attempt.attempt_id).tool_results == trail
 
 
-def test_run_with_agent_consolidates_tool_events_by_call_id(
+def test_run_with_agent_consolidates_tool_results_by_call_id(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    """Results finishing out of order land on their own call, through the real plumbing.
+
+    The loop writes the turn through the recorder the session agent factory hands it;
+    the reply's trail is projected from those items when the turn ends.
+    """
+
     class _DummyAgentLoop:
         def __init__(
             self,
@@ -149,48 +185,33 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
             persistent_memory,
             cancel_event=None,
             background_manager=None,
+            thread_recorder=None,
+            queued_inputs=None,
+            memory=None,
         ) -> None:
-            del registry, llm, max_iterations, persistent_memory, cancel_event
-            self._event_callback = event_callback
+            del registry, llm, event_callback, max_iterations, persistent_memory, cancel_event, memory
+            self._thread = thread_recorder
 
         def run(self, *, user_message: str, history, session_id: str):
-            del user_message, history, session_id
-            self._event_callback(
-                "tool_call",
-                {
-                    "tool": "get_market_data",
-                    "call_id": "call-1",
-                    "arguments": {"symbol": "AAPL"},
-                },
+            del history, session_id
+            user = {"role": "user", "content": user_message}
+            self._thread.start(prompt=user_message, message=user, model=None, provider=None)
+            self._thread.assistant({"role": "assistant", "content": None, "tool_calls": [
+                {"id": "call-1", "type": "function",
+                 "function": {"name": "get_market_data", "arguments": '{"symbol": "AAPL"}'}},
+                {"id": "call-2", "type": "function",
+                 "function": {"name": "get_market_data", "arguments": '{"symbol": "MSFT"}'}},
+            ]}, phase="commentary")
+            self._thread.tool_result(
+                {"role": "tool", "tool_call_id": "call-2", "name": "get_market_data", "content": "MSFT"},
+                status="ok", elapsed_ms=20,
             )
-            self._event_callback(
-                "tool_call",
-                {
-                    "tool": "get_market_data",
-                    "call_id": "call-2",
-                    "arguments": {"symbol": "MSFT"},
-                },
+            self._thread.tool_result(
+                {"role": "tool", "tool_call_id": "call-1", "name": "get_market_data",
+                 "content": "AAPL unavailable"},
+                status="error", elapsed_ms=10,
             )
-            self._event_callback(
-                "tool_result",
-                {
-                    "tool": "get_market_data",
-                    "call_id": "call-2",
-                    "status": "ok",
-                    "elapsed_ms": 20,
-                    "preview": "MSFT",
-                },
-            )
-            self._event_callback(
-                "tool_result",
-                {
-                    "tool": "get_market_data",
-                    "call_id": "call-1",
-                    "status": "error",
-                    "elapsed_ms": 10,
-                    "preview": "AAPL unavailable",
-                },
-            )
+            self._thread.assistant({"role": "assistant", "content": "done"}, phase="final")
             return {"status": "success", "content": "done"}
 
         def cancel(self) -> None:
@@ -198,9 +219,9 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
 
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: object())
     llm = SimpleNamespace(aclose=AsyncMock())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda **kwargs: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
-    monkeypatch.setattr("src.agent.loop.AgentLoop", _DummyAgentLoop)
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _DummyAgentLoop)
     monkeypatch.setattr(
         "src.config.loader.load_runtime_agent_config",
         lambda overrides=None: object(),
@@ -210,11 +231,12 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
         lambda overrides: dict(overrides),
     )
     service = _service(tmp_path, monkeypatch)
-    attempt = Attempt(session_id="abcdef012345", prompt="compare")
+    session = Session(session_id="abcdef012345", title="consolidate")
+    service.store.create_session(session)
+    attempt = Attempt(session_id=session.session_id, prompt="compare")
+    service.store.create_attempt(attempt)
 
-    result = asyncio.run(
-        service._run_with_agent(attempt, messages=[], session_config={})
-    )
+    asyncio.run(service._run_attempt(session, attempt))
 
     assert [
         {
@@ -228,7 +250,7 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
                 "preview",
             )
         }
-        for entry in result["tool_trail"]
+        for entry in project_turn(service.store.thread_log(session.session_id).read(), attempt.attempt_id).tool_results
     ] == [
         {
             "tool": "get_market_data",

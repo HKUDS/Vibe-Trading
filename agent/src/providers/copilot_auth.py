@@ -1,9 +1,4 @@
-"""GitHub Copilot SDK adapter.
-
-Authentication and transport are delegated to GitHub's supported SDK. The SDK
-resolves ``COPILOT_GITHUB_TOKEN``, stored Copilot CLI credentials, and ``gh``
-credentials without Vibe-Trading borrowing an OAuth client or editor identity.
-"""
+"""GitHub Copilot SDK adapter."""
 
 from __future__ import annotations
 
@@ -21,18 +16,36 @@ from typing import Any, Optional
 
 from langchain_core.messages import AIMessage, AIMessageChunk
 
+from src.providers.messages import message_value
+from src.providers.response import tool_call_chunks
+from src.providers.stream_guard import threaded_stream
+
 COPILOT_TOKEN_ENV = "COPILOT_GITHUB_TOKEN"
 TOKEN_ENV_NAMES = (COPILOT_TOKEN_ENV, "GH_TOKEN", "GITHUB_TOKEN")
 _SUPPORTED_TOKEN_PREFIXES = ("gho_", "ghu_", "github_pat_")
 
 
 def is_supported_token(token: str) -> bool:
-    """Return whether ``token`` is accepted by the Copilot SDK."""
+    """Check whether a token has a supported Copilot SDK prefix.
+
+    Args:
+        token: Candidate token string.
+
+    Returns:
+        True for a nonempty token with a supported prefix.
+    """
     return bool(token) and token.startswith(_SUPPORTED_TOKEN_PREFIXES)
 
 
 def gh_cli_token(*, stored_only: bool = False) -> str:
-    """Return a supported token from ``gh auth token``, if available."""
+    """Return a supported token from ``gh auth token``, if available.
+
+    Args:
+        stored_only: Whether to omit environment token overrides when calling gh.
+
+    Returns:
+        A supported token from a successful CLI command, or an empty string.
+    """
     executable = shutil.which("gh")
     if not executable:
         return ""
@@ -52,7 +65,12 @@ def gh_cli_token(*, stored_only: bool = False) -> str:
 
 
 def resolve_copilot_token() -> tuple[str, str]:
-    """Resolve explicit credentials; the SDK handles stored CLI credentials."""
+    """Resolve Copilot credentials from the environment or GitHub CLI.
+
+    Returns:
+        A pair of the token and its source, preferring supported environment values, or two empty
+        strings if unavailable.
+    """
     for name in TOKEN_ENV_NAMES:
         token = os.getenv(name, "").strip()  # noqa: env-gate - provider credential
         if is_supported_token(token):
@@ -80,12 +98,6 @@ def _gh_cli_token() -> str:
         return token
 
 
-def get_copilot_login_status() -> Optional[str]:
-    """Return an explicit token, or None when the SDK must resolve login."""
-    token, _source = resolve_copilot_token()
-    return token or None
-
-
 def _client_options(token: str | None = None) -> dict[str, Any]:
     """Return explicit SDK options without disabling stored CLI credentials."""
     if token is None:
@@ -100,7 +112,11 @@ def _client_options(token: str | None = None) -> dict[str, Any]:
 
 
 def get_copilot_auth_status() -> tuple[bool, str]:
-    """Return the official SDK's authentication status."""
+    """Return the official SDK's authentication status.
+
+    Returns:
+        The authentication flag and status message, login name, or reason the SDK check failed.
+    """
     result: queue.Queue[Any] = queue.Queue(maxsize=1)
 
     async def check() -> tuple[bool, str]:
@@ -137,12 +153,6 @@ class _CopilotResult:
     tool_calls: list[dict[str, Any]] | None = None
 
 
-def _message_value(message: Any, key: str, default: Any = None) -> Any:
-    if isinstance(message, dict):
-        return message.get(key, default)
-    return getattr(message, key, default)
-
-
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -160,25 +170,25 @@ def _convert_messages(messages: list[Any]) -> tuple[str, str]:
     system: list[str] = []
     transcript: list[dict[str, Any]] = []
     for message in messages:
-        role = str(_message_value(message, "role", "") or "")
+        role = str(message_value(message, "role", "") or "")
         if not role:
-            message_type = str(_message_value(message, "type", "") or "")
+            message_type = str(message_value(message, "type", "") or "")
             role = {
                 "human": "user",
                 "ai": "assistant",
                 "system": "system",
                 "tool": "tool",
             }.get(message_type, message_type or "user")
-        content = _content_text(_message_value(message, "content", ""))
+        content = _content_text(message_value(message, "content", ""))
         if role == "system":
             if content:
                 system.append(content)
             continue
         item: dict[str, Any] = {"role": role, "content": content}
-        tool_call_id = _message_value(message, "tool_call_id")
+        tool_call_id = message_value(message, "tool_call_id")
         if tool_call_id:
             item["tool_call_id"] = str(tool_call_id)
-        tool_calls = _message_value(message, "tool_calls")
+        tool_calls = message_value(message, "tool_calls")
         if tool_calls:
             item["tool_calls"] = tool_calls
         transcript.append(item)
@@ -293,8 +303,6 @@ async def _run_copilot(
         elif isinstance(data, SessionIdleData):
             finished.set()
 
-    # ponytail: one runtime per call keeps lifecycle simple; pool it if startup
-    # latency becomes material in profiling.
     async with CopilotClient(**_client_options(token)) as client:
         sdk_tools = _convert_tools(tools)
         available_tools = ToolSet()
@@ -322,6 +330,7 @@ async def _run_copilot(
             tool_task = asyncio.create_task(tool_requested.wait())
 
             async def watch_cancel() -> None:
+                """Abort the SDK turn when the caller signals cancellation."""
                 if cancel_event is None:
                     return
                 while not cancel_event.is_set():
@@ -339,8 +348,7 @@ async def _run_copilot(
                     timeout=timeout,
                 )
                 if tool_task in done:
-                    # ponytail: 100 ms debounce collects parallel tool events;
-                    # replace it if the SDK exposes an explicit batch-complete event.
+                    # Debounce to collect parallel tool requests before returning.
                     await asyncio.sleep(0.1)
             finally:
                 for task in (finish_task, tool_task, cancel_task):
@@ -360,7 +368,14 @@ async def _run_copilot(
 
 
 class CopilotSDKLLM:
-    """Minimal LangChain-compatible wrapper around the official Copilot SDK."""
+    """Minimal LangChain-compatible wrapper around the official Copilot SDK.
+
+    Args:
+        model: Model ID to select for Copilot turns.
+        timeout: Default request timeout in seconds.
+        tools: Optional function tools offered to the Copilot session.
+        token: Optional token override supplied to SDK client setup.
+    """
 
     def __init__(
         self,
@@ -376,23 +391,43 @@ class CopilotSDKLLM:
         self._token = token
 
     def bind_tools(self, tools: list[dict[str, Any]]) -> "CopilotSDKLLM":
+        """Bind function tools to a copy of the Copilot model.
+
+        Args:
+            tools: Tool definitions to offer to the SDK session.
+
+        Returns:
+            A new adapter with the supplied tools and the same model, timeout, and token.
+        """
         return CopilotSDKLLM(model=self.model, timeout=self.timeout, tools=tools, token=self._token)
+
+    def _request(
+        self, messages: list[Any], timeout: float, **stream_options: Any
+    ) -> _CopilotResult:
+        return asyncio.run(_run_copilot(
+            model=self.model,
+            token=self._token,
+            messages=messages,
+            tools=self.tools,
+            timeout=timeout,
+            **stream_options,
+        ))
 
     def invoke(
         self,
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> AIMessage:
-        timeout = float((config or {}).get("timeout") or self.timeout)
-        result = asyncio.run(
-            _run_copilot(
-                model=self.model,
-                token=self._token,
-                messages=messages,
-                tools=self.tools,
-                timeout=timeout,
-            )
-        )
+        """Run a Copilot turn synchronously.
+
+        Args:
+            messages: Conversation as SDK-compatible message objects or dictionaries.
+            config: Optional run config containing a timeout override in seconds.
+
+        Returns:
+            A LangChain message carrying response text, tool calls, and finish and model metadata.
+        """
+        result = self._request(messages, float((config or {}).get("timeout") or self.timeout))
         return AIMessage(
             content=result.content,
             tool_calls=result.tool_calls or [],
@@ -407,87 +442,64 @@ class CopilotSDKLLM:
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> Iterable[AIMessageChunk]:
-        timeout = float((config or {}).get("timeout") or self.timeout)
-        chunks: queue.Queue[Any] = queue.Queue()
-        sentinel = object()
-        cancel_event = threading.Event()
+        """Stream a Copilot turn from a worker thread.
 
-        def run() -> None:
+        Args:
+            messages: Conversation as SDK-compatible message objects or dictionaries.
+            config: Optional run config containing a timeout override in seconds.
+
+        Yields:
+            Text or reasoning chunks, followed by the tool-call or stop chunk.
+        """
+        timeout = float((config or {}).get("timeout") or self.timeout)
+
+        def run(publish: Callable[[AIMessageChunk], None], cancel_event: threading.Event) -> None:
             emitted_text = False
 
             def emit(kind: str, value: str) -> None:
                 nonlocal emitted_text
                 emitted_text = emitted_text or kind == "text"
-                chunks.put(
+                publish(AIMessageChunk(
+                    content=value if kind == "text" else "",
+                    additional_kwargs={"reasoning_content": value} if kind == "reasoning" else {},
+                ))
+
+            result = self._request(messages, timeout, emit=emit, cancel_event=cancel_event)
+            if result.content and not emitted_text:
+                publish(AIMessageChunk(content=result.content))
+            if result.tool_calls:
+                publish(
                     AIMessageChunk(
-                        content=value if kind == "text" else "",
-                        additional_kwargs=(
-                            {"reasoning_content": value} if kind == "reasoning" else {}
-                        ),
+                        content="",
+                        tool_call_chunks=tool_call_chunks(result.tool_calls),
+                        response_metadata={"finish_reason": "tool_calls"},
+                    )
+                )
+            else:
+                publish(
+                    AIMessageChunk(
+                        content="",
+                        response_metadata={
+                            "finish_reason": "stop",
+                            "model_name": result.model or self.model,
+                        },
                     )
                 )
 
-            try:
-                result = asyncio.run(
-                    _run_copilot(
-                        model=self.model,
-                        token=self._token,
-                        messages=messages,
-                        tools=self.tools,
-                        timeout=timeout,
-                        emit=emit,
-                        cancel_event=cancel_event,
-                    )
-                )
-                if result.content and not emitted_text:
-                    chunks.put(AIMessageChunk(content=result.content))
-                if result.tool_calls:
-                    chunks.put(
-                        AIMessageChunk(
-                            content="",
-                            tool_call_chunks=[
-                                {
-                                    "id": call["id"],
-                                    "name": call["name"],
-                                    "args": json.dumps(call["args"]),
-                                    "index": index,
-                                    "type": "tool_call_chunk",
-                                }
-                                for index, call in enumerate(result.tool_calls)
-                            ],
-                            response_metadata={"finish_reason": "tool_calls"},
-                        )
-                    )
-                else:
-                    chunks.put(
-                        AIMessageChunk(
-                            content="",
-                            response_metadata={
-                                "finish_reason": "stop",
-                                "model_name": result.model or self.model,
-                            },
-                        )
-                    )
-            except Exception as exc:
-                chunks.put(exc)
-            finally:
-                chunks.put(sentinel)
-
-        threading.Thread(target=run, daemon=True).start()
-        try:
-            while True:
-                chunk = chunks.get()
-                if chunk is sentinel:
-                    return
-                if isinstance(chunk, Exception):
-                    raise chunk
-                yield chunk
-        finally:
-            cancel_event.set()
+        yield from threaded_stream(run)
 
     async def ainvoke(
         self,
         messages: list[Any],
         config: Optional[dict[str, Any]] = None,
     ) -> AIMessage:
+        """Run a synchronous Copilot turn in a worker thread.
+
+        Args:
+            messages: Conversation as SDK-compatible message objects or dictionaries.
+            config: Optional run config passed through to invoke.
+
+        Returns:
+            The response message returned by invoke.
+        """
         return await asyncio.to_thread(self.invoke, messages, config)

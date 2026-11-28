@@ -11,6 +11,12 @@ session is misread as a manual rename and keeps its raw truncated prompt
 forever (CONTRIBUTING.md:36-37).
 """
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
+from tests.recording_helpers import seed_message
+
 import asyncio
 import json
 import sys
@@ -18,7 +24,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
-from src.api.sessions_routes import UpdateSessionRequest, register_sessions_routes
+from src.api.session_actions import UpdateSessionRequest
+from src.api.sessions_routes import register_sessions_routes
 from src.session.events import EventBus
 from src.session.search import SessionSearchIndex
 from src.session.service import SessionService
@@ -70,6 +77,7 @@ def wrapped_prompt_routes(tmp_path, monkeypatch):
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: index)
     monkeypatch.setattr("src.session.search.get_shared_index", lambda: index)
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -77,6 +85,9 @@ def wrapped_prompt_routes(tmp_path, monkeypatch):
     from src.providers import chat
 
     class OwnedTitleProvider:
+        def __init__(self, *, policy):
+            self.policy = policy
+
         def chat(self, messages, timeout):
             return SimpleNamespace(content=GENERATED_TITLE)
 
@@ -108,17 +119,13 @@ def _seed_web_chat_session(service, index, *, wrapped: str, title: str):
     session = service.create_session(title=title[:50])
     # The auto-title route reads a real stored user message; it is admitted
     # directly so no agent or provider runs during setup.
-    service.store.append_message(
-        Message(session_id=session.session_id, role="user", content=wrapped)
-    )
+    seed_message(service.store, Message(session_id=session.session_id, role="user", content=wrapped))
     index.index_message(session.session_id, "user", wrapped)
-    service.store.append_message(
-        Message(
+    seed_message(service.store, Message(
             session_id=session.session_id,
             role="assistant",
             content="Realized vol is 18% annualized over the trailing quarter.",
-        )
-    )
+        ))
     return session
 
 
@@ -202,4 +209,3 @@ def test_auto_title_preserves_manual_rename_on_wrapped_session(
     assert (
         service.store.get_session(session.session_id).title == "Manual protected title"
     )
-

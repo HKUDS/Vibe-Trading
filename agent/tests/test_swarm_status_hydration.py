@@ -18,6 +18,10 @@ Coverage map:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 import os
@@ -28,7 +32,7 @@ import pytest
 import mcp_server
 import src.swarm.runtime as rt
 import src.swarm.store as store_mod
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -495,7 +499,7 @@ def test_runtime_layer_boundary_sync_writes_run_json(tmp_path, monkeypatch):
     """After a layer finishes, run.json must show the layer's terminal task
     statuses without needing hydrate."""
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store, max_workers=1)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, max_workers=1)
     run = _base_run("r-layer", timeout=5, retries=0)
     store.create_run(run)
 
@@ -505,7 +509,7 @@ def test_runtime_layer_boundary_sync_writes_run_json(tmp_path, monkeypatch):
 
     import threading
 
-    monkeypatch.setattr(rt, "run_worker", fake_worker)
+    monkeypatch.setattr(rt, "run_node", fake_worker)
     runtime._execute_run(run, threading.Event())
 
     # After _execute_run, run.json must reflect the completed task.
@@ -528,7 +532,7 @@ def test_worker_emits_task_heartbeat_during_tool_call():
     """
     import time
 
-    from src.agent.progress import HeartbeatTimer
+    from src.kernel.progress import HeartbeatTimer
 
     captured: list[dict] = []
     with HeartbeatTimer(tool_name="slow_tool", interval=0.5, emit=captured.append):
@@ -574,7 +578,7 @@ def test_swarm_tool_no_longer_cancels_on_budget_out():
         "SwarmTool.execute must not cancel the run on budget exhaustion; "
         "return partial state and let the agent decide."
     )
-    # The only legitimate trigger is the session cancel flag shared with AgentLoop.
+    # The only legitimate trigger is the session cancel flag shared with AgentRuntime.
     assert "_cancel_event" in source, (
         "SwarmTool.execute must watch the session cancel flag so a user stop "
         "reaches the run."
@@ -783,7 +787,7 @@ def test_worker_source_wires_heartbeat_around_llm_streaming():
     import re
     source = inspect.getsource(worker_mod)
     timer_match = re.search(
-        r'with HeartbeatTimer\(\s*\n\s*tool_name=f"llm:', source
+        r'with HeartbeatTimer\(\s*tool_name=f"llm:', source
     )
     timer_idx = timer_match.start() if timer_match else -1
     stream_idx = source.find("llm.stream_chat(", timer_idx)
@@ -799,29 +803,22 @@ def test_heartbeat_interval_env_var_is_robust_to_garbage(monkeypatch):
     took down every swarm path. Falls back to 3.0s now."""
     monkeypatch.setenv("SWARM_HEARTBEAT_INTERVAL_S", "abc")
 
-    # Force re-evaluation by calling the resolver directly.
-    import importlib
-    import src.swarm.worker as w
-    importlib.reload(w)
-
-    assert w._HEARTBEAT_INTERVAL_S == 3.0
+    assert get_env_config().swarm.swarm_heartbeat_interval_s == 3.0
 
 
 def test_worker_source_wires_heartbeat_around_tool_execute():
-    """Belt-and-braces: assert worker.py wraps registry.execute in HeartbeatTimer.
-
-    A pure-source check (no LLM/tool needed) guards against accidental
-    refactors that re-expose the silent-tool-call symptom from #132.
-    """
+    """The common tool wait wraps registry dispatch in its heartbeat."""
     import inspect
-    source = inspect.getsource(worker_mod)
-    assert "HeartbeatTimer(" in source
-    assert "task_heartbeat" in source
-    # The wrapping must enclose registry.execute, not sit beside it.
-    timer_idx = source.find("with HeartbeatTimer(")
-    exec_idx = source.find("registry.execute(", timer_idx)
-    next_dedent = source.find("\n        ", exec_idx)  # exit the `with` block
-    assert 0 < timer_idx < exec_idx < next_dedent
+    from src.kernel.tool_runner import wait_for_tool
+    from src.product.tool_invocation import ToolInvocation
+
+    invocation = inspect.getsource(ToolInvocation._invoke_tool)
+    assert "HeartbeatTimer(" in invocation
+    assert "heartbeat=heartbeat" in invocation
+    assert "registry.execute(tool_name, effective_args)" in invocation
+    wait = inspect.getsource(wait_for_tool)
+    assert "with heartbeat(_on_heartbeat)" in wait
+    assert "result_queue.get(timeout=wait)" in wait
 
 
 def test_swarm_tool_forwards_started_and_live_events(monkeypatch):
@@ -843,7 +840,7 @@ def test_swarm_tool_forwards_started_and_live_events(monkeypatch):
             return loaded
 
     class FakeRuntime:
-        def __init__(self, store, max_workers=4, agent_config=None):
+        def __init__(self, store, max_workers=4, agent_config=None, policy=None):
             self._store = store
 
         def start_run(self, preset, variables, live_callback=None, include_shell_tools=False):
@@ -866,7 +863,7 @@ def test_swarm_tool_forwards_started_and_live_events(monkeypatch):
     monkeypatch.setattr("src.swarm.store.SwarmStore", FakeStore)
     monkeypatch.setattr("src.swarm.runtime.SwarmRuntime", FakeRuntime)
 
-    tool = swarm_tool.SwarmTool(event_callback=lambda etype, data: captured.append((etype, data)))
+    tool = swarm_tool.SwarmTool(policy=ToolPolicy.from_config(get_env_config()), event_callback=lambda etype, data: captured.append((etype, data)))
     payload = json.loads(tool.execute(prompt="analyze AAPL"))
 
     assert payload["run_id"] == "r-web-chat"
@@ -896,7 +893,7 @@ def test_swarm_tool_without_session_callback_preserves_plain_runtime(monkeypatch
             return loaded
 
     class FakeRuntime:
-        def __init__(self, store, max_workers=4, agent_config=None):
+        def __init__(self, store, max_workers=4, agent_config=None, policy=None):
             self._store = store
 
         def start_run(self, preset, variables, live_callback=None, include_shell_tools=False):
@@ -910,7 +907,7 @@ def test_swarm_tool_without_session_callback_preserves_plain_runtime(monkeypatch
     monkeypatch.setattr("src.swarm.store.SwarmStore", FakeStore)
     monkeypatch.setattr("src.swarm.runtime.SwarmRuntime", FakeRuntime)
 
-    payload = json.loads(swarm_tool.SwarmTool().execute(prompt="analyze AAPL"))
+    payload = json.loads(swarm_tool.SwarmTool(policy=ToolPolicy.from_config(get_env_config())).execute(prompt="analyze AAPL"))
 
     assert payload["run_id"] == "r-no-session"
     assert payload["status"] == "running"

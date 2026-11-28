@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.connectors as _cmd_connectors
+
 from io import StringIO
 
 from rich.console import Console
 
-import cli._legacy as legacy
 
 
 def _bars(n: int) -> list[dict[str, object]]:
@@ -28,11 +30,11 @@ def _run(monkeypatch, rows: list[dict[str, object]], limit: int) -> str:
     )
     buf = StringIO()
     monkeypatch.setattr(
-        legacy,
+        _cmd_common,
         "console",
         Console(file=buf, force_terminal=False, width=200, no_color=True),
     )
-    assert legacy.cmd_connector_history("AAPL", limit=limit) == 0
+    assert _cmd_connectors.cmd_connector_history("AAPL", limit=limit) == 0
     return buf.getvalue()
 
 

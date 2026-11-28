@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import shlex
 import sys
 
 import pytest
 
-from src.providers import claude_cli, tool_policy
+from src.product import tool_policy
+from src.providers import claude_cli
 from tests.claude_cli_helpers import install_fake_cli, payload, tool
 
 
@@ -24,6 +29,7 @@ def test_trading_tools_are_not_offered_by_default(fake_cli) -> None:
     set_replies({"payload": payload({"action": "final", "content": "ok"})})
 
     claude_cli.ClaudeCliLLM(
+        policy=ToolPolicy.from_config(get_env_config()),
         tools=[
             tool("get_market_data"),
             tool("trading_place_order"),
@@ -52,6 +58,7 @@ def test_request_for_unoffered_tool_is_fed_back_and_retried(fake_cli) -> None:
     )
 
     message = claude_cli.ClaudeCliLLM(
+        policy=ToolPolicy.from_config(get_env_config()),
         tools=[tool("get_market_data"), tool("trading_place_order")]
     ).invoke([{"role": "user", "content": "buy"}])
 
@@ -71,7 +78,7 @@ def test_empty_deny_list_offers_every_tool(fake_cli, monkeypatch) -> None:
     set_replies({"payload": payload({"action": "final", "content": "ok"})})
     monkeypatch.setenv("CLAUDE_CLI_DENY_TOOL_PREFIXES", "")
 
-    claude_cli.ClaudeCliLLM(tools=[tool("trading_place_order")]).invoke(
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("trading_place_order")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -157,7 +164,7 @@ def test_blocked_bash_is_fed_back_and_allowed_bash_is_rewritten(fake_cli) -> Non
         },
     )
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("bash")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("bash")]).invoke(
         [{"role": "user", "content": "risk"}]
     )
 
@@ -187,7 +194,7 @@ def test_background_tools_are_blocked_under_python_only(fake_cli) -> None:
         {"payload": payload({"action": "final", "content": "ok"})},
     )
 
-    claude_cli.ClaudeCliLLM(tools=[tool("background_run")]).invoke(
+    claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("background_run")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -213,7 +220,7 @@ def test_policy_off_passes_bash_through_unchanged(fake_cli, monkeypatch) -> None
         }
     )
 
-    message = claude_cli.ClaudeCliLLM(tools=[tool("bash")]).invoke(
+    message = claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("bash")]).invoke(
         [{"role": "user", "content": "x"}]
     )
 
@@ -235,6 +242,6 @@ def test_repeated_policy_violations_raise(fake_cli) -> None:
         }
     )
     with pytest.raises(RuntimeError, match="host policy"):
-        claude_cli.ClaudeCliLLM(tools=[tool("bash")]).invoke(
+        claude_cli.ClaudeCliLLM(policy=ToolPolicy.from_config(get_env_config()), tools=[tool("bash")]).invoke(
             [{"role": "user", "content": "x"}]
         )

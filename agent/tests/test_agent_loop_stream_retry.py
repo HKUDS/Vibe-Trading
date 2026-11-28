@@ -1,4 +1,4 @@
-"""AgentLoop single stream retry on ProviderStreamError.
+"""AgentRuntime single stream retry on ProviderStreamError.
 
 Mirrors the swarm worker policy: a transient mid-stream failure (connection
 reset, relay hiccup, 5xx) is retried exactly once; a deterministic 4xx fails
@@ -9,13 +9,17 @@ contain duplicated thinking text.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any, Callable
 
-import pytest
 
 import src.agent.tuning as tuning_mod
-from src.providers.chat import LLMResponse, ProviderStreamError
+from src.kernel.contracts import LLMResponse
+from src.providers.response import ProviderStreamError
 
 
 class _FlakyLoopLLM:
@@ -113,7 +117,7 @@ def _run(
     llm: _FlakyLoopLLM,
     events: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Run an AgentLoop turn against the given scripted LLM.
+    """Run an AgentRuntime turn against the given scripted LLM.
 
     Args:
         monkeypatch: pytest monkeypatch fixture (zeroes the retry sleep).
@@ -122,19 +126,19 @@ def _run(
         events: Optional event sink collecting ``(event_type, data)`` tuples.
 
     Returns:
-        The AgentLoop result dict.
+        The AgentRuntime result dict.
     """
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 0.0, raising=False)
     pm = PersistentMemory()
-    agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+    agent = AgentRuntime(
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(
-            (lambda event_type, data: events.append((event_type, data)))
+            (lambda event_type, data: events.append((data.get("kind", event_type), data)))
             if events is not None
             else None
         ),
@@ -161,13 +165,13 @@ def test_transient_stream_failure_is_retried_and_run_succeeds(
     assert llm.calls == 2
 
     event_types = [event_type for event_type, _ in events]
-    assert "stream_reset" in event_types
+    assert "text.reset" in event_types
     text_positions = [
-        index for index, event_type in enumerate(event_types) if event_type == "text_delta"
+        index for index, event_type in enumerate(event_types) if event_type == "text.delta"
     ]
-    reset_position = event_types.index("stream_reset")
+    reset_position = event_types.index("text.reset")
     assert text_positions[0] < reset_position < text_positions[-1]
-    reset = next(data for event_type, data in events if event_type == "stream_reset")
+    reset = next(data for event_type, data in events if event_type == "text.reset")
     assert reset["reason"] == "provider_stream_retry"
     assert reset["iter"] == 1
     assert reset["provider"] == "deepseek"

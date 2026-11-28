@@ -97,7 +97,7 @@ def _prompt_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                 "prompt.trace_preserved",
                 case.prompt,
                 bundle.errors.get("trace"),
-                "trace.jsonl",
+                "thread.jsonl",
             )
         )
         return verdicts
@@ -116,7 +116,7 @@ def _prompt_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                 "prompt.trace_preserved",
                 case.prompt,
                 None,
-                "trace.jsonl",
+                "thread.jsonl",
                 detail="this trace has no user message record",
             )
         )
@@ -131,7 +131,7 @@ def _prompt_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                 "prompt.trace_preserved",
                 case.prompt,
                 trace_prompt,
-                f"trace.jsonl:{user_record['_line']}",
+                f"thread.jsonl:{user_record['_line']}",
             )
         )
     return verdicts
@@ -154,7 +154,7 @@ def _execution_verdict(case: HarnessCase, bundle: ArtifactBundle) -> Verdict:
             allowed,
             errors,
             "state.json",
-            "trace.jsonl",
+            "thread.jsonl",
         )
     state_status = bundle.state.get("status") if bundle.state else None
     end_records = [record for record in bundle.trace if record.get("type") == "end"]
@@ -176,7 +176,7 @@ def _execution_verdict(case: HarnessCase, bundle: ArtifactBundle) -> Verdict:
             allowed,
             observed,
             "state.json#/status",
-            "trace.jsonl",
+            "thread.jsonl",
         )
     if any(item != state_status for item in end_statuses):
         return _verdict(
@@ -185,7 +185,7 @@ def _execution_verdict(case: HarnessCase, bundle: ArtifactBundle) -> Verdict:
             allowed,
             observed,
             "state.json#/status",
-            *(f"trace.jsonl:{record['_line']}" for record in end_records),
+            *(f"thread.jsonl:{record['_line']}" for record in end_records),
             detail="terminal artifacts disagree",
         )
     if not isinstance(allowed, list) or not all(
@@ -204,7 +204,7 @@ def _execution_verdict(case: HarnessCase, bundle: ArtifactBundle) -> Verdict:
         allowed,
         state_status,
         "state.json#/status",
-        f"trace.jsonl:{end_records[-1]['_line']}",
+        f"thread.jsonl:{end_records[-1]['_line']}",
     )
 
 
@@ -270,7 +270,7 @@ def _tool_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
                 "tools.trace_available",
                 expectation,
                 bundle.errors.get("trace"),
-                "trace.jsonl",
+                "thread.jsonl",
             )
         ]
     calls = [record for record in bundle.trace if record.get("type") == "tool_call"]
@@ -299,7 +299,7 @@ def _tool_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
                 f"tools.required.{index}",
                 required,
                 {"matching_calls": len(matches)},
-                *(f"trace.jsonl:{record['_line']}" for record in matches),
+                *(f"thread.jsonl:{record['_line']}" for record in matches),
             )
         )
     for index, forbidden in enumerate(expectation.get("forbidden", [])):
@@ -326,7 +326,7 @@ def _tool_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
                 f"tools.forbidden.{index}",
                 forbidden,
                 {"matching_calls": len(matches)},
-                *(f"trace.jsonl:{record['_line']}" for record in matches),
+                *(f"thread.jsonl:{record['_line']}" for record in matches),
             )
         )
     if expectation.get("max_false_skips") is not None:
@@ -339,7 +339,7 @@ def _tool_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
                 "tools.false_skips",
                 {"max": expectation.get("max_false_skips")},
                 {"observed_skip_records": len(skips)},
-                *(f"trace.jsonl:{record['_line']}" for record in skips),
+                *(f"thread.jsonl:{record['_line']}" for record in skips),
                 detail="current tool_skipped records omit arguments and policy, so false skips cannot be classified",
             )
         )
@@ -551,7 +551,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                     f"budget.{gate}",
                     limit,
                     bundle.errors.get("trace", "missing"),
-                    "trace.jsonl",
+                    "thread.jsonl",
                 )
             )
             continue
@@ -563,7 +563,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                     f"budget.{gate}",
                     limit,
                     None,
-                    "trace.jsonl",
+                    "thread.jsonl",
                 )
             )
         else:
@@ -578,7 +578,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                     f"budget.{gate}",
                     limit,
                     observed,
-                    f"trace.jsonl:{end_records[-1]['_line']}",
+                    f"thread.jsonl:{end_records[-1]['_line']}",
                 )
             )
 
@@ -636,7 +636,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                             "llm_calls": observed_iterations,
                         },
                         "llm_usage.json",
-                        f"trace.jsonl:{end_records[-1]['_line']}",
+                        f"thread.jsonl:{end_records[-1]['_line']}",
                         detail="provider usage is missing for one or more LLM calls",
                     )
                 )
@@ -666,7 +666,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                     f"budget.{gate}",
                     limit,
                     None,
-                    "trace.jsonl",
+                    "thread.jsonl",
                     detail=f"{gate} requires per-LLM-call tool-surface instrumentation",
                 )
             )
@@ -684,7 +684,7 @@ def _risk_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
                 "risk.trace_available",
                 expectation,
                 bundle.errors.get("trace"),
-                "trace.jsonl",
+                "thread.jsonl",
             )
         ]
     successful = _successful_tool_records(bundle.trace)
@@ -697,7 +697,7 @@ def _risk_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
             "risk.forbidden_successful_tools",
             forbidden,
             sorted({record.get("tool") for record in violations}),
-            *(f"trace.jsonl:{record['_line']}" for record in violations),
+            *(f"thread.jsonl:{record['_line']}" for record in violations),
         )
     )
     maximum = expectation.get("max_authorization_bypasses")
@@ -726,7 +726,7 @@ def _risk_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]:
                 "risk.authorization_bypasses",
                 maximum,
                 len(bypasses),
-                *(f"trace.jsonl:{record['_line']}" for record in bypasses),
+                *(f"thread.jsonl:{record['_line']}" for record in bypasses),
             )
         )
     return verdicts
@@ -740,7 +740,7 @@ def _tool_result_join_verdict(bundle: ArtifactBundle) -> Verdict:
             "tools.result_join",
             "consistent call/result records",
             bundle.errors.get("trace"),
-            "trace.jsonl",
+            "thread.jsonl",
         )
     calls = [record for record in bundle.trace if record.get("type") == "tool_call"]
     results = [record for record in bundle.trace if record.get("type") == "tool_result"]
@@ -791,7 +791,7 @@ def _tool_result_join_verdict(bundle: ArtifactBundle) -> Verdict:
         "tools.result_join",
         "consistent call/result records",
         {"outcomes": dict(sorted(outcomes.items())), "problems": problems},
-        "trace.jsonl",
+        "thread.jsonl",
     )
 
 

@@ -5,6 +5,13 @@ Fixtures are synthesized in-test via tmp_path; no binary fixtures on disk.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import builtins
 import json
 import types
@@ -1195,7 +1202,7 @@ def test_reportlab_fallback_embeds_bundled_font_when_no_system_font(
 def test_shadow_tools_are_auto_discovered() -> None:
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     for expected in (
         "extract_shadow_strategy",
         "run_shadow_backtest",
@@ -1214,7 +1221,7 @@ def test_extract_shadow_strategy_tool(
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
-    tool = ExtractShadowStrategyTool()
+    tool = ExtractShadowStrategyTool(roots=FileRoots.from_config(get_env_config().api))
     out = json.loads(tool.execute(journal_path=str(profitable_journal)))
     assert out["status"] == "ok"
     assert out["shadow_id"].startswith("shadow_")
@@ -1232,7 +1239,7 @@ def test_extract_shadow_strategy_tool_reports_errors(tmp_path: Path, monkeypatch
     from src.tools.shadow_account_tool import ExtractShadowStrategyTool
 
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
-    tool = ExtractShadowStrategyTool()
+    tool = ExtractShadowStrategyTool(roots=FileRoots.from_config(get_env_config().api))
     out = json.loads(tool.execute(journal_path=str(tmp_path / "missing.csv")))
     assert out["status"] == "error"
     assert "error" in out
@@ -1248,7 +1255,7 @@ def test_scan_shadow_signals_tool(
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     profile = extract_shadow_profile(profitable_journal)
     save_profile(profile)
-    tool = ScanShadowSignalsTool()
+    tool = ScanShadowSignalsTool(roots=FileRoots.from_config(get_env_config().api))
     out = json.loads(tool.execute(shadow_id=profile.shadow_id, date="2026-04-18"))
     assert out["status"] == "ok"
     assert out["disclaimer"]
@@ -1259,7 +1266,7 @@ def test_scan_shadow_signals_tool(
 def test_run_shadow_backtest_tool_handles_missing_id() -> None:
     from src.tools.shadow_account_tool import RunShadowBacktestTool
 
-    out = json.loads(RunShadowBacktestTool().execute(shadow_id="shadow_unknown"))
+    out = json.loads(RunShadowBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(shadow_id="shadow_unknown"))
     assert out["status"] == "error"
 
 
@@ -1296,7 +1303,7 @@ def test_run_shadow_backtest_tool_serializes_unknown_real_pnl_as_null(
     )
 
     out = json.loads(
-        shadow_account_tool.RunShadowBacktestTool().execute(shadow_id=profile.shadow_id)
+        shadow_account_tool.RunShadowBacktestTool(roots=FileRoots.from_config(get_env_config().api)).execute(shadow_id=profile.shadow_id)
     )
 
     assert out["status"] == "ok"
@@ -1315,7 +1322,7 @@ def test_shadow_account_skill_shipped() -> None:
 
 @pytest.mark.unit
 def test_context_prompt_references_shadow_account() -> None:
-    from src.agent.context import _SYSTEM_PROMPT  # noqa: SLF001 — intentional peek
+    from src.product.context import _SYSTEM_PROMPT  # noqa: SLF001 — intentional peek
 
     assert "Shadow Account" in _SYSTEM_PROMPT
     assert "extract_shadow_strategy" in _SYSTEM_PROMPT

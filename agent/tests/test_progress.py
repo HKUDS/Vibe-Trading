@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from src.agent.progress import (
+from src.kernel.progress import (
     HeartbeatTimer,
     ProgressEvent,
     _get_emitter,
@@ -146,7 +146,7 @@ def test_heartbeat_timer_logs_warning_when_clamped(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Clamping a sub-0.5s interval emits exactly one warning record."""
-    with caplog.at_level(logging.WARNING, logger="src.agent.progress"):
+    with caplog.at_level(logging.WARNING, logger="src.kernel.progress"):
         HeartbeatTimer("x", interval=0.01, emit=lambda d: None)
     clamp_records = [
         r for r in caplog.records if "clamped" in r.getMessage()
@@ -159,7 +159,7 @@ def test_heartbeat_timer_no_warning_when_interval_ok(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A valid interval (>= 0.5s) must not log the clamp warning."""
-    with caplog.at_level(logging.WARNING, logger="src.agent.progress"):
+    with caplog.at_level(logging.WARNING, logger="src.kernel.progress"):
         HeartbeatTimer("x", interval=1.5, emit=lambda d: None)
     assert not any("clamped" in r.getMessage() for r in caplog.records)
 

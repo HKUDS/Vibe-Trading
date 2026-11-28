@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import io
 import json
@@ -92,7 +94,7 @@ def load_frozen_benchmark(manifest_path: str, manifest: dict, config: dict) -> F
     return FrozenBenchmarkInput(ticker, visible)
 
 
-def load_frozen_frames(manifest_path: str, config: dict) -> tuple[dict, dict]:
+def load_frozen_frames(manifest_path: str, config: dict, *, roots: FileRoots) -> tuple[dict, dict]:
     """Read sealed price inputs, filtering before a strategy sees any rows.
 
     Args:
@@ -108,7 +110,7 @@ def load_frozen_frames(manifest_path: str, config: dict) -> tuple[dict, dict]:
     from src.tools.path_utils import safe_run_dir
 
     path = Path(manifest_path).expanduser().resolve()
-    safe_run_dir(str(path.parent))
+    safe_run_dir(str(path.parent), roots=roots)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1:
         raise ValueError("unsupported frozen-data manifest")

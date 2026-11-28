@@ -6,7 +6,7 @@ keyed on tool field names, never on natural language.
 
 from __future__ import annotations
 
-from src.agent.tool_results import ARCHIVE_MANIFEST
+from src.product.tool_results import ARCHIVE_MANIFEST
 
 import contextlib
 import csv
@@ -26,13 +26,14 @@ from evals.grounding.figures import (
     parse_figures_block,
     scan_figures,
 )
-from src.agent.instrument_identity import (
+from src.product.identity.authorization import extract_symbol_arguments, match_authorized_symbol
+from src.product.identity.normalize import (
     _CANONICAL_SYMBOL_RE,
     _infer_currency,
     _infer_venue,
     _normalize_symbol,
-    _utc_now,
 )
+from src.product.identity.ledger import _utc_now
 
 _PRICE_FIELDS = {"open", "high", "low", "close", "adj_close", "price"}
 
@@ -1149,7 +1150,7 @@ class _EvidenceMixin:
         from src.tools.path_utils import safe_run_dir
 
         try:
-            directory = safe_run_dir(str(raw_dir))
+            directory = safe_run_dir(str(raw_dir), roots=self.file_roots)
         except ValueError:
             return
         card, metrics = directory / "run_card.json", directory / "artifacts" / "metrics.csv"
@@ -1453,11 +1454,11 @@ class _EvidenceMixin:
         call_id: str,
     ) -> None:
         """Flatten bounded numeric leaves from other market-sensitive tools."""
-        symbols = self._extract_symbol_arguments(arguments)
+        symbols = extract_symbol_arguments(arguments)
         symbol = symbols[0] if len(symbols) == 1 else None
         if symbol:
             symbol = (
-                self._match_authorized_symbol(symbol, self.authorized_symbols) or symbol
+                match_authorized_symbol(symbol, self.authorized_symbols) or symbol
             )
         source = str(payload.get("source") or tool_name)
         remaining = _MAX_GENERIC_EVIDENCE

@@ -1194,6 +1194,20 @@
     "reasoningStrength": "推論強度",
     "unknownProvider": "不明なプロバイダー",
     "unknownModel": "不明なモデル",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "接続が切断されました。再接続しています…",
     "connectionRestored": "接続が復元されました",
     "agentWorking": "作業を始めています…",
@@ -1213,6 +1227,8 @@
     "describeGoal": "このセッションに添付するリサーチ目標を記述してください",
     "placeholder": "例: 000001.SZ で単純な移動平均戦略を2024年について検証する",
     "send": "送信",
+    "answerPlaceholder": "回答を入力",
+    "toolResultImageAlt": "ツールの結果",
     "messageInputLabel": "エージェントへのメッセージ",
     "inputHint": "Enter で送信 · Shift+Enter で改行",
     "editGoalObjectiveLabel": "リサーチ目標を編集",
@@ -1279,7 +1295,10 @@
       "failed": "失敗",
       "steps": "{{count}} ステップ",
       "continue": "続行",
-      "reattach": "再接続"
+      "reattach": "再接続",
+      "interrupted": "中断されました — このターンが終わる前にサーバーが再起動しました",
+      "interruptedStep": "完了前に中断されました",
+      "partial": "ターン停止時に途切れました"
     },
     "resumeConnector": "コネクタを再開",
     "resumeConnectorTitle": "キルスイッチを解除してコネクタ活動を再開",
@@ -1287,6 +1306,20 @@
     "failedToResumeConnector": "コネクタの再開に失敗しました。",
     "tokenUsage": {
       "live": "トークン"
+    },
+    "turnFailed": "実行に失敗しました",
+    "notice": {
+      "compaction": "以前の会話は要約されました"
+    },
+    "queue": {
+      "placeholder": "メッセージを追加 — 現在のステップの後に加わります",
+      "label": "待機中のメッセージ",
+      "queued": "待機中",
+      "delivering": "会話に追加しています…",
+      "discard": "待機中のメッセージを削除",
+      "discardFailed": "このメッセージはすでに会話に追加されています",
+      "failed": "メッセージを待機列に追加できませんでした",
+      "send": "待機列に追加"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "投資委員会レビュー",
       "quant_strategy_desk": "クオンツ戦略デスク",
+      "research": "リサーチ",
       "value_investing_committee": "バリュー投資委員会"
     }
   },

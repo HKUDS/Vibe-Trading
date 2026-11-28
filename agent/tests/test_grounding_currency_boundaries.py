@@ -1,4 +1,8 @@
 """Currency identity survives magnitude marks without inventing word matches."""
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import json
 
 import pytest
@@ -30,7 +34,7 @@ def test_currency_shape_boundaries(text, code):
     ('shares', 'USD 2,500,000,000', False),
 ])
 def test_sec_currency_units_and_scaled_claims(tmp_path, unit, claim, valid):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message='Analyze HE.US debt')
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message='Analyze HE.US debt')
     ledger.ingest_tool_result(
         tool_name='get_sec_filings', arguments={'ticker': 'HE'}, call_id='sec1', success=True,
         result=json.dumps({'ok': True, 'market': 'US', 'source': 'sec_edgar', 'data': {

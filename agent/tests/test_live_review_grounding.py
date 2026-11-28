@@ -1,4 +1,8 @@
 """Sparse, two-sided regressions for failures captured in real model traces."""
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import hashlib
 import json
 
@@ -10,7 +14,7 @@ from tests.test_grounding_backtest_outputs import _backtest, _declared, _read, _
 
 @pytest.mark.parametrize('unit,currency', [('USD', 'USD'), ('EUR', 'EUR'), ('USD/shares', 'USD')])
 def test_statement_leaf_unit_is_scoped_money_not_a_quote(tmp_path, unit, currency):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message='Summarize filing')
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message='Summarize filing')
     ledger.ingest_tool_result(tool_name='get_financial_statements', arguments={'code': 'TEST.US'},
         call_id='sec', success=True, result=json.dumps({'data': {'TEST.US': {'periods': [
             {'_units': {'Revenues': unit, 'Shares': 'shares'}, 'Revenues': 400000000.0, 'Shares': 700000000.0}
@@ -34,7 +38,7 @@ def _table_ledger(tmp_path):
     card = json.loads((tmp_path / 'run_card.json').read_text())
     card['artifacts'].append({'path': 'artifacts/ohlcv_TEST.US.csv', 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
     (tmp_path / 'run_card.json').write_text(json.dumps(card))
-    ledger = GroundingLedger(run_dir=tmp_path, user_message='Report backtest')
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message='Report backtest')
     _backtest(ledger, tmp_path, 'bt')
     return ledger, path
 

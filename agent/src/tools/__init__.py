@@ -1,14 +1,17 @@
-"""Tool registry: auto-discovery via BaseTool.__subclasses__().
+"""Tool registry for built-ins and explicitly supplied host tools.
 
-Adding a new tool:
-  1. Create a file in src/tools/ with a class extending BaseTool
-  2. Done. It's automatically discovered and registered.
+Built-in classes are discovered from ``src/tools`` for compatibility with the
+existing catalog. Host tools supplied through ``register_tool`` are added only
+to that client's registry and never enter this discovery path. This keeps a
+third-party class import from changing every process-wide registry.
 
 Tools with missing dependencies can override check_available() → False
 to be silently excluded from the registry.
 """
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
 
 import importlib
 import logging
@@ -19,9 +22,10 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from src.agent.tools import BaseTool, ToolRegistry
+from src.agent.tools import BaseTool, FileBoundTool, ToolRegistry
 
 if TYPE_CHECKING:
+    from src.product.resources.hooks import HookManager
     from src.config.schema import AgentConfig
     from src.memory.persistent import PersistentMemory
 
@@ -65,7 +69,11 @@ def _discover_subclasses() -> list[type[BaseTool]]:
     queue = deque(BaseTool.__subclasses__())
     while queue:
         cls = queue.popleft()
-        if cls.name:
+        module_name = str(getattr(cls, "__module__", ""))
+        if cls.name and (
+            module_name.startswith("src.tools.")
+            or module_name == "src.product.tool_loading"
+        ):
             classes.append(cls)
         queue.extend(cls.__subclasses__())
 
@@ -74,8 +82,45 @@ def _discover_subclasses() -> list[type[BaseTool]]:
     return classes
 
 
+def session_bound_tool_classes() -> frozenset[type[BaseTool]]:
+    """Tool classes ``build_registry`` binds to the host session.
+
+    Each is built with the session id and event callback: they create or
+    mutate the session's research goal (or schedule runs for it), and the LLM
+    never knows the session id. An instance of one acts on that session
+    whoever calls it.
+
+    Returns:
+        The goal tools, the research autopilot and scheduled research.
+    """
+    from src.tools.autopilot_tool import RunResearchAutopilotTool
+    from src.tools.goal_tool import (
+        AddGoalEvidenceTool,
+        GetResearchGoalTool,
+        StartResearchGoalTool,
+        UpdateResearchGoalStatusTool,
+        UpdateResearchGoalTool,
+    )
+    from src.tools.scheduled_research_tool import ScheduledResearchTool
+    from src.tools.plan_tool import PlanTool
+    from src.tools.ask_user_tool import AskUserTool
+
+    return frozenset({
+        StartResearchGoalTool,
+        GetResearchGoalTool,
+        AddGoalEvidenceTool,
+        UpdateResearchGoalStatusTool,
+        UpdateResearchGoalTool,
+        RunResearchAutopilotTool,
+        ScheduledResearchTool,
+        PlanTool,
+        AskUserTool,
+    })
+
+
 def build_registry(
     *,
+    policy: ToolPolicy,
     persistent_memory: "PersistentMemory | None" = None,
     include_shell_tools: bool = False,
     agent_config: "AgentConfig | None" = None,
@@ -87,6 +132,8 @@ def build_registry(
     background_manager: Any | None = None,
     background_scope: Any | None = None,
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
+    host_tools: list[BaseTool] | None = None,
+    hook_manager: HookManager | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
 
@@ -129,7 +176,7 @@ def build_registry(
             start. When omitted the scope is derived from ``session_id``, or is
             private to this registry when there is no session either. The
             resolved handle is exposed as ``registry.background`` so the host
-            can give the same one to ``AgentLoop`` and keep task results and
+            can give the same one to ``AgentRuntime`` and keep task results and
             completion notifications inside one conversation.
 
     Returns:
@@ -143,33 +190,18 @@ def build_registry(
         CheckBackgroundTool,
         get_background_manager,
     )
-    from src.tools.goal_tool import (
-        AddGoalEvidenceTool,
-        GetResearchGoalTool,
-        StartResearchGoalTool,
-        UpdateResearchGoalStatusTool,
-        UpdateResearchGoalTool,
-    )
-    from src.tools.autopilot_tool import RunResearchAutopilotTool
     from src.tools.remember_tool import RememberTool
+    from src.tools.spawn_agent_tool import SpawnAgentTool
     from src.tools.swarm_tool import SwarmTool
-    from src.tools.scheduled_research_tool import ScheduledResearchTool
 
-    goal_tool_classes = {
-        StartResearchGoalTool,
-        GetResearchGoalTool,
-        AddGoalEvidenceTool,
-        UpdateResearchGoalStatusTool,
-        UpdateResearchGoalTool,
-    }
-    # Tools that need the host session id injected: they create or mutate the
-    # session's research goal, and the LLM never knows the session id.
-    session_injected_classes = goal_tool_classes | {
-        RunResearchAutopilotTool,
-        ScheduledResearchTool,
-    }
+    from src.product.resources.hooks import load_hooks
+
+    session_injected_classes = session_bound_tool_classes()
     classes = _discover_subclasses()
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=policy)
+    sandbox = policy.sandbox
+    registry.sandbox = sandbox
+    registry.hooks = hook_manager or load_hooks()
 
     bg_scope = background_scope or (
         BackgroundScope(owner_id=f"session:{session_id}")
@@ -177,7 +209,8 @@ def build_registry(
         else getattr(background_manager, "scope", None)
         or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
     )
-    bg = (background_manager or get_background_manager()).for_scope(bg_scope)
+    bg_base = background_manager or get_background_manager(sandbox=sandbox)
+    bg = bg_base.for_scope(bg_scope, sandbox=sandbox)
     # The loop drains the same handle the tools write to, so a task's result
     # reaches the conversation that started it and no other.
     registry.background = bg
@@ -197,16 +230,35 @@ def build_registry(
             elif cls in (BackgroundRunTool, CheckBackgroundTool, CancelBackgroundTool):
                 registry.register(cls(background=bg))
             elif cls in session_injected_classes:
-                registry.register(cls(default_session_id=session_id, event_callback=event_callback))
+                kwargs = {"roots": policy.file_roots} if issubclass(cls, FileBoundTool) else {}
+                registry.register(cls(default_session_id=session_id, event_callback=event_callback, **kwargs))
+            elif cls.name == "analyze_image":
+                registry.register(cls(policy=policy))
             elif cls is SwarmTool:
                 registry.register(
                     cls(
+                        policy=policy,
                         include_shell_tools=include_shell_tools,
                         event_callback=event_callback,
                         session_id=session_id,
                         cancel_event=cancel_event,
                     )
                 )
+            elif cls is SpawnAgentTool:
+                # Reads this registry when it runs, so MCP tools appended
+                # below are part of the child's tool set too.
+                registry.register(
+                    cls(
+                        registry,
+                        cancel_event=cancel_event,
+                        session_id=session_id,
+                        event_callback=event_callback,
+                    )
+                )
+            elif issubclass(cls, FileBoundTool):
+                registry.register(cls(roots=policy.file_roots))
+            elif cls.name == "bash":
+                registry.register(cls(sandbox=sandbox))
             else:
                 registry.register(cls())
         except Exception as exc:
@@ -314,12 +366,16 @@ def build_registry(
                 if warn_callback is not None:
                     warn_callback(skip_msg)
 
+    for host_tool in host_tools or []:
+        registry.register_host_tool(host_tool)
+
     return registry
 
 
 def build_filtered_registry(
     tool_names: list[str],
     *,
+    policy: ToolPolicy,
     include_shell_tools: bool = False,
     skill_allowlist: list[str] | None = None,
     background_manager: Any | None = None,
@@ -345,6 +401,7 @@ def build_filtered_registry(
         ToolRegistry containing only the requested tools.
     """
     full = build_registry(
+        policy=policy,
         include_shell_tools=include_shell_tools,
         background_manager=background_manager,
         background_scope=background_scope,
@@ -360,6 +417,7 @@ def build_filtered_registry(
 def build_swarm_registry(
     tool_names: list[str],
     *,
+    policy: ToolPolicy,
     agent_config: "AgentConfig | None" = None,
     include_shell_tools: bool = False,
     skill_allowlist: list[str] | None = None,
@@ -368,7 +426,8 @@ def build_swarm_registry(
 ) -> ToolRegistry:
     """Build a per-worker registry that merges local + remote MCP tools.
 
-    Swarm workers receive a strict whitelist (``agent_spec.tools``). This
+    Swarm workers receive a strict whitelist (``agent_spec.tools``). Broker
+    mutations are excluded even when requested by a preset. This
     builder honors that whitelist while letting operator-configured MCP
     servers contribute additional tools by name (``mcp_<server>_<tool>``).
     Tools the whitelist requests but the operator has NOT surfaced — either
@@ -400,11 +459,14 @@ def build_swarm_registry(
         ToolRegistry containing the whitelist intersection of local tools
         and any operator-surfaced MCP tools.
     """
+    from src.tools.spawn_agent_tool import is_trading_state_tool
+
     swarm_agent_config, swarm_local_server_names = _prune_agent_config_for_swarm_tools(
         agent_config,
         tool_names,
     )
     full = build_registry(
+        policy=policy,
         agent_config=swarm_agent_config,
         include_shell_tools=include_shell_tools,
         background_manager=background_manager,
@@ -416,6 +478,7 @@ def build_swarm_registry(
         tool_names,
         include_shell_tools=include_shell_tools,
         skill_allowlist=skill_allowlist,
+        excluded=lambda tool: is_trading_state_tool(tool, include_unclassified_remote=False),
     )
 
 
@@ -456,12 +519,17 @@ def _filter_registry(
     *,
     include_shell_tools: bool,
     skill_allowlist: list[str] | None = None,
+    excluded: Callable[[BaseTool], bool] | None = None,
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
-    filtered = ToolRegistry()
+    filtered = ToolRegistry(policy=full.policy)
     filtered.background = getattr(full, "background", None)
+    filtered.hooks = getattr(full, "hooks", None)
     for name in tool_names:
         tool = full.get(name)
+        if tool is not None and excluded is not None and excluded(tool):
+            logger.warning("Requested tool %r is excluded from the worker registry.", name)
+            continue
         if tool:
             filtered.register(tool)
         else:

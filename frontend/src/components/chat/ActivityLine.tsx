@@ -28,6 +28,13 @@ interface ActivityLineProps {
   reasoningTail?: string;
   onContinue?: () => void;
   onReattach?: () => void;
+  /**
+   * `summary`: one line with no expandable details, for a turn's end, whose
+   * steps are already shown above it.
+   */
+  variant?: "default" | "summary";
+  /** List the steps in the details (off when they are shown inline elsewhere). */
+  showSteps?: boolean;
 }
 
 const ACTIVE_STATES = new Set<AgentActivity["state"]>([
@@ -64,6 +71,8 @@ export const ActivityLine = memo(function ActivityLine({
   reasoningTail,
   onContinue,
   onReattach,
+  variant = "default",
+  showSteps = true,
 }: ActivityLineProps): JSX.Element {
   const { t } = useTranslation();
   const detailsId = useId();
@@ -126,12 +135,44 @@ export const ActivityLine = memo(function ActivityLine({
     if (activity.state === "failed") {
       return `${t("agent.activity.failed" as never)} · ${stepsLabel} · ${elapsed}`;
     }
+    if (activity.state === "interrupted") {
+      return `${t("agent.activity.interrupted" as never)} · ${stepsLabel} · ${elapsed}`;
+    }
     if (activity.state === "done") {
       return `${t("agent.activity.done" as never)} · ${stepsLabel} · ${elapsed}`;
     }
     const latest = newestStep ? localizeToolName(newestStep.tool) : "";
     return [verb, latest, elapsed, stepsLabel].filter(Boolean).join(" · ");
   }, [activity.state, elapsed, newestStep, stepsLabel, t, verb]);
+
+  if (variant === "summary") {
+    const action = activity.state === "stopped" && onContinue
+      ? { label: t("agent.activity.continue" as never), onClick: onContinue }
+      : activity.state === "timeout" && onReattach
+        ? { label: t("agent.activity.reattach" as never), onClick: onReattach }
+        : null;
+    return (
+      <div
+        role="status"
+        data-turn-status={activity.state}
+        className="flex min-h-8 min-w-0 items-center gap-2 px-1 text-[13px] text-muted-foreground"
+      >
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+          <StateIcon state={activity.state} />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="shrink-0 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {action.label}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -171,7 +212,7 @@ export const ActivityLine = memo(function ActivityLine({
             </p>
           </div>
         )}
-        {activity.steps.length > 0 && (
+        {showSteps && activity.steps.length > 0 && (
           <div className="border-t border-border/30 px-3 py-2">
             <ToolProgressIndicator toolCalls={activity.steps} />
           </div>

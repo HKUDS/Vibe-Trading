@@ -22,6 +22,7 @@ vibe-trading provider list    # shared provider catalog as JSON (no credentials)
 |---------|-------------|
 | `/help` | Show keyboard shortcuts and command list |
 | `/model` | Switch LLM provider and model |
+| `/compact` | Summarize the current session context |
 | `/memory` | Show / manage persistent memory |
 | `/history` | Browse and resume prior sessions |
 | `/goal` | Start / inspect a finance research goal |
@@ -34,6 +35,7 @@ vibe-trading provider list    # shared provider catalog as JSON (no credentials)
 | `/journal` | Analyze trade journal CSV |
 | `/shadow` | Train / view shadow account |
 | `/export` | Export current session (md / json) |
+| `/fork` | Fork the current session from a turn |
 | `/debug` | Toggle debug panel (token usage / latency) |
 | `/comps` | Comparable company analysis (peer multiples -> implied range) |
 | `/dcf` | Discounted cash flow valuation with sensitivity grid |

@@ -52,7 +52,7 @@ _PLAYBOOK_DIR_ENV = "VIBE_TRADING_PLAYBOOK_DIR"
 _BUNDLED_DIR = Path(__file__).resolve().parent / "playbooks"
 
 # Opening ---, the YAML block, closing ---, then the body. Deliberately stricter
-# than src.agent.frontmatter: playbook metadata carries block sequences of
+# than src.product.resources.frontmatter: playbook metadata carries block sequences of
 # natural-language phrases (which contain commas), and that parser's inline
 # ``[a, b]`` form would shred them.
 _FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n(.*))?$", re.DOTALL)

@@ -9,6 +9,8 @@ users can send a chart screenshot and ask about it.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import base64
 import json
 import logging
@@ -81,6 +83,14 @@ class AnalyzeImageTool(BaseTool):
     repeatable = True
     is_readonly = True
 
+    def __init__(self, *, policy: ToolPolicy) -> None:
+        """Capture the host policy for image paths and provider access.
+
+        Args:
+            policy: Trusted tool policy containing the permitted import roots.
+        """
+        self.policy = policy
+
     def execute(self, **kwargs: Any) -> str:
         """Validate the path, send the image to the LLM, return its answer.
 
@@ -102,7 +112,7 @@ class AnalyzeImageTool(BaseTool):
             return _error("question must be a string")
 
         try:
-            path = safe_user_path(raw_path.strip())
+            path = safe_user_path(raw_path.strip(), roots=self.policy.file_roots)
         except ValueError as exc:
             return _error(str(exc))
         if not path.is_file():
@@ -131,7 +141,7 @@ class AnalyzeImageTool(BaseTool):
         try:
             from src.providers.chat import ChatLLM
 
-            llm = ChatLLM()
+            llm = ChatLLM(policy=self.policy)
             response = llm.chat(messages, timeout=_VISION_TIMEOUT_S)
             answer = (response.content or "").strip()
         except Exception as exc:  # noqa: BLE001 - provider errors go back to the agent

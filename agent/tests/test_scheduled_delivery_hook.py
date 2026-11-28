@@ -10,8 +10,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from src.scheduled_research.executor import ScheduledResearchExecutor
 from src.scheduled_research.models import DeliveryStatus, ScheduledResearchJob
 from src.scheduled_research.store import ScheduledResearchJobStore
@@ -35,9 +33,9 @@ def test_a_listener_that_raises_cannot_break_the_event_stream() -> None:
     bus.add_listener(_explodes)
     bus.add_listener(lambda event: seen.append(event.event_type))
 
-    bus.emit("s1", "attempt.completed", {})
+    bus.emit("s1", "item.delta", {"kind": "text.delta", "delta": "done"})
 
-    assert seen == ["attempt.completed"]
+    assert seen == ["item.delta"]
     # And the event still reached the buffer every reconnecting client reads.
     assert len(bus.replay("s1", replay_all=True)) == 1
 
@@ -48,11 +46,11 @@ def test_a_removed_listener_stops_hearing_events() -> None:
     listener = lambda event: seen.append(event.event_type)  # noqa: E731
 
     bus.add_listener(listener)
-    bus.emit("s1", "attempt.completed", {})
+    bus.emit("s1", "item.delta", {"kind": "text.delta", "delta": "done"})
     bus.remove_listener(listener)
-    bus.emit("s1", "attempt.failed", {})
+    bus.emit("s1", "item.delta", {"kind": "text.delta", "delta": "later"})
 
-    assert seen == ["attempt.completed"]
+    assert seen == ["item.delta"]
 
 
 def test_a_requested_sweep_delivers_without_waiting_for_a_tick(tmp_path: Path) -> None:

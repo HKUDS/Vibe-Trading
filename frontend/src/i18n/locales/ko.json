@@ -1194,6 +1194,20 @@
     "reasoningStrength": "추론 강도",
     "unknownProvider": "알 수 없는 제공자",
     "unknownModel": "알 수 없는 모델",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "연결이 끊겼습니다. 재연결 중…",
     "connectionRestored": "연결이 복원되었습니다",
     "agentWorking": "작업을 시작하고 있습니다…",
@@ -1213,6 +1227,8 @@
     "describeGoal": "이 세션에 첨부할 리서치 목표를 설명하세요",
     "placeholder": "예: 000001.SZ의 단순 이동평균 전략을 2024년 구간에서 테스트",
     "send": "보내기",
+    "answerPlaceholder": "답변 입력",
+    "toolResultImageAlt": "도구 결과",
     "messageInputLabel": "에이전트에게 보낼 메시지",
     "inputHint": "Enter로 전송 · Shift+Enter로 줄바꿈",
     "editGoalObjectiveLabel": "리서치 목표 편집",
@@ -1279,7 +1295,10 @@
       "failed": "실패",
       "steps": "{{count}}단계",
       "continue": "계속",
-      "reattach": "다시 연결"
+      "reattach": "다시 연결",
+      "interrupted": "중단됨 — 이 턴이 끝나기 전에 서버가 다시 시작되었습니다",
+      "interruptedStep": "완료되기 전에 중단됨",
+      "partial": "턴이 중지되며 잘림"
     },
     "resumeConnector": "커넥터 재개",
     "resumeConnectorTitle": "킬 스위치를 해제하고 커넥터 활동을 재개",
@@ -1287,6 +1306,20 @@
     "failedToResumeConnector": "커넥터 재개에 실패했습니다.",
     "tokenUsage": {
       "live": "토큰"
+    },
+    "turnFailed": "실행 실패",
+    "notice": {
+      "compaction": "이전 대화가 요약되었습니다"
+    },
+    "queue": {
+      "placeholder": "메시지 추가 — 현재 단계가 끝나면 합류합니다",
+      "label": "대기 중인 메시지",
+      "queued": "대기 중",
+      "delivering": "대화에 합류하는 중…",
+      "discard": "대기 메시지 삭제",
+      "discardFailed": "이 메시지는 이미 대화에 합류하는 중입니다",
+      "failed": "메시지를 대기열에 넣지 못했습니다",
+      "send": "대기열에 추가"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "투자 위원회 리뷰",
       "quant_strategy_desk": "퀀트 전략 데스크",
+      "research": "리서치",
       "value_investing_committee": "가치 투자 위원회"
     }
   },

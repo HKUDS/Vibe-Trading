@@ -2,7 +2,7 @@
 
 import pytest
 
-import src.agent.loop as loop_module
+
 import src.agent.tuning as tuning_module
 
 MOVED_NAMES = (
@@ -22,13 +22,12 @@ MOVED_NAMES = (
 
 
 @pytest.mark.parametrize("name", MOVED_NAMES)
-def test_tuning_helpers_are_reexported_by_loop(name: str) -> None:
-    assert getattr(loop_module, name) is getattr(tuning_module, name)
+def test_tuning_helpers_live_in_the_tuning_module(name: str) -> None:
+    assert name in vars(tuning_module)
 
 
 def test_token_threshold_override_must_target_tuning_module(monkeypatch) -> None:
     default = tuning_module._token_threshold()
-    monkeypatch.setattr(loop_module, "TOKEN_THRESHOLD", 123)
     assert tuning_module._token_threshold() == default
     monkeypatch.setattr(tuning_module, "TOKEN_THRESHOLD", 321)
     assert tuning_module._token_threshold() == 321

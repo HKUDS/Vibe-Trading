@@ -12,6 +12,11 @@ Covers:
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.dispatch as _cmd_dispatch
+import cli.commands.inspection as _cmd_inspection
+import cli.commands.setup_memory as _cmd_setup_memory
+
 import importlib
 from pathlib import Path
 import time
@@ -277,18 +282,17 @@ class TestMainDispatch:
         """
         from pathlib import Path
 
-        import cli
 
         captured: dict[str, Any] = {}
 
         def fake_cmd_list(*args, **kwargs):  # noqa: ANN001
-            captured["runs_dir"] = cli._legacy.RUNS_DIR
+            captured["runs_dir"] = _cmd_common.RUNS_DIR
             return 0
 
-        monkeypatch.setattr(cli._legacy, "cmd_list", fake_cmd_list)
-        monkeypatch.setattr(cli, "RUNS_DIR", Path("/tmp/regression-runs-dir"))
+        monkeypatch.setattr(_cmd_inspection, "cmd_list", fake_cmd_list)
+        monkeypatch.setattr(_cmd_common, "RUNS_DIR", Path("/tmp/regression-runs-dir"))
 
-        cli.cmd_list(20)
+        _cmd_inspection.cmd_list(20)
 
         assert captured.get("runs_dir") == Path("/tmp/regression-runs-dir")
 
@@ -330,9 +334,8 @@ class TestMainDispatch:
             captured["argv"] = list(passed_argv)
             return 0
 
-        from cli import _legacy
 
-        monkeypatch.setattr(_legacy, "main", fake_legacy_main)
+        monkeypatch.setattr(_cmd_dispatch, "main", fake_legacy_main)
 
         rc = cli_main_fn(argv)
 
@@ -626,7 +629,7 @@ class TestPackageCompat:
         # Historically the tests reached into ``cli._render_env_content``
         # and ``cli.cmd_memory_list``; the package keeps re-exporting
         # them so downstream callers stay green.
-        assert hasattr(cli, "_render_env_content")
-        assert hasattr(cli, "cmd_memory_list")
-        assert hasattr(cli, "cmd_init")
+        assert hasattr(_cmd_common, "_render_env_content")
+        assert hasattr(_cmd_setup_memory, "cmd_memory_list")
+        assert hasattr(_cmd_setup_memory, "cmd_init")
         assert callable(cli.main)

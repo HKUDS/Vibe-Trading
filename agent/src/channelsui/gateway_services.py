@@ -95,11 +95,10 @@ class WorkspaceService:
         envelope: dict[str, Any],
         *,
         chat_id: str,
-        chat_running: bool,
         controls_available: bool,
     ) -> WorkspaceScope:
         """Build a scope update from a client request."""
-        del chat_running, controls_available
+        del controls_available
         return self._scope_from_envelope(envelope) or self._scopes.get(chat_id) or self._default_scope()
 
     def scope_for_message(
@@ -107,11 +106,10 @@ class WorkspaceService:
         envelope: dict[str, Any],
         *,
         chat_id: str,
-        chat_running: bool,
         controls_available: bool,
     ) -> WorkspaceScope:
         """Return the active scope for a message."""
-        del chat_running, controls_available
+        del controls_available
         return self._scope_from_envelope(envelope) or self._scopes.get(chat_id) or self._default_scope()
 
     def persist_scope(self, chat_id: str, scope: WorkspaceScope) -> None:

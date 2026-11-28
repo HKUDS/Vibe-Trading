@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.provider_helpers import chat_with_adapter
 
 import json
@@ -10,11 +14,11 @@ from typing import Any, Callable
 
 import pytest
 
-from src.agent.loop import AgentLoop
-from src.agent.progress import emit_progress
+from src.agent.runtime import AgentRuntime
+from src.kernel.progress import emit_progress
 from src.agent.tools import BaseTool, ToolRegistry
 from src.memory.persistent import PersistentMemory
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 class _Chunk:
@@ -66,9 +70,12 @@ def _chat_llm(fake_llm: _ScriptedStreamingLLM):
     return chat_with_adapter(fake_llm, model="deepseek-v4-pro")
 
 
+@pytest.mark.parametrize("tag_space, wrapper", [("", "tool_calls"), (" ", "calls")])
 def test_agent_loop_executes_dsml_textual_tool_call(
     tmp_path: Path,
     monkeypatch,
+    tag_space: str,
+    wrapper: str,
 ) -> None:
     """A pure DSML response must execute as a tool call instead of final text."""
     class _ImmediateHeartbeatTimer:
@@ -85,23 +92,24 @@ def test_agent_loop_executes_dsml_textual_tool_call(
             return None
 
     monkeypatch.setattr(
-        "src.agent.tool_lifecycle.HeartbeatTimer", _ImmediateHeartbeatTimer
+        "src.product.tool_invocation.HeartbeatTimer", _ImmediateHeartbeatTimer
     )
-    dsml = (
-        '<｜｜DSML｜｜tool_calls>'
-        '<｜｜DSML｜｜invoke name="echo_probe">'
-        '<｜｜DSML｜｜parameter name="marker" string="true">ran-dsml</｜｜DSML｜｜parameter>'
-        "</｜｜DSML｜｜invoke>"
-        "</｜｜DSML｜｜tool_calls>"
-    )
-    registry = ToolRegistry()
+    tag = f"｜｜DSML｜｜{tag_space}"
+    dsml = "\n".join((
+        f'<{tag}{wrapper}>',
+        f'<{tag}invoke name="echo_probe">',
+        f'<{tag}parameter name="marker" string="true">ran-dsml</{tag}parameter>',
+        f'</{tag}invoke>',
+        f'</{tag}{wrapper}>',
+    ))
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     memory = PersistentMemory(memory_dir=tmp_path / "memory")
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM([dsml, "final answer"])),
-        event_callback=lambda event_type, payload: events.append((event_type, payload)),
+        event_callback=lambda event_type, payload: events.append((payload.get("kind", event_type), payload)),
         max_iterations=2,
         persistent_memory=memory,
     )
@@ -115,19 +123,21 @@ def test_agent_loop_executes_dsml_textual_tool_call(
         event_type: payload
         for event_type, payload in events
         if event_type
-        in {"tool_call", "tool_progress", "tool_heartbeat", "tool_result"}
+        in {"tool.started", "tool.progress", "tool.progress", "tool.completed"}
     }
+    assert any(p.get("heartbeat") is True for k, p in events if k == "tool.progress")
+    assert any(p.get("heartbeat") is False for k, p in events if k == "tool.progress")
     assert set(tool_events) == {
-        "tool_call",
-        "tool_progress",
-        "tool_heartbeat",
-        "tool_result",
+        "tool.started",
+        "tool.progress",
+        "tool.progress",
+        "tool.completed",
     }
     assert {
-        payload["call_id"] for payload in tool_events.values()
+        (payload.get("item") or payload.get("progress"))["tool_call_id" if "item" in payload else "call_id"] for payload in tool_events.values()
     } == {"dsml_call_1"}
     assert {
-        payload["tool"] for payload in tool_events.values()
+        (payload.get("item") or payload.get("progress"))["name" if "item" in payload else "tool"] for payload in tool_events.values()
     } == {"echo_probe"}
 
 def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
@@ -156,17 +166,17 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
             return None
 
     monkeypatch.setattr(
-        "src.agent.tool_lifecycle.HeartbeatTimer", _ImmediateHeartbeatTimer
+        "src.product.tool_invocation.HeartbeatTimer", _ImmediateHeartbeatTimer
     )
     # The fullwidth-vbar (U+FF5C) form is what the real failure looked like; the
     # streaming DSML parser does not recognize it, so it arrives as text.
     garbage = "<││DSML││tool_calls><││invoke name=\"trading_quote\">"
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM([garbage, garbage])),
-        event_callback=lambda event_type, payload: events.append((event_type, payload)),
+        event_callback=lambda event_type, payload: events.append((payload.get("kind", event_type), payload)),
         max_iterations=1,  # the single iteration is the forced-text last one
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
     )
@@ -188,7 +198,7 @@ def test_agent_loop_never_releases_tool_call_syntax_as_a_final_answer(
 def test_closing_dsml_tags_alone_are_tool_call_syntax() -> None:
     """A DeepSeek draft once ended in closing tags only, inside its figures block;
     the opening-tag pattern missed them and the gate got three unreadable lines."""
-    from src.agent.loop import _looks_like_tool_call_syntax
+    from src.product.tool_results import _looks_like_tool_call_syntax
 
     tail = "\n".join(
         [
@@ -217,13 +227,13 @@ def test_final_tool_syntax_gets_one_text_only_retry(
     )
     garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
     responses = [dsml] * (max_iterations - 1) + [garbage, "The report is ready."]
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=_chat_llm(_ScriptedStreamingLLM(responses)),
-        event_callback=lambda kind, payload: events.append((kind, payload)),
+        event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
         max_iterations=max_iterations,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
     )
@@ -235,13 +245,13 @@ def test_final_tool_syntax_gets_one_text_only_retry(
     assert result["content"] == "The report is ready."
     assert result["iterations"] == max_iterations + 1
     assert not result.get("degraded")
-    assert sum(kind == "tool_result" for kind, _ in events) == max_iterations - 1
+    assert sum(kind == "tool.completed" for kind, _ in events) == max_iterations - 1
     assert not responses
     shown = ""
     for kind, payload in events:
-        if kind == "stream_reset":
+        if kind == "text.reset":
             shown = ""
-        elif kind == "text_delta":
+        elif kind == "text.delta":
             shown += payload["delta"]
     assert shown == "The report is ready."
 
@@ -250,6 +260,7 @@ class _AnswerRetryLLM:
     def __init__(self, responses: list[LLMResponse]) -> None:
         self.responses = responses
         self.offered_tools: list[list[dict[str, Any]] | None] = []
+        self.requests: list[list[dict[str, Any]]] = []
 
     def stream_chat(
         self,
@@ -259,10 +270,51 @@ class _AnswerRetryLLM:
         **kwargs: Any,
     ) -> LLMResponse:
         self.offered_tools.append(tools)
+        self.requests.append([dict(message) for message in messages])
         response = self.responses.pop(0)
         if on_text_chunk and response.content:
             on_text_chunk(response.content)
         return response
+
+
+@pytest.mark.parametrize("repeats", [False, True], ids=["native-call", "repeated-markup"])
+def test_main_tool_syntax_gets_one_correction_with_tools(
+    tmp_path: Path, repeats: bool,
+) -> None:
+    """Let the model reissue a native call once while tools can still be offered."""
+    markup = '<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="echo_probe">'
+    native = LLMResponse(tool_calls=[
+        ToolCallRequest(id="corrected", name="echo_probe", arguments={"marker": "ready"})
+    ])
+    llm = _AnswerRetryLLM([
+        LLMResponse(content=markup), LLMResponse(content=markup) if repeats else native,
+        LLMResponse(content="The report is ready."),
+    ])
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(_EchoProbeTool())
+    events = []
+    agent = AgentRuntime(
+        registry=registry, llm=llm, max_iterations=4,
+        persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
+        event_callback=lambda kind, data: events.append(data.get("kind", kind)),
+    )
+    agent.memory.run_dir = str(tmp_path)
+
+    result = agent.run("Use the probe and report.")
+
+    assert result["iterations"] == (2 if repeats else 3)
+    assert llm.offered_tools[1]
+    assert sum(
+        "was not executed" in msg.get("content", "") and "tool-calling interface" in msg["content"]
+        for msg in llm.requests[1]
+    ) == 1
+    assert events.count("tool.completed") == (0 if repeats else 1)
+    if repeats:
+        assert result.get("degraded") is True
+        assert "tool-call syntax" in result["content"]
+        assert markup not in result["content"]
+    else:
+        assert result["content"] == "The report is ready."
 
 
 def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> None:
@@ -283,13 +335,13 @@ def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> No
             ),
         ]
     )
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EchoProbeTool())
     events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,
         llm=llm,
-        event_callback=lambda kind, payload: events.append((kind, payload)),
+        event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
     )
@@ -297,7 +349,7 @@ def test_final_answer_retry_cannot_execute_unoffered_tools(tmp_path: Path) -> No
 
     result = agent.run("report")
 
-    assert not any(kind in {"tool_call", "tool_result"} for kind, _ in events)
+    assert not any(kind in {"tool.started", "tool.completed"} for kind, _ in events)
     assert llm.offered_tools == [None, None]
     assert result["iterations"] == 2
     assert result.get("degraded") is True
@@ -311,7 +363,7 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
     from src.goal import GoalStore
 
     monkeypatch.setenv("VIBE_TRADING_GOAL_DB_PATH", str(tmp_path / "goals.db"))
-    monkeypatch.setattr("src.agent.loop.SESSIONS_DIR", tmp_path / "sessions")
+    monkeypatch.setattr("src.agent.runtime.SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr("src.agent.tuning.GOAL_MAX_CONTINUATIONS", 1, raising=False)
     store = GoalStore()
     goal = store.replace_goal(
@@ -329,8 +381,8 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
             ),
         ]
     )
-    agent = AgentLoop(
-        registry=ToolRegistry(),
+    agent = AgentRuntime(
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=llm,
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
@@ -357,13 +409,13 @@ def test_answer_retry_obeys_goal_budget_and_accounts_usage(
 def test_cancel_after_rejected_answer_prevents_retry(tmp_path: Path) -> None:
     garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
     llm = _AnswerRetryLLM([LLMResponse(content=garbage)])
-    agent = AgentLoop(
-        registry=ToolRegistry(),
+    agent = AgentRuntime(
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=llm,
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
         event_callback=lambda kind, payload: (
-            agent.cancel() if kind == "stream_reset" else None
+            agent.cancel() if payload.get("kind") == "text.reset" else None
         ),
     )
     agent.memory.run_dir = str(tmp_path / "run")
@@ -382,8 +434,8 @@ def test_protocol_retry_delivers_answer_without_numeric_gate(tmp_path: Path) -> 
             LLMResponse(content="AAPL is trading at $999.00."),
         ]
     )
-    agent = AgentLoop(
-        registry=ToolRegistry(),
+    agent = AgentRuntime(
+        registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())),
         llm=llm,
         max_iterations=1,
         persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
@@ -395,3 +447,64 @@ def test_protocol_retry_delivers_answer_without_numeric_gate(tmp_path: Path) -> 
     assert not result.get("degraded")
     assert result["content"] == "AAPL is trading at $999.00."
     assert llm.offered_tools == [None, None]
+
+
+# Native tool-call tokens a provider can leave unparsed in the text channel.
+_DEEPSEEK_NATIVE_CALL = (
+    "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>echo_probe\n"
+    '```json\n{"marker": "ready"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>'
+)
+_NATIVE_TOOL_CALL_MARKUP = [
+    "Report follows.<tool_calls_begin>echo_probe",
+    "<tool_call_begin>echo_probe",
+    'echo_probe<tool_sep>{"marker": "ready"}',
+    _DEEPSEEK_NATIVE_CALL,
+    "function tool▁sep echo_probe",
+    '<|tool_calls_section_begin|><|tool_call_begin|>functions.echo_probe:0<|tool_call_argument_begin|>{"marker": "ready"}<|tool_call_end|><|tool_calls_section_end|>',
+]
+
+
+@pytest.mark.parametrize("markup", _NATIVE_TOOL_CALL_MARKUP)
+def test_native_tool_call_tokens_are_tool_call_syntax(markup: str) -> None:
+    from src.product.tool_results import _looks_like_tool_call_syntax
+
+    assert _looks_like_tool_call_syntax(markup)
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "The provider emits tool_calls_begin tokens when parsing fails.",
+        "Use `tool_call` records; a tool_sep is a separator.",
+        "| 标的 | 权重 |\n|---|---|\n| 000001.SZ | 38.97% |",
+    ],
+)
+def test_prose_naming_tool_tokens_is_not_tool_call_syntax(prose: str) -> None:
+    from src.product.tool_results import _looks_like_tool_call_syntax
+
+    assert not _looks_like_tool_call_syntax(prose)
+
+
+@pytest.mark.parametrize("markup", _NATIVE_TOOL_CALL_MARKUP)
+def test_native_tool_call_tokens_are_never_released_as_the_answer(
+    tmp_path: Path, markup: str
+) -> None:
+    """Unparsed DeepSeek/Kimi call tokens get the text-only retry, not release."""
+    responses = [markup, "The report is ready."]
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(_EchoProbeTool())
+    events: list[tuple[str, dict[str, Any]]] = []
+    agent = AgentRuntime(
+        registry=registry,
+        llm=_chat_llm(_ScriptedStreamingLLM(responses)),
+        event_callback=lambda kind, payload: events.append((payload.get("kind", kind), payload)),
+        max_iterations=2,
+        persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
+    )
+    agent.memory.run_dir = str(tmp_path / "run")
+
+    result = agent.run("use the probe and report")
+
+    assert result["status"] == "success"
+    assert result["content"] == "The report is ready."
+    assert not responses

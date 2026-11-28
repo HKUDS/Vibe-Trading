@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -262,7 +266,7 @@ def test_the_tool_is_auto_discovered_by_the_agent_registry() -> None:
     """Creating the module is sufficient to expose the read-only agent tool."""
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     tool = registry.get("cashflow_performance")
     assert tool is not None
     assert tool.is_readonly is True

@@ -31,6 +31,8 @@ the playbook create contract (``source_type == "playbook"``).
 
 from __future__ import annotations
 
+import cli.commands.dispatch as _cmd_dispatch
+
 import json
 import time
 import uuid
@@ -156,9 +158,8 @@ def _handwritten_payload(operation: str, **extra: object) -> dict:
 
 def _run_cli(argv: List[str]) -> int:
     """Drive the real argparse dispatcher, returning its exit code."""
-    from cli import _legacy
 
-    return int(_legacy.main(argv))
+    return int(_cmd_dispatch.main(argv))
 
 
 # ---------------------------------------------------------------------------

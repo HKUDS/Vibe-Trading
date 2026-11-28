@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 from pathlib import Path
 
@@ -25,6 +29,7 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
     store = SessionStore(tmp_path / "sessions")
     event_bus = EventBus()
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=store, event_bus=event_bus, runs_dir=tmp_path / "runs"
     )
     session = Session(title="runtime metadata")
@@ -44,7 +49,7 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
             "reasoning_effort": "high",
         }
 
-    monkeypatch.setattr(service, "_run_with_agent", _fake_run)
+    monkeypatch.setattr(service._factory, "run", _fake_run)
 
     asyncio.run(service._run_attempt(session, attempt))
 
@@ -57,7 +62,10 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
     assert isinstance(reply.metadata["elapsed_ms"], int)
     assert reply.metadata["elapsed_ms"] >= 0
 
-    terminal = event_bus.replay(session.session_id, replay_all=True)[-1]
-    assert terminal.event_type == "attempt.completed"
-    assert terminal.data["model"] == "deepseek-v4-flash-202607"
-    assert terminal.data["elapsed_ms"] == reply.metadata["elapsed_ms"]
+    terminal = next(
+        item for item in store.thread_log(session.session_id).read()
+        if item.type == "turn_end"
+    )
+    assert terminal.get("status") == "completed"
+    assert terminal.get("model") == "deepseek-v4-flash-202607"
+    assert terminal.get("elapsed_ms") == reply.metadata["elapsed_ms"]

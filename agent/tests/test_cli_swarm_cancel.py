@@ -13,14 +13,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import cli._legacy as legacy
+from cli.commands import common
+from cli.commands import swarm_runtime as legacy
 from src.swarm.models import RunStatus, SwarmRun
 from src.swarm.runtime import register_active_run
 from src.swarm.store import SwarmStore
 
 
 def test_cancel_reaches_a_run_only_known_through_the_active_run_index(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(legacy, "SWARM_DIR", tmp_path)
+    monkeypatch.setattr(common, "SWARM_DIR", tmp_path)
     store = SwarmStore(base_dir=tmp_path)
     run = SwarmRun(
         id="run-abc123", preset_name="demo", status=RunStatus.running,
@@ -34,11 +35,11 @@ def test_cancel_reaches_a_run_only_known_through_the_active_run_index(tmp_path, 
     legacy.cmd_swarm_cancel(run.id)
 
     assert signalled == [run.id]
-    assert "Cancel signal sent" in capsys.readouterr().out
+    assert "Cancellation requested" in capsys.readouterr().out
 
 
 def test_cancel_still_reports_failure_for_an_unknown_run(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(legacy, "SWARM_DIR", tmp_path)
+    monkeypatch.setattr(common, "SWARM_DIR", tmp_path)
 
     legacy.cmd_swarm_cancel("nonexistent-run")
 
@@ -51,7 +52,7 @@ def test_cancel_records_a_durable_request_for_a_run_in_another_process(tmp_path,
     for it and the in-process fallbacks cannot fire. It must leave a durable
     cancel request in the run dir for the owning runtime to pick up.
     """
-    monkeypatch.setattr(legacy, "SWARM_DIR", tmp_path)
+    monkeypatch.setattr(common, "SWARM_DIR", tmp_path)
     store = SwarmStore(base_dir=tmp_path)
     run = SwarmRun(
         id="run-xproc",
@@ -64,17 +65,17 @@ def test_cancel_records_a_durable_request_for_a_run_in_another_process(tmp_path,
 
     legacy.cmd_swarm_cancel(run.id)
 
-    assert "Cancel signal sent" in capsys.readouterr().out
+    assert "Cancellation requested" in capsys.readouterr().out
     assert store.cancel_requested(run.id)
     # Re-asking is idempotent: the marker is already there.
     legacy.cmd_swarm_cancel(run.id)
-    assert "Cancel signal sent" in capsys.readouterr().out
+    assert "Cancellation requested" in capsys.readouterr().out
 
 
 def test_cancel_still_reports_failure_for_a_finished_run(tmp_path, monkeypatch, capsys):
     """A terminal run must not gain a cancel marker: there is no owner left
     to honour it, and reporting success would be a lie."""
-    monkeypatch.setattr(legacy, "SWARM_DIR", tmp_path)
+    monkeypatch.setattr(common, "SWARM_DIR", tmp_path)
     store = SwarmStore(base_dir=tmp_path)
     run = SwarmRun(
         id="run-done",
@@ -88,3 +89,36 @@ def test_cancel_still_reports_failure_for_a_finished_run(tmp_path, monkeypatch, 
 
     assert "not found or already finished" in capsys.readouterr().out
     assert not store.cancel_requested(run.id)
+
+
+def test_cancel_preserves_pending_run_and_rejects_symlink_markers(tmp_path, monkeypatch):
+    """A pending owner is cancellable, but a marker must be a regular local file."""
+    monkeypatch.setattr(common, "SWARM_DIR", tmp_path)
+    store = SwarmStore(base_dir=tmp_path)
+    run = SwarmRun(id="pending", preset_name="demo", status=RunStatus.pending,
+                   created_at=datetime.now(timezone.utc).isoformat())
+    run_dir = store.create_run(run)
+    target = tmp_path / "unrelated"
+    target.write_text("unchanged")
+    marker = run_dir / "cancel.request"
+    marker.symlink_to(target)
+    assert legacy.cmd_swarm_cancel(run.id) == 1
+    assert not store.cancel_requested(run.id)
+    assert target.read_text() == "unchanged"
+    marker.unlink()
+    assert legacy.cmd_swarm_cancel(run.id) == 0
+    assert store.cancel_requested(run.id)
+
+
+def test_cancel_rejects_symlinked_run_directory(tmp_path, monkeypatch):
+    """The request and polling paths both reject an alias to another run directory."""
+    monkeypatch.setattr(common, "SWARM_DIR", tmp_path)
+    store = SwarmStore(base_dir=tmp_path)
+    run = SwarmRun(id="real-run", preset_name="demo", status=RunStatus.running,
+                   created_at=datetime.now(timezone.utc).isoformat())
+    run_dir = store.create_run(run)
+    (tmp_path / "alias").symlink_to(run_dir, target_is_directory=True)
+    assert legacy.cmd_swarm_cancel("alias") == 1
+    assert not (run_dir / "cancel.request").exists()
+    assert store.request_cancel(run.id)
+    assert not store.cancel_requested("alias")

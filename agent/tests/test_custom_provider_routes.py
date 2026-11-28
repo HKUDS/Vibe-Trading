@@ -1,6 +1,10 @@
 """Tests for the custom OpenAI-compatible provider manager."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 from src.providers import custom_profiles
 
 import json
@@ -200,7 +204,7 @@ def test_activate_constructs_a_model_with_one_vault_profile(
     assert "secret" not in (tmp_path / ".env").read_text()
     creds = get_llm_credentials("custom", "stale-model")
     assert creds == {"provider": "custom", "model": "alpha-model", "base_url": "https://alpha.example/v1", "api_key": "alpha-secret"}
-    model = llm.build_llm()
+    model = llm.build_llm(policy=ToolPolicy.from_config(get_env_config()))
     assert model.model_name == "alpha-model"
     assert model.openai_api_base == "https://alpha.example/v1"
     assert model.openai_api_key.get_secret_value() == "alpha-secret"

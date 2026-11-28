@@ -7,6 +7,10 @@ and whether an idle run can pose as one.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -109,7 +113,7 @@ def _run(run_dir: Path, *, success: bool = True, exit_code: int = 0) -> dict[str
         runner_cls.return_value.execute.return_value = _FakeRunResult(
             success=success, exit_code=exit_code
         )
-        return json.loads(run_backtest(str(run_dir)))
+        return json.loads(run_backtest(str(run_dir), roots=FileRoots.from_config(get_env_config().api)))
 
 
 def _decay_check(artifact_id: str) -> dict[str, Any]:
@@ -466,13 +470,13 @@ def test_real_local_perpetual_backtest_records_one_measurement(run_root, store, 
         '    def generate(self, data_map):\n'
         '        return {k: pd.Series([1 if i % 10 < 5 else -1 for i in range(len(v))], index=v.index) for k,v in data_map.items()}\n'
     )
-    outcome = json.loads(run_backtest(str(run)))
+    outcome = json.loads(run_backtest(str(run), roots=FileRoots.from_config(get_env_config().api)))
     assert outcome["status"] == "ok", outcome
     assert outcome["bench_record"]["status"] == "recorded", outcome
     assert pd.read_csv(run / "artifacts" / "metrics.csv").iloc[0]["trade_count"] > 0
     copied = run_root / "real-copy"
     shutil.copytree(run, copied)
-    repeated = json.loads(run_backtest(str(copied)))
+    repeated = json.loads(run_backtest(str(copied), roots=FileRoots.from_config(get_env_config().api)))
     assert repeated["status"] == "ok", repeated
     assert repeated["bench_record"]["status"] == "skipped", repeated
     assert len(store.get_bench_history(artifact_id)) == 1

@@ -8,6 +8,10 @@ figure's value, and that no hint ever widens what a ref authorizes.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -37,7 +41,7 @@ GROUPS = {
 
 
 def _ledger(tmp_path: Path, *calls: tuple[str, dict]) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Show contributions per group")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Show contributions per group")
     for call_id, payload in calls or ((CALL, GROUPS),):
         ledger.ingest_tool_result(
             tool_name=TOOL,

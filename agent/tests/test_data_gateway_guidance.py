@@ -1,21 +1,25 @@
 """Guidance reaches actual agent surfaces without changing execution contracts."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 
-from src.agent.context import ContextBuilder
-from src.agent.memory import WorkspaceMemory
+from src.product.context import ContextBuilder
+from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.data_gateway.guidance import DATA_ACCESS_POLICY, MCP_DATA_GUIDANCE, SHELL_DATA_GUIDANCE
 from src.swarm.models import SwarmAgentSpec
-from src.swarm.worker import build_worker_prompt
+from src.swarm.node import build_worker_prompt
 from src.tools.bash_tool import BashTool
 from src.tools.background_tools import BackgroundRunTool
 from src.tools.mcp import MCPRemoteTool, MCPRemoteToolSpec
 
 
 def test_main_system_message_contains_policy_and_no_direct_fetch_exception():
-    builder = ContextBuilder(ToolRegistry(), WorkspaceMemory())
+    builder = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), WorkspaceMemory())
     messages = builder.build_messages("Use Python and an external MCP for this research.")
     prompt = messages[0]["content"]
     assert messages[0]["role"] == "system"
@@ -37,7 +41,7 @@ def test_workers_receive_same_policy_even_without_bar_tool():
 def test_shell_descriptions_direct_scripts_to_existing_artifacts():
     assert SHELL_DATA_GUIDANCE in BashTool.description
     assert SHELL_DATA_GUIDANCE in BackgroundRunTool.description
-    assert "Heredocs" in BashTool.description
+    assert "heredoc" in BashTool.description.lower()  # stated for the host shell (POSIX: supported; cmd.exe: not)
     assert "cancel_background" in BackgroundRunTool.description
 
 

@@ -1,15 +1,4 @@
-"""Supervise a provider stream whose next chunk may never arrive.
-
-A synchronous provider iterator blocks inside ``next()`` while the wire is
-silent, so a caller that polls a timeout or a cancel flag *after* each chunk
-never gets to poll at all. This races the pull against the idle deadline, the
-total deadline and a cancel predicate, and requests iterator cleanup when the
-wait is interrupted.
-
-Closing is best effort for a synchronous iterator already inside next(). The
-caller stops waiting promptly; the pull thread closes a busy iterator when it
-returns. Adapters remain responsible for bounding their underlying socket I/O.
-"""
+"""Supervise a provider stream whose next chunk may never arrive."""
 
 from __future__ import annotations
 
@@ -18,10 +7,12 @@ import inspect
 import queue
 import threading
 import time
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional, TypeVar
 
-#: Sentinel for "the iterator is exhausted".
 _EXHAUSTED = object()
+_stream_retry_wait: contextvars.ContextVar[Callable[[float], None] | None] = contextvars.ContextVar(
+    "stream_retry_wait", default=None,
+)
 
 #: How long a close is given to take effect before it is left to the adapter.
 _CLOSE_JOIN_SECONDS = 2.0
@@ -30,28 +21,32 @@ _CLOSE_JOIN_SECONDS = 2.0
 class StreamInterrupted(Exception):
     """A stream was stopped before it delivered a usable answer.
 
-    Carries the reason so the caller can tell a user stop from a stall, and
-    whether any partial output was already handed out, because that decides
-    whether a fallback request would replay a turn the user has already seen.
+    Args:
+        reason: Reason for interruption, such as cancellation or an idle or total timeout.
+        emitted: Whether an item already reached the consumer.
+        pending: Undelivered chunk, when present, whose billed usage the caller may recover.
     """
 
     def __init__(self, reason: str, *, emitted: bool = False, pending: Any = None) -> None:
         super().__init__(reason)
         self.reason = reason
         self.emitted = emitted
-        #: A chunk the provider had already produced when the stream stopped.
-        #: Its usage was billed, so the caller keeps it even though its text
-        #: and tool calls are dropped.
+        # Retain billed usage from the pending chunk on interruption.
         self.pending = pending
 
 
 class _Puller:
     """Move items off a blocking iterator one at a time onto a queue."""
 
-    def __init__(self, iterator: Iterator[Any], out: "queue.Queue[Any]") -> None:
+    def __init__(
+        self, iterator: Iterator[Any], out: "queue.Queue[Any]",
+        should_cancel: Callable[[], bool] | None, deadline: float | None,
+    ) -> None:
         self._iterator = iterator
         self._out = out
         self._stop = threading.Event()
+        self._should_cancel = should_cancel
+        self._deadline = deadline
         self._close_lock = threading.Lock()
         self._closed = False
         context = contextvars.copy_context()
@@ -60,7 +55,20 @@ class _Puller:
         )
         self._thread.start()
 
+    def _wait_for_retry(self, delay: float) -> None:
+        if self._should_cancel is not None and self._should_cancel():
+            raise StreamInterrupted("cancelled")
+        if self._deadline is not None:
+            delay = min(delay, max(0.0, self._deadline - time.monotonic()))
+        if self._stop.wait(delay):
+            raise StreamInterrupted("cancelled")
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise StreamInterrupted("total timeout")
+        if self._should_cancel is not None and self._should_cancel():
+            raise StreamInterrupted("cancelled")
+
     def _run(self) -> None:
+        token = _stream_retry_wait.set(self._wait_for_retry)
         try:
             while not self._stop.is_set():
                 try:
@@ -73,9 +81,11 @@ class _Puller:
                     return
                 self._put(item)
         finally:
-            # A busy generator rejects cross-thread close(). Once next() returns,
-            # this owning thread can release it, even after the caller has left.
-            self._close_once()
+            # Release a busy generator on the pull thread after next() returns.
+            try:
+                self._close_once()
+            finally:
+                _stream_retry_wait.reset(token)
 
     def _close_once(self) -> None:
         with self._close_lock:
@@ -90,8 +100,7 @@ class _Puller:
             self._closed = True
 
     def _put(self, item: Any) -> None:
-        # Backpressure must never discard text, usage, errors or EOF. Polling
-        # permits cancellation while a slow consumer leaves the slot occupied.
+        # Poll for cancellation without dropping data, errors or EOF.
         while not self._stop.is_set():
             try:
                 self._out.put(item, timeout=0.05)
@@ -104,15 +113,12 @@ class _Puller:
 
     def close_iterator(self) -> None:
         """Close the underlying iterator, bounded so a busy generator cannot hang us."""
-        # Never close a generator concurrently with its owner. Besides raising
-        # "generator already executing", concurrent finalization is unsafe in
-        # some Python runtimes. The owner closes it in _run's finally block.
+        # Only the owner may finalize a busy generator.
         if inspect.isgenerator(self._iterator) or self._closed:
             return
         if not callable(getattr(self._iterator, "close", None)):
             return
-        # Custom adapters may expose a close that unblocks next(). Bound that
-        # operation too; the caller must not hang inside adapter cleanup.
+        # Bound custom close() calls that can unblock next().
         done = threading.Event()
 
         def _attempt() -> None:
@@ -138,10 +144,21 @@ def supervised_pulls(
 ) -> Iterator[Any]:
     """Yield items while the stream can still make progress.
 
-    Raises :class:`StreamInterrupted` when the idle deadline passes with no
-    chunk, the total deadline expires, or ``should_cancel`` turns true. The
-    iterator receives a bounded cleanup attempt; a busy generator is closed
-    by its owning thread when next() returns. Queued late text is not emitted.
+    Args:
+        iterator: Source iterator, which may block in next.
+        idle_timeout_s: Maximum seconds waiting for the next item, excluding consumer time. None or
+            zero disables the idle deadline.
+        total_timeout_s: Maximum seconds for the supervised stream. None or zero disables the total
+            deadline.
+        should_cancel: Optional cancellation predicate checked before pulling and while waiting.
+        poll_interval_s: Seconds between cancellation polls while waiting for an item.
+
+    Yields:
+        Source items until exhaustion, cancellation, or timeout.
+
+    Raises:
+        StreamInterrupted: If a deadline expires or cancellation is requested.
+        BaseException: If a supervised pull raises an exception from the source iterator.
     """
     idle_timeout_s = idle_timeout_s or None
     total_timeout_s = total_timeout_s or None
@@ -152,14 +169,14 @@ def supervised_pulls(
     out: "queue.Queue[Any]" = queue.Queue(maxsize=1)
     if should_cancel is not None and should_cancel():
         raise StreamInterrupted("cancelled")
-    puller = _Puller(iterator, out)
     started = time.monotonic()
+    deadline = None if total_timeout_s is None else started + total_timeout_s
+    puller = _Puller(iterator, out, should_cancel, deadline)
     last_chunk = started
     emitted = False
 
     def interrupt(reason: str) -> StreamInterrupted:
-        # Take whatever the provider already produced: it was billed, so its
-        # usage belongs on the response even though its text is dropped.
+        # Keep already billed usage when discarding interrupted output.
         try:
             pending = out.get_nowait()
         except queue.Empty:
@@ -174,20 +191,17 @@ def supervised_pulls(
             remaining: Optional[float] = None
             if idle_timeout_s is not None:
                 remaining = max(0.0, idle_timeout_s - (now - last_chunk))
-            if total_timeout_s is not None:
-                budget = max(0.0, total_timeout_s - (now - started))
+            if deadline is not None:
+                budget = max(0.0, deadline - now)
                 remaining = budget if remaining is None else min(remaining, budget)
             if remaining is not None and remaining <= 0:
-                total_expired = total_timeout_s is not None and now - started >= total_timeout_s
+                total_expired = deadline is not None and now >= deadline
                 raise interrupt("total timeout" if total_expired else "idle timeout")
             wait = poll_interval_s if remaining is None else min(poll_interval_s, remaining)
             try:
                 item = out.get(timeout=wait)
             except queue.Empty:
-                # Nothing arrived in this window, so the only thing that can
-                # still make progress is stopping. A chunk that has already
-                # arrived is always preferred, because it was already billed
-                # and the consumer keeps its usage even while dropping text.
+                # Check cancellation after polling so already billed chunks can be retained.
                 if should_cancel is not None and should_cancel():
                     raise interrupt("cancelled")
                 continue
@@ -202,3 +216,56 @@ def supervised_pulls(
     finally:
         puller.stop()
         puller.close_iterator()
+
+
+Chunk = TypeVar("Chunk")
+
+
+def threaded_stream(
+    run: Callable[[Callable[[Chunk], None], threading.Event], None],
+    *,
+    heartbeat: Callable[[], Chunk] | None = None,
+    interval: float | None = None,
+) -> Iterator[Chunk]:
+    """Yield worker output and signal cancellation when the consumer closes.
+
+    Args:
+        run: Worker function receiving an item emitter and an event set when consumption ends.
+        heartbeat: Optional factory for a heartbeat item when the output queue is idle.
+        interval: Seconds to wait for worker output between heartbeats. None waits without a
+            deadline.
+
+    Yields:
+        Worker output and any configured heartbeat items.
+
+    Raises:
+        Exception: If the worker or heartbeat factory raises.
+    """
+    chunks: queue.Queue[Any] = queue.Queue()
+    sentinel = object()
+    cancelled = threading.Event()
+
+    def produce() -> None:
+        try:
+            run(chunks.put, cancelled)
+        except Exception as exc:
+            chunks.put(exc)
+        finally:
+            chunks.put(sentinel)
+
+    threading.Thread(target=produce, daemon=True).start()
+    try:
+        while True:
+            try:
+                chunk = chunks.get(timeout=interval)
+            except queue.Empty:
+                if heartbeat is not None:
+                    yield heartbeat()
+                continue
+            if chunk is sentinel:
+                return
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
+    finally:
+        cancelled.set()

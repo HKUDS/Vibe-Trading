@@ -20,8 +20,9 @@ agents:
       4. **Current drawdown state** — Whether in a drawdown now; distance from last high
       5. **Drawdown alert** — Estimated drawdown probability based on volatility and trend
 
-      `load_skill` loads methodology documents; it does NOT fetch data. Pull the
-      price history with `get_market_data`, build the equity curve in `bash`, then
+      `load_skill` loads methodology documents; it does NOT fetch data. Reuse
+      suitable supplied price history; fetch missing coverage with `get_market_data`.
+      If the required drawdown calculation is missing, build the equity curve in `bash`, then
       call `src.quantlib.risk.max_drawdown_analysis(equity)` for the drawdown
       profile. Rank the top-5 events and the recovery times from that output.
       For output 5, run `src.quantlib.risk.monte_carlo_gbm(...)` +
@@ -53,9 +54,10 @@ agents:
       4. **Tail event probability** — `src.quantlib.risk.fit_gpd_tail(returns, threshold_pct)`; report the threshold you used, since the fit depends on it
       5. **Protection ideas** — Priced hedge structures, not shapes. Build each candidate as signed legs and run `options_payoff` for entry debit/credit, analytic breakevens and max loss; `options_pricing` values a single leg. Take the implied vol from `get_options_chain` when the underlying is US-listed, and when it is not, state the vol you assumed and label it an assumption. Report the cost of protection as a percentage of the notional being protected — an unpriced hedge cannot be compared against the tail loss it is supposed to cover
 
-      `load_skill` loads methodology documents; it does NOT fetch data — pull returns
-      with `get_market_data` first. Every figure above must name the sample window
-      it came from. If the series cannot be retrieved, report the section as
+      `load_skill` loads methodology documents; it does NOT fetch data. Reuse
+      suitable supplied returns and calculations; fetch missing coverage with
+      `get_market_data`. Every figure above must name its sample window.
+      If neither supplied nor retrieved evidence supports it, report the section as
       unavailable rather than producing an illustrative number.
     tools: [bash, read_file, write_file, load_skill, get_market_data, get_options_chain, options_pricing, options_payoff]
     skills: [volatility]
@@ -80,8 +82,9 @@ agents:
       4. **Historical analogs** — 2–3 past periods most similar to today
       5. **Forward look** — 1–3 month path probabilities under a regime framework
 
-      `load_skill` loads methodology documents; it does NOT fetch data. Pull bars
-      with `get_market_data` and derive the regime evidence in `bash`:
+      `load_skill` loads methodology documents; it does NOT fetch data. Reuse
+      suitable supplied bars; fetch missing coverage with `get_market_data`.
+      Derive any missing regime evidence in `bash`:
       realised vol and trend from the bars, `technical_indicators` for the
       momentum readings, `src.quantlib.timeseries.fit_garch(returns, horizon)` for
       volatility persistence, and `src.quantlib.risk.monte_carlo_gbm` +

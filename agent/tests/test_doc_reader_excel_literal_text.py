@@ -1,5 +1,9 @@
 """Physical Excel text must not be reinterpreted as pandas missing-value markers."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import re
 
@@ -26,7 +30,7 @@ def read_workbook(tmp_path, monkeypatch, rows, second_sheet=False):
     reopened = openpyxl.load_workbook(path)
     assert list(reopened["Regions"].values)[1:] == [tuple(row) for row in rows]
     reopened.close()
-    return json.loads(DocReaderTool().execute(file_path=str(path)))
+    return json.loads(DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path=str(path)))
 
 
 @pytest.mark.parametrize("literal", ["NA", "N/A", "NULL", "None", "null", "n/a"])

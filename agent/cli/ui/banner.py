@@ -63,7 +63,18 @@ def print_banner(
     mode: str = "cli",
     **_: object,
 ) -> None:
-    """Render the cold-start banner once before the prompt appears."""
+    """Render the cold-start banner once before the prompt appears.
+
+    Args:
+        console: Rich console receiving the banner.
+        model: Model label displayed below the logo.
+        skills: Skill count accepted from banner statistics. Currently unused.
+        tools: Tool count accepted from banner statistics. Currently unused.
+        sessions: Session count accepted from banner statistics. Currently unused.
+        version: Version label displayed below the logo.
+        mode: Mode label displayed below the logo.
+        **_: Additional banner statistics accepted for compatibility.
+    """
 
     del skills, tools, sessions
     width = max(len(line.rstrip()) for line in _LOGO)

@@ -1,16 +1,4 @@
-"""Keep a user-supplied model endpoint on the public internet at connect time.
-
-A custom OpenAI-compatible provider is checked when it is tested and saved,
-but a host name can re-resolve later (DNS rebinding) and point the saved
-profile at a private address. The clients built here resolve every direct
-connection once, refuse it unless every address is public, and connect to the
-address they checked, so there is no second lookup to rebind. TLS still
-verifies the certificate against the original host name.
-
-When a proxy applies to the endpoint, the proxy resolves the name and no
-local check can see the address it reaches; those clients are not built and
-the caller keeps its default transport.
-"""
+"""Keep a user-supplied model endpoint on the public internet at connect time."""
 
 from __future__ import annotations
 
@@ -25,9 +13,7 @@ import httpcore
 import httpx
 
 
-# Fake-IP proxies (Clash, Surge, sing-box in TUN mode) answer every lookup
-# from the RFC 2544 benchmarking range and resolve the real name themselves,
-# the way an HTTP proxy does; refusing it refused every endpoint on such hosts.
+# Fake-IP proxies use the RFC 2544 range and resolve the real endpoint themselves.
 _FAKE_IP_RANGE = ipaddress.ip_network("198.18.0.0/15")
 
 
@@ -36,19 +22,13 @@ def is_non_public_address(
 ) -> bool:
     """Return whether an endpoint address is outside the public internet.
 
-    ``is_private`` misses the shared address space 100.64.0.0/10, which holds
-    Alibaba Cloud's metadata service (100.100.100.200); ``is_global`` covers it
-    together with loopback, link-local, reserved and documentation ranges. An
-    IPv4-mapped IPv6 address is judged by the IPv4 address it carries.
-
     Args:
-        address: The literal or resolved endpoint address.
-        resolved: True when the address came from a DNS lookup. A looked-up
-            address in 198.18.0.0/15 is a local fake-IP proxy's answer and is
-            allowed; the same address written into a URL is not.
+        address: The literal or resolved endpoint address. IPv4-mapped IPv6 addresses are checked as
+            IPv4.
+        resolved: Whether the address came from DNS, where the fake-IP range is allowed.
 
     Returns:
-        True when the address must not be used as a provider endpoint.
+        True when the endpoint address is disallowed for a direct connection.
     """
     mapped = getattr(address, "ipv4_mapped", None)
     if mapped is not None:
@@ -62,10 +42,10 @@ def proxy_applies(url: str) -> bool:
     """Return whether the process proxy settings route ``url`` through a proxy.
 
     Args:
-        url: The endpoint URL.
+        url: Endpoint URL whose scheme and hostname are checked.
 
     Returns:
-        True when a proxy from the environment would carry the request.
+        True when the process proxy settings cover the URL and the hostname does not bypass them.
     """
     parts = urlsplit(url)
     host = parts.hostname or ""
@@ -76,12 +56,7 @@ def proxy_applies(url: str) -> bool:
 
 
 def _checked_address(host: str, port: int) -> str:
-    """Resolve ``host`` and return one address, refusing any non-public one.
-
-    Raises:
-        httpcore.ConnectError: If the name does not resolve or any of its
-            addresses is not public.
-    """
+    """Resolve ``host`` and return one address, refusing any non-public one."""
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
@@ -138,12 +113,7 @@ class _AsyncPublicOnlyBackend(httpcore.AsyncNetworkBackend):
 
 
 def _guard_pool(transport: httpx.HTTPTransport | httpx.AsyncHTTPTransport) -> None:
-    """Wrap the transport's connection pool backend in the public-only check.
-
-    Raises:
-        RuntimeError: If the installed httpx no longer exposes the pool's
-            network backend, so the guard cannot be installed.
-    """
+    """Wrap the transport's connection pool backend in the public-only check."""
     pool = getattr(transport, "_pool", None)
     inner = getattr(pool, "_network_backend", None)
     if inner is None:
@@ -155,14 +125,12 @@ def _guard_pool(transport: httpx.HTTPTransport | httpx.AsyncHTTPTransport) -> No
 def public_only_async_client(**client_kwargs: Any) -> httpx.AsyncClient:
     """Build an async client whose every direct connection is checked.
 
-    The transport is explicit, so environment proxies are not mounted; call
-    this only when :func:`proxy_applies` is false for the endpoint.
-
     Args:
-        **client_kwargs: Extra keyword arguments for the client.
+        **client_kwargs: Extra keyword arguments for the async client, such as timeouts or redirect
+            policy.
 
     Returns:
-        The guarded async client.
+        The async client with its direct-connection transport guarded.
     """
     transport = httpx.AsyncHTTPTransport(proxy=None, trust_env=True)
     _guard_pool(transport)
@@ -172,15 +140,12 @@ def public_only_async_client(**client_kwargs: Any) -> httpx.AsyncClient:
 def build_public_only_clients(**client_kwargs: Any) -> tuple[httpx.Client, httpx.AsyncClient]:
     """Build sync and async clients whose every direct connection is checked.
 
-    The transports are explicit, so environment proxies are not mounted; call
-    this only when :func:`proxy_applies` is false for the endpoint.
-
     Args:
-        **client_kwargs: Extra keyword arguments for both clients (timeouts,
-            redirect policy).
+        **client_kwargs: Extra keyword arguments for both clients, such as timeouts or redirect
+            policy.
 
     Returns:
-        A ``(sync_client, async_client)`` pair.
+        A pair of guarded clients, synchronous first and asynchronous second.
     """
     sync_transport = httpx.HTTPTransport(proxy=None, trust_env=True)
     _guard_pool(sync_transport)

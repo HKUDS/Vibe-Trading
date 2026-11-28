@@ -7,6 +7,10 @@ markdown formatter are pure-function tests.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from datetime import date
 from unittest.mock import MagicMock
@@ -18,7 +22,7 @@ from src.swarm import grounding
 from src.swarm.models import SwarmAgentSpec, SwarmRun, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.task_store import TaskStore
-from src.swarm.worker import build_worker_prompt
+from src.swarm.node import build_worker_prompt
 
 
 # --------------------------------------------------------------------------- #
@@ -300,7 +304,7 @@ def test_worker_prompt_data_citation_rule_targets_aggregator_roles() -> None:
 def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatch) -> None:
     """Regression: _execute_layer must receive the run-level grounding block."""
     store = MagicMock()
-    runtime = SwarmRuntime(store=store, max_workers=1)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, max_workers=1)
     run_dir = tmp_path / "run"
     task_store = TaskStore(run_dir)
     agent = _spec()
@@ -319,14 +323,13 @@ def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatc
         seen.append(kwargs["grounding_block"])
         return WorkerResult(status="completed", summary="done")
 
-    monkeypatch.setattr(runtime, "_run_worker_with_retries", _fake_worker)
+    monkeypatch.setattr(runtime, "_run_node_with_retries", _fake_worker)
 
     results = runtime._execute_layer(
         run=run,
         task_store=task_store,
         agent_map={agent.id: agent},
         layer_task_ids=[task.id],
-        task_summaries={},
         run_dir=run_dir,
         cancel_event=threading.Event(),
         grounding_block="GROUNDING",

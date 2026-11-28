@@ -63,6 +63,8 @@ export interface ComposerHandle {
 
 interface Props {
   streaming: boolean;
+  /** While streaming, a sent message queues behind the running turn instead of being refused. */
+  canQueue?: boolean;
   activityVerb?: AgentActivity["verb"];
   hasCompletedTurn: boolean;
   showExport: boolean;
@@ -81,6 +83,7 @@ interface Props {
 
 export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer({
   streaming,
+  canQueue = false,
   activityVerb,
   hasCompletedTurn,
   showExport,
@@ -100,6 +103,8 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
+  /* Typing stays open during a turn when the message can queue behind it. */
+  const inputLocked = streaming && !canQueue;
   const lastCompositionEndRef = useRef(0);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -115,7 +120,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   }, []);
 
   const submitPrompt = useCallback((prompt: string) => {
-    if ((!prompt.trim() && attachments.length === 0) || streaming || uploading) return;
+    if ((!prompt.trim() && attachments.length === 0) || inputLocked || uploading) return;
     const submitted = prompt.trim();
     const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
     const requestText = goalComposerActive ? submitted : buildChatPrompt(submitted, attachments, Boolean(swarmPreset));
@@ -129,7 +134,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
     if (!goalComposerActive) setAttachments([]);
     onSubmit(submitted, submittedAttachments);
     inputRef.current?.focus();
-  }, [attachments, goalComposerActive, onSubmit, streaming, swarmPreset, t, uploading]);
+  }, [attachments, goalComposerActive, inputLocked, onSubmit, swarmPreset, t, uploading]);
 
   useImperativeHandle(ref, () => ({
     fill(prompt: string) {
@@ -451,7 +456,9 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
             }
           }}
           placeholder={
-            streaming
+            streaming && canQueue
+              ? t("agent.queue.placeholder" as never)
+              : streaming
               ? t(`agent.activity.verbs.${activityVerb ?? "working"}` as never)
               : goalComposerActive
               ? t("agent.describeGoal")
@@ -460,12 +467,12 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
               : t("agent.placeholder")
           }
           aria-label={t("agent.messageInputLabel")}
-          aria-readonly={streaming}
+          aria-readonly={inputLocked}
           className={[
             "min-h-[52px] flex-1 resize-none overflow-y-auto bg-transparent px-3 py-3 text-sm outline-none max-h-32",
-            streaming ? "cursor-not-allowed text-muted-foreground/70" : "",
+            inputLocked ? "cursor-not-allowed text-muted-foreground/70" : "",
           ].join(" ")}
-          readOnly={streaming}
+          readOnly={inputLocked}
         />
         {showExport && (
           <button
@@ -476,6 +483,17 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
             title={t("agent.exportChat")}
           >
             <Download className="h-4 w-4" />
+          </button>
+        )}
+        {streaming && canQueue && input.trim() && (
+          <button
+            type="submit"
+            disabled={uploading}
+            className="h-10 px-4 rounded-xl border border-primary/40 text-primary text-sm font-medium disabled:opacity-40 hover:bg-primary/10 transition-colors"
+            title={t("agent.queue.send" as never)}
+            aria-label={t("agent.queue.send" as never)}
+          >
+            <Send className="h-4 w-4" />
           </button>
         )}
         {streaming ? (

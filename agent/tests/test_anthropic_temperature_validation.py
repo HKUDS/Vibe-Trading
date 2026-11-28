@@ -4,7 +4,8 @@ import asyncio
 
 import pytest
 
-from src.providers import llm
+from src.providers.adapters import anthropic as anthropic_adapter
+from src.providers.adapters import common as common_adapter
 
 
 @pytest.mark.parametrize("message", [
@@ -21,16 +22,16 @@ def test_other_validation_failures_do_not_poison_temperature_cache(message):
             self.calls += 1
             raise RuntimeError(message)
 
-    instance = llm._make_temperature_safe_anthropic(Provider)()
-    key = llm._endpoint_model(instance)
-    llm._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
+    instance = anthropic_adapter._make_temperature_safe_anthropic(Provider)()
+    key = common_adapter._endpoint_model(instance)
+    anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
     try:
         with pytest.raises(RuntimeError, match=".*"):
             instance._generate([])
         assert instance.calls == 1
-        assert key not in llm._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+        assert key not in anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED
     finally:
-        llm._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
+        anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
 
 
 @pytest.mark.parametrize("method", ["_generate", "_agenerate", "_stream", "_astream"])
@@ -71,9 +72,9 @@ def test_validation_retry_paths_preserve_stream_boundary(method, partial):
                 yield "already emitted"
             yield self._attempt()
 
-    instance = llm._make_temperature_safe_anthropic(Provider)()
-    key = llm._endpoint_model(instance)
-    llm._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
+    instance = anthropic_adapter._make_temperature_safe_anthropic(Provider)()
+    key = common_adapter._endpoint_model(instance)
+    anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
     output = []
 
     async def run_async():
@@ -97,7 +98,7 @@ def test_validation_retry_paths_preserve_stream_boundary(method, partial):
                 run()
             assert output == ["already emitted"]
             assert len(instance.calls) == 1
-            assert key not in llm._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+            assert key not in anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED
         else:
             run()
             assert output == ["ok"]
@@ -106,4 +107,4 @@ def test_validation_retry_paths_preserve_stream_boundary(method, partial):
             run()
             assert len(instance.calls) == 3
     finally:
-        llm._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)
+        anthropic_adapter._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard(key)

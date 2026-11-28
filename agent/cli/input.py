@@ -1,19 +1,4 @@
-"""prompt_toolkit input editor + ``SafeFileHistory``.
-
-Wraps a :class:`PromptSession` with:
-    * The slash :class:`~cli.completer.SlashCompleter`
-    * Multi-line editing — Enter inserts a newline only when the buffer is
-      mid-bracket; Alt+Enter / Esc-Enter inserts a newline unconditionally;
-      a plain Enter on a balanced buffer submits.
-    * Ctrl+C with three-state semantics (clear buffer → exit hint → exit)
-    * A surrogate-safe :class:`FileHistory` subclass for Windows users
-    * UTF-8 stdout reconfigure on Windows so the brand glyph ``●`` and the
-      Rich box-drawing characters print without ``UnicodeEncodeError``
-
-Cancel-during-generation lives outside the input loop — that is owned by
-the agent runner in :mod:`cli.main`. Here we only handle the *input
-editing* and *idle* states.
-"""
+"""prompt_toolkit input editor + ``SafeFileHistory``."""
 
 from __future__ import annotations
 
@@ -33,33 +18,22 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.styles import Style
 
 
-# Sentinel raised by the Ctrl+C path so the caller can distinguish
-# "user pressed Ctrl+C on an empty line" from real EOF. We reuse
-# :class:`EOFError` so prompt_toolkit's existing plumbing keeps working;
-# the caller decides between "show hint" and "exit" via timing.
+# Reuse EOFError for prompt_toolkit while distinguishing Ctrl+C from actual EOF.
 _EXIT_HINT_GAP_SEC = 2.0
 
 
-# ---------------------------------------------------------------- history ----
+# history
 
 
 class SafeFileHistory(FileHistory):
-    """:class:`FileHistory` that strips invalid surrogate code points.
-
-    Background:
-        Windows terminals occasionally inject lone surrogate halves into
-        pasted Unicode (emoji, mixed-script CJK). prompt_toolkit's default
-        ``store_string`` writes the line straight to disk using the
-        system encoding, which raises ``UnicodeEncodeError`` and corrupts
-        the history file. This subclass round-trips the string through
-        ``utf-16-le`` with ``surrogatepass`` and then back to a sanitised
-        string before delegating to the parent implementation.
-
-    The cleanup is safe to run on every line — sanitised input that
-    contains only valid code points round-trips unchanged.
-    """
+    """:class:`FileHistory` that strips invalid surrogate code points."""
 
     def store_string(self, string: str) -> None:  # type: ignore[override]
+        """Store a history entry after stripping surrogate characters.
+
+        Args:
+            string: Input line to save in the history file.
+        """
         super().store_string(_strip_surrogates(string))
 
 
@@ -75,7 +49,7 @@ def _strip_surrogates(text: str) -> str:
     return cleaned.replace("�", "")
 
 
-# ---------------------------------------------------------------- session ----
+# session
 
 
 class _VibePromptSession(PromptSession):
@@ -119,12 +93,7 @@ def _force_utf8_stdout() -> None:
 
 
 def _has_unbalanced_brackets(text: str) -> bool:
-    """Return True if ``text`` contains unbalanced ``()``/``[]``/``{}`` pairs.
-
-    Used to decide whether a plain Enter should submit or insert a
-    newline. Strings inside ``"..."`` / ``'...'`` are skipped so a user
-    typing ``"hello (world)"`` does not get stuck in multi-line mode.
-    """
+    """Return True if ``text`` contains unbalanced ``()``/``[]``/``{}`` pairs."""
     stack: list[str] = []
     pairs = {")": "(", "]": "[", "}": "{"}
     openers = set(pairs.values())
@@ -154,23 +123,7 @@ def _has_unbalanced_brackets(text: str) -> bool:
 
 
 class _CtrlCState:
-    """Track Ctrl+C presses so the outer loop can implement two-press exit.
-
-    Attributes:
-        previous_press_ts: Monotonic timestamp of the press *before* the
-            most recent one. ``0.0`` means "no prior press".
-        last_window_hit: Set by :meth:`record_press_and_check_window` —
-            ``True`` iff the press that just landed was inside the
-            configured window relative to ``previous_press_ts``. Cached
-            so :func:`ctrl_c_within_window` does not re-read the clock
-            and decide independently of the keybinding.
-
-    The two-press semantics live here (not in the outer loop) because
-    the keybinding fires *before* the EOFError propagates, and we want
-    the outer loop's view of "are we inside the window?" to reflect the
-    decision made at the exact press moment — not whatever ``time.monotonic()``
-    reads a few microseconds later.
-    """
+    """Track Ctrl+C presses so the outer loop can implement two-press exit."""
 
     __slots__ = ("previous_press_ts", "last_window_hit")
 
@@ -179,17 +132,7 @@ class _CtrlCState:
         self.last_window_hit: bool = False
 
     def record_press_and_check_window(self, window_sec: float = _EXIT_HINT_GAP_SEC) -> bool:
-        """Record the current press, return True iff inside the window.
-
-        Args:
-            window_sec: Two-press window in seconds.
-
-        Returns:
-            ``False`` for the very first press (``previous_press_ts == 0``).
-            ``True`` if the gap between the prior press and this one is
-            below ``window_sec``. Otherwise ``False`` (treated as a fresh
-            first press for the next round).
-        """
+        """Record the current press, return True iff inside the window."""
         now = time.monotonic()
         prev = self.previous_press_ts
         self.previous_press_ts = now
@@ -202,20 +145,7 @@ class _CtrlCState:
 
 
 def _build_keybindings(state: _CtrlCState) -> KeyBindings:
-    """Wire Ctrl+C + multi-line submit semantics.
-
-    State machine (idle / typing):
-
-        Ctrl+C with text     → clear the buffer and stay at the prompt
-        Ctrl+C empty (first) → exit with ``EOFError``; caller prints hint
-                                and records the press timestamp.
-        Ctrl+C empty (twice) → caller sees the timestamp inside 2 s and
-                                actually exits the loop.
-
-        Enter on balanced buffer    → submit
-        Enter on unbalanced buffer  → insert newline
-        Alt-Enter / Esc-Enter       → insert newline unconditionally
-    """
+    """Wire Ctrl+C + multi-line submit semantics."""
     kb = KeyBindings()
 
     @kb.add("c-c")
@@ -225,10 +155,7 @@ def _build_keybindings(state: _CtrlCState) -> KeyBindings:
             buf.reset()
             event.app.invalidate()
             return
-        # Empty buffer → record the press (this updates the state so the
-        # outer loop's two-press check has the right prior timestamp) and
-        # propagate EOF so the outer loop can decide whether to print the
-        # exit hint or actually exit.
+        # Update press timing before the outer loop checks for double-press exit.
         state.record_press_and_check_window(_EXIT_HINT_GAP_SEC)
         event.app.exit(exception=EOFError())
 
@@ -256,18 +183,14 @@ def _default_history_path() -> Path:
 
 
 def make_session(history_path: Optional[Path] = None) -> PromptSession:
-    """Construct a configured :class:`PromptSession`.
+    """Construct a configured prompt_toolkit session.
 
     Args:
-        history_path: Override for the persistent history file. ``None``
-            uses ``~/.vibe-trading/history``.
+        history_path: Override for the persistent history file. None uses the default history path.
 
     Returns:
-        A ready-to-use ``PromptSession`` wired to the slash completer,
-        Ctrl+C bindings, multi-line editing, and a surrogate-safe
-        history file. The session exposes ``vibe_ctrl_c_state`` on the
-        returned object so callers can implement the two-press exit
-        confirmation.
+        Prompt session with slash completion, multiline editing, surrogate-safe history, and a
+        vibe_ctrl_c_state for two-press exit.
     """
     _force_utf8_stdout()
 
@@ -304,7 +227,7 @@ def make_session(history_path: Optional[Path] = None) -> PromptSession:
     return session
 
 
-# ---------------------------------------------------------------- helpers ----
+# helpers
 
 
 def get_user_input(
@@ -312,14 +235,18 @@ def get_user_input(
     *,
     session: Optional[PromptSession] = None,
 ) -> str:
-    """Prompt the user with the configured session and return the input.
+    """Prompt for input with a styled terminal border.
 
-    Convenience for one-shot callers. Reuses ``session`` when supplied so
-    the persistent history and completer carry across calls — otherwise
-    a fresh session is built (and torn down).
+    Args:
+        prompt_message: Text displayed beside the input cursor.
+        session: Existing prompt session to reuse. Omit to create one.
+
+    Returns:
+        Submitted input text.
 
     Raises:
-        EOFError: When the user hits Ctrl+D, or Ctrl+C on an empty line.
+        EOFError: If the user sends EOF or the configured Ctrl+C binding exits from an empty input
+            buffer.
     """
     sess = session or make_session()
     formatted = FormattedText(
@@ -337,32 +264,16 @@ def _prompt_rule() -> str:
 
 
 def ctrl_c_within_window(session: PromptSession, window_sec: float = _EXIT_HINT_GAP_SEC) -> bool:
-    """Return True if the most recent Ctrl+C press was a "second press".
-
-    A "second press" means the user pressed Ctrl+C twice within
-    ``window_sec`` on an empty buffer — that's the signal to actually
-    exit. The decision is made at *press time* by
-    :meth:`_CtrlCState.record_press_and_check_window` and cached on the
-    state object; the outer loop reads the cached flag here.
-
-    Falls back to a timestamp comparison against ``previous_press_ts``
-    for two cases:
-
-    * ``SimpleNamespace`` test doubles that set ``last_press_ts`` directly
-      (legacy test fixtures predate the two-timestamp design).
-    * ``vibe_ctrl_c_state`` being absent entirely (defensive — returns
-      ``False`` so the caller treats it as "no exit").
+    """Read the most recent two-press Ctrl+C exit decision.
 
     Args:
-        session: The active prompt_toolkit session (or a duck-typed
-            stand-in exposing ``vibe_ctrl_c_state``).
-        window_sec: Window length in seconds. Only used by the fallback
-            paths described above; the primary path trusts the cached
-            ``last_window_hit`` already computed against the configured
-            window.
+        session: Active prompt session supplying the Ctrl+C state.
+        window_sec: Window length in seconds for the timestamp fallback. The key binding normally
+            supplies a cached decision.
 
     Returns:
-        ``True`` iff the loop should now exit.
+        True if the cached decision, or the fallback check against the prior press timestamp,
+        signals exit.
     """
     state = getattr(session, "vibe_ctrl_c_state", None)
     if state is None:

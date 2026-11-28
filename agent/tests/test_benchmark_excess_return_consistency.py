@@ -10,6 +10,10 @@ went inconsistent with each other in the same metrics dict.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import pandas as pd
 import pytest
 import yaml
@@ -153,7 +157,7 @@ def test_signed_price_policy_applies_to_the_lazily_loaded_benchmark(monkeypatch,
         run_dir = tmp_path / label
         run_dir.mkdir()
         config = _config(run_dir, dates) | {"source": "local", "allow_nonpositive_prices": allow}
-        fetched = fetch_data_map(config)
+        fetched = fetch_data_map(config, roots=FileRoots.from_config(get_env_config().api))
         assert set(fetched.data_map) == {"000001.SZ"}
         loader = _AutoLoader(fetched.data_map, inner=fetched.loader, name="local")
         return ChinaAEngine(config).run_backtest(config, loader, _FlatSignal(), run_dir)

@@ -10,6 +10,10 @@ silently falls back to a network source.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 
 import pandas as pd
@@ -103,7 +107,7 @@ def test_a_served_local_code_comes_back_as_its_bare_symbol_without_network(
     _configure_local(monkeypatch, tmp_path, ["AAPL.US"])
 
     result = runner.fetch_data_map(
-        {"source": source, "codes": ["local:AAPL.US"], "start_date": _START, "end_date": _END}
+        {"source": source, "codes": ["local:AAPL.US"], "start_date": _START, "end_date": _END}, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert result.codes == ["AAPL.US"]
@@ -119,7 +123,7 @@ def test_auto_serves_local_codes_locally_and_the_rest_from_their_chain(
     _configure_local(monkeypatch, tmp_path, ["AAPL.US"])
 
     result = runner.fetch_data_map(
-        {"source": "auto", "codes": ["local:AAPL.US", "MSFT.US"], "start_date": _START, "end_date": _END}
+        {"source": "auto", "codes": ["local:AAPL.US", "MSFT.US"], "start_date": _START, "end_date": _END}, roots=FileRoots.from_config(get_env_config().api)
     )
 
     assert result.codes == ["AAPL.US", "MSFT.US"]
@@ -136,7 +140,7 @@ def test_auto_refuses_a_local_code_the_dataset_lacks_instead_of_fetching_it(
 
     with pytest.raises(NoAvailableSourceError, match=r"source=local; missing symbols: \['local:NOPE.US'\]"):
         runner.fetch_data_map(
-            {"source": "auto", "codes": ["local:AAPL.US", "local:NOPE.US"], "start_date": _START, "end_date": _END}
+            {"source": "auto", "codes": ["local:AAPL.US", "local:NOPE.US"], "start_date": _START, "end_date": _END}, roots=FileRoots.from_config(get_env_config().api)
         )
     assert network.calls == []
 
@@ -150,20 +154,20 @@ def test_a_local_code_the_dataset_lacks_is_never_filled_from_the_network(
 
     with pytest.raises(NoAvailableSourceError, match=r"source=local; missing symbols: \['local:MSFT.US'\]"):
         runner.fetch_data_map(
-            {"source": source, "codes": ["local:AAPL.US", "local:MSFT.US"], "start_date": _START, "end_date": _END}
+            {"source": source, "codes": ["local:AAPL.US", "local:MSFT.US"], "start_date": _START, "end_date": _END}, roots=FileRoots.from_config(get_env_config().api)
         )
     assert network.calls == []
 
 
 def test_a_local_code_from_a_network_source_is_refused(network: type[_NetworkLoader]) -> None:
     with pytest.raises(ValueError, match="need source='local' or 'auto'"):
-        runner.fetch_data_map({"source": "yahoo", "codes": ["local:AAPL.US"], "start_date": _START, "end_date": _END})
+        runner.fetch_data_map({"source": "yahoo", "codes": ["local:AAPL.US"], "start_date": _START, "end_date": _END}, roots=FileRoots.from_config(get_env_config().api))
     assert network.calls == []
 
 
 def test_one_symbol_with_and_without_the_prefix_is_refused(network: type[_NetworkLoader]) -> None:
     with pytest.raises(ValueError, match=r"requested more than once .*\['AAPL.US'\]"):
         runner.fetch_data_map(
-            {"source": "auto", "codes": ["local:AAPL.US", "AAPL.US"], "start_date": _START, "end_date": _END}
+            {"source": "auto", "codes": ["local:AAPL.US", "AAPL.US"], "start_date": _START, "end_date": _END}, roots=FileRoots.from_config(get_env_config().api)
         )
     assert network.calls == []

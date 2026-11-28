@@ -1,4 +1,4 @@
-"""Tests for content-filter skip logic in run_worker.
+"""Tests for content-filter skip logic in run_node.
 
 When the LLM returns ``content_filter_triggered=True``, the worker should
 skip that iteration and continue instead of finalizing on empty/garbage
@@ -8,13 +8,17 @@ emits a ``content_filter_skipped`` event, and increments an internal counter.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from unittest.mock import patch
 
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
-import src.swarm.worker as worker_mod
-from src.swarm.worker import run_worker
+import src.swarm.node as worker_mod
+from src.swarm.node import run_node
 from tests.message_roles_helpers import assert_system_messages_only_lead
 
 FINAL_TEXT = (
@@ -27,6 +31,9 @@ FINAL_TEXT = (
 
 
 class _EmptyRegistry:
+
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
     def get_definitions(self) -> list[dict]:
         return []
 
@@ -35,6 +42,9 @@ class _EmptyRegistry:
 
     def get(self, name: str):
         return None
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedChatLLM:
@@ -53,8 +63,7 @@ class _ScriptedChatLLM:
 
     def stream_chat(
         self, messages, tools=None, on_text_chunk=None, timeout=None,
-        on_waiting_chunk=None,
-    ) -> LLMResponse:
+        on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         self.calls += 1
         self.received_messages.append(list(messages))
         if self._responses:
@@ -69,7 +78,7 @@ def _run(
     event_callback=None,
     max_iterations: int = 5,
 ) -> WorkerResult:
-    monkeypatch.setattr(worker_mod, "_STREAM_RETRY_DELAY_S", 0.0)
+    monkeypatch.setenv("SWARM_STREAM_RETRY_DELAY_S", "0")
     agent = SwarmAgentSpec(
         id="analyst",
         role="Synthesis analyst",
@@ -86,7 +95,8 @@ def _run(
         ),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        return run_worker(
+        return run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},

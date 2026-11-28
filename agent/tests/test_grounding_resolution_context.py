@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from typing import Any
@@ -9,7 +13,7 @@ from typing import Any
 import pytest
 
 from evals.grounding import GroundingLedger
-from src.agent.resolution_context import ResolutionContext
+from src.product.identity.constraints import ResolutionContext
 
 
 def _resolver_payload(query: str, candidates: list[dict[str, Any]]) -> str:
@@ -61,7 +65,7 @@ def _ingest(
 
 def test_explicit_a_share_context_locks_the_a_share_candidate(tmp_path: Path) -> None:
     message = "请分析A股恒瑞医药的最新财务情况"
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=message)
 
     _ingest(ledger, "恒瑞医药", _hengrui_candidates())
 
@@ -85,6 +89,7 @@ def test_explicit_a_share_context_locks_the_a_share_candidate(tmp_path: Path) ->
 
 def test_explicit_a_h_comparison_keeps_both_candidates(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="比较恒瑞医药 A/H 两地上市表现",
     )
@@ -98,7 +103,7 @@ def test_explicit_a_h_comparison_keeps_both_candidates(tmp_path: Path) -> None:
 
 
 def test_no_explicit_market_remains_fail_closed(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析恒瑞医药")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="分析恒瑞医药")
 
     _ingest(ledger, "恒瑞医药", _hengrui_candidates())
 
@@ -108,6 +113,7 @@ def test_no_explicit_market_remains_fail_closed(tmp_path: Path) -> None:
 
 def test_explicit_us_market_in_english_locks_the_us_candidate(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="Analyze the US stock ABC",
     )
@@ -128,6 +134,7 @@ def test_explicit_us_market_in_english_locks_the_us_candidate(tmp_path: Path) ->
 
 def test_negated_market_is_not_used_as_positive_authorization(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="不要看港股恒瑞医药",
     )
@@ -139,7 +146,7 @@ def test_negated_market_is_not_used_as_positive_authorization(tmp_path: Path) ->
 
 
 def test_constraint_mismatch_stays_fail_closed(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="只看A股恒瑞医药")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="只看A股恒瑞医药")
 
     _ingest(ledger, "恒瑞医药", [_hengrui_candidates()[1]])
 
@@ -149,6 +156,7 @@ def test_constraint_mismatch_stays_fail_closed(tmp_path: Path) -> None:
 
 def test_one_ambiguous_entity_does_not_retract_another_lock(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="A股恒瑞医药；比较 ABC A/H",
     )
@@ -175,6 +183,7 @@ def test_one_ambiguous_entity_does_not_retract_another_lock(tmp_path: Path) -> N
 
 def test_market_constraints_stay_attached_to_their_named_clause(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="我的持仓包括A股恒瑞医药，港股腾讯",
     )
@@ -201,6 +210,7 @@ def test_market_constraints_stay_attached_to_their_named_clause(tmp_path: Path) 
 
 def test_current_follow_up_constraint_applies_to_prior_subjects(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="都只看 A 股",
         history=[
@@ -231,6 +241,7 @@ def test_current_follow_up_constraint_applies_to_prior_subjects(tmp_path: Path) 
 
 def test_named_constraint_overrides_current_global_constraint(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="都只看A股，腾讯看港股",
     )
@@ -246,6 +257,7 @@ def test_named_constraint_overrides_current_global_constraint(tmp_path: Path) ->
 
 def test_stale_global_history_does_not_authorize_a_new_turn(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="分析恒瑞医药",
         history=[{"role": "user", "content": "都只看港股"}],
@@ -259,6 +271,7 @@ def test_stale_global_history_does_not_authorize_a_new_turn(tmp_path: Path) -> N
 
 def test_named_history_constraint_can_follow_its_subject(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="继续分析",
         history=[{"role": "user", "content": "只看A股恒瑞医药"}],
@@ -271,6 +284,7 @@ def test_named_history_constraint_can_follow_its_subject(tmp_path: Path) -> None
 
 def test_latest_named_history_constraint_wins(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="继续分析恒瑞医药",
         history=[
@@ -287,6 +301,7 @@ def test_latest_named_history_constraint_wins(tmp_path: Path) -> None:
 
 def test_current_reset_discards_history_constraints(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="忽略之前的市场限制，分析恒瑞医药",
         history=[{"role": "user", "content": "只看港股恒瑞医药"}],
@@ -300,6 +315,7 @@ def test_current_reset_discards_history_constraints(tmp_path: Path) -> None:
 
 def test_feature_flag_can_restore_previous_resolution_behavior(tmp_path: Path) -> None:
     ledger = GroundingLedger(
+        roots=FileRoots.from_config(get_env_config().api),
         run_dir=tmp_path,
         user_message="只看A股恒瑞医药",
         contextual_identity_constraints=False,
@@ -317,7 +333,7 @@ def test_feature_flag_can_restore_previous_resolution_behavior(tmp_path: Path) -
 )
 def test_a_ticker_ending_in_a_is_not_a_market_constraint(tmp_path: Path, message: str) -> None:
     assert ResolutionContext.from_messages(message).constraints == ()
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=message)
     _ingest(ledger, "NVDA", [{"symbol": "NVDA.US", "name": "NVIDIA", "market": "us", "source": "yahoo"}])
     assert ledger.authorized_symbols == {"NVDA.US"}
 

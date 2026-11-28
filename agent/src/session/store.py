@@ -6,10 +6,13 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.session.models import Attempt, Message, Session
+from src.session.replay import project_turn
+from src.session.thread import THREAD_FILENAME, ThreadLog
 
 logger = logging.getLogger(__name__)
 
@@ -17,26 +20,12 @@ logger = logging.getLogger(__name__)
 class SessionStore:
     """Filesystem-backed persistent storage.
 
-    Directory structure::
-
-        sessions/
-        ├── {session_id}/
-        │   ├── session.json
-        │   ├── messages.jsonl
-        │   └── attempts/
-        │       └── {attempt_id}/
-        │           └── attempt.json
-
-    Attributes:
-        base_dir: Root directory for session storage.
+    Args:
+        base_dir: Root directory containing the session subdirectories. Created if absent.
     """
 
     def __init__(self, base_dir: Path) -> None:
-        """Initialize session storage.
-
-        Args:
-            base_dir: Root directory for session storage.
-        """
+        """Initialize session storage."""
         self.base_dir = base_dir
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -46,8 +35,41 @@ class SessionStore:
     def _session_file(self, session_id: str) -> Path:
         return self._session_dir(session_id) / "session.json"
 
-    def _messages_file(self, session_id: str) -> Path:
-        return self._session_dir(session_id) / "messages.jsonl"
+    def thread_path(self, session_id: str) -> Path:
+        """Return the location of a session's conversation thread log.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The conversation log path inside that session's directory.
+        """
+        return self._session_dir(session_id) / THREAD_FILENAME
+
+    def thread_log(self, session_id: str) -> ThreadLog:
+        """Open a session's conversation thread log.
+
+        Args:
+            session_id: Session ID to migrate if necessary before opening the log.
+
+        Returns:
+            A log handle for the session's durable thread.
+        """
+        self.ensure_migrated(session_id)
+        return ThreadLog(self.thread_path(session_id))
+
+    def ensure_migrated(self, session_id: str):
+        """Migrate a pre-thread session before any thread read or write.
+
+        Args:
+            session_id: Session ID to pass to the migration routine.
+
+        Returns:
+            The migration outcome for that session directory.
+        """
+        from src.session.migration import migrate_session
+
+        return migrate_session(self._session_dir(session_id), session_id=session_id)
 
     def _attempt_dir(self, session_id: str, attempt_id: str) -> Path:
         return self._session_dir(session_id) / "attempts" / attempt_id
@@ -55,22 +77,19 @@ class SessionStore:
     def _attempt_file(self, session_id: str, attempt_id: str) -> Path:
         return self._attempt_dir(session_id, attempt_id) / "attempt.json"
 
-    def _partial_response_file(self, session_id: str, attempt_id: str) -> Path:
-        return self._attempt_dir(session_id, attempt_id) / "partial_response.json"
-
-    # ---- Session CRUD ----
+    # Session CRUD
 
     def create_session(self, session: Session) -> Session:
         """Create and persist a session.
 
         Args:
-            session: Session instance to create.
+            session: Session with an unused ID.
 
         Returns:
-            The persisted Session.
+            The supplied session, after its directory and metadata are created.
 
         Raises:
-            ValueError: Raised when the session already exists.
+            ValueError: If a session directory with that ID already exists.
         """
         session_dir = self._session_dir(session.session_id)
         if session_dir.exists():
@@ -78,6 +97,7 @@ class SessionStore:
         session_dir.mkdir(parents=True)
         (session_dir / "attempts").mkdir()
         self._write_json(self._session_file(session.session_id), session.to_dict())
+        self.ensure_migrated(session.session_id)
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -87,30 +107,31 @@ class SessionStore:
             session_id: Session ID.
 
         Returns:
-            The Session instance, or None when it does not exist.
+            The deserialized session, or None when its metadata cannot be read.
         """
         path = self._session_file(session_id)
         data = self._read_json(path)
         if data is None:
             return None
+        self.ensure_migrated(session_id)
         return Session.from_dict(data)
 
     def update_session(self, session: Session) -> None:
         """Update a session.
 
         Args:
-            session: Modified Session instance.
+            session: Session carrying the metadata to write.
         """
         self._write_json(self._session_file(session.session_id), session.to_dict())
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete a session and all of its data.
+        """Remove a session directory and its data.
 
         Args:
             session_id: Session ID.
 
         Returns:
-            Whether the delete succeeded.
+            True if the directory existed and removal was attempted, otherwise False.
         """
         session_dir = self._session_dir(session_id)
         if not session_dir.exists():
@@ -121,13 +142,13 @@ class SessionStore:
         return True
 
     def list_sessions(self, limit: int = 50) -> List[Session]:
-        """List all sessions in descending update-time order.
+        """List readable sessions in descending update-time order.
 
         Args:
             limit: Maximum number of sessions to return.
 
         Returns:
-            List of Session objects.
+            The most recently updated sessions with valid metadata.
         """
         sessions: List[Session] = []
         if not self.base_dir.exists():
@@ -151,79 +172,93 @@ class SessionStore:
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         return sessions[:limit]
 
-    # ---- Message Append-Only Log ----
-
-    def append_message(self, message: Message) -> None:
-        """Append a message to the session JSONL log.
-
-        Args:
-            message: Message to append.
-        """
-        path = self._messages_file(message.session_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(message.to_dict(), ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+    # Derived message views
 
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
     ) -> List[Message]:
-        """Read the most recent messages for a session.
+        """Return display messages derived from the session thread.
 
         Args:
             session_id: Session ID.
-            limit: Maximum number of messages, or None for the full history.
-                A nonpositive limit returns an empty list.
+            limit: Number of newest messages to return. None keeps all, and nonpositive values
+                return no messages.
 
         Returns:
-            List of Message objects in chronological order.
+            Display messages in order, with durable prompts as a fallback when the thread has no
+            turn starts.
         """
         if limit is not None and limit <= 0:
+            self.ensure_migrated(session_id)
             return []
-        path = self._messages_file(session_id)
-        if not path.exists():
-            return []
-        messages: List[Message] = []
-        # Decode physical JSONL records separately: one unreadable byte must
-        # cost one record, never the intact messages on either side of it.
-        with path.open("rb") as log:
-            for line_number, raw_line in enumerate(log, start=1):
-                if not raw_line.strip():
+        items = self.thread_log(session_id).read()
+        starts = [item for item in items if item.type == "turn_start"]
+        rows: List[Message] = []
+        for start in starts:
+            turn_items = [item for item in items if item.turn_id == start.turn_id]
+            user_items = [item for item in turn_items if item.type == "user"]
+            if user_items:
+                for item in user_items:
+                    metadata = {}
+                    input_id = item.get("input_id")
+                    if isinstance(input_id, str) and input_id:
+                        metadata["queued_input_id"] = input_id
+                    rows.append(Message(
+                        message_id=f"{session_id}:{item.seq}",
+                        session_id=session_id,
+                        role="user",
+                        content=item.get("content") or "",
+                        created_at=datetime.fromtimestamp(item.ts, timezone.utc).isoformat(),
+                        metadata=metadata,
+                    ))
+            else:
+                prompt = start.get("prompt")
+                if isinstance(prompt, str) and prompt:
+                    rows.append(Message(
+                        session_id=session_id,
+                        role="user",
+                        content=prompt,
+                        created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
+                    ))
+            for item in turn_items:
+                if item.type == "inject" and item.get("role") == "system":
+                    rows.append(Message(message_id=f"{session_id}:{item.seq}", session_id=session_id,
+                                        role="system", content=item.get("content") or ""))
+            projection = project_turn(turn_items, start.turn_id)
+            if projection.status is None or projection.content is None:
+                continue
+            rows.append(Message(
+                message_id=f"{session_id}:{start.turn_id}:reply",
+                session_id=session_id,
+                role="assistant",
+                content=projection.content or "",
+                linked_attempt_id=start.turn_id,
+                created_at=datetime.fromtimestamp(start.ts, timezone.utc).isoformat(),
+                metadata={**projection.metadata, "status": projection.status},
+            ))
+        if not starts:
+            # Show the durable prompt while the accepted attempt still lacks a terminal projection.
+            for attempt in self.list_attempts():
+                if attempt.session_id != session_id:
                     continue
-                try:
-                    line = raw_line.decode("utf-8")
-                    payload = json.loads(line)
-                    if not isinstance(payload, dict):
-                        raise TypeError(
-                            f"message line must be a JSON object, got {type(payload).__name__}"
-                        )
-                    messages.append(Message.from_dict(payload))
-                except (
-                    json.JSONDecodeError,
-                    UnicodeDecodeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                ) as exc:
-                    logger.warning(
-                        "Skipping corrupted message record %d in session %s (%s)",
-                        line_number,
-                        session_id,
-                        type(exc).__name__,
-                    )
-        return messages if limit is None else messages[-limit:]
+                if attempt.status.value in {"pending", "running", "waiting_user"}:
+                    rows.append(Message(
+                        session_id=session_id,
+                        role="user",
+                        content=attempt.prompt,
+                    ))
+        return rows if limit is None else rows[-limit:]
 
-    # ---- Attempt CRUD ----
+    # Attempt CRUD
 
     def create_attempt(self, attempt: Attempt) -> Attempt:
         """Create an execution attempt.
 
         Args:
-            attempt: Attempt to create.
+            attempt: Attempt whose session and attempt IDs identify its record.
 
         Returns:
-            The persisted Attempt.
+            The supplied attempt after it is written.
         """
         attempt_dir = self._attempt_dir(attempt.session_id, attempt.attempt_id)
         attempt_dir.mkdir(parents=True, exist_ok=True)
@@ -237,11 +272,11 @@ class SessionStore:
         """Read an execution attempt.
 
         Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
+            session_id: Session ID owning the attempt.
+            attempt_id: ID of the attempt record to read.
 
         Returns:
-            The Attempt instance, or None when it does not exist.
+            The deserialized attempt, or None if its record cannot be read.
         """
         path = self._attempt_file(session_id, attempt_id)
         data = self._read_json(path)
@@ -253,7 +288,7 @@ class SessionStore:
         """Update an execution attempt.
 
         Args:
-            attempt: Modified Attempt.
+            attempt: Attempt whose persisted record should be updated.
         """
         self._write_json(
             self._attempt_file(attempt.session_id, attempt.attempt_id),
@@ -264,7 +299,7 @@ class SessionStore:
         """Read every valid persisted attempt.
 
         Returns:
-            Attempts found below the session storage root.
+            All valid attempt records, skipping unreadable or corrupt entries.
         """
         attempts: List[Attempt] = []
         for path in self.base_dir.glob("*/attempts/*/attempt.json"):
@@ -283,65 +318,30 @@ class SessionStore:
         """Return the persisted assistant message linked to an attempt.
 
         Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
+            session_id: Session ID whose thread to project.
+            attempt_id: Attempt ID used as the turn ID.
 
         Returns:
-            The linked message, or None when the reply is not in the log.
+            The projected assistant reply, or None if the turn has no terminal status.
         """
-        for message in reversed(self.get_messages(session_id, limit=1_000_000)):
-            if message.linked_attempt_id == attempt_id:
-                return message
-        return None
-
-    # ---- Streaming Response Checkpoints ----
-
-    def save_partial_response(
-        self, session_id: str, attempt_id: str, content: str
-    ) -> None:
-        """Atomically persist the current streamed assistant text.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-            content: Assistant text accumulated so far.
-        """
-        self._write_json(
-            self._partial_response_file(session_id, attempt_id),
-            {"content": content},
+        items = self.thread_log(session_id).read()
+        projection = project_turn(items, attempt_id)
+        if projection.status is None:
+            return None
+        return Message(
+            session_id=session_id,
+            role="assistant",
+            content=projection.content or "",
+            linked_attempt_id=attempt_id,
+            metadata={**projection.metadata, "status": projection.status},
         )
 
-    def get_partial_response(self, session_id: str, attempt_id: str) -> Optional[str]:
-        """Read a streamed assistant response checkpoint.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-
-        Returns:
-            Saved response text, or None when no checkpoint exists.
-        """
-        data = self._read_json(self._partial_response_file(session_id, attempt_id))
-        if not isinstance(data, dict):
-            return None
-        content = data.get("content")
-        return content if isinstance(content, str) else None
-
-    def delete_partial_response(self, session_id: str, attempt_id: str) -> None:
-        """Remove a response checkpoint after the attempt becomes terminal.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-        """
-        self._partial_response_file(session_id, attempt_id).unlink(missing_ok=True)
-
-    # ---- IO Helpers ----
+    # IO Helpers
 
     @staticmethod
-    def _write_json(path: Path, data: Dict[str, Any]) -> None:
+    def _write_json(path: Path, data: Dict[str, Any], *, indent: Optional[int] = 2) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        encoded = json.dumps(data, ensure_ascii=False, indent=indent).encode("utf-8")
         fd, temporary_name = tempfile.mkstemp(
             dir=path.parent,
             prefix=f".{path.name}.",

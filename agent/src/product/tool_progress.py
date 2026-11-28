@@ -1,0 +1,172 @@
+"""Per-run tool observations, independent of the activity watchdog."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections import Counter
+
+NO_PROGRESS_LIMIT = 8
+# Allow one retry for a transient failure. A successful mutation clears the count.
+FAILURE_BLOCK_THRESHOLD = 2
+# An exact path allows recovery when an artifact cannot be found (#1363).
+_NEXT_STEP = (
+    "Retry the request, rerun the missing research step with a narrower scope "
+    "(fewer symbols, another data source), or give the exact file path if you "
+    "meant an existing artifact."
+)
+RECOVERY_MESSAGE = (
+    "I stopped because repeated tool attempts did not produce new information, "
+    "so I cannot reliably answer. " + _NEXT_STEP
+)
+_NOTE_TEXT = {
+    "error": "failed",
+    "repeat": "returned results it had already returned",
+    "blocked": "was refused before running",
+    "skipped": "was skipped as a repeat of a call that already succeeded",
+    "cached": "was served from cache",
+    "replayed": "was restored after context compaction",
+    "compact": "was asked to compact the context",
+}
+
+
+def _failure_detail(result: str) -> str:
+    """Short reason from a failed tool envelope, for the stop message."""
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError):
+        return str(result or "")[:120]
+    if not isinstance(payload, dict):
+        return ""
+    return str(
+        payload.get("error_code") or payload.get("error") or payload.get("message") or ""
+    )[:120]
+
+
+class ToolProgress:
+    """Bound repeated discovery without treating activity as new evidence."""
+
+    def __init__(self) -> None:
+        self.failed: dict[tuple[str, str], int] = {}
+        self._observations: set[tuple[str, str | None, str]] = set()
+        self._new_observation = False
+        self._context_restored = False
+        self._context_restore_grace_used = False
+        self.stalled_iterations = 0
+        self._notes: list[tuple[str, str, str]] = []
+        self._stall_notes: list[tuple[str, str, str]] = []
+
+    def note(self, kind: str, tool: str, detail: str = "") -> None:
+        """Record why a call in this iteration produced nothing new.
+
+        Args:
+            kind: Outcome category used to label the note in the recovery message.
+            tool: Tool name.
+            detail: Error code or message, when there is one.
+        """
+        self._notes.append((kind, tool, detail))
+
+    def record(
+        self,
+        name: str,
+        key: tuple[str, str] | None,
+        result: str,
+        *,
+        success: bool,
+        is_readonly: bool = True,
+    ) -> None:
+        """Record the result of an executed call in the progress ledger.
+
+        Args:
+            name: Tool name used to group observations.
+            key: Canonical call identity, or None for an unkeyed call.
+            result: Payload used to identify a new observation or describe a failure.
+            success: Whether the call succeeded.
+            is_readonly: Whether the call was read-only. Successful mutations clear failed-call counts.
+        """
+        if not success:
+            if key is not None:
+                self.failed[key] = self.failed.get(key, 0) + 1
+            self.note("error", name, _failure_detail(result))
+            return
+        if not is_readonly:
+            self.failed.clear()
+        if not is_readonly and key is None:
+            self._new_observation = True
+            return
+        try:
+            result = json.dumps(json.loads(result), sort_keys=True, ensure_ascii=False)
+        except (ValueError, TypeError):
+            pass
+        observation = (
+            name,
+            None if is_readonly else key[1],
+            hashlib.sha256(result.encode("utf-8")).hexdigest(),
+        )
+        if observation not in self._observations:
+            self._observations.add(observation)
+            self._new_observation = True
+        else:
+            self.note("repeat", name)
+
+    def mark_context_restored(self) -> None:
+        """Give the model one run-scoped grace iteration to read restored evidence."""
+        if self._context_restore_grace_used:
+            return
+        self._context_restore_grace_used = True
+        self._context_restored = True
+
+    def is_blocked(self, key: tuple[str, str]) -> bool:
+        """Check whether this exact call failed often enough to refuse a repeat.
+
+        Args:
+            key: Canonical call identity (name, serialized arguments).
+
+        Returns:
+            True once the identity reached FAILURE_BLOCK_THRESHOLD failures without
+            an intervening successful mutation.
+        """
+        return self.failed.get(key, 0) >= FAILURE_BLOCK_THRESHOLD
+
+    def finish_iteration(self) -> bool:
+        """Update the streak of no-progress iterations and clear this iteration's tracking state.
+
+        Returns:
+            True when the consecutive no-progress budget is exhausted.
+        """
+        if self._new_observation:
+            self.stalled_iterations = 0
+            self._stall_notes.clear()
+        elif self._context_restored:
+            # Give the model one turn to use restored evidence without resetting the stall budget.
+            pass
+        else:
+            self.stalled_iterations += 1
+            self._stall_notes.extend(self._notes)
+        self._notes = []
+        self._new_observation = False
+        self._context_restored = False
+        return self.stalled_iterations >= NO_PROGRESS_LIMIT
+
+    def recovery_message(self) -> str:
+        """Summarize the repeated operations that stalled the run.
+
+        Returns:
+            The stop message shown to the user, with repeated failure details when available.
+        """
+        if not self._stall_notes:
+            return RECOVERY_MESSAGE
+        counts = Counter(self._stall_notes)
+        parts = []
+        for (kind, tool, detail), count in counts.most_common(5):
+            text = f"{tool} {_NOTE_TEXT.get(kind, kind)}"
+            if detail:
+                text += f" ({detail})"
+            parts.append(f"{text} x{count}")
+        return (
+            f"I stopped because {self.stalled_iterations} tool rounds in a row "
+            "produced no new information: "
+            + "; ".join(parts)
+            + ". I cannot reliably answer from this. "
+            + _NEXT_STEP
+        )

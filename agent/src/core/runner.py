@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -33,11 +34,13 @@ console = Console(stderr=True)
 logger = logging.getLogger(__name__)
 
 # --- Sandbox subprocess hardening (VT-001 defense-in-depth) ---------------
-# These layers only bite inside the hardened Docker deployment; everywhere else
-# (bare pip install, local dev, CI, non-Linux) they detect the missing
-# precondition and degrade to the previous behaviour with a WARNING. The
-# always-on control for VT-001 is the AST scrubber in backtest/runner.py, not
-# any of this.
+# Landlock (_landlock_confined) confines the subprocess on any Linux kernel that
+# provides it, the Docker image included. The UID drop needs CAP_SETUID, which a
+# process started as a non-root user never holds (compose runs as `vibe`, and
+# cap_add only reaches root), so there it fails and is logged. Where a
+# precondition is missing (non-Linux, old kernel) the layer degrades to the
+# previous behaviour with a WARNING. The always-on control for VT-001 is the AST
+# scrubber in backtest/runner.py, not any of this.
 _SANDBOX_USER = "vibe-sandbox"
 # The only paths under ~/.vibe-trading re-exposed into the ephemeral sandbox
 # HOME. Data loaders that run in the same subprocess resolve these via
@@ -70,6 +73,73 @@ def _resolve_sandbox_credentials() -> tuple[str, str] | None:
     except (KeyError, OSError):
         return None
     return (_SANDBOX_USER, _SANDBOX_USER)
+
+
+#: Runtime-root entries a backtest's loaders read (the opt-in cache is also written).
+#: Runtime-root entries generated code must not read, beside the broker/auth credential paths
+#: (VT-001: .env, sessions, memory, the live mandate/audit ledger). Uploads, imports, data-bridge
+#: sources and the cache stay readable: backtests legitimately read the user's own data there.
+_LANDLOCK_HIDDEN = (".env", "sessions", "sessions.db", "sessions.db-wal", "sessions.db-shm", "memory", "live")
+_LANDLOCK_WARNED: list[str] = []
+
+
+def _landlock_confined(cmd: list[str], *, run_dir: Path, sandbox_home: Path | None,
+                       real_home: Path | None) -> list[str]:
+    """Wrap the backtest subprocess in Landlock where the kernel provides it (Linux).
+
+    The UID drop needs CAP_SETUID, which the compose deployment's non-root ``vibe`` process never
+    has, so on its own it silently does nothing there. Landlock needs no privilege: the child may
+    write only its run directory, its ephemeral HOME, the temporary directory and the loader
+    cache, and may not read ``.env``, sessions, memory, the live ledger, dot files or broker
+    credentials under the runtime root; the user's own data there (uploads, imports, the files
+    data-bridge points at) stays readable, because backtests read it. The
+    network stays open because the data loaders run in the same process. Where Landlock is
+    unavailable the command runs as before, with a warning once on Linux.
+
+    Args:
+        cmd: The subprocess argv.
+        run_dir: The run directory the backtest writes.
+        sandbox_home: The ephemeral HOME, if one was created.
+        real_home: The server's HOME, whose ``.cache`` stays writable for library caches.
+
+    Returns:
+        ``cmd`` wrapped by the Landlock launcher, or ``cmd`` unchanged.
+    """
+    from src.config.paths import get_runtime_root
+    from src.tools.sandbox import (
+        build_landlock_spec, enumerate_protected_runtime_paths, landlock_available, landlock_command,
+    )
+
+    reason = landlock_available(True)
+    if reason is not None:
+        if platform.system() == "Linux" and not _LANDLOCK_WARNED:
+            _LANDLOCK_WARNED.append(reason)
+            logger.warning("Backtest subprocess runs without Landlock: %s", reason)
+        return cmd
+    root = get_runtime_root().expanduser().resolve()
+    hidden = {path.resolve() for path in enumerate_protected_runtime_paths(root)}
+    hidden.update(root / name for name in _LANDLOCK_HIDDEN)
+    hidden.update(path for path in root.glob(".*"))
+    cache = root / "cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    writable = [Path(run_dir), cache]
+    override = os.environ.get("VIBE_TRADING_DATA_CACHE_ROOT", "").strip()  # noqa: env-gate — loader cache root
+    if override:
+        writable.append(Path(override).expanduser())
+    gateway_override = os.environ.get("VIBE_GATEWAY_CACHE_DIR", "").strip()  # noqa: env-gate — gateway cache root
+    if gateway_override:
+        writable.append(Path(gateway_override).expanduser())
+    if sandbox_home is not None:
+        writable.append(sandbox_home)
+    if real_home is not None:
+        # The ephemeral HOME re-exposes the server HOME's loader cache by symlink; with
+        # VIBE_TRADING_HOME elsewhere that cache is not the runtime root's, so grant it too.
+        writable.extend(path for path in (real_home / ".cache", real_home / ".vibe-trading" / "cache") if path.is_dir())
+    spec = build_landlock_spec(
+        hidden=hidden, writable=[path for path in writable if path.exists()], network=True,
+        private_tmp=Path(run_dir) / ".tmp",
+    )
+    return landlock_command(cmd, spec)
 
 
 def _rlimit_as_bytes() -> int:
@@ -685,7 +755,9 @@ class Runner:
             errors="ignore",
         )
         try:
-            process = self._run_sandboxed(cmd, run_kwargs)
+            confined = _landlock_confined(cmd, run_dir=run_dir,
+                                          sandbox_home=sandbox_home, real_home=real_home)
+            process = self._run_sandboxed(confined, run_kwargs)
         finally:
             if sandbox_home is not None:
                 shutil.rmtree(sandbox_home, ignore_errors=True)

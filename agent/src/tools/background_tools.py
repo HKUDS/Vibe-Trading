@@ -17,6 +17,9 @@ from typing import Any, Callable, Dict, List, Optional
 from src.agent.tools import BaseTool
 from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
+from src.tools.redaction import redact_text, redact_tool_result
+from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
+from src.tools.workspace_writes import WorkspaceWrites, workspace_call_id
 
 WORKDIR = Path(__file__).resolve().parents[2]
 #: Task ids with a live process anywhere in this interpreter. Restart recovery
@@ -49,11 +52,20 @@ class BackgroundScope:
             raise ValueError("a background scope must have a non-empty owner_id")
 
 
-def _start_process(command: str) -> subprocess.Popen[str]:
+def _start_process(command: str, *, sandbox: SandboxSettings | None = None) -> subprocess.Popen[str]:
     """Start a shell command in a process group that can be stopped as a unit."""
+    profile: Path | None = None
+    cwd = WORKDIR if sandbox is None or sandbox.workspace is None else sandbox.workspace
+    argv: str | list[str] = command
+    shell = True
+    if sandbox is not None and sandbox.enabled:
+        cwd = sandbox.workspace or sandbox.runtime_root / "workspace"
+        cwd.mkdir(parents=True, exist_ok=True)
+        argv, profile = sandbox_command(command, cwd, sandbox)
+        shell = False
     kwargs: dict[str, Any] = {
-        "shell": True,
-        "cwd": WORKDIR,
+        "shell": shell,
+        "cwd": cwd,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "text": True,
@@ -64,7 +76,18 @@ def _start_process(command: str) -> subprocess.Popen[str]:
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         kwargs["start_new_session"] = True
-    return subprocess.Popen(command, **kwargs)
+    try:
+        process = subprocess.Popen(argv, **kwargs)
+    except Exception:
+        if profile is not None:
+            try:
+                profile.unlink()
+            except OSError:
+                pass
+        raise
+    if profile is not None:
+        setattr(process, "_vibe_sandbox_profile", profile)
+    return process
 
 
 def _signal_posix_process_group(process: subprocess.Popen[str], sig: int) -> None:
@@ -129,7 +152,8 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return ((stdout or "") + (stderr or "")).strip()[:_MAX_OUTPUT_CHARS]
+    text = ((stdout or "") + (stderr or "")).strip()
+    return redact_tool_result(text, preserve_format=True)[:_MAX_OUTPUT_CHARS]
 
 
 class BackgroundManager:
@@ -147,6 +171,7 @@ class BackgroundManager:
         *,
         on_completion: Optional[Callable[[str, dict], None]] = None,
         store: Optional[Any] = None,
+        sandbox: SandboxSettings | None = None,
     ) -> None:
         self.tasks: Dict[str, dict] = {}
         self._store = store
@@ -158,6 +183,8 @@ class BackgroundManager:
         self._condition = threading.Condition(self._lock)
         self._accepting = [True]
         self._on_completion = on_completion
+        self._sandbox = sandbox
+        self._workspace_writes: WorkspaceWrites | None = None
         self._scope = scope or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
 
     @property
@@ -170,8 +197,20 @@ class BackgroundManager:
         scope: BackgroundScope,
         *,
         on_completion: Optional[Callable[[str, dict], None]] = None,
+        sandbox: SandboxSettings | None = None,
+        workspace_writes: WorkspaceWrites | None = None,
     ) -> "BackgroundManager":
-        """Return a handle over the same task table bound to another owner."""
+        """Return a handle over the same task table bound to another owner.
+
+        Args:
+            scope: Owner and attempt associated with the returned handle.
+            on_completion: Completion callback override.
+            sandbox: Sandbox override for commands on the returned handle.
+            workspace_writes: Optional recorder for node tool windows.
+
+        Returns:
+            Scoped handle over the existing tasks, notifications and store.
+        """
         other = BackgroundManager(scope=scope)
         other.tasks = self.tasks
         other._notifications = self._notifications
@@ -183,6 +222,8 @@ class BackgroundManager:
         other._on_completion = (
             self._on_completion if on_completion is None else on_completion
         )
+        other._sandbox = self._sandbox if sandbox is None else sandbox
+        other._workspace_writes = self._workspace_writes if workspace_writes is None else workspace_writes
         return other
 
     def _owns(self, task: dict) -> bool:
@@ -260,7 +301,8 @@ class BackgroundManager:
             command: Shell command to execute.
 
         Returns:
-            JSON string containing status and task_id.
+            JSON string containing status and task_id; a swarm node command that runs
+            without its sandbox also carries ``"sandbox": "unavailable"``.
         """
         safety_error = broad_python_kill_error(command)
         if safety_error:
@@ -269,6 +311,16 @@ class BackgroundManager:
                 ensure_ascii=False,
             )
 
+        if self._sandbox is not None and self._sandbox.enabled:
+            try:
+                self._sandbox.resolved_backend()
+            except SandboxUnavailableError as exc:
+                return json.dumps(
+                    {"status": "error", "error_code": "sandbox_unavailable", "error": str(exc)},
+                    ensure_ascii=False,
+                )
+
+        command_preview = redact_text(command)
         task_id = uuid.uuid4().hex[:8]
         started_at = time.monotonic()
         with self._lock:
@@ -277,7 +329,7 @@ class BackgroundManager:
             self.tasks[task_id] = {
                 "status": "running",
                 "result": None,
-                "command": command,
+                "command": command_preview,
                 "exit_code": None,
                 "process": None,
                 "cancel_requested": False,
@@ -290,20 +342,33 @@ class BackgroundManager:
             with _LIVE_TASK_IDS_LOCK:
                 _LIVE_TASK_IDS.add(task_id)
         self._persist(task_id)
-        threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
-        return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command[:80]}"})
+        threading.Thread(target=self._execute, args=(task_id, command, workspace_call_id.get()), daemon=True).start()
+        started = {"status": "ok", "task_id": task_id, "message": f"Started: {command_preview[:80]}"}
+        if self._sandbox is not None and self._sandbox.unconfined_fallback:
+            started["sandbox"] = "unavailable"
+        return json.dumps(started)
 
-    def _execute(self, task_id: str, command: str) -> None:
+    def _execute(self, task_id: str, command: str, call_id: str = "") -> None:
         exit_code: int | None = None
         process: subprocess.Popen[str] | None = None
         output = ""
         status = "error"
+        window = None
         try:
             with self._lock:
                 task = self.tasks.get(task_id)
                 skip_spawn = task is None or bool(task.get("cancel_requested"))
             if not skip_spawn:
-                process = _start_process(command)
+                sandbox = self._sandbox
+                if self._workspace_writes is not None:
+                    window, _ = self._workspace_writes.start(
+                        "background_run", call_id, may_write=True, task_id=task_id,
+                    )
+                process = (
+                    _start_process(command, sandbox=sandbox)
+                    if sandbox is not None and (sandbox.enabled or sandbox.workspace is not None)
+                    else _start_process(command)
+                )
                 with self._lock:
                     task = self.tasks[task_id]
                     task["process"] = process
@@ -330,12 +395,14 @@ class BackgroundManager:
                     exit_code = process.returncode
                     status = "timeout"
         except Exception as e:
-            output, status = str(e), "error"
+            output, status = redact_text(e)[:_MAX_OUTPUT_CHARS], "error"
             if process is not None:
                 # Do not publish a terminal cancellation before its root is reaped.
                 _terminate_process_tree(process)
                 exit_code = process.returncode
 
+        if self._workspace_writes is not None:
+            self._workspace_writes.finish(window, success=exit_code == 0, exit_code=exit_code)
         with self._lock:
             task = self.tasks.get(task_id)
             if task is None:
@@ -361,13 +428,19 @@ class BackgroundManager:
                 )
             payload = {
                 "task_id": task_id, "status": status,
-                "command": command[:80], "result": (output or "")[:500],
+                "command": task["command"][:80], "result": (output or "")[:500],
                 "exit_code": exit_code,
             }
             self._notifications.append((task["owner_id"], payload))
             task["ended_at"] = time.time()
             task["pid"] = getattr(process, "pid", None)
             self._condition.notify_all()
+        profile = getattr(process, "_vibe_sandbox_profile", None) if process is not None else None
+        if profile is not None:
+            try:
+                profile.unlink()
+            except OSError:
+                pass
         self._persist(task_id)
         with _LIVE_TASK_IDS_LOCK:
             _LIVE_TASK_IDS.discard(task_id)
@@ -563,12 +636,14 @@ def init_background_store(root: Path) -> Any:
     return _manager_for_root(root)._store
 
 
-def get_background_manager(root: Path | None = None) -> BackgroundManager:
+def get_background_manager(root: Path | None = None, *, sandbox: SandboxSettings | None = None) -> BackgroundManager:
     """Return a private handle over this runtime root's durable task table."""
     if root is None:
         from src.config.paths import get_runtime_root
         root = get_runtime_root()
-    return _manager_for_root(root).for_scope(BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}"))
+    return _manager_for_root(root).for_scope(
+        BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}"), sandbox=sandbox
+    )
 
 
 class BackgroundRunTool(BaseTool):
@@ -584,8 +659,8 @@ class BackgroundRunTool(BaseTool):
     }, "required": ["command"]}
     is_readonly = False
 
-    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
-        self.background = background if background is not None else get_background_manager()
+    def __init__(self, background: BackgroundManager) -> None:
+        self.background = background
 
     def execute(self, **kw: Any) -> str:
         return self.background.run(kw["command"])
@@ -603,8 +678,8 @@ class CheckBackgroundTool(BaseTool):
     }, "required": []}
     repeatable = True
 
-    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
-        self.background = background if background is not None else get_background_manager()
+    def __init__(self, background: BackgroundManager) -> None:
+        self.background = background
 
     def execute(self, **kw: Any) -> str:
         return self.background.check(kw.get("task_id"))
@@ -630,8 +705,8 @@ class CancelBackgroundTool(BaseTool):
     }
     is_readonly = False
 
-    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
-        self.background = background if background is not None else get_background_manager()
+    def __init__(self, background: BackgroundManager) -> None:
+        self.background = background
 
     def execute(self, **kw: Any) -> str:
         return self.background.cancel(kw["task_id"])

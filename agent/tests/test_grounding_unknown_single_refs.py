@@ -1,4 +1,8 @@
 """Derived claims can reference two observed calls without losing either."""
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import json
 
 import pytest
@@ -9,7 +13,7 @@ pytestmark = pytest.mark.unit
 
 
 def _ledger(tmp_path):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze AAPL.US")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze AAPL.US")
     for call_id, date, close in (
         ("before", "2026-08-03", 100.0),
         ("after", "2026-09-02", 112.4),

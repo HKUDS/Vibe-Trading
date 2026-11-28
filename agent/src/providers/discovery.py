@@ -32,8 +32,7 @@ class LLMProviderOption(BaseModel):
     api_key_required: bool = True
     auth_type: str = "api_key"
     login_command: Optional[str] = None
-    # Levels the settings form offers and the update route accepts; "" (unset)
-    # is always allowed on top of these.
+    # The settings form also accepts empty effort.
     reasoning_efforts: List[str] = Field(default_factory=lambda: list(DEFAULT_REASONING_EFFORTS))
 
 
@@ -51,8 +50,7 @@ class LLMModelsResponse(BaseModel):
     models: List[str]
     source: str
     warning_code: Optional[ModelDiscoveryWarningCode] = None
-    # Model id -> reasoning effort levels it accepts; an empty list means the
-    # model takes no effort setting. Only providers that report it fill this.
+    # An empty list means the model accepts no explicit effort.
     effort_levels: Optional[Dict[str, List[str]]] = None
     # Optional display metadata. IDs remain canonical and editable.
     model_labels: Optional[Dict[str, str]] = None
@@ -106,9 +104,7 @@ def _extract_model_ids(payload: Any) -> List[str]:
     return sorted(model_ids, key=str.casefold)[:1000]
 
 
-# Codex CLI model discovery requires a client_version query parameter. Keep
-# this value explicit and review it when updating Codex OAuth compatibility.
-# Verified with the ChatGPT Codex catalog on 2026-10-27.
+# The Codex catalog requires a client_version query parameter.
 _CODEX_MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
 _CODEX_MODELS_CLIENT_VERSION = "0.159.0"
 _CODEX_EFFORT_LEVELS = frozenset(
@@ -153,8 +149,7 @@ async def _list_openai_codex_models(provider: LLMProviderOption) -> LLMModelsRes
         for item in payload["models"][:1000]:
             if not isinstance(item, dict):
                 continue
-            # supported_in_api is an API-key catalog filter, not a ChatGPT
-            # entitlement check (Codex ModelPreset::filter_by_auth).
+            # Ignore the API-key filter when evaluating ChatGPT entitlements.
             if item.get("visibility") != "list":
                 continue
             slug = item.get("slug")
@@ -224,8 +219,7 @@ async def _list_provider_models(
     headers = {"Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    # Match the chat transport: direct mode mounts no ambient proxy while
-    # retaining SSL_CERT_FILE / SSL_CERT_DIR for custom certificate authorities.
+    # Match chat’s direct transport and retain custom certificate authorities.
     client_options: dict[str, Any] = {}
     if disable_proxy:
         client_options["transport"] = httpx.AsyncHTTPTransport(proxy=None, trust_env=True)
@@ -238,8 +232,7 @@ async def _list_provider_models(
         fallback.warning_code = "model_list_unavailable"
         return fallback
 
-    # Prefer configured recommendations without deleting discovered routes.
-    # Paid variants, legacy models and future releases remain selectable.
+    # Prioritize recommendations while keeping discovered variants selectable.
     official_endpoints = {provider.default_base_url, *provider.base_url_options}
     if base_url.rstrip("/") in official_endpoints:
         preferred = [model for model in provider.model_options if model in models]

@@ -102,7 +102,7 @@ def test_catalog_includes_research_runs_without_backtest_config(isolated):
     root = isolated / "research-run"
     root.mkdir()
     (root / "req.json").write_text('{"prompt":"task"}')
-    (root / "trace.jsonl").write_text("{}\n")
+    (root / "thread.jsonl").write_text("{}\n")
     row = service.catalog()["runs"][0]
     assert row["id"] == "research-run"
     assert row["has_trace"] and not row["has_prices"]
@@ -126,7 +126,7 @@ def test_catalog_http_keeps_valid_runs_beside_malformed_metadata(isolated, malfo
     replay = isolated / "replay-run"
     replay.mkdir()
     (replay / "req.json").write_text('{"prompt":"saved task"}', encoding="utf-8")
-    (replay / "trace.jsonl").write_text("{}\n", encoding="utf-8")
+    (replay / "thread.jsonl").write_text("{}\n", encoding="utf-8")
     before = broken_config.read_bytes()
 
     app = FastAPI()

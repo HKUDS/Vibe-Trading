@@ -28,7 +28,7 @@ from backtest.runner import (
     BacktestConfigSchema,
     _create_market_engine,
 )
-from src.agent.instrument_identity import _infer_currency, _infer_venue, _scan_symbols
+from src.product.identity.normalize import _infer_currency, _infer_venue, _scan_symbols
 from src.config.env_schema import DataConfig
 from src.data_gateway.history_router import market_for
 from src.market_data import data_market, detect_source, fetch_market_data

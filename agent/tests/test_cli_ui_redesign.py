@@ -15,12 +15,11 @@ def _render(renderable) -> str:
 
 def test_rail_uses_codex_marker_and_output_branch() -> None:
     dash = RailRunDashboard("check price", 50)
-    dash.handle_event("tool_call", {"tool": "get_market_data", "arguments": {"symbol": "AAPL"}})
+    dash.handle_event('item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'arguments': {'symbol': 'AAPL'}}, 'live_id': "tool:" + str('')})
     dash.handle_event(
-        "tool_progress",
-        {"tool": "get_market_data", "stage": "fetch", "current": 1, "total": 2, "message": "downloaded candles"},
+        'item.delta', {"kind": 'tool.progress', 'progress': {'tool': 'get_market_data', 'stage': 'fetch', 'current': 1, 'total': 2, 'message': 'downloaded candles'}, 'heartbeat': False, 'live_id': "tool:" + str('')},
     )
-    dash.handle_event("tool_result", {"tool": "get_market_data", "status": "ok", "elapsed_ms": 1200, "preview": "AAPL 195.00"})
+    dash.handle_event('item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'get_market_data', 'content': 'AAPL 195.00', 'status': 'ok', 'elapsed_ms': 1200}, 'live_id': "tool:" + str('')})
     dash.finish({"status": "success", "content": "AAPL is trading near 195.00."}, 1.2)
 
     out = _render(dash.render())
@@ -36,24 +35,10 @@ def test_rail_uses_codex_marker_and_output_branch() -> None:
 def test_rail_renders_codex_style_shell_transcript() -> None:
     dash = RailRunDashboard("show status", 50)
     dash.handle_event(
-        "tool_call",
-        {
-            "tool": "bash",
-            "arguments": {"command": "git status --short agent\\cli\\main.py docs\\screenshots\\boot.png"},
-        },
+        'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'bash', 'arguments': {'command': 'git status --short agent\\cli\\main.py docs\\screenshots\\boot.png'}}, 'live_id': "tool:" + str('')},
     )
     dash.handle_event(
-        "tool_result",
-        {
-            "tool": "bash",
-            "status": "ok",
-            "elapsed_ms": 200,
-            "preview": (
-                '{"status":"ok","stdout":"M  CHANGELOG.md\\n M agent/.env.example\\n'
-                'M  agent/cli/main.py\\nA  docs/screenshots/boot.png\\n'
-                'A  docs/screenshots/agent-run.png\\n","stderr":""}'
-            ),
-        },
+        'item.completed', {"kind": 'tool.completed', 'item': {'type': 'tool_result', 'name': 'bash', 'content': '{"status":"ok","stdout":"M  CHANGELOG.md\\n M agent/.env.example\\nM  agent/cli/main.py\\nA  docs/screenshots/boot.png\\nA  docs/screenshots/agent-run.png\\n","stderr":""}', 'status': 'ok', 'elapsed_ms': 200}, 'live_id': "tool:" + str('')},
     )
 
     out = _render(dash.render())
@@ -67,8 +52,7 @@ def test_rail_renders_codex_style_shell_transcript() -> None:
 def test_run_elapsed_is_rendered_as_last_status_line() -> None:
     dash = RailRunDashboard("long command", 50)
     dash.handle_event(
-        "tool_call",
-        {"tool": "bash", "arguments": {"command": "python slow_task.py"}},
+        'item.started', {"kind": 'tool.started', 'item': {'type': 'tool_result', 'name': 'bash', 'arguments': {'command': 'python slow_task.py'}}, 'live_id': "tool:" + str('')},
     )
     dash.start_time -= 2.2
 

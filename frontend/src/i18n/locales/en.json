@@ -1200,6 +1200,20 @@
     "reasoningStrength": "Reasoning Effort",
     "unknownProvider": "Unknown provider",
     "unknownModel": "Unknown model",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "Connection lost, reconnecting…",
     "connectionRestored": "Connection restored",
     "agentWorking": "Getting to work…",
@@ -1219,6 +1233,8 @@
     "describeGoal": "Describe the research goal to attach to this session",
     "placeholder": "e.g. Test a simple moving-average strategy on 000001.SZ over 2024",
     "send": "Send message",
+    "answerPlaceholder": "Type an answer",
+    "toolResultImageAlt": "Tool result",
     "messageInputLabel": "Message to the agent",
     "inputHint": "Enter to send · Shift+Enter for a new line",
     "editGoalObjectiveLabel": "Edit research goal objective",
@@ -1285,7 +1301,10 @@
       "failed": "Failed",
       "steps": "{{count}} steps",
       "continue": "Continue",
-      "reattach": "Re-attach"
+      "reattach": "Re-attach",
+      "interrupted": "Interrupted — the server restarted before this turn finished",
+      "interruptedStep": "Interrupted before it finished",
+      "partial": "Cut off when the turn stopped"
     },
     "resumeConnector": "Resume connector",
     "resumeConnectorTitle": "Clear the kill switch and re-enable connector activity",
@@ -1293,6 +1312,20 @@
     "failedToResumeConnector": "Failed to resume connector.",
     "tokenUsage": {
       "live": "tokens"
+    },
+    "turnFailed": "Execution failed",
+    "notice": {
+      "compaction": "Earlier conversation summarized"
+    },
+    "queue": {
+      "placeholder": "Add a message — it joins after the current step",
+      "label": "Queued messages",
+      "queued": "Queued",
+      "delivering": "Joining the conversation…",
+      "discard": "Remove queued message",
+      "discardFailed": "This message is already joining the conversation",
+      "failed": "Could not queue the message",
+      "send": "Queue message"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "Investment Committee Review",
       "quant_strategy_desk": "Quant Strategy Desk",
+      "research": "Research",
       "value_investing_committee": "Value Investing Committee"
     }
   },

@@ -1,58 +1,9 @@
-"""Pre-fetch market data for symbols mentioned in a swarm's user_vars.
-
-Why this exists
----------------
-Swarm workers are LLMs. Without explicit grounding they cheerfully quote
-prices from their training data — which is wrong by definition for any
-asset that has traded since the model's cutoff. The fix can only be
-structural: feed the worker the real recent prices before it starts
-reasoning, and tell it those are the only prices it may cite.
-
-What this module does
----------------------
-* Scans every value in ``user_vars`` for tokens that match one of the
-  data-source-suffixed symbol shapes the loaders already understand
-  (``NVDA.US``, ``700.HK``, ``TD.TO``, ``PNG.V``, ``600519.SH``,
-  ``BTC-USDT``, etc.).
-* Pulls the last ``DEFAULT_WINDOW_DAYS`` of OHLCV for each detected
-  symbol via ``backtest.loaders.registry.resolve_loader`` with
-  ``source="auto"``. Failures (delisted ticker, network blip) are
-  swallowed per-symbol so they do not poison the whole run.
-* Renders a compact markdown block the worker prompt can splice in.
-
-Bare US tickers
----------------
-Suffixed symbols are matched verbatim. Bare all-caps tokens (``NVDA``
-without ``.US``) are *promoted* to ``<TOKEN>.US`` under guards, because
-auto-built swarm variables routinely carry the user's raw prompt and
-real prompts say "long or short on NVDA", not "NVDA.US" (#198):
-
-* only 2–5 uppercase letters on word boundaries (never lowercase,
-  never single letters — too collision-prone);
-* a stopword list drops common finance/English acronyms (``ETF``,
-  ``CEO``, ``GDP``, ``USD``, bare crypto symbols, …);
-* text already matched by a suffixed pattern is blanked first, so
-  ``BTC-USDT`` never leaks a bogus ``BTC.US``;
-* promotions sort *after* explicit symbols, so explicit symbols win
-  the ``DEFAULT_MAX_SYMBOLS`` cap;
-* the per-symbol fetch remains the final validator — a promoted token
-  that is not a real Yahoo ticker returns no data and is dropped.
-
-A residual risk stays by design: an all-caps non-ticker word that
-collides with a real listed product (e.g. ``MOAT``) grounds an
-irrelevant table. That costs prompt budget, not correctness — workers
-are told to cite only symbols they analyze.
-* It does not refresh data mid-run. The block is a snapshot taken once
-  when the background run starts; long-running swarms will see stale data after
-  many minutes, but that is still strictly better than training-data
-  prices from a year ago.
-"""
+"""Pre-fetch market data for symbols mentioned in a swarm's user_vars."""
 
 from __future__ import annotations
 
 import logging
 import math
-import os
 import re
 from datetime import date, timedelta
 from typing import Iterable
@@ -67,16 +18,11 @@ def _is_finite(value: float) -> bool:
     return isinstance(value, (int, float)) and math.isfinite(value)
 
 
-# Window of OHLCV bars to fetch per symbol. 30 calendar days yields
-# roughly 21 US trading days — enough for a "recent" view without
-# bloating the worker prompt.
+# Keep the recent price window small enough for worker prompts.
 DEFAULT_WINDOW_DAYS = 30
 DEFAULT_MAX_SYMBOLS = 8
-MAX_SYMBOLS_ENV = "SWARM_GROUNDING_MAX_SYMBOLS"
 
-# How many of the most-recent rows to render in the worker prompt.
-# The full window is still used to compute the min/max line; the table
-# is truncated for readability.
+# Limit displayed bars while using the full window for extrema.
 PROMPT_TABLE_TAIL = 5
 
 # Symbol patterns understood by the bundled loaders. Anchored on word
@@ -89,15 +35,10 @@ _SYMBOL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b[A-Z]{2,6}-USDT\b"),
 )
 
-# Bare-ticker promotion: 2–5 uppercase letters. Single letters (A, F, T …)
-# collide with ordinary prose far too often to be worth grounding. The
-# lookarounds reject dotted compounds on either side (FOO.USDA promotes
-# neither FOO nor USDA) while still matching a sentence-ending "NVDA.".
+# Exclude single letters and dotted compounds to avoid promoting prose or partial tickers.
 _BARE_US_TICKER_PATTERN = re.compile(r"(?<![\w.])[A-Z]{2,5}(?!\w)(?!\.\w)")
 
-# All-caps tokens that show up in finance prompts but must never be promoted
-# to a .US symbol — either not tickers at all, or colliding with unrelated
-# listed products (CEO and MSCI are both real Yahoo symbols).
+# Exclude finance abbreviations that could resolve to unrelated listings.
 _BARE_TICKER_STOPWORDS = frozenset({
     # geography / venues / index & data providers
     "US", "USA", "UK", "EU", "HK", "CN", "JP", "NYSE", "AMEX", "SSE", "SZSE",
@@ -126,12 +67,14 @@ _BARE_TICKER_STOPWORDS = frozenset({
 
 
 def extract_symbols_from_user_vars(user_vars: dict[str, str]) -> list[str]:
-    """Return the deduplicated list of symbols mentioned anywhere in *user_vars*.
+    """Return a deduplicated list of symbols mentioned in the user variable values.
 
-    Explicit suffixed symbols come first (in first-occurrence order),
-    followed by guarded bare-ticker promotions (``NVDA`` → ``NVDA.US``),
-    so explicit symbols always win the grounding cap. See the module
-    docstring for the promotion guards.
+    Args:
+        user_vars: Mapping whose string values are scanned for symbols.
+
+    Returns:
+        Suffixed symbols in first-occurrence order, followed by eligible bare tickers promoted to
+        .US.
     """
     explicit: dict[str, None] = {}  # ordered set
     promoted: dict[str, None] = {}
@@ -152,7 +95,11 @@ def extract_symbols_from_user_vars(user_vars: dict[str, str]) -> list[str]:
 
 
 def max_grounding_symbols() -> int:
-    """Return the configured cap for symbols fetched into worker prompts."""
+    """Return the configured cap for symbols fetched into worker prompts.
+
+    Returns:
+        Configured symbol cap, clamped to at least one.
+    """
     value = get_env_config().swarm.swarm_grounding_max_symbols
     return max(1, value)
 
@@ -163,22 +110,16 @@ def fetch_grounding_data(
     window_days: int = DEFAULT_WINDOW_DAYS,
     today: date | None = None,
 ) -> dict[str, list[dict]]:
-    """Fetch OHLCV for *symbols* and return a code -> list-of-bars mapping.
-
-    Each bar is a plain dict with ``trade_date`` (ISO string), ``open``,
-    ``high``, ``low``, ``close``, ``volume``. Symbols that fail to
-    resolve are simply omitted from the result with a logged warning.
+    """Fetch daily OHLCV bars for the supplied symbols.
 
     Args:
-        symbols: Iterable of suffixed symbols (``NVDA.US`` etc.).
-        window_days: Calendar-day lookback. Defaults to
-            :data:`DEFAULT_WINDOW_DAYS`.
-        today: Override the upper bound (mainly for tests). Defaults to
-            ``date.today()``.
+        symbols: Iterable of suffixed symbols such as NVDA.US.
+        window_days: Calendar-day lookback from the end date.
+        today: End date for the fetch. Defaults to the current local date.
 
     Returns:
-        Dict keyed by the *original* symbol string with the bars list as
-        value. Empty if no symbols resolve.
+        Mapping from original symbols to lists of bars with trade_date, open, high, low, close, and
+        volume. Symbols with missing or failed fetches are omitted.
     """
     symbols_list = list(symbols)
     if not symbols_list:
@@ -189,12 +130,7 @@ def fetch_grounding_data(
     start_str = start.isoformat()
     end_str = end.isoformat()
 
-    # Imported lazily so unit tests of the extraction / formatting layer
-    # don't have to drag in pandas + the loader graph just to import.
-    # ``resolve_loader`` expects a *market* key (``"us_equity"`` etc.), not a
-    # raw code; ``_detect_market`` is the function ``runner.py`` already uses
-    # to dispatch the same shapes we extract here, so reusing it keeps the
-    # routing identical to the rest of the codebase.
+    # Defer loader imports and reuse standard market routing for extracted symbols.
     from backtest.loaders.registry import resolve_loader
     from backtest.runner import _detect_market
 
@@ -229,11 +165,14 @@ def fetch_grounding_data(
 
 
 def format_grounding_block(grounding: dict[str, list[dict]]) -> str:
-    """Render *grounding* as a markdown block ready to splice into a prompt.
+    """Render a dated market snapshot for a worker prompt.
 
-    Returns the empty string if no symbol has any data — callers can use
-    that as a falsy guard so the section is omitted entirely instead of
-    rendering an empty heading.
+    Args:
+        grounding: Mapping from symbol to dated OHLCV rows in chronological order.
+
+    Returns:
+        Markdown with recent rows and finite-close statistics, or an empty string if no symbol has a
+        finite close.
     """
     if not grounding:
         return ""
@@ -250,9 +189,7 @@ def format_grounding_block(grounding: dict[str, list[dict]]) -> str:
         window_low = min(closes)
         window_high = max(closes)
         last_close = closes[-1]
-        # Find the last row with a finite close so the "Latest close" label
-        # pairs the price with its correct date, not the final bar's date
-        # (which may have a NaN close in the halted-stock case).
+        # Pair the latest finite close with its own date because the final bar can lack a close.
         last_finite_row = next(
             (r for r in reversed(rows) if _is_finite(r["close"])), rows[-1]
         )

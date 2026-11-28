@@ -1,16 +1,7 @@
-"""SQLite FTS5 session search index for cross-session full-text search.
-
-Stores an inverted index of all conversation messages. The primary data
-remains in the file-based SessionStore; this module provides a fast search
-layer on top.
-
-Database location: ``sessions.db`` under the runtime root (default
-``~/.vibe-trading``; WAL mode for concurrent reads).
-"""
+"""Index session messages in a derived SQLite FTS5 database under the runtime root."""
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import sqlite3
@@ -45,8 +36,7 @@ def _search_snippet(
     conn: sqlite3.Connection, message_id: int, content: str, fts_query: str
 ) -> str:
     """Map native FTS match spans back to the original, bounded excerpt."""
-    # Markers cannot be mistaken for literal source text. Their brackets also
-    # avoid partial overlaps when a control-character run borders a match.
+    # Keep highlight markers distinct from literal text.
     opening, closing = "<\x01>", "<\x02>"
     while opening in content or closing in content:
         opening = "<" + opening[1:-1] * 2 + ">"
@@ -58,8 +48,7 @@ def _search_snippet(
     ).fetchone()
     highlighted = row[0] if row else ""
 
-    # Only inserted spaces need offsets; Latin messages allocate no per-char
-    # mapping. A boundary loses one position for each insertion before it.
+    # Only inserted spaces need offset bookkeeping.
     insertions = []
     for index, match in enumerate(_EAST_ASIAN_CHAR.finditer(content)):
         position = match.start() + 2 * index
@@ -108,16 +97,7 @@ def _search_snippet(
 
 @dataclass(frozen=True)
 class SearchMatch:
-    """A single search result from the FTS5 index.
-
-    Attributes:
-        session_id: Session ID.
-        title: Session title.
-        started_at: Human-readable start time.
-        message_count: Total messages in the session.
-        snippet: FTS5 snippet with match highlights (>>> <<<).
-        rank: FTS5 relevance rank (lower is better).
-    """
+    """A single search result from the FTS5 index."""
 
     session_id: str
     title: str
@@ -127,7 +107,11 @@ class SearchMatch:
     rank: float
 
     def to_dict(self) -> dict:
-        """Serialize to JSON-safe dict."""
+        """Serialize the match for clients.
+
+        Returns:
+            Session ID, title, start time, message count, and matching snippet.
+        """
         return {
             "session_id": self.session_id,
             "title": self.title,
@@ -151,18 +135,12 @@ def _serialized_operation(fn: Callable[..., Any]) -> Callable[..., Any]:
 class SessionSearchIndex:
     """SQLite FTS5 index for cross-session search.
 
-    Supports:
-        - Indexing individual messages as they arrive
-        - Full-text search with relevance ranking
-        - Bulk reindex from the file-based SessionStore
+    Args:
+        db_path: Path to the SQLite index. Its parent directory is created when needed.
     """
 
     def __init__(self, db_path: Path = _DB_PATH) -> None:
-        """Initialize the search index.
-
-        Args:
-            db_path: Path to SQLite database file.
-        """
+        """Initialize the search index."""
         self._operation_lock = _threading.RLock()
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,8 +178,7 @@ class SessionSearchIndex:
             CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages(session_id);
         """)
-        # Serialize upgrade across processes. Keep original messages for readable
-        # snippets; rebuild the derived index once, including historical rows.
+        # Serialize upgrades across processes and preserve original text for snippets.
         conn.create_function(
             "prepare_session_text", 1, _prepare_search_text, deterministic=True
         )
@@ -246,22 +223,15 @@ class SessionSearchIndex:
         title: str = "",
         ts: float | None = None,
     ) -> None:
-        """Upsert a session record.
+        """Upsert a session without resetting an existing message count.
 
         Args:
             session_id: Session ID.
             title: Session title.
-            ts: Session start time as a Unix epoch. When ``None``, an
-                existing row keeps its ``started_at`` and a new row is
-                stamped with ``time.time()``. Passing an explicit value
-                (e.g. parsed from the on-disk ``created_at``) overwrites
-                the stored timestamp so that bulk reindex restores the
-                true session start time rather than the reindex moment.
+            ts: Explicit Unix start time in seconds. None preserves an existing start time or uses
+                the current time for a new session.
         """
         conn = self._get_conn()
-        # Preserve the existing started_at when the caller does not supply
-        # one — otherwise INSERT OR REPLACE would overwrite the original
-        # session start time on every re-upsert, breaking date-sort/filter.
         conn.execute(
             "INSERT OR REPLACE INTO sessions (id, title, started_at, message_count) "
             "VALUES ("
@@ -281,8 +251,8 @@ class SessionSearchIndex:
 
         Args:
             session_id: Session ID.
-            role: Message role (user/assistant/tool).
-            content: Message text.
+            role: Message role such as user, assistant, or tool.
+            content: Message text. Whitespace-only messages are skipped and long text is capped.
             tool_name: Tool name if this is a tool result.
         """
         if not content or not content.strip():
@@ -305,11 +275,8 @@ class SessionSearchIndex:
     def remove_session(self, session_id: str) -> None:
         """Remove a session and all of its messages from the index.
 
-        The ``messages_ad`` trigger propagates each message deletion into
-        ``messages_fts``, so the derived index clears with the base rows.
-
         Args:
-            session_id: Session ID.
+            session_id: Session ID whose indexed text should be removed.
         """
         conn = self._get_conn()
         with conn:
@@ -318,19 +285,7 @@ class SessionSearchIndex:
 
     @staticmethod
     def _sanitize_fts_query(query: str) -> str:
-        """Sanitize a user query for FTS5 MATCH syntax.
-
-        - Separates Unicode words and East Asian character runs; the latter
-          become adjacent-token phrases, matching shorter text accurately
-        - Joins with OR so any-word-matches (not all-words-required)
-        - Quotes each token to prevent FTS5 operator interpretation
-
-        Args:
-            query: Raw user query string.
-
-        Returns:
-            FTS5-safe MATCH expression.
-        """
+        """Sanitize a user query for FTS5 MATCH syntax."""
         tokens = [
             _prepare_search_text(term).strip() for term in _QUERY_TERM.findall(query)
         ]
@@ -341,11 +296,11 @@ class SessionSearchIndex:
         """Full-text search across all sessions.
 
         Args:
-            query: Search query (keywords or phrase).
+            query: Search query containing keywords or a phrase.
             max_sessions: Maximum number of distinct sessions to return.
 
         Returns:
-            List of SearchMatch results, grouped by session, ranked by relevance.
+            The best match per session ranked by relevance, or an empty list when the query fails.
         """
         conn = self._get_conn()
         fts_query = self._sanitize_fts_query(query)
@@ -390,78 +345,6 @@ class SessionSearchIndex:
 
         return list(seen.values())
 
-    def reindex_from_store(self, store_base_dir: Path) -> int:
-        """Rebuild the entire index from file-based session store.
-
-        Args:
-            store_base_dir: Root directory of the SessionStore (contains session subdirs).
-
-        Returns:
-            Number of messages indexed.
-        """
-        if not store_base_dir.exists():
-            return 0
-
-        # Only SQLite work is serialized; source-file reads remain outside.
-        with self._operation_lock:
-            conn = self._get_conn()
-            conn.execute("DELETE FROM messages")
-            conn.execute("DELETE FROM sessions")
-            try:
-                conn.execute(
-                    "INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')"
-                )
-            except sqlite3.OperationalError:
-                pass
-            conn.commit()
-
-        count = 0
-        for session_dir in store_base_dir.iterdir():
-            if not session_dir.is_dir():
-                continue
-
-            session_file = session_dir / "session.json"
-            messages_file = session_dir / "messages.jsonl"
-
-            if not session_file.exists():
-                continue
-
-            try:
-                session_data = json.loads(session_file.read_text(encoding="utf-8"))
-                sid = session_data.get("session_id", session_dir.name)
-                title = session_data.get("title", "")
-
-                try:
-                    ts = datetime.fromisoformat(
-                        session_data.get("created_at", "")
-                    ).timestamp()
-                except (ValueError, TypeError):
-                    ts = time.time()
-
-                self.index_session(sid, title, ts=ts)
-
-                if messages_file.exists():
-                    # JSONL uses LF as its record separator.  ``splitlines``
-                    # incorrectly treats U+2028/U+2029 inside message text as
-                    # separators and drops the affected record during rebuild.
-                    for line in messages_file.read_text(encoding="utf-8").strip().split("\n"):
-                        if not line.strip():
-                            continue
-                        try:
-                            msg = json.loads(line)
-                            role = msg.get("role", "")
-                            content = msg.get("content", "")
-                            if content and role in ("user", "assistant"):
-                                self.index_message(sid, role, content)
-                                count += 1
-                        except json.JSONDecodeError:
-                            continue
-            # One corrupt session must not abort the remaining reindex.
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to index session %s: %s", session_dir.name, exc)
-
-        return count
-
     @staticmethod
     def _format_time(epoch: float) -> str:
         """Format epoch timestamp to human-readable string."""
@@ -483,11 +366,10 @@ _shared_lock = _threading.Lock()
 
 
 def get_shared_index() -> SessionSearchIndex:
-    """Return a process-wide singleton SessionSearchIndex.
+    """Access the process-wide session search index.
 
-    Thread-safe via double-checked locking. Used by both
-    SessionService (indexing) and SessionSearchTool (searching)
-    so they share one SQLite connection.
+    Returns:
+        The shared SessionSearchIndex, created on first use.
     """
     global _shared_index
     if _shared_index is None:

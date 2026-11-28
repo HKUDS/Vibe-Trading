@@ -155,7 +155,7 @@
 ## ✨ 主な機能
 
 <div align="center">
-<a href="assets/features/ja/feature-market-research-card.svg"><img src="assets/features/ja/feature-market-research-card.svg" width="50%" alt="🔍 市場調査 · 株価・開示資料・ETF の保有銘柄を調べる · DCF と同業他社の倍率で企業価値を評価 · 決算を追跡し、寄り付き前のレポートを予約"/></a><a href="assets/features/ja/feature-research-teams-card.svg"><img src="assets/features/ja/feature-research-teams-card.svg" width="50%" alt="🐝 調査チーム · 株式・クオンツ・暗号資産・リスクの計30チーム · 強気・弱気双方の論点とリスク評価を確認 · Pixel Office で調査を分担"/></a><br/>
+<a href="assets/features/ja/feature-market-research-card.svg"><img src="assets/features/ja/feature-market-research-card.svg" width="50%" alt="🔍 市場調査 · 株価・開示資料・ETF の保有銘柄を調べる · DCF と同業他社の倍率で企業価値を評価 · 決算を追跡し、寄り付き前のレポートを予約"/></a><a href="assets/features/ja/feature-research-teams-card.svg"><img src="assets/features/ja/feature-research-teams-card.svg" width="50%" alt="🐝 調査チーム · 株式・クオンツ・暗号資産・リスクの計31チーム · 強気・弱気双方の論点とリスク評価を確認 · Pixel Office で調査を分担"/></a><br/>
 <a href="assets/features/ja/feature-quant-lab-card.svg"><img src="assets/features/ja/feature-quant-lab-card.svg" width="50%" alt="📊 クオンツラボ · 5つのライブラリの478因子を比較 · 複数市場でバックテストし、標本外で検証 · オプションの損益・感応度とポートフォリオリスクを分析"/></a><a href="assets/features/ja/feature-trading-portfolio-card.svg"><img src="assets/features/ja/feature-trading-portfolio-card.svg" width="50%" alt="👥 取引とポートフォリオ · 19のブローカー接続に個別の取引権限 · 模擬約定を追跡し、対応する実取引に上限を設定 · シャドー口座で自分の売買ルールを再現"/></a>
 </div>
 

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 import pytest
@@ -22,7 +26,7 @@ def test_write_file_accepts_model_argument_aliases(tmp_path: Path, monkeypatch) 
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
 
     body = _body(
-        WriteFileTool().execute(
+        WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             file_path="handoff.md",
             text="verified alias content",
             run_dir=str(tmp_path),
@@ -34,8 +38,8 @@ def test_write_file_accepts_model_argument_aliases(tmp_path: Path, monkeypatch) 
 
 
 def test_write_file_returns_recoverable_errors_for_missing_arguments() -> None:
-    missing_path = _body(WriteFileTool().execute(content="payload"))
-    missing_content = _body(WriteFileTool().execute(path="handoff.md"))
+    missing_path = _body(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(content="payload"))
+    missing_content = _body(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="handoff.md"))
 
     assert missing_path["status"] == "error"
     assert "missing required argument 'path'" in missing_path["error"]
@@ -46,7 +50,7 @@ def test_write_file_returns_recoverable_errors_for_missing_arguments() -> None:
 def test_write_file_rejects_unconfigured_absolute_run_dir(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
 
-    body = _body(WriteFileTool().execute(
+    body = _body(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(
         path="code/signal_engine.py",
         content="print('nope')",
         run_dir=str(tmp_path),
@@ -63,8 +67,8 @@ def test_read_and_edit_file_accept_configured_run_root(tmp_path: Path, monkeypat
     target.parent.mkdir(parents=True)
     target.write_text("alpha beta", encoding="utf-8")
 
-    read_body = _body(ReadFileTool().execute(path="notes.md", run_dir=str(target.parent)))
-    edit_body = _body(EditFileTool().execute(
+    read_body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="notes.md", run_dir=str(target.parent)))
+    edit_body = _body(EditFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(
         path="notes.md",
         old_text="beta",
         new_text="gamma",
@@ -87,7 +91,7 @@ def test_read_file_skill_prefix_is_not_shadowed_by_run_dir(
     decoy.write_text("DECOY CONTENT", encoding="utf-8")
 
     body = _body(
-        ReadFileTool().execute(path="skills/data-routing/SKILL.md", run_dir=str(tmp_path))
+        ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="skills/data-routing/SKILL.md", run_dir=str(tmp_path))
     )
 
     assert body["status"] == "ok"
@@ -101,7 +105,7 @@ def test_read_file_skill_prefix_cannot_escape_skills_root() -> None:
     Binding the prefix to one root would be worthless if `skills/../x` walked
     back out of it.
     """
-    body = _body(ReadFileTool().execute(path="skills/../agent.json"))
+    body = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="skills/../agent.json"))
 
     assert body["status"] == "error"
 
@@ -115,7 +119,7 @@ def test_backtest_rejects_unconfigured_absolute_run_dir(tmp_path: Path, monkeypa
         encoding="utf-8",
     )
 
-    body = _body(run_backtest(str(tmp_path)))
+    body = _body(run_backtest(str(tmp_path), roots=FileRoots.from_config(get_env_config().api)))
 
     assert body["status"] == "error"
     assert "outside allowed run roots" in body["error"]
@@ -130,11 +134,11 @@ def test_tilde_expansion_resolves_to_mock_home(tmp_path: Path, monkeypatch) -> N
 
     # Configure mock home as allowed write root
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(mock_home / ".vibe-trading"))
-    allowed_write = allowed_write_roots()
+    allowed_write = allowed_write_roots(roots=FileRoots.from_config(get_env_config().api))
     assert any(p.is_relative_to(mock_home) for p in allowed_write)
 
     # Resolve safe path using tilde
-    resolved = resolve_safe_path("~/.vibe-trading/scripts/strat.py", None, allowed_write, purpose="write")
+    resolved = resolve_safe_path("~/.vibe-trading/scripts/strat.py", None, allowed_write, purpose="write", roots=FileRoots.from_config(get_env_config().api))
     assert resolved == mock_home / ".vibe-trading" / "scripts" / "strat.py"
 
 
@@ -153,19 +157,19 @@ def test_read_write_separation_prevent_cross_escalation(tmp_path: Path, monkeypa
     ro_file.write_text('{"key": "val"}', encoding="utf-8")
 
     # 1. Read should succeed on read-only root
-    read_res = _body(ReadFileTool().execute(path=str(ro_file)))
+    read_res = _body(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=str(ro_file)))
     assert read_res["status"] == "ok"
     assert "val" in read_res["content"]
 
     # 2. Write/Edit should FAIL on read-only root (write isolation)
-    write_res = _body(WriteFileTool().execute(path=str(ro_file), content="poison"))
+    write_res = _body(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=str(ro_file), content="poison"))
     assert write_res["status"] == "error"
     assert "run_dir is required" in write_res["error"] or "escapes" in write_res["error"]
     assert ro_file.read_text(encoding="utf-8") == '{"key": "val"}' # Intact
 
     # 3. Write should succeed on write-only root
     wo_file = write_only_dir / "output.txt"
-    write_ok = _body(WriteFileTool().execute(path=str(wo_file), content="success_write"))
+    write_ok = _body(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=str(wo_file), content="success_write"))
     assert write_ok["status"] == "ok"
     assert wo_file.read_text(encoding="utf-8") == "success_write"
 
@@ -180,17 +184,48 @@ def test_resolve_safe_path_run_dir_escapes_fallback(tmp_path: Path, monkeypatch)
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(extra_write_dir))
 
     # 1. Inside run_dir -> resolves to run_dir
-    resolved_1 = resolve_safe_path("script.py", str(run_dir), allowed_write_roots(), purpose="write")
+    resolved_1 = resolve_safe_path("script.py", str(run_dir), allowed_write_roots(roots=FileRoots.from_config(get_env_config().api)), purpose="write", roots=FileRoots.from_config(get_env_config().api))
     assert resolved_1 == run_dir / "script.py"
 
     # 2. Escapes run_dir but inside extra_write -> resolves to extra_write (fallback)
-    resolved_2 = resolve_safe_path(str(extra_write_dir / "tool.py"), str(run_dir), allowed_write_roots(), purpose="write")
+    resolved_2 = resolve_safe_path(str(extra_write_dir / "tool.py"), str(run_dir), allowed_write_roots(roots=FileRoots.from_config(get_env_config().api)), purpose="write", roots=FileRoots.from_config(get_env_config().api))
     assert resolved_2 == extra_write_dir / "tool.py"
 
     # 3. Escapes run_dir and not in extra_write -> raises ValueError
     with pytest.raises(ValueError) as excinfo:
-        resolve_safe_path("/etc/passwd", str(run_dir), allowed_write_roots(), purpose="write")
+        resolve_safe_path("/etc/passwd", str(run_dir), allowed_write_roots(roots=FileRoots.from_config(get_env_config().api)), purpose="write", roots=FileRoots.from_config(get_env_config().api))
     assert "escapes run_dir" in str(excinfo.value)
+
+
+def test_confined_write_roots_only_narrow_and_leave_the_parent_policy_intact(tmp_path: Path, monkeypatch) -> None:
+    from dataclasses import replace
+
+    runs = tmp_path / "runs"
+    parent = runs / "parent"
+    child = parent / "subagents" / "child"
+    child.mkdir(parents=True)
+    extra_write_dir = tmp_path / "extra_write"
+    extra_write_dir.mkdir()
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(runs))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", f"{extra_write_dir},{runs}")
+
+    parent_roots = FileRoots.from_config(get_env_config().api)
+    child_roots = replace(parent_roots, confined_writes=child.resolve())
+    allowed_child_roots = allowed_write_roots(roots=child_roots)
+    assert allowed_child_roots == [child.resolve()]
+    assert resolve_safe_path(
+        "notes.md", str(child), allowed_child_roots, purpose="write", roots=child_roots,
+    ) == child / "notes.md"
+    for escape in ("../../req.json", str(parent / "req.json"), str(extra_write_dir / "tool.py")):
+        with pytest.raises(ValueError) as excinfo:
+            resolve_safe_path(escape, str(child), allowed_child_roots, purpose="write", roots=child_roots)
+        assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" not in str(excinfo.value)
+
+    allowed_parent_roots = allowed_write_roots(roots=parent_roots)
+    assert extra_write_dir.resolve() in allowed_parent_roots
+    assert resolve_safe_path(
+        "../../req.json", str(child), allowed_parent_roots, purpose="write", roots=parent_roots,
+    ) == parent / "req.json"
 
 
 def test_write_rejection_names_the_write_roots_env(tmp_path: Path, monkeypatch) -> None:
@@ -200,7 +235,7 @@ def test_write_rejection_names_the_write_roots_env(tmp_path: Path, monkeypatch) 
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(tmp_path / "elsewhere"))
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / "runs"))
 
-    body = _body(WriteFileTool().execute(path="/etc/poison.txt", content="x"))
+    body = _body(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="/etc/poison.txt", content="x"))
 
     assert body["status"] == "error"
     assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" in body["error"]
@@ -213,7 +248,7 @@ def test_write_rejection_inside_run_dir_fallback_also_names_env(tmp_path: Path, 
     run_dir.mkdir(parents=True)
 
     body = _body(
-        WriteFileTool().execute(path="/etc/poison.txt", content="x", run_dir=str(run_dir))
+        WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="/etc/poison.txt", content="x", run_dir=str(run_dir))
     )
 
     assert body["status"] == "error"
@@ -227,7 +262,7 @@ def test_read_purpose_rejection_names_the_file_roots_env(tmp_path: Path, monkeyp
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path / "elsewhere"))
 
     with pytest.raises(ValueError) as excinfo:
-        resolve_safe_path("/etc/passwd", None, allowed_write_roots(), purpose="file")
+        resolve_safe_path("/etc/passwd", None, allowed_write_roots(roots=FileRoots.from_config(get_env_config().api)), purpose="file", roots=FileRoots.from_config(get_env_config().api))
 
     assert "VIBE_TRADING_ALLOWED_FILE_ROOTS" in str(excinfo.value)
     assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" not in str(excinfo.value)
@@ -243,9 +278,9 @@ def test_relative_fallback_uses_run_dir_not_cwd(tmp_path, monkeypatch, allowed_r
     monkeypatch.chdir(cwd)
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(run_dir if allowed_run else tmp_path / "other"))
     with pytest.raises(ValueError):
-        resolve_safe_path("../../outside.txt", str(run_dir), [allowed])
+        resolve_safe_path("../../outside.txt", str(run_dir), [allowed], roots=FileRoots.from_config(get_env_config().api))
     # An explicitly allowed sibling remains reachable through the same base.
-    assert resolve_safe_path("../../allowed/ok.txt", str(run_dir), [allowed]) == allowed / "ok.txt"
+    assert resolve_safe_path("../../allowed/ok.txt", str(run_dir), [allowed], roots=FileRoots.from_config(get_env_config().api)) == allowed / "ok.txt"
 
 
 @pytest.mark.parametrize("run_dir", ["//server/share", r"\\server\share"])
@@ -255,7 +290,7 @@ def test_unc_run_dir_is_rejected_before_any_resolution(run_dir, monkeypatch):
 
     monkeypatch.setattr(Path, "resolve", forbidden)
     with pytest.raises(ValueError, match="UNC"):
-        resolve_safe_path("result.txt", run_dir, [])
+        resolve_safe_path("result.txt", run_dir, [], roots=FileRoots.from_config(get_env_config().api))
 
 
 def test_relative_fallback_cannot_escape_through_symlink(tmp_path, monkeypatch):
@@ -268,4 +303,4 @@ def test_relative_fallback_cannot_escape_through_symlink(tmp_path, monkeypatch):
     (allowed / "link").symlink_to(outside, target_is_directory=True)
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(run_dir))
     with pytest.raises(ValueError):
-        resolve_safe_path("../../allowed/link/out.txt", str(run_dir), [allowed])
+        resolve_safe_path("../../allowed/link/out.txt", str(run_dir), [allowed], roots=FileRoots.from_config(get_env_config().api))

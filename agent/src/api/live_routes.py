@@ -601,23 +601,26 @@ async def _run_live_session_attempt(
     early_results: Dict[str, Dict[str, Any]] = {}
 
     def on_terminal(event: Any) -> None:
-        if event.session_id == session_id and usage_callback is not None and event.event_type in {
-            "llm_usage", "llm_usage_unavailable"
-        }:
+        if (
+            event.session_id == session_id
+            and usage_callback is not None
+            and event.event_type == "item.delta"
+            and event.data.get("kind") in {"run.usage", "run.usage_unavailable"}
+        ):
             try:
-                usage_callback(event.data if event.event_type == "llm_usage" else {})
+                usage_callback(event.data if event.data.get("kind") == "run.usage" else {})
             except Exception:
                 svc.cancel_current(session_id)
                 logger.warning("live model budget stopped the active decision", exc_info=True)
             return
         if event.session_id != session_id or event.event_type not in {
-            "attempt.completed", "attempt.failed", "attempt.cancelled", "attempt.interrupted"
+            "run.completed", "run.failed", "run.cancelled"
         }:
             return
         data = {**event.data, "status": event.event_type.split(".", 1)[1]}
 
         def settle() -> None:
-            attempt_id = data.get("attempt_id")
+            attempt_id = data.get("turn_id")
             if not receipt:
                 early_results[attempt_id] = data
             elif attempt_id == receipt.get("attempt_id") and not completed.done():
@@ -637,7 +640,7 @@ async def _run_live_session_attempt(
             terminal = await asyncio.shield(completed)
         except asyncio.CancelledError:
             svc.cancel_current(session_id)
-            # Session execution is a separate task (and may own an AgentLoop
+            # Session execution is a separate task (and may own an AgentRuntime
             # thread). Cancelling only this waiter cannot stop that execution.
             await asyncio.shield(completed)
             raise

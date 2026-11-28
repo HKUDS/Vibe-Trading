@@ -216,6 +216,7 @@ def execute_live_action(
     audit_request: dict[str, Any] | None = None,
     session_id: str = "",
     structural_reason: str | None = None,
+    audit_kind: str = "order_placed",
 ) -> dict[str, Any]:
     """Run the live mandate gate around a direct-SDK write that is not ``place_order``.
 
@@ -249,6 +250,7 @@ def execute_live_action(
             audit_request=audit_request,
             checked=["risk_reducing"],
             consume_daily_count=False,
+            audit_kind=audit_kind,
         )
 
     if mandate is None or mandate.schema_version != MANDATE_SCHEMA_VERSION:
@@ -349,6 +351,7 @@ def execute_live_action(
                 audit_request=audit_request,
                 checked=checked,
                 consume_daily_count=True,
+                audit_kind=audit_kind,
             )
     except DailyOrderLockUnavailable as exc:
         return _deny(
@@ -372,6 +375,7 @@ def _execute_and_audit_live_action(
     audit_request: dict[str, Any] | None,
     checked: list[str],
     consume_daily_count: bool,
+    audit_kind: str,
 ) -> dict[str, Any]:
     """Execute one approved action and atomically account for its success."""
     try:
@@ -406,7 +410,7 @@ def _execute_and_audit_live_action(
             broker,
             session_id,
             remote_tool=remote_tool,
-            kind="order_placed",
+            kind=audit_kind,
             outcome="accepted",
             mandate=mandate,
             intent=intent,

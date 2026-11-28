@@ -11,16 +11,19 @@ added instructions as ``developer`` messages (``context/base_instructions.rs``).
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import base64
 import json
 
 import pytest
 
 import src.providers.openai_codex as codex_mod
-from src.agent.context import ContextBuilder
-from src.providers.chat import ChatLLM
+from src.product.context import ContextBuilder
+from src.providers.response import parse_response
 from src.providers.openai_codex import (
-    CodexToolCall,
     OpenAICodexLLM,
     _convert_messages,
     _events_from_lines,
@@ -84,7 +87,7 @@ def _turn_one():
 
 def _history_after_turn_one() -> list[dict]:
     """Loop messages after turn one ran, built by the loop's own helpers."""
-    response = ChatLLM._parse_response(_turn_one())
+    response = parse_response(_turn_one())
     assistant = ContextBuilder.format_assistant_tool_calls(
         response.tool_calls,
         content=response.content,
@@ -101,7 +104,7 @@ def _history_after_turn_one() -> list[dict]:
 
 
 def test_reasoning_items_travel_back_ahead_of_their_calls() -> None:
-    _, items = _convert_messages(_history_after_turn_one())
+    _, items = _convert_messages(_history_after_turn_one(), roots=FileRoots.from_config(get_env_config().api))
     kinds = [item.get("type") or item.get("role") for item in items]
 
     assert kinds == ["user", "reasoning", "function_call", "function_call",
@@ -114,13 +117,13 @@ def test_reasoning_items_travel_back_ahead_of_their_calls() -> None:
 
 
 def test_replay_can_be_switched_off() -> None:
-    _, items = _convert_messages(_history_after_turn_one(), replay_reasoning=False)
+    _, items = _convert_messages(_history_after_turn_one(), replay_reasoning=False, roots=FileRoots.from_config(get_env_config().api))
     assert all(item.get("type") != "reasoning" for item in items)
 
 
 def test_calls_without_backend_ids_are_not_given_made_up_ones() -> None:
     """Two parallel calls used to both be sent back as id "fc_0"."""
-    _, items = _convert_messages(_history_after_turn_one())
+    _, items = _convert_messages(_history_after_turn_one(), roots=FileRoots.from_config(get_env_config().api))
     calls = [item for item in items if item.get("type") == "function_call"]
 
     assert [call["call_id"] for call in calls] == ["call_a", "call_b"]
@@ -144,7 +147,7 @@ def test_backend_issued_call_ids_are_kept() -> None:
         {"role": "assistant", "content": "", "tool_calls": [
             {"id": "call_1|fc_real", "type": "function",
              "function": {"name": "bash", "arguments": '{"command": "pwd"}'}}]},
-    ])
+    ], roots=FileRoots.from_config(get_env_config().api))
     assert items[0]["id"] == "fc_real" and items[0]["call_id"] == "call_1"
 
 
@@ -155,7 +158,7 @@ def test_a_mid_run_system_message_does_not_replace_the_system_prompt() -> None:
         {"role": "system", "content": "[SYSTEM] Your previous response was empty."},
         {"role": "system", "content": "[SYSTEM] Write the pending file now."},
     ]
-    instructions, items = _convert_messages(messages)
+    instructions, items = _convert_messages(messages, roots=FileRoots.from_config(get_env_config().api))
 
     assert instructions == SYSTEM_PROMPT
     developer = [item for item in items if item.get("role") == "developer"]
@@ -185,7 +188,7 @@ def test_prompt_cache_key_is_stable_for_a_session_and_differs_between_sessions()
 
 
 def test_body_uses_the_session_key_across_turns() -> None:
-    adapter = OpenAICodexLLM(model="openai-codex/gpt-6-sol")
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model="openai-codex/gpt-6-sol")
     history = _history_after_turn_one()
     token = bind_llm_session_id("session-a")
     try:
@@ -243,7 +246,7 @@ def test_a_refused_reasoning_replay_is_resent_without_it(monkeypatch, fresh_repl
     ok = _Response(200, lines=_sse({"type": "response.output_text.delta", "delta": "done"}, ev_completed()))
     refused = _Response(400, b'{"error": {"message": "Invalid reasoning item rs_1: encrypted_content could not be verified"}}')
     monkeypatch.setattr(codex_mod.httpx, "Client", _client_returning([refused, ok], sent))
-    adapter = OpenAICodexLLM(model="openai-codex/gpt-6-sol")
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model="openai-codex/gpt-6-sol")
     adapter._headers = lambda **kwargs: {}
 
     text = "".join(chunk.content for chunk in adapter.stream(_history_after_turn_one()))
@@ -257,7 +260,7 @@ def test_an_unrelated_400_is_not_retried(monkeypatch, fresh_replay_state) -> Non
     sent: list[dict] = []
     refused = _Response(400, b'{"detail": "The model is not supported when using Codex with a ChatGPT account."}')
     monkeypatch.setattr(codex_mod.httpx, "Client", _client_returning([refused], sent))
-    adapter = OpenAICodexLLM(model="openai-codex/gpt-6-sol")
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model="openai-codex/gpt-6-sol")
     adapter._headers = lambda **kwargs: {}
 
     with pytest.raises(codex_mod.CodexStreamError):
@@ -269,5 +272,4 @@ def test_an_unrelated_400_is_not_retried(monkeypatch, fresh_replay_state) -> Non
 def test_tool_call_ids_round_trip_through_the_parser() -> None:
     message = _turn_one()
     assert [call["id"] for call in message.tool_calls] == ["call_a", "call_b"]
-    assert CodexToolCall(id="call_a", name="x", arguments={}).as_langchain_tool_call()["id"] == "call_a"
     assert [item["id"] for item in message.additional_kwargs["provider_items"]] == ["rs_1"]

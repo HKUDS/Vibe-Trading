@@ -9,16 +9,20 @@ succeeded.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 from src.tools.financial_rigor_tool import FinancialRigorTool
 
 
@@ -42,7 +46,7 @@ class _CountingTool(BaseTool):
 
 
 def _drive(
-    agent: AgentLoop,
+    agent: AgentRuntime,
     tool_name: str,
     run_dir: Path,
     arg_sets: list[dict],
@@ -58,31 +62,23 @@ def _drive(
     Returns:
         Tuple of (messages appended, trace records written).
     """
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict] = []
-    react_trace: list[dict] = []
     for index, arguments in enumerate(arg_sets, start=1):
-        agent._process_tool_calls(
-            [SimpleNamespace(id=f"call_{index}", name=tool_name, arguments=arguments)],
-            ContextBuilder,
-            messages,
-            trace,
-            react_trace,
-            index,
-        )
+        run_recorded_tools(agent, [SimpleNamespace(id=f"call_{index}", name=tool_name, arguments=arguments)], ContextBuilder, messages, trace, index)
     trace.close()
-    return messages, list(TraceWriter.read(run_dir))
+    return messages, list(records_at(run_dir))
 
 
 @pytest.fixture()
 def agent_factory(tmp_path: Path):
-    """Return a builder for an AgentLoop wired to a run dir and one tool."""
+    """Return a builder for an AgentRuntime wired to a run dir and one tool."""
 
-    def _build(tool: BaseTool) -> tuple[AgentLoop, Path, list[tuple[str, dict]]]:
-        registry = ToolRegistry()
+    def _build(tool: BaseTool) -> tuple[AgentRuntime, Path, list[tuple[str, dict]]]:
+        registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
         registry.register(tool)
         captured: list[tuple[str, dict]] = []
-        agent = AgentLoop(
+        agent = AgentRuntime(
             registry=registry,
             llm=SimpleNamespace(),
             max_iterations=4,
@@ -119,9 +115,13 @@ def test_identical_deterministic_call_is_served_from_cache(agent_factory) -> Non
         json.loads(messages[1]["content"])["result_exact"]
     )
     assert [r["type"] for r in records].count("tool_result_cached") == 1
-    cached_events = [d for name, d in captured if d.get("cached")]
+    cached_events = [
+        d["item"] for name, d in captured
+        if name == "item.completed" and d.get("kind") == "tool.completed"
+        and d.get("item", {}).get("cached")
+    ]
     assert len(cached_events) == 1
-    assert cached_events[0]["tool"] == tool.name
+    assert cached_events[0]["name"] == tool.name
 
 
 def test_different_arguments_re_execute(agent_factory) -> None:
@@ -222,7 +222,7 @@ def test_cache_hit_still_passes_the_identity_gate(agent_factory) -> None:
         def ingest_tool_result(self, **kwargs):
             ingested.append(kwargs["call_id"])
 
-    agent._identity = _Grounding()
+    agent.tool_env.identity = _Grounding()
     messages, records = _drive(agent, tool.name, run_dir, [{"a": 1}, {"a": 1}])
 
     # Both calls reached the gate; the blocked repeat was not served cached.

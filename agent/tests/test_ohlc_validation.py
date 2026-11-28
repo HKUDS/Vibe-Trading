@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import logging
 from pathlib import Path
 
@@ -225,7 +229,7 @@ def test_backtest_keeps_signed_bars_with_separate_cache_entries(
     }
 
     def fetch(signed: bool) -> None:
-        result = runner.fetch_data_map({**config, "allow_nonpositive_prices": signed})
+        result = runner.fetch_data_map({**config, "allow_nonpositive_prices": signed}, roots=FileRoots.from_config(get_env_config().api))
         assert result.effective_sources == ["local"]
         expected = bars.iloc[[0, 1, 4] if signed else [0, 4]]
         actual = result.data_map["POWER.US"]
@@ -292,13 +296,17 @@ def test_public_market_read_stays_strict_during_signed_backtest(tmp_path, monkey
     try:
         monkeypatch.setitem(local_loader._READERS, "csv", overlapping_read)
         with ThreadPoolExecutor(max_workers=1) as pool:
-            signed = pool.submit(fetch_data_map, {**config, "allow_nonpositive_prices": True})
+            signed = pool.submit(
+                fetch_data_map,
+                {**config, "allow_nonpositive_prices": True},
+                roots=FileRoots.from_config(get_env_config().api),
+            )
             public = fetch_market_data(**config, as_frames=True)
             assert signed.result(timeout=10).data_map["POWER.US"]["close"].tolist() == [11, -12]
             assert public["POWER.US"]["close"].tolist() == [11]
         monkeypatch.setitem(local_loader._READERS, "csv", read_csv)
         for options in ({}, {"allow_nonpositive_prices": "false"}):
-            assert fetch_data_map({**config, **options}).data_map["POWER.US"]["close"].tolist() == [11]
+            assert fetch_data_map({**config, **options}, roots=FileRoots.from_config(get_env_config().api)).data_map["POWER.US"]["close"].tolist() == [11]
     finally:
         gateway.close()
 
@@ -316,13 +324,13 @@ def test_backtest_price_policy_is_nested_and_restored_on_error(monkeypatch) -> N
         assert validate_ohlc(bars, allow_nonpositive_prices=False).empty
         assert validate_ohlc(bars, allow_nonpositive_prices=None).empty
         with pytest.raises(ValueError, match="inner failed"):
-            runner.fetch_data_map({"source": "auto", "allow_nonpositive_prices": False})
+            runner.fetch_data_map({"source": "auto", "allow_nonpositive_prices": False}, roots=FileRoots.from_config(get_env_config().api))
         assert len(validate_ohlc(bars)) == 1
         raise ValueError("outer failed")
 
     monkeypatch.setattr(runner, "_fetch_auto", fake_fetch_auto)
     with pytest.raises(ValueError, match="outer failed"):
-        runner.fetch_data_map({"source": "auto", "allow_nonpositive_prices": True})
+        runner.fetch_data_map({"source": "auto", "allow_nonpositive_prices": True}, roots=FileRoots.from_config(get_env_config().api))
     assert validate_ohlc(bars).empty
 
 
@@ -357,11 +365,11 @@ def test_frozen_backtest_honors_explicit_price_policy(tmp_path, monkeypatch) -> 
     with ohlc_price_policy(True):
         for policy in (False, None, "false", 1):
             with pytest.raises(ValueError, match="violate OHLC"):
-                runner.fetch_data_map({**config, "allow_nonpositive_prices": policy})
-    result = runner.fetch_data_map({**config, "allow_nonpositive_prices": True})
+                runner.fetch_data_map({**config, "allow_nonpositive_prices": policy}, roots=FileRoots.from_config(get_env_config().api))
+    result = runner.fetch_data_map({**config, "allow_nonpositive_prices": True}, roots=FileRoots.from_config(get_env_config().api))
     assert result.data_map["POWER.US"]["close"].tolist() == [11, -12]
 
     signed_bars.loc[signed_bars.index[1], "high"] = 0
     write_snapshot(signed_bars)
     with pytest.raises(ValueError, match="violate OHLC"):
-        runner.fetch_data_map({**config, "allow_nonpositive_prices": True})
+        runner.fetch_data_map({**config, "allow_nonpositive_prices": True}, roots=FileRoots.from_config(get_env_config().api))

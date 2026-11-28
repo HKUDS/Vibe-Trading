@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from contextlib import closing
 
 from tests.provider_helpers import provider_server as provider_server
@@ -19,11 +23,11 @@ def test_model_inference_does_not_change_explicit_adapter_family(monkeypatch):
     route = resolve_config(environment={"LANGCHAIN_PROVIDER": "openai", "LANGCHAIN_MODEL_NAME": "deepseek-test"})
     assert route.backend == "openai_compatible"
     assert get_provider_capabilities(route.provider, route.model).name == "deepseek"
-    from src.providers import llm as llm_module
+    from src.providers import diagnostics
 
-    monkeypatch.setattr(llm_module, "resolve_config", lambda: route)
-    monkeypatch.setattr(llm_module, "_package_version", lambda _: "installed")
-    assert llm_module.provider_diagnostics()["adapter"]["type"] == "openai-compatible"
+    monkeypatch.setattr(diagnostics, "resolve_config", lambda: route)
+    monkeypatch.setattr(diagnostics, "_package_version", lambda _: "installed")
+    assert diagnostics.provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))["adapter"]["type"] == "openai-compatible"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "openai_codex", "LANGCHAIN_MODEL_NAME": "test"}).backend == "openai_codex"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "github-copilot", "LANGCHAIN_MODEL_NAME": "test"}).backend == "copilot"
     assert resolve_config(environment={"LANGCHAIN_PROVIDER": "unknown-legacy-relay", "LANGCHAIN_MODEL_NAME": "test"}).backend == "openai_compatible"
@@ -57,7 +61,7 @@ def test_settings_to_real_sdk_stream_and_tool_followup(tmp_path, monkeypatch, pr
         assert response.status_code == 200, response.text
         provider = next(p for p in response.json()["providers"] if p["name"] == "ollama")
         assert provider["backend"] == "openai_compatible"
-        with closing(ChatLLM()) as llm:
+        with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()))) as llm:
             assert_stream_tool_roundtrip(llm, "gateway-test")
     assert len(received) == 2
     assert all(path == "/v1/chat/completions" for path, _, _ in received)
@@ -90,14 +94,17 @@ def test_catalog_only_provider_reaches_settings_and_real_sdk(tmp_path, provider_
         from unittest.mock import patch
         from src.providers import registry
         registry.CATALOG_PATH = Path(sys.argv[1])
-        from cli import _legacy, onboard
+        from cli import onboard
+        from cli.commands import common, setup_memory
+        from src.config.accessor import get_env_config
+        from src.product.tool_policy import ToolPolicy
         from src.providers.chat import ChatLLM
         from src.providers.settings import SettingsStore, secret_names
         assert onboard.PROVIDERS[-1].key == "catalog-test"
-        with patch.object(_legacy.IntPrompt, "ask", return_value=len(_legacy._PROVIDER_CHOICES)), \
-             patch.object(_legacy.Prompt, "ask", side_effect=["cli-secret", sys.argv[2], "cli-model", ""]):
-            assert _legacy.cmd_init() == 0
-        with closing(ChatLLM()) as old:
+        with patch.object(common.IntPrompt, "ask", return_value=len(common._PROVIDER_CHOICES)), \
+             patch.object(common.Prompt, "ask", side_effect=["cli-secret", sys.argv[2], "cli-model", ""]):
+            assert setup_memory.cmd_init() == 0
+        with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()))) as old:
             import api_server
             from fastapi.testclient import TestClient
             with TestClient(api_server.app, client=("127.0.0.1", 50000)) as api:
@@ -109,7 +116,7 @@ def test_catalog_only_provider_reaches_settings_and_real_sdk(tmp_path, provider_
                 })
                 assert response.status_code == 200, response.text
                 assert "api-secret" not in response.text and "cli-secret" not in response.text
-                with closing(ChatLLM()) as new:
+                with closing(ChatLLM(policy=ToolPolicy.from_config(get_env_config()))) as new:
                     assert new.chat([{"role": "user", "content": "hello"}]).content == "api-model"
                 assert old.chat([{"role": "user", "content": "hello"}]).content == "cli-model"
                 os.environ["VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS"] = "1"

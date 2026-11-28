@@ -1,24 +1,40 @@
 import { useTranslation } from 'react-i18next';
+import i18n from "@/i18n";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import { ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import {
+  setTranscriptBuilder,
   useAgentStore,
   type AgentActivity,
   type AgentMessageMeta,
-  type StoredAgentMessage,
 } from "@/stores/agent";
 import { useSessionsStore } from "@/stores/sessions";
 import { useSSE } from "@/hooks/useSSE";
 import { useLlmUsageCounter } from "@/hooks/useLlmUsageCounter";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type RunPreview } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, isQueuedMessage, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type SessionModelSelection } from "@/lib/api";
+import {
+  addQueuedInput,
+  applyThreadEvent,
+  buildTranscript,
+  contentText,
+  discardLiveAssistant,
+  endedTurns,
+  historyReply,
+  mergeThreadPage,
+  removeQueuedInput,
+  reuseRows,
+  withPendingInputs,
+  type TurnMeta,
+} from "@/lib/threadItems";
 import {
   extractUploadedAttachments,
 } from "@/lib/attachments";
 import { hasStoredMetrics, runCardFields } from "@/lib/runCards";
 import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
-import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
+import type { AgentMessage, SwarmRunStatus } from "@/types/agent";
+import { QueuedInputs } from "@/components/chat/QueuedInputs";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { MarkdownContent, MessageBubble } from "@/components/chat/MessageBubble";
@@ -30,6 +46,9 @@ import { LlmUsageCounter } from "@/components/chat/LlmUsageCounter";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
 import { ScheduledResearchProposalCard } from "@/components/chat/ScheduledResearchProposalCard";
 import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
+import { PlanCard } from "@/components/chat/PlanCard";
+import { QuestionCard } from "@/components/chat/QuestionCard";
+import { ImageResult } from "@/components/chat/ImageResult";
 import {
   Composer,
   type ComposerAttachment,
@@ -49,36 +68,9 @@ import {
   mergeSwarmRunUsage,
   stopSwarmRun,
 } from "@/lib/swarmStatus";
-import { buildToolTimelineMessages } from "@/pages/agentToolTimeline";
+import { readThread } from "@/pages/agentHydration";
 
-/* ---------- Message grouping ---------- */
-type MsgGroup =
-  | { kind: "single"; msg: StoredAgentMessage; msgIdx: number }
-  | { kind: "timeline"; msgs: StoredAgentMessage[]; msgIdx: number };
-
-function groupMessages(msgs: StoredAgentMessage[]): MsgGroup[] {
-  const out: MsgGroup[] = [];
-  let buf: StoredAgentMessage[] = [];
-  let bufStartIdx = -1;
-  const flush = () => {
-    if (buf.length) {
-      out.push({ kind: "timeline", msgs: [...buf], msgIdx: bufStartIdx });
-      buf = [];
-      bufStartIdx = -1;
-    }
-  };
-  for (const [msgIdx, m] of msgs.entries()) {
-    if (["thinking", "tool_call", "tool_result", "compact"].includes(m.type)) {
-      if (bufStartIdx < 0) bufStartIdx = msgIdx;
-      buf.push(m);
-    } else {
-      flush();
-      out.push({ kind: "single", msg: m, msgIdx });
-    }
-  }
-  flush();
-  return out;
-}
+import { groupMessages, type MsgGroup } from "@/pages/agentTranscript";
 
 const act = () => useAgentStore.getState();
 
@@ -91,27 +83,11 @@ function hydrateSwarmRunUsage(runId: string): void {
   }).catch(() => undefined);
 }
 
-function eventCallId(data: Record<string, unknown>): string | undefined {
-  return typeof data.call_id === "string" && data.call_id
-    ? data.call_id
-    : undefined;
-}
-
-interface PendingToolProgress {
-  callId?: string;
-  tool: string;
-  progress: NonNullable<ToolCallEntry["progress"]>;
-}
-
 interface RuntimeIdentity {
   sessionId?: string;
   provider?: string;
   model?: string;
   reasoningEffort?: string;
-}
-
-function toolProgressKey(callId: string | undefined, tool: string): string {
-  return callId ? `call:${callId}` : `tool:${tool}`;
 }
 
 // i18n hook for Agent component — used inside the component below
@@ -164,6 +140,20 @@ function toDisplayPrompt(content: string): {
     content: display,
     meta,
   };
+}
+
+/* Thread rows are rebuilt by the store whenever the thread view changes. */
+setTranscriptBuilder((thread, turnMeta, previous) => reuseRows(
+  previous,
+  buildTranscript(thread, turnMeta, {
+    displayUser: toDisplayPrompt,
+    interruptedLabel: i18n.t("agent.activity.interruptedStep" as never),
+    failedLabel: i18n.t("agent.turnFailed" as never),
+  }),
+));
+
+function runIdFromDir(runDir: unknown): string | undefined {
+  return typeof runDir === "string" && runDir ? runDir.split(/[/\\]/).pop() || undefined : undefined;
 }
 
 /* ---------- Connector runtime channel ----------
@@ -240,15 +230,14 @@ export function Agent() {
   const lastEventRef = useRef(0);
   const sseTimeoutMsRef = useRef(90_000);
 
-  /* tool_progress coalescing — keep latest payload per invocation, flush once per rAF. */
-  const pendingProgressRef = useRef<Map<string, PendingToolProgress>>(new Map());
+  /* tool.progress coalescing — keep the latest delta per live item, apply once per rAF. */
+  const pendingProgressRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   const progressRafRef = useRef(0);
   const pendingTextRef = useRef("");
   const pendingReasoningRef = useRef<boolean | null>(null);
   const streamFlushTimerRef = useRef(0);
   const pendingSwarmEventsRef = useRef<Map<string, unknown[]>>(new Map());
   const swarmRafRef = useRef(0);
-  const toolCallSeqRef = useRef(0);
   const replayAttemptSeenRef = useRef(false);
   const replayCheckTimerRef = useRef(0);
   const smoothScrollingRef = useRef(false);
@@ -256,6 +245,9 @@ export function Agent() {
   const historyScrollTimerRef = useRef(0);
   const titleBeforeCompletionRef = useRef<string | null>(null);
   const completedAttemptIdsRef = useRef<Set<string>>(new Set());
+  /* Turns whose terminal attempt event is already handled (or that had ended
+     before this stream connected), so a replayed one changes nothing. */
+  const settledTurnsRef = useRef<Set<string>>(new Set());
 
   const [swarmPreset, setSwarmPreset] = useState<{ name: string; title: string } | null>(null);
   const [goalComposerActive, setGoalComposerActive] = useState(false);
@@ -268,6 +260,7 @@ export function Agent() {
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [runtimeIdentity, setRuntimeIdentity] = useState<RuntimeIdentity>({});
+  const [sessionModel, setSessionModel] = useState<SessionModelSelection | null>(null);
 
   const messages = useAgentStore(s => s.messages);
   const streamingText = useAgentStore(s => s.streamingText);
@@ -277,6 +270,7 @@ export function Agent() {
   const reasoningTail = useAgentStore(s => s.reasoningTail);
   const swarmRuns = useAgentStore(s => s.swarmRuns);
   const sessionLoading = useAgentStore(s => s.sessionLoading);
+  const queuedInputs = useAgentStore(s => s.thread.queued);
   const previousStatusRef = useRef(status);
 
   const { connect, disconnect, onStatusChange } = useSSE();
@@ -378,42 +372,23 @@ export function Agent() {
     act().clearStreaming();
   }, [cancelPendingStreamFlush]);
 
-  const archiveActivity = useCallback((
-    terminalState: "stopped" | "timeout" | "failed" | "done",
-    endedAt = Date.now(),
-  ): AgentActivity | null => {
-    const store = act();
-    store.setActivityState(terminalState, endedAt);
-    const finished = act().activity;
-    if (!finished) return null;
-    const [activityMessage] = buildToolTimelineMessages(finished.steps, {
-      activity: finished,
-      idPrefix: "live_",
-    });
-    useAgentStore.setState((state) => ({
-      messages: [
-        ...state.messages.filter(
-          (message) => message.meta?.activity?.attemptId !== finished.attemptId,
-        ),
-        activityMessage,
-      ],
-      activity: null,
-      toolCalls: [],
-    }));
-    return finished;
-  }, []);
+  /** End the in-flight turn on this page; whatever it streamed stays as a cut-off response. */
+  const endLiveTurn = useCallback(() => {
+    const streamed = act().streamingText + pendingTextRef.current;
+    cancelPendingStreamFlush();
+    act().updateThread((thread) => discardLiveAssistant(thread, streamed, Date.now()));
+    act().clearStreaming();
+    useAgentStore.setState({ activity: null, toolCalls: [] });
+    act().setStatus("idle");
+  }, [cancelPendingStreamFlush]);
 
-  const persistPartialAnswer = useCallback((
-    attempt: AgentActivity | null,
-    content: string,
-  ) => {
-    if (!attempt || !content.trim()) return;
-    act().addMessage({
-      id: `partial_${attempt.attemptId}`,
-      type: "answer",
-      content,
-      meta: { partialAttemptId: attempt.attemptId },
-      timestamp: Date.now(),
+  /** Drop the optimistic copy of a message once the thread records it. */
+  const dropPendingSend = useCallback((requestText: string) => {
+    useAgentStore.setState((state) => {
+      const messages = state.messages.filter((message) => !(
+        message.meta?.pendingSend && message.meta.requestText === requestText
+      ));
+      return messages.length === state.messages.length ? {} : { messages };
     });
   }, []);
 
@@ -447,6 +422,21 @@ export function Agent() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!urlSessionId) {
+      setSessionModel(null);
+      return;
+    }
+    let active = true;
+    if (typeof api.getSessionModel !== "function") return;
+    api.getSessionModel(urlSessionId).then((selection) => {
+      if (active) setSessionModel(selection);
+    }).catch(() => {
+      if (active) setSessionModel(null);
+    });
+    return () => { active = false; };
+  }, [urlSessionId]);
 
   const fillComposer = useCallback((prompt: string) => {
     composerRef.current?.fill(prompt);
@@ -537,145 +527,83 @@ export function Agent() {
     }
   }, []);
 
-  const loadSessionMessages = useCallback(async (sid: string, gen: number) => {
+  const loadSessionMessages = useCallback(async (sid: string, gen: number): Promise<boolean> => {
     setHistoryError(null);
     try {
-      const msgs = await api.getSessionMessages(sid);
-      if (genRef.current !== gen) return;
-      // Every assistant turn owns a run directory, so most of these are plain
-      // replies. Request all previews up front rather than one per message.
-      const previews = new Map<string, Promise<RunPreview | null>>();
-      for (const m of msgs) {
-        const meta = m.metadata as Record<string, unknown> | undefined;
-        const runId = meta?.run_id as string | undefined;
-        const metrics = meta?.metrics as Record<string, number> | undefined;
-        if (m.role !== "user" && runId && !hasStoredMetrics(metrics) && !previews.has(runId)) {
-          previews.set(runId, api.getRunPreview(runId).catch(() => null));
-        }
+      const [thread, pending] = await Promise.all([
+        readThread((after, limit) => api.getSessionThread(sid, { after, limit })),
+        api.listPendingInputs(sid).catch(() => null),
+      ]);
+      if (genRef.current !== gen) return false;
+      const previewIds = new Set<string>();
+      for (const item of thread.items) {
+        if (item.type !== "turn_end") continue;
+        const runId = item.display?.run_id || runIdFromDir(item.run_dir);
+        if (runId) previewIds.add(runId);
       }
-      const agentMsgs: StoredAgentMessage[] = [];
+      const previewEntries = await Promise.all(
+        [...previewIds].map(async (runId) => [runId, await api.getRunPreview(runId).catch(() => null)] as const),
+      );
+      const previews = new Map(previewEntries);
       let latestRuntimeIdentity: RuntimeIdentity | null = null;
-      for (const m of msgs) {
-        const meta = m.metadata as Record<string, unknown> | undefined;
-        const runId = meta?.run_id as string | undefined;
-        const metrics = meta?.metrics as Record<string, number> | undefined;
-        const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
-        if (
-          m.role === "assistant"
-          && (
-            typeof meta?.provider === "string"
-            || typeof meta?.model === "string"
-            || typeof meta?.reasoning_effort === "string"
-          )
-        ) {
+      for (const item of thread.items) {
+        if (item.type === "turn_start" && (item.provider || item.model)) {
           latestRuntimeIdentity = {
             sessionId: sid,
-            provider: typeof meta?.provider === "string" ? meta.provider : undefined,
-            model: typeof meta?.model === "string" ? meta.model : undefined,
-            reasoningEffort: typeof meta?.reasoning_effort === "string"
-              ? meta.reasoning_effort
-              : undefined,
+            provider: item.provider || undefined,
+            model: item.model || undefined,
           };
         }
-        const ts = new Date(m.created_at).getTime();
-        // The reply is committed when the attempt ends, so created_at is the
-        // end. The start comes from the persisted attempt start when present,
-        // else is backed out of the attempt's elapsed time; only legacy rows
-        // without either fall back to the first tool call.
-        const startedAtSec = typeof meta?.started_at === "number" ? meta.started_at : NaN;
-        const attemptStartedAt = Number.isFinite(startedAtSec) && startedAtSec > 0
-          ? startedAtSec * 1000
-          : elapsedMs != null
-            ? ts - elapsedMs
-            : undefined;
-        const toolTimeline = m.role === "assistant"
-          ? buildToolTimelineMessages(m.tool_trail ?? [], {
-              fallbackTimestamp: ts,
-              idPrefix: `${m.message_id}_`,
-              attemptId: m.linked_attempt_id || `${m.message_id}_attempt`,
-              state: meta?.status === "failed"
-                ? "failed"
-                : meta?.status === "cancelled"
-                  ? "stopped"
-                  : "done",
-              startedAt: attemptStartedAt,
-              endedAt: ts,
-            })
-          : [];
-        agentMsgs.push(...toolTimeline);
-        const lastToolTimestamp = toolTimeline.length > 0
-          ? toolTimeline[toolTimeline.length - 1].timestamp
-          : ts - 1;
-        const assistantTs = Math.max(ts, lastToolTimestamp + 1);
-        if (m.role === "user") {
-          const displayPrompt = toDisplayPrompt(m.content);
-          agentMsgs.push({
-            id: m.message_id,
-            type: "user",
-            content: displayPrompt.content,
-            meta: displayPrompt.meta,
-            timestamp: ts,
-          });
-        } else if (runId) {
-          // Show text answer first (if non-empty), then chart card
-          if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
-          }
-          if (hasStoredMetrics(metrics)) {
-            agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
-          } else {
-            const card = runCardFields((await previews.get(runId)) ?? null);
-            if (card) {
-              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
-            }
-          }
-        } else {
-          agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
+      }
+      for (const item of thread.items) {
+        if (item.type === "turn_end" && item.display?.reasoning_effort !== undefined && latestRuntimeIdentity) {
+          latestRuntimeIdentity.reasoningEffort = item.display.reasoning_effort;
         }
       }
-      if (genRef.current !== gen) return;
-      // A background session's SSE stream disconnects the moment you navigate
-      // away (doDisconnect() in the session-switch effect), so the
-      // session_completed event that would normally clear streamingSessionId
-      // never arrives -- the sidebar's "thinking" spinner for that session
-      // sticks around for the rest of the tab's life, even long after the
-      // turn actually finished. Reopening the session re-fetches its
-      // committed history right here; if the newest stored message is
-      // already the assistant's reply, the turn is done, so release the
-      // stale marker instead of leaving it dangling.
-      if (
-        act().streamingSessionId === sid
-        && msgs.length > 0
-        && msgs[msgs.length - 1].role === "assistant"
-      ) {
-        act().clearStreamingSession(sid);
+      const historyMeta: Record<string, TurnMeta> = {};
+      for (const item of thread.items) {
+        if (item.type !== "turn_end") continue;
+        const runId = item.display?.run_id || runIdFromDir(item.run_dir);
+        const turnMeta: TurnMeta = historyReply(item);
+        if (runId) {
+          turnMeta.runId = runId;
+          turnMeta.card = hasStoredMetrics(item.display?.metrics)
+            ? { metrics: item.display!.metrics } : runCardFields(previews.get(runId) ?? null);
+          if (turnMeta.card && !turnMeta.card.equityCurve) turnMeta.card.equityCurve = [];
+        }
+        const start = thread.items.find((candidate) => candidate.type === "turn_start" && candidate.turn_id === item.turn_id);
+        if (start?.ts) turnMeta.startedAt = start.ts * 1000;
+        historyMeta[item.turn_id] = turnMeta;
       }
-      act().loadHistory(agentMsgs);
-      // The live activity is carried across a same-session re-mount so its
-      // clock survives, but if the attempt finished while we were away its
-      // committed reply is now in history: the durable row above supersedes
-      // the live one, which would otherwise sit at "Working" until the safety
-      // timeout fired.
+      if (genRef.current !== gen) return false;
+      useAgentStore.setState((state) => {
+        const turnMeta = { ...historyMeta };
+        for (const [turnId, live] of Object.entries(state.turnMeta)) {
+          turnMeta[turnId] = { ...turnMeta[turnId], ...live };
+        }
+        return { turnMeta };
+      });
+      act().updateThread((view) => mergeThreadPage(view, thread, Date.now()));
+      if (pending) {
+        act().updateThread((view) => withPendingInputs(view, pending.items ?? []));
+      }
+      if (act().streamingSessionId === sid && thread.items[thread.items.length - 1]?.type === "turn_end") act().clearStreamingSession(sid);
       const liveActivity = act().activity;
-      if (
-        liveActivity
-        && msgs.some((message) => (
-          message.role === "assistant"
-          && message.linked_attempt_id === liveActivity.attemptId
-        ))
-      ) {
+      if (liveActivity && endedTurns(act().thread).has(liveActivity.attemptId)) {
         useAgentStore.setState({ activity: null, toolCalls: [] });
         if (act().status === "streaming") act().setStatus("idle");
       }
       act().setSessionLoading(false);
-      act().cacheSession(sid, agentMsgs);
+      act().cacheSession(sid, act().messages);
       setRuntimeIdentity(latestRuntimeIdentity ?? {});
       scheduleHistoryScroll();
+      return true;
     } catch (error) {
-      if (genRef.current !== gen) return;
+      if (genRef.current !== gen) return false;
       setRuntimeIdentity({});
       act().setSessionLoading(false);
       setHistoryError(error instanceof Error ? error.message : t("settings.unknownError"));
+      return true;
     }
   }, [scheduleHistoryScroll, t]);
 
@@ -685,31 +613,48 @@ export function Agent() {
     await loadSessionMessages(sid, gen);
   }, [loadSessionMessages]);
 
-  const syncCompletedAttempt = useCallback(async (sid: string, attemptId?: string) => {
-    if (!attemptId) return false;
-    for (let i = 0; i < 3; i += 1) {
-      try {
-        const storedMessages = await api.getSessionMessages(sid);
-        const completed = storedMessages.some(
-          (message) => message.role === "assistant" && message.linked_attempt_id === attemptId,
-          );
-        if (completed) {
-          act().clearStreamingSession(sid);
-          markBackgroundCompletion(sid, attemptId);
-          if (act().sessionId !== sid) return true;
-          clearStreamingView();
-          act().setStatus("idle");
-          useAgentStore.setState({ toolCalls: [], activity: null });
-          await refreshSessionMessages(sid);
-          return true;
-        }
-      } catch {
-        return false;
-      }
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
+  const changeSessionModel = useCallback(async (selection: { provider: string; model: string; reasoning_effort: string }) => {
+    if (!sessionId) return;
+    try {
+      setSessionModel(await api.setSessionModel(sessionId, selection));
+      toast.success(t("agent.modelUpdated" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.modelUpdateFailed" as never));
     }
-    return false;
-  }, [clearStreamingView, markBackgroundCompletion, refreshSessionMessages]);
+  }, [sessionId, t]);
+
+  const clearSessionModel = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      setSessionModel(await api.clearSessionModel(sessionId));
+      toast.success(t("agent.modelUpdated" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.modelUpdateFailed" as never));
+    }
+  }, [sessionId, t]);
+
+  const compactSession = useCallback(async () => {
+    if (!sessionId || status === "streaming") return;
+    try {
+      await api.compactSession(sessionId);
+      await refreshSessionMessages(sessionId);
+      toast.success(t("agent.contextCompacted" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.compactFailed" as never));
+    }
+  }, [refreshSessionMessages, sessionId, status, t]);
+
+  const forkFromTurn = useCallback(async (turnId: string) => {
+    if (!sessionId) return;
+    try {
+      const fork = await api.forkSession(sessionId, turnId);
+      useSessionsStore.getState().upsert(fork);
+      setSearchParams({ session: fork.session_id });
+      toast.success(t("agent.sessionForked" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.forkFailed" as never));
+    }
+  }, [sessionId, setSearchParams, t]);
 
   const setupSSE = useCallback((sid: string) => {
     if (sseSessionRef.current === sid) return;
@@ -718,406 +663,244 @@ export function Agent() {
     replayAttemptSeenRef.current = false;
     disconnect();
     sseSessionRef.current = sid;
+    // A turn that had ended before this stream connected is old news: its
+    // terminal event may be replayed, but it must not toast, retitle or
+    // re-add anything.
+    settledTurnsRef.current = new Set(endedTurns(act().thread).keys());
 
     const touch = () => { lastEventRef.current = Date.now(); };
-    const identifyActivity = (
-      data: Record<string, unknown>,
-      state: "thinking" | "working" | "responding",
-    ): boolean => {
+    const turnIsOver = (turnId: string): boolean => {
+      if (!turnId) return false;
       const store = act();
-      const attemptId = String(data.attempt_id || "");
-      if (attemptId && store.messages.some((message) => (
-        message.meta?.activity?.attemptId === attemptId
-        && ["stopped", "timeout"].includes(message.meta.activity.state)
-      ))) {
-        return false;
-      }
+      const meta = store.turnMeta[turnId];
+      return Boolean(meta?.timedOut || meta?.stopRequested) || endedTurns(store.thread).has(turnId);
+    };
+    const identifyActivity = (
+      turnId: string,
+      state: "thinking" | "working" | "responding",
+      startedAtSec?: unknown,
+    ): boolean => {
+      if (turnIsOver(turnId)) return false;
+      const store = act();
       const current = store.activity;
-      // `attempt.started` carries the backend's wall-clock start (epoch
+      // `run.started` carries the backend's wall-clock start (epoch
       // seconds). On a replayed stream that is the original start, so the
       // elapsed timer resumes from the truth rather than from reconnect time.
-      const startedAtSec = Number(data.started_at);
-      const startedAt = Number.isFinite(startedAtSec) && startedAtSec > 0
-        ? startedAtSec * 1000
+      const startedAtNumber = Number(startedAtSec);
+      const startedAt = Number.isFinite(startedAtNumber) && startedAtNumber > 0
+        ? startedAtNumber * 1000
         : undefined;
       if (!current) {
-        store.startActivity(attemptId || `pending-${Date.now()}`, startedAt);
+        store.startActivity(turnId || `pending-${Date.now()}`, startedAt);
       } else if (
-        attemptId &&
-        current.attemptId !== attemptId &&
+        turnId &&
+        current.attemptId !== turnId &&
         current.attemptId.startsWith("pending-")
       ) {
-        store.setActivityAttemptId(attemptId);
-      } else if (attemptId && current.attemptId !== attemptId) {
-        store.startActivity(attemptId, startedAt);
+        store.setActivityAttemptId(turnId);
+      } else if (turnId && current.attemptId !== turnId) {
+        store.startActivity(turnId, startedAt);
       }
       act().setActivityState(state);
       return true;
     };
+    const markStreaming = () => {
+      if (act().status !== "streaming") act().setStatus("streaming");
+    };
+    /** The turn ended: drop this page's live state for it. */
+    const endTurnHere = (turnId: string) => {
+      const activity = act().activity;
+      if (activity && activity.attemptId !== turnId) return;
+      endLiveTurn();
+    };
+    const applyItem = (eventType: string, data: Record<string, unknown>, streamed = "") => {
+      act().updateThread((view) => applyThreadEvent(view, eventType, data, Date.now(), streamed));
+    };
+    const shadowIdOf = (turnId: string): string | undefined => {
+      for (const entry of act().thread.entries) {
+        if (
+          entry.turnId !== turnId
+          || entry.type !== "tool_result"
+          || entry.item.name !== "render_shadow_report"
+          || entry.item.status !== "ok"
+        ) continue;
+        const match = contentText(entry.item.content).match(/"shadow_id"\s*:\s*"(shadow_[A-Za-z0-9_]+)"/);
+        if (match) return match[1];
+      }
+      return undefined;
+    };
+    const userMessageCount = () => act().messages.filter((message) => message.type === "user").length;
 
-    connect(api.sseUrl(sid, { replay: "active" }), {
-      text_delta: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        // Answer text only streams once the grounding gate has released it.
-        if (!identifyActivity(d, "responding")) return;
-        if (act().status !== "streaming") act().setStatus("streaming");
-        queueStreamUpdate(String(d.delta || ""), false);
-      },
-      llm_waiting: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        identifyActivity(d, "thinking");
-      },
-      llm_usage: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        recordLlmUsage(String(d.attempt_id || ""), Number(d.iter || 0), d);
-      },
+    const onItem = (eventType: "item.started" | "item.delta" | "item.completed") => (d: Record<string, unknown>) => {
+      touch();
+      replayAttemptSeenRef.current = true;
+      const kind = String(d.kind || "");
+      const turnId = String(d.turn_id || "");
+      const liveId = typeof d.live_id === "string" ? d.live_id : undefined;
+      const item = (d.item && typeof d.item === "object" ? d.item : {}) as Record<string, unknown>;
+      const recorded = typeof d.seq === "number";
 
-      reasoning_delta: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (!identifyActivity(d, "thinking")) return;
-        // The backend sends a bounded rolling tail — replace, never append.
-        act().setReasoningTail(String(d.tail ?? ""));
-        queueStreamUpdate("", true);
-        if (act().status !== "streaming") act().setStatus("streaming");
-      },
-      stream_reset: (d) => {
-        touch();
-        if (!identifyActivity(d, "thinking")) return;
-        clearStreamingView();
-        if (act().status !== "streaming") act().setStatus("streaming");
-        scrollToBottom();
-      },
-      thinking_done: () => { touch(); /* don't flush — keep streaming text visible */ },
+      if (eventType === "item.delta") {
+        if (kind === "text.delta" || kind === "reasoning.delta") {
+          if (!identifyActivity(turnId, kind === "text.delta" ? "responding" : "thinking")) return;
+          markStreaming();
+          if (liveId && act().thread.liveAssistant?.liveId !== liveId) {
+            // Joined mid-response: whatever was shown belongs to an older one.
+            cancelPendingStreamFlush();
+            act().clearStreaming();
+          }
+          applyItem(eventType, d);
+          if (kind === "text.delta") {
+            queueStreamUpdate(String(d.delta || ""), false);
+          } else {
+            // The backend sends a bounded rolling tail — replace, never append.
+            act().setReasoningTail(String(d.tail ?? ""));
+            queueStreamUpdate("", true);
+          }
+          return;
+        }
+        if (kind === "text.reset") {
+          if (turnIsOver(turnId)) return;
+          clearStreamingView();
+          markStreaming();
+          scrollToBottom();
+          return;
+        }
+        if (kind === "tool.progress") {
+          if (identifyActivity(turnId, "working")) markStreaming();
+          // Coalesce: keep the latest delta per live item, apply once per frame.
+          pendingProgressRef.current.set(liveId ?? turnId, d);
+          if (progressRafRef.current) return;
+          progressRafRef.current = requestAnimationFrame(() => {
+            progressRafRef.current = 0;
+            const pendingDeltas = [...pendingProgressRef.current.values()];
+            pendingProgressRef.current.clear();
+            if (pendingDeltas.length === 0) return;
+            act().updateThread((view) => pendingDeltas.reduce(
+              (next, delta) => applyThreadEvent(next, "item.delta", delta, Date.now()),
+              view,
+            ));
+          });
+          return;
+        }
+        if (kind === "run.waiting") {
+          if (identifyActivity(turnId, "thinking")) markStreaming();
+          return;
+        }
+        applyItem(eventType, d);
+        return;
+      }
 
-      tool_call: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (!identifyActivity(d, "working")) return;
-        queueStreamUpdate("", false);
-        const toolName = String(d.tool || "");
-        const callId = eventCallId(d);
-        toolCallSeqRef.current += 1;
-        // Only update toolCalls tracker (no message creation during streaming)
+      const liveResponse = act().thread.liveAssistant;
+      const closesResponse = eventType === "item.completed" && liveId !== undefined && liveResponse?.liveId === liveId;
+      const opensResponse = eventType === "item.started" && !recorded && item.type === "assistant";
+      let streamed = "";
+      if (closesResponse || opensResponse) {
+        // The streamed text becomes the recorded item (or, discarded, a cut-off one).
+        streamed = act().streamingText + pendingTextRef.current;
+        cancelPendingStreamFlush();
+        act().clearStreaming();
+      }
+      if (liveId && eventType === "item.completed") pendingProgressRef.current.delete(liveId);
+      applyItem(eventType, d, kind === "item.discarded" ? streamed : "");
+
+      if (item.type === "user" && recorded) dropPendingSend(contentText(item.content));
+      if (opensResponse && identifyActivity(turnId, "thinking")) markStreaming();
+      if (kind === "tool.started" && identifyActivity(turnId, "working")) {
+        markStreaming();
         act().addToolCall({
-          id: callId ?? `${toolName}#${toolCallSeqRef.current}`, tool: toolName,
-          arguments: (d.arguments as Record<string, string>) ?? {},
-          status: "running", timestamp: Date.now(),
+          id: String(item.tool_call_id || liveId || ""),
+          tool: String(item.name || ""),
+          arguments: (item.arguments as Record<string, string> | undefined) ?? {},
+          status: "running",
+          timestamp: Date.now(),
         });
-        scrollToBottom();
-      },
-
-      tool_result: (d) => {
-        touch();
-        const toolName = String(d.tool || "");
-        const callId = eventCallId(d);
-        // Drop any in-flight coalesced progress for this invocation.
-        pendingProgressRef.current.delete(toolProgressKey(callId, toolName));
-        // Only update tracker (no message creation during streaming)
-        act().updateRunningToolCall(callId, toolName, {
-          status: d.status === "ok" ? "ok" : "error",
-          preview: String(d.preview || ""),
-          elapsed_ms: Number(d.elapsed_ms || 0),
-          elapsed_s: undefined,
-          progress: undefined,
-        });
-        if (toolName === "run_swarm") {
-          const fallback = buildSwarmStatusFromToolResultPreview(String(d.preview || ""));
+      }
+      if (kind === "tool.completed" || kind === "tool.failed") {
+        act().updateRunningToolCall(
+          typeof item.tool_call_id === "string" ? item.tool_call_id : undefined,
+          String(item.name || ""),
+          { status: kind === "tool.completed" ? "ok" : "error" },
+        );
+        if (item.name === "run_swarm") {
+          const fallback = buildSwarmStatusFromToolResultPreview(contentText(item.content));
           if (fallback && !act().swarmRuns[fallback.runId]) {
             act().upsertSwarmStatus(fallback);
             hydrateSwarmRunUsage(fallback.runId);
           }
         }
-      },
+      }
+      scrollToBottom();
+    };
 
-      tool_heartbeat: (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (!identifyActivity(d, "working")) return;
-        // Keep streaming state alive during long-running tools (swarm, backtest)
-        if (act().status !== "streaming") act().setStatus("streaming");
-        const toolName = String(d.tool || "");
-        if (!toolName) return;
-        act().updateRunningToolCall(eventCallId(d), toolName, {
-          elapsed_s: Number(d.elapsed_s || 0),
+    const onRunEnd = async (eventType: "run.completed" | "run.failed" | "run.cancelled", d: Record<string, unknown>) => {
+      touch();
+      const turnId = String(d.turn_id || "");
+      if (!turnId || settledTurnsRef.current.has(turnId)) return;
+      settledTurnsRef.current.add(turnId);
+      markBackgroundCompletion(sid, turnId);
+      applyItem(eventType, d);
+      if (act().sessionId !== sid) {
+        act().clearStreamingSession(sid);
+        return;
+      }
+      const runId = runIdFromDir(d.run_dir);
+      const startedAt = Number(d.started_at);
+      act().setTurnMeta(turnId, {
+        content: String(d.summary || ""),
+        ...(runId ? { runId } : {}),
+        ...(Number.isFinite(startedAt) && startedAt > 0 ? { startedAt: startedAt * 1000 } : {}),
+        ...(eventType === "run.failed" ? { error: String(d.error || t("agent.turnFailed" as never)) } : {}),
+      });
+      if (d.provider || d.model) {
+        setRuntimeIdentity({
+          sessionId: sid,
+          provider: d.provider ? String(d.provider) : undefined,
+          model: d.model ? String(d.model) : undefined,
+          reasoningEffort: typeof d.reasoning_effort === "string" ? d.reasoning_effort : undefined,
         });
-      },
+      }
+      endTurnHere(turnId);
+      if (userMessageCount() === 1 && eventType === "run.completed") {
+        api.autoTitleSession(sid).then(() => useSessionsStore.getState().refresh()).catch(() => {});
+      }
+      const shadowId = shadowIdOf(turnId);
+      if (runId) {
+        const card = runCardFields(await api.getRunPreview(runId).catch(() => null));
+        if (card || shadowId) act().setTurnMeta(turnId, { card: { ...card, shadowId } });
+      } else if (shadowId) {
+        act().setTurnMeta(turnId, { card: { shadowId } });
+      }
+      scrollToBottom();
+    };
 
-      tool_progress: (d) => {
+    connect(() => {
+      // Resume from the newest item this page holds: every recorded item
+      // after it is re-read from the thread, however long the stream was down.
+      const view = act().sessionId === sid ? act().thread : null;
+      return api.sseUrl(
+        sid,
+        view?.loaded ? { replay: "active", cursor: view.cursor } : { replay: "active" },
+      );
+    }, {
+      "item.started": onItem("item.started"),
+      "item.delta": onItem("item.delta"),
+      "item.completed": onItem("item.completed"),
+
+      "run.started": (d) => {
         touch();
         replayAttemptSeenRef.current = true;
-        const toolName = String(d.tool || "");
-        if (!toolName) return;
-        const callId = eventCallId(d);
-        const payload: NonNullable<ToolCallEntry["progress"]> = {};
-        if (typeof d.stage === "string" && d.stage) payload.stage = d.stage;
-        if (typeof d.message === "string" && d.message) payload.message = d.message;
-        if (typeof d.current === "number") payload.current = d.current;
-        if (typeof d.total === "number") payload.total = d.total;
-        // Coalesce: keep latest payload per invocation, flush once per animation frame.
-        pendingProgressRef.current.set(
-          toolProgressKey(callId, toolName),
-          { callId, tool: toolName, progress: payload },
-        );
-        if (progressRafRef.current) return;
-        progressRafRef.current = requestAnimationFrame(() => {
-          progressRafRef.current = 0;
-          const pending = pendingProgressRef.current;
-          if (pending.size === 0) return;
-          const store = act();
-          for (const { callId: pendingCallId, tool, progress } of pending.values()) {
-            store.updateRunningToolCall(pendingCallId, tool, { progress });
-          }
-          pending.clear();
-        });
+        applyItem("run.started", d);
+        if (identifyActivity(String(d.turn_id || ""), "thinking", d.started_at)) markStreaming();
       },
+      "run.completed": (d) => { void onRunEnd("run.completed", d); },
+      "run.failed": (d) => { void onRunEnd("run.failed", d); },
+      "run.cancelled": (d) => { void onRunEnd("run.cancelled", d); },
 
-      compact: () => { touch(); },
-
-      "message.received": (d) => {
-        touch();
-        if (String(d.role || "") !== "user") return;
-        const messageId = String(d.message_id || "");
-        const requestText = String(d.content || "");
-        if (!messageId || !requestText || act().messages.some((msg) => msg.id === messageId)) return;
-        const now = Date.now();
-        const optimisticDuplicate = act().messages.some((msg) => (
-          msg.type === "user" &&
-          msg.meta?.requestText === requestText &&
-          now - msg.timestamp < 10_000
-        ));
-        if (optimisticDuplicate) return;
-        const displayPrompt = toDisplayPrompt(requestText);
-        act().addMessage({
-          id: messageId,
-          type: "user",
-          content: displayPrompt.content,
-          meta: displayPrompt.meta,
-          timestamp: now,
-        });
-        scrollToBottom();
-      },
-
-      "attempt.created": (d) => {
+      "run.usage": (d) => {
         touch();
         replayAttemptSeenRef.current = true;
-        if (!identifyActivity(d, "thinking")) return;
-        // Backend has created a new attempt — ensure streaming state is active
-        // even if we connected mid-stream (SSE replay / page reload).
-        if (act().status !== "streaming") act().setStatus("streaming");
-      },
-
-      "attempt.started": (d) => {
-        touch();
-        replayAttemptSeenRef.current = true;
-        if (!identifyActivity(d, "thinking")) return;
-        // Backend has begun executing the attempt. Re-affirm streaming state
-        // so the UI shows a working indicator for reconnects and fresh loads.
-        if (act().status !== "streaming") act().setStatus("streaming");
-      },
-
-      "attempt.completed": async (d) => {
-        touch();
-        const attemptId = String(d.attempt_id || "");
-        markBackgroundCompletion(sid, attemptId);
-        if (act().sessionId !== sid) {
-          act().clearStreamingSession(sid);
-          return;
-        }
-        if (attemptId && act().messages.some(
-          (message) => (
-            message.meta?.activity?.attemptId === attemptId
-            && message.meta.activity.state === "done"
-          ),
-        )) {
-          clearStreamingView();
-          act().setStatus("idle");
-          return;
-        }
-        const streamedAnswer = act().streamingText + pendingTextRef.current;
-        flushPendingStreamUpdate();
-        // No live activity means we never saw this attempt run (connected after
-        // the fact); rebuild its timing from the event rather than from now.
-        const eventStartedSec = Number(d.started_at);
-        const eventElapsedMs = Number(d.elapsed_ms);
-        const eventEndedSec = Number(d.ended_at);
-        const completedEndedAt = Number.isFinite(eventEndedSec) && eventEndedSec > 0
-          ? eventEndedSec * 1000
-          : Date.now();
-        const completedStartedAt = Number.isFinite(eventStartedSec) && eventStartedSec > 0
-          ? eventStartedSec * 1000
-          : Number.isFinite(eventElapsedMs) && eventElapsedMs > 0
-            ? completedEndedAt - eventElapsedMs
-            : undefined;
-        if (!act().activity) {
-          act().startActivity(attemptId || `completed-${Date.now()}`, completedStartedAt);
-        } else if (attemptId && act().activity?.attemptId !== attemptId) {
-          act().setActivityAttemptId(attemptId);
-        }
-        // A client that joined mid-attempt may have started its clock late; the
-        // backend's start is authoritative for the durable row.
-        const liveStart = act().activity?.startedAt;
-        if (
-          completedStartedAt !== undefined
-          && liveStart !== undefined
-          && completedStartedAt < liveStart
-        ) {
-          useAgentStore.setState((state) => ({
-            activity: state.activity ? { ...state.activity, startedAt: completedStartedAt } : null,
-          }));
-        }
-        const s = act();
-        const completedTools = s.activity?.steps ?? s.toolCalls;
-        const completedActivity = archiveActivity("done", completedEndedAt);
-        const completedAttemptId = completedActivity?.attemptId || attemptId;
-        useAgentStore.setState((state) => ({
-          messages: state.messages.filter(
-            (message) => message.meta?.partialAttemptId !== completedAttemptId,
-          ),
-        }));
-
-        // Clear streaming text after freezing the durable activity summary.
-        s.clearStreaming();
-
-        // Add final answer
-        const runDir = String(d.run_dir || "");
-        const runId = runDir ? runDir.split(/[/\\]/).pop() : undefined;
-        const summary = String(d.summary || "");
-        const finalAnswer = summary.trim() ? summary : streamedAnswer;
-        if (finalAnswer) {
-          s.addMessage({
-            id: "",
-            type: "answer",
-            content: finalAnswer,
-            elapsed_ms: Number(d.elapsed_ms || 0) || undefined,
-            timestamp: Date.now(),
-          });
-        }
-        if (d.provider || d.model) {
-          setRuntimeIdentity({
-            sessionId: sid,
-            provider: d.provider ? String(d.provider) : undefined,
-            model: d.model ? String(d.model) : undefined,
-            reasoningEffort: typeof d.reasoning_effort === "string"
-              ? d.reasoning_effort
-              : undefined,
-          });
-        }
-
-        // First completed exchange → ask the backend for a Codex-style
-        // summary title, then re-list so the sidebar shows it.
-        if (act().messages.filter((message) => message.type === "user").length === 1) {
-          api.autoTitleSession(sid)
-            .then(() => useSessionsStore.getState().refresh())
-            .catch(() => {});
-        }
-
-        // Detect Shadow Account id if render_shadow_report fired successfully this turn
-        const shadowCall = completedTools.find(
-          (tc) => tc.tool === "render_shadow_report" && (tc.status || "ok") === "ok",
-        );
-        const shadowMatch = shadowCall?.preview?.match(/"shadow_id"\s*:\s*"(shadow_[A-Za-z0-9_]+)"/);
-        const shadowId = shadowMatch?.[1];
-
-        // The transcript is already complete. Drop transient state before the
-        // optional report fetch so answer/tool progress never overlap.
-        s.setStatus("idle");
-        scrollToBottom();
-
-        // Show RunCompleteCard when the turn produced backtest metrics or a shadow report
-        if (runId) {
-          const card = runCardFields(await api.getRunPreview(runId).catch(() => null));
-          if (card || shadowId) {
-            s.addMessage({
-              id: "", type: "run_complete", content: "", runId,
-              metrics: card?.metrics,
-              equityCurve: card?.equityCurve,
-              shadowId,
-              timestamp: Date.now(),
-            });
-          }
-        } else if (shadowId) {
-          s.addMessage({ id: "", type: "run_complete", content: "", shadowId, timestamp: Date.now() });
-        }
-
-        scrollToBottom();
-      },
-
-      "attempt.failed": (d) => {
-        touch();
-        const attemptId = String(d.attempt_id || "");
-        if (act().sessionId !== sid) {
-          act().clearStreamingSession(sid);
-          return;
-        }
-        const archived = act().messages.find(
-          (message) => message.meta?.activity?.attemptId === attemptId,
-        )?.meta?.activity;
-        if (archived?.state === "stopped") {
-          act().setStatus("idle");
-          return;
-        }
-        if (!act().activity && archived) {
-          useAgentStore.setState((state) => ({
-            messages: state.messages.map((message) => (
-              message.meta?.activity?.attemptId === attemptId
-                ? {
-                    ...message,
-                    meta: {
-                      ...message.meta,
-                      activity: { ...archived, state: "failed", endedAt: Date.now() },
-                    },
-                  }
-                : message
-            )),
-          }));
-        } else {
-          if (!act().activity) act().startActivity(attemptId || `failed-${Date.now()}`);
-          archiveActivity("failed");
-        }
-        clearStreamingView();
-        act().addMessage({ id: "", type: "error", content: String(d.error || "Execution failed"), timestamp: Date.now() });
-        act().setStatus("idle");
-        scrollToBottom();
-      },
-
-      // A user stop is its own terminal event now, so it no longer arrives as
-      // attempt.failed and no longer needs the pre-marked "stopped" workaround
-      // to avoid showing an error bubble.
-      "attempt.cancelled": (d) => {
-        touch();
-        const attemptId = String(d.attempt_id || "");
-        if (act().sessionId !== sid) {
-          act().clearStreamingSession(sid);
-          return;
-        }
-        const archived = act().messages.find(
-          (message) => message.meta?.activity?.attemptId === attemptId,
-        )?.meta?.activity;
-        if (archived && archived.state !== "stopped") {
-          useAgentStore.setState((state) => ({
-            messages: state.messages.map((message) => (
-              message.meta?.activity?.attemptId === attemptId
-                ? {
-                    ...message,
-                    meta: {
-                      ...message.meta,
-                      activity: { ...archived, state: "stopped", endedAt: Date.now() },
-                    },
-                  }
-                : message
-            )),
-          }));
-        } else if (!archived) {
-          if (!act().activity) act().startActivity(attemptId || `cancelled-${Date.now()}`);
-          archiveActivity("stopped");
-        }
-        clearStreamingView();
-        act().setStatus("idle");
-        scrollToBottom();
+        recordLlmUsage(String(d.turn_id || ""), Number(d.iter || 0), d);
       },
 
       "goal.created": () => {
@@ -1250,17 +1033,18 @@ export function Agent() {
       reconnect: (d) => { act().setSseStatus("reconnecting", Number(d.attempt ?? 0)); },
     });
   }, [
-    archiveActivity,
     cancelPendingStreamFlush,
     clearStreamingView,
     connect,
     disconnect,
-    flushPendingStreamUpdate,
+    dropPendingSend,
+    endLiveTurn,
     loadGoalSnapshot,
     markBackgroundCompletion,
     queueStreamUpdate,
     recordLlmUsage,
     scrollToBottom,
+    t,
   ]);
 
   useEffect(() => {
@@ -1284,15 +1068,17 @@ export function Agent() {
       }
       // Cached rows provide an instant shell; REST remains authoritative for a
       // turn that completed while this session was off-screen.
-      loadSessionMessages(urlSessionId, gen);
-      setupSSE(urlSessionId);
+      // Connect once the history is in: the stream resumes from its cursor.
+      void loadSessionMessages(urlSessionId, gen).then((current) => {
+        if (current) setupSSE(urlSessionId);
+      });
     } else if (urlSessionId && urlSessionId === curSid && sseSessionRef.current !== urlSessionId) {
       // #229: returning to the SAME session after the page was unmounted (user
       // navigated away and back). The store kept our messages, but the unmount
       // cleanup tore down the SSE stream, so a running attempt stopped updating
       // and the UI looked frozen until the safety timeout fired. Re-hydrate like
       // a reload: reset the transient streaming view first (so replay=active
-      // rebuilds the in-flight turn from the backend ring buffer instead of
+      // rebuilds the in-flight turn from the active item stream instead of
       // duplicating deltas onto the preserved text), refresh committed history
       // (covers an attempt that finished while we were away), then re-subscribe.
       const gen = genRef.current + 1;
@@ -1301,8 +1087,8 @@ export function Agent() {
       const seed = curMsgs.length > 0 ? curMsgs : getCachedSession(urlSessionId);
       // switchSession() drops the live activity so replay can rebuild its
       // steps without duplicating them — but the attempt's start time is not
-      // something replay can restore once the ring buffer has rotated past
-      // `attempt.started`. Re-seed the still-running activity with its
+      // something replay can restore once the active stream has rotated past
+      // `run.started`. Re-seed the still-running activity with its
       // original startedAt so the elapsed clock does not restart at 0s.
       const liveActivity = act().activity;
       switchSession(urlSessionId, seed);
@@ -1311,8 +1097,10 @@ export function Agent() {
         store.startActivity(liveActivity.attemptId, liveActivity.startedAt);
         store.setActivityState(liveActivity.state);
       }
-      loadSessionMessages(urlSessionId, gen);
-      setupSSE(urlSessionId);
+      // Connect once the history is in: the stream resumes from its cursor.
+      void loadSessionMessages(urlSessionId, gen).then((current) => {
+        if (current) setupSSE(urlSessionId);
+      });
     } else if (!urlSessionId && curSid) {
       genRef.current += 1;
       doDisconnect();
@@ -1375,17 +1163,28 @@ export function Agent() {
     lastEventRef.current = Date.now();
     const timer = setInterval(() => {
       if (lastEventRef.current && Date.now() - lastEventRef.current > sseTimeoutMsRef.current && act().status === "streaming") {
-        flushPendingStreamUpdate();
-        const partialAnswer = act().streamingText;
-        const timedOutActivity = archiveActivity("timeout");
-        act().clearStreaming();
-        persistPartialAnswer(timedOutActivity, partialAnswer);
-        act().setStatus("idle");
+        // Stop waiting, not the turn: it may still finish, and Re-attach
+        // resumes the stream from the thread cursor.
+        const activity = act().activity;
+        if (activity) {
+          act().setTurnMeta(activity.attemptId, {
+            timedOut: true,
+            localEndedAt: Date.now(),
+            startedAt: act().turnMeta[activity.attemptId]?.startedAt ?? activity.startedAt,
+          });
+        }
+        endLiveTurn();
         toast.warning(t('agent.executionTimedOut'));
       }
     }, 10_000);
     return () => clearInterval(timer);
-  }, [archiveActivity, flushPendingStreamUpdate, persistPartialAnswer, status, t]);
+  }, [endLiveTurn, status, t]);
+
+  /** A session this page just created has an empty thread: its stream starts at cursor 0. */
+  const adoptNewSession = useCallback((sid: string) => {
+    act().setSessionId(sid);
+    act().updateThread((view) => ({ ...view, loaded: true }));
+  }, []);
 
   const ensureGoalSession = useCallback(async (title: string): Promise<string> => {
     let sid = act().sessionId;
@@ -1394,17 +1193,78 @@ export function Agent() {
     useSessionsStore.getState().upsert(session);
     sid = session.session_id;
     pendingGoalSessionRef.current = sid;
-    act().setSessionId(sid);
+    adoptNewSession(sid);
     setSearchParams({ session: sid }, { replace: true });
     setupSSE(sid);
     return sid;
-  }, [setSearchParams, setupSSE]);
+  }, [adoptNewSession, setSearchParams, setupSSE]);
+
+  /** Send a message that starts a turn. A session busy elsewhere queues it instead. */
+  const sendTurn = useCallback(async (sid: string, requestText: string) => {
+    setupSSE(sid);
+    const sent = await api.sendMessage(sid, requestText);
+    if (isQueuedMessage(sent)) {
+      dropPendingSend(requestText);
+      act().updateThread((view) => addQueuedInput(view, { inputId: sent.input_id, content: requestText }));
+      if (sent.attempt_id && act().activity?.attemptId.startsWith("pending-")) {
+        act().setActivityAttemptId(sent.attempt_id);
+      }
+      return;
+    }
+    if (act().activity?.attemptId.startsWith("pending-")) {
+      act().setActivityAttemptId(sent.attempt_id);
+    }
+  }, [dropPendingSend, setupSSE]);
+
+  /** While a turn runs, a message waits on the server and joins after the current step. */
+  const queuePrompt = useCallback(async (
+    prompt: string,
+    attachments: ComposerAttachment[],
+  ) => {
+    const sid = act().sessionId;
+    if (!sid) return;
+    const finalPrompt = buildChatPrompt(prompt, attachments, Boolean(swarmPreset));
+    if (promptExceedsLimit(finalPrompt, MAX_MESSAGE_CHARS)) {
+      toast.error(t('agent.messageTooLong', { limit: MAX_MESSAGE_CHARS.toLocaleString() }));
+      composerRef.current?.fill(prompt);
+      return;
+    }
+    if (swarmPreset) setSwarmPreset(null);
+    try {
+      const sent = await api.sendMessage(sid, finalPrompt);
+      if (isQueuedMessage(sent)) {
+        act().updateThread((view) => addQueuedInput(view, { inputId: sent.input_id, content: finalPrompt }));
+      } else {
+        // The running turn ended meanwhile, so this message started the next one.
+        const displayPrompt = toDisplayPrompt(finalPrompt);
+        act().addMessage({
+          id: "",
+          type: "user",
+          content: displayPrompt.content,
+          meta: { ...displayPrompt.meta, requestText: finalPrompt, pendingSend: true },
+          timestamp: Date.now(),
+        });
+        if (!act().activity) act().startActivity(sent.attempt_id);
+        act().setStatus("streaming");
+      }
+      forceScrollToBottom();
+    } catch (error) {
+      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE
+        : error instanceof ApiError && error.status === 409 ? error.message : t('agent.queue.failed' as never);
+      toast.error(message);
+      composerRef.current?.fill(prompt);
+    }
+  }, [forceScrollToBottom, swarmPreset, t]);
 
   const runPrompt = useCallback(async (
     prompt: string,
     attachments: ComposerAttachment[] = [],
   ) => {
-    if ((!prompt.trim() && attachments.length === 0) || status === "streaming") return;
+    if (!prompt.trim() && attachments.length === 0) return;
+    if (status === "streaming") {
+      if (!goalComposerActive) void queuePrompt(prompt, attachments);
+      return;
+    }
     const finalPrompt = buildChatPrompt(prompt, attachments, Boolean(swarmPreset));
     const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
     if (promptExceedsLimit(goalComposerActive ? prompt : finalPrompt, limit)) {
@@ -1427,20 +1287,15 @@ export function Agent() {
           id: "",
           type: "user",
           content: prompt,
-          meta: { goalMode: true, requestText: kickoff },
+          meta: { goalMode: true, requestText: kickoff, pendingSend: true },
           timestamp: Date.now(),
         });
         act().startActivity(`pending-${Date.now()}`);
         act().setStatus("streaming");
         forceScrollToBottom();
-        setupSSE(sid);
-        const sent = await api.sendMessage(sid, kickoff);
-        if (act().activity?.attemptId.startsWith("pending-")) {
-          act().setActivityAttemptId(sent.attempt_id);
-        }
-        void syncCompletedAttempt(sid, sent.attempt_id);
+        await sendTurn(sid, kickoff);
       } catch (error) {
-        if (act().activity) archiveActivity("failed");
+        useAgentStore.setState({ activity: null, toolCalls: [] });
         act().setStatus("idle");
         const message = error instanceof Error ? error.message : t('agent.failedToStartGoal');
         toast.error(message);
@@ -1462,11 +1317,12 @@ export function Agent() {
       messageMeta.attachments = attachments.map(({ filename }) => ({ filename }));
     }
     messageMeta.requestText = finalPrompt;
+    messageMeta.pendingSend = true;
     act().addMessage({
       id: "",
       type: "user",
       content: displayPrompt.content,
-      meta: Object.keys(messageMeta).length > 0 ? messageMeta : undefined,
+      meta: messageMeta,
       timestamp: Date.now(),
     });
     act().startActivity(`pending-${Date.now()}`);
@@ -1481,17 +1337,12 @@ export function Agent() {
         const session = await api.createSession(sessionTitle.slice(0, 50));
         useSessionsStore.getState().upsert(session);
         sid = session.session_id;
-        act().setSessionId(sid);
+        adoptNewSession(sid);
         setSearchParams({ session: sid }, { replace: true });
       }
-      setupSSE(sid);
-      const sent = await api.sendMessage(sid, finalPrompt);
-      if (act().activity?.attemptId.startsWith("pending-")) {
-        act().setActivityAttemptId(sent.attempt_id);
-      }
-      void syncCompletedAttempt(sid, sent.attempt_id);
+      await sendTurn(sid, finalPrompt);
     } catch (error) {
-      archiveActivity("failed");
+      useAgentStore.setState({ activity: null, toolCalls: [] });
       act().setStatus("error");
       const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE
         : error instanceof ApiError && ['message_too_long', 'network_error', 'request_timeout'].includes(error.code || '') ? error.message : t('agent.failedToSend');
@@ -1499,16 +1350,16 @@ export function Agent() {
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
   }, [
-    archiveActivity,
+    adoptNewSession,
     clearStreamingView,
     ensureGoalSession,
     forceScrollToBottom,
     goalComposerActive,
+    queuePrompt,
+    sendTurn,
     setSearchParams,
-    setupSSE,
     status,
     swarmPreset,
-    syncCompletedAttempt,
     t,
   ]);
 
@@ -1518,16 +1369,11 @@ export function Agent() {
 
   const handleCancel = useCallback(async () => {
     if (!sessionId) {
-      flushPendingStreamUpdate();
-      const partialAnswer = act().streamingText;
-      const stoppedActivity = archiveActivity("stopped");
-      act().clearStreaming();
-      persistPartialAnswer(stoppedActivity, partialAnswer);
-      act().setStatus("idle");
+      endLiveTurn();
       return;
     }
     try {
-      await api.cancelSession(sessionId);
+      const result = await api.cancelSession(sessionId);
       // Cancelling the session only stops the ReAct loop; a swarm tool call that
       // already returned keeps its workers running. Tell the swarm endpoint too
       // and settle the cards locally, so the user sees "cancelled" immediately
@@ -1542,26 +1388,20 @@ export function Agent() {
           // what the card shows either way.
         });
       }
-      flushPendingStreamUpdate();
-      const partialAnswer = act().streamingText;
-      const stoppedActivity = archiveActivity("stopped");
-      act().clearStreaming();
-      persistPartialAnswer(stoppedActivity, partialAnswer);
-      act().setStatus("idle");
+      // The turn shows as stopped now; its recorded end confirms it. Events
+      // still in flight for it no longer restart the live view.
+      const turnId = act().activity?.attemptId;
+      if (turnId) act().setTurnMeta(turnId, { stopRequested: true, localEndedAt: Date.now() });
+      endLiveTurn();
+      const pending = result?.pending_inputs;
+      if (pending) act().updateThread((view) => withPendingInputs(view, pending));
       toast.info(t('agent.cancelRequestSent'));
     } catch {
       // The attempt is still live. Preserve its activity, buffered text and
       // streaming status so a failed cancel request does not strand the turn.
       toast.error(t('agent.cancelFailed'));
     }
-  }, [
-    archiveActivity,
-    flushPendingStreamUpdate,
-    persistPartialAnswer,
-    sessionId,
-    swarmRuns,
-    t,
-  ]);
+  }, [endLiveTurn, sessionId, swarmRuns, t]);
 
   useEffect(() => {
     if (status !== "streaming") return;
@@ -1574,6 +1414,17 @@ export function Agent() {
     return () => document.removeEventListener("keydown", cancelOnEscape);
   }, [handleCancel, status]);
 
+  const handleDiscardQueued = useCallback(async (inputId: string) => {
+    if (!sessionId) return;
+    try {
+      await api.discardPendingInput(sessionId, inputId);
+      act().updateThread((view) => removeQueuedInput(view, inputId));
+    } catch {
+      // 404: a turn is taking it right now; its delivered event moves it.
+      toast.error(t("agent.queue.discardFailed" as never));
+    }
+  }, [sessionId, t]);
+
   const handleContinueGoal = useCallback(async () => {
     if (!sessionId || !goalSnapshot || status === "streaming") return;
     const prompt = goalContinuePrompt(goalSnapshot);
@@ -1581,7 +1432,7 @@ export function Agent() {
       id: "",
       type: "user",
       content: t("agent.continueGoalMessage" as never, { goal: goalSnapshot.goal.objective }),
-      meta: { goalMode: true, requestText: prompt },
+      meta: { goalMode: true, requestText: prompt, pendingSend: true },
       timestamp: Date.now(),
     });
     act().startActivity(`pending-${Date.now()}`);
@@ -1589,20 +1440,15 @@ export function Agent() {
     forceScrollToBottom();
     composerRef.current?.focus();
     try {
-      setupSSE(sessionId);
-      const sent = await api.sendMessage(sessionId, prompt);
-      if (act().activity?.attemptId.startsWith("pending-")) {
-        act().setActivityAttemptId(sent.attempt_id);
-      }
-      void syncCompletedAttempt(sessionId, sent.attempt_id);
+      await sendTurn(sessionId, prompt);
     } catch (error) {
-      archiveActivity("failed");
+      useAgentStore.setState({ activity: null, toolCalls: [] });
       act().setStatus("error");
       const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : t('agent.failedToContinue');
       toast.error(message);
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
-  }, [archiveActivity, forceScrollToBottom, goalSnapshot, sessionId, setupSSE, status, syncCompletedAttempt, t]);
+  }, [forceScrollToBottom, goalSnapshot, sendTurn, sessionId, status, t]);
 
   const handleRetry = useCallback((errorMsg: AgentMessage) => {
     if (status === "streaming") return;
@@ -1627,20 +1473,10 @@ export function Agent() {
 
   const handleReattachActivity = useCallback((timedOut: AgentActivity) => {
     if (!sessionId || status === "streaming") return;
-    useAgentStore.setState((state) => ({
-      messages: state.messages.filter((message) => (
-        message.meta?.activity?.attemptId !== timedOut.attemptId
-        && message.meta?.partialAttemptId !== timedOut.attemptId
-      )),
-      activity: {
-        ...timedOut,
-        state: "thinking",
-        steps: [],
-        endedAt: undefined,
-      },
-      toolCalls: [],
-      streamingText: "",
-    }));
+    // Follow the turn again: the stream resumes from the thread cursor, so
+    // everything it recorded meanwhile arrives first.
+    act().setTurnMeta(timedOut.attemptId, { timedOut: false, localEndedAt: undefined });
+    act().startActivity(timedOut.attemptId, timedOut.startedAt);
     act().setStatus("streaming");
     sseSessionRef.current = null;
     setupSSE(sessionId);
@@ -1678,6 +1514,8 @@ export function Agent() {
         lines.push(`## User (${time})`, ``, msg.content, ``);
       } else if (msg.type === "answer") {
         lines.push(`## Assistant (${time})`, ``, msg.content, ``);
+      } else if (msg.type === "commentary") {
+        lines.push(`> ${msg.content.split("\n").join("\n> ")}`, ``);
       } else if (msg.type === "error") {
         lines.push(`## Error (${time})`, ``, msg.content, ``);
       } else if (msg.type === "tool_call") {
@@ -1776,7 +1614,22 @@ export function Agent() {
         runtimeProvider={visibleRuntimeIdentity.provider}
         runtimeModel={visibleRuntimeIdentity.model}
         runtimeReasoningEffort={visibleRuntimeIdentity.reasoningEffort}
+        sessionModel={sessionModel}
+        onSelectionChange={changeSessionModel}
+        onClearSelection={clearSessionModel}
       />
+      {sessionId && (
+        <div className="flex justify-end border-b border-border/40 px-6 py-1">
+          <button
+            type="button"
+            onClick={() => void compactSession()}
+            disabled={status === "streaming"}
+            className="rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("agent.compactContext" as never)}
+          </button>
+        </div>
+      )}
       {historyError && (
         <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs">
           <span>{t("layout.sessionsLoadFailed")} {historyError}</span>
@@ -1878,9 +1731,29 @@ export function Agent() {
                 </div>
               );
             }
+            if (g.msg.type === "turn_status" && g.msg.meta?.activity) {
+              const turnActivity = g.msg.meta.activity;
+              return (
+                <div
+                  key={row.key}
+                  data-msg-idx={g.msgIdx}
+                  className={shouldAnimate ? "msg-enter" : undefined}
+                >
+                  <ActivityLine
+                    activity={turnActivity}
+                    variant="summary"
+                    onContinue={handleContinueActivity}
+                    onReattach={() => handleReattachActivity(turnActivity)}
+                  />
+                </div>
+              );
+            }
             const swarmStatus = g.msg.swarmRunId
               ? swarmRuns[g.msg.swarmRunId] ?? g.msg.swarmStatus
               : g.msg.swarmStatus;
+            if (g.msg.type === "plan" && g.msg.plan) return <div key={row.key} data-msg-idx={g.msgIdx}><PlanCard steps={g.msg.plan.steps} /></div>;
+            if (g.msg.type === "question" && g.msg.question) return <div key={row.key} data-msg-idx={g.msgIdx}><QuestionCard questionId={g.msg.question.question_id} prompt={g.msg.question.prompt} options={g.msg.question.options} allowFreeText={g.msg.question.allow_free_text} onAnswer={submitComposerPrompt} /></div>;
+            if (g.msg.type === "image" && g.msg.images) return <div key={row.key} data-msg-idx={g.msgIdx}><ImageResult images={g.msg.images} /></div>;
             if (g.msg.type === "swarm_status" && swarmStatus) {
               return (
                 <div
@@ -1899,6 +1772,15 @@ export function Agent() {
                 className={shouldAnimate ? "msg-enter" : undefined}
               >
                 <MessageBubble msg={g.msg} onRetry={g.msg.type === "error" ? handleRetry : undefined} />
+                {g.msg.type === "answer" && g.msg.meta?.turnId && (
+                  <button
+                    type="button"
+                    onClick={() => void forkFromTurn(g.msg.meta?.turnId || "")}
+                    className="mt-2 rounded border border-border/60 px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
+                  >
+                    {t("agent.forkFromHere" as never)}
+                  </button>
+                )}
               </div>
             );
           })}
@@ -1908,7 +1790,8 @@ export function Agent() {
             <div className="flex gap-3 msg-enter">
               <AgentAvatar />
               <div className="flex-1 min-w-0 space-y-2">
-                {activity && <ActivityLine activity={activity} reasoningTail={reasoningTail} />}
+                {/* The steps themselves are rows above; this line is the turn's clock and verb. */}
+                {activity && <ActivityLine activity={activity} reasoningTail={reasoningTail} showSteps={false} />}
                 <LlmUsageCounter input={usageInput} output={usageOutput} />
                 {streamingText && (
                   <div aria-live="polite" aria-atomic="false">
@@ -1917,6 +1800,14 @@ export function Agent() {
                 )}
               </div>
             </div>
+          )}
+
+          {queuedInputs.length > 0 && (
+            <QueuedInputs
+              inputs={queuedInputs}
+              display={toDisplayPrompt}
+              onDiscard={handleDiscardQueued}
+            />
           )}
 
         </div>
@@ -1946,6 +1837,7 @@ export function Agent() {
             <Composer
               ref={composerRef}
               streaming={status === "streaming"}
+              canQueue={sessionId != null && !goalComposerActive}
               activityVerb={activity?.verb}
               hasCompletedTurn={hasCompletedTurn}
               showExport={sessionId != null}

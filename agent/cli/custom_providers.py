@@ -7,7 +7,11 @@ import json
 
 
 def configure_parser(parser) -> None:
-    """Add list, add (test and save), and activate commands."""
+    """Add list, add (test and save), and activate commands.
+
+    Args:
+        parser: Parent argument parser for custom provider operations.
+    """
     commands = parser.add_subparsers(dest="custom_command", required=True)
     commands.add_parser("list", help="List redacted custom provider metadata")
     add = commands.add_parser("add", help="Test and save a provider; prompts privately for its key")
@@ -18,7 +22,15 @@ def configure_parser(parser) -> None:
 
 
 def run(args) -> int:
-    """Run a custom provider operation without accepting a key on argv."""
+    """Manage custom provider profiles, prompting privately for new API keys.
+
+    Args:
+        args: Parsed custom provider subcommand arguments.
+
+    Returns:
+        Zero after printing a successful operation's JSON result, or one on a handled runtime,
+        validation, or I/O error.
+    """
     from src.providers.custom_profiles import CustomProviderStore
 
     store = CustomProviderStore()

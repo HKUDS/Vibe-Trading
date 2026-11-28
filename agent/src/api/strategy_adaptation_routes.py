@@ -1,5 +1,9 @@
 """Authenticated strategy adaptation and evidence refresh entry points."""
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -35,4 +39,6 @@ def register_strategy_adaptation_routes(app: FastAPI, write_auth) -> None:
     def refresh(payload: EvidenceRefreshRequest):
         from src.tools.strategy_discovery_tool import refresh_strategy_evidence_core
 
-        return refresh_strategy_evidence_core(runs=payload.runs, scope="strategies")
+        return refresh_strategy_evidence_core(
+            runs=payload.runs, scope="strategies", roots=FileRoots.from_config(get_env_config().api),
+        )

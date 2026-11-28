@@ -6,6 +6,10 @@ that later re-resolves to a private address (DNS rebinding) would reach it.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 
 import httpcore
@@ -123,11 +127,11 @@ def test_custom_model_uses_guarded_clients_unless_a_proxy_resolves_the_name(monk
     settings.reset_env_config()
 
     _no_proxy(monkeypatch)
-    direct = llm.build_llm()
+    direct = llm.build_llm(policy=ToolPolicy.from_config(get_env_config()))
     assert isinstance(direct.http_async_client._transport._pool._network_backend, endpoint_guard._AsyncPublicOnlyBackend)
 
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
-    proxied = llm.build_llm()
+    proxied = llm.build_llm(policy=ToolPolicy.from_config(get_env_config()))
     assert proxied.http_async_client is None
 
 

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import threading
 from pathlib import Path
 
 import pytest
 
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
+from src.swarm.artifacts import collect_artifacts
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -18,14 +23,13 @@ from src.swarm.models import (
     WorkerResult,
 )
 from src.swarm.store import SwarmStore
-from src.swarm.worker import (
+from src.product.tool_results import _is_tool_success
+from src.swarm.node import (
     _delivery_error,
-    _collect_artifacts,
-    _is_error_result,
-    run_worker,
+    run_node,
 )
 import src.swarm.runtime as rt
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 
 PLAN_STUB = (
     "### Phase 1 — Plan\n"
@@ -56,10 +60,22 @@ def test_actual_delivery_errors():
     assert _delivery_error("<tool_call_begin>broken")
 
 
+@pytest.mark.parametrize("markup", [
+    "<\uff5ctool\u2581calls\u2581begin\uff5c>", "<tool_calls_begin>", "<tool_sep>", "a tool\u2581sep b",
+    '<invoke name="echo">', "</\uff5c\uff5cDSML\uff5c\uff5cinvoke>", "<|tool_call_begin|>",
+])
+def test_swarm_and_main_agent_share_one_tool_markup_recognizer(markup):
+    from src.product.tool_results import _looks_like_tool_call_syntax
+
+    assert not hasattr(worker_mod, "_UNPARSED_TOOL_MARKERS")
+    assert _looks_like_tool_call_syntax(markup)
+    assert _delivery_error(markup) == "unparsed tool-call markup (provider did not parse tool calls)"
+
+
 # ---- runtime integrity ----------------------------------------------------
 def _run(tmp_path: Path, worker_result: WorkerResult) -> SwarmRun:
     store = SwarmStore(base_dir=tmp_path)
-    runtime = rt.SwarmRuntime(store=store)
+    runtime = rt.SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
     agent = SwarmAgentSpec(id="analyst", role="Analyst", system_prompt="x", max_retries=0)
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="do x")
     run = SwarmRun(id="r", preset_name="demo", created_at="2026-01-01T00:00:00Z", agents=[agent], tasks=[task])
@@ -74,7 +90,7 @@ def test_timeout_terminal_run_not_completed(tmp_path, monkeypatch):
     """fail-before / pass-after anchor: timeout terminal must not be a success."""
     monkeypatch.setattr(
         rt,
-        "run_worker",
+        "run_node",
         lambda *a, **k: WorkerResult(status="timeout", summary="partial work"),
     )
     run = _run(tmp_path, None)
@@ -86,7 +102,7 @@ def test_timeout_terminal_run_not_completed(tmp_path, monkeypatch):
 def test_incomplete_terminal_run_not_completed(tmp_path, monkeypatch):
     monkeypatch.setattr(
         rt,
-        "run_worker",
+        "run_node",
         lambda *a, **k: WorkerResult(
             status="incomplete",
             summary=PLAN_STUB,
@@ -104,7 +120,7 @@ def test_genuine_completion_still_succeeds(tmp_path, monkeypatch):
     """Guard: a real deliverable must still complete and become final_report."""
     monkeypatch.setattr(
         rt,
-        "run_worker",
+        "run_node",
         lambda *a, **k: WorkerResult(status="completed", summary=REAL_REPORT, iterations=4),
     )
     run = _run(tmp_path, None)
@@ -119,19 +135,19 @@ def test_genuine_completion_still_succeeds(tmp_path, monkeypatch):
 
 
 def test_is_error_result_top_level_error():
-    assert _is_error_result('{"status": "error", "error": "bad key"}') is True
-    assert _is_error_result('{"status":"error"}') is True
+    assert (not _is_tool_success('{"status": "error", "error": "bad key"}')) is True
+    assert (not _is_tool_success('{"status":"error"}')) is True
 
 
 def test_is_error_result_top_level_ok():
-    assert _is_error_result('{"status": "ok", "content": "..."}') is False
+    assert (not _is_tool_success('{"status": "ok", "content": "..."}')) is False
 
 
 def test_is_error_result_nested_error_no_false_positive():
     """A nested ``status`` (e.g. inside ``data``) must NOT count — only the
     envelope status matters for the deliverable contract."""
     nested = '{"status": "ok", "data": {"status": "error", "detail": "x"}}'
-    assert _is_error_result(nested) is False
+    assert (not _is_tool_success(nested)) is False
 
 
 def test_is_error_result_error_past_substring_head():
@@ -140,28 +156,28 @@ def test_is_error_result_error_past_substring_head():
     this; JSON parse catches it."""
     long_field = "x" * 200
     payload = '{"meta": "' + long_field + '", "status": "error"}'
-    assert _is_error_result(payload) is True
+    assert (not _is_tool_success(payload)) is True
 
 
 def test_is_error_result_truncated_falls_back_to_substring():
     """Truncated / unparseable JSON still gets the original substring
     classifier; the function must never raise on the worker hot path."""
     truncated = '{"status": "error", "trace": "...'  # missing closing quote
-    assert _is_error_result(truncated) is True
+    assert (not _is_tool_success(truncated)) is True
 
 
 def test_is_error_result_non_json_safe():
-    assert _is_error_result("") is False
-    assert _is_error_result(None) is False  # type: ignore[arg-type]
-    assert _is_error_result("plain text output") is False
-    assert _is_error_result("[1, 2, 3]") is False  # JSON array, not envelope
+    assert (not _is_tool_success("")) is False
+    assert (not _is_tool_success(None)) is False  # type: ignore[arg-type]
+    assert (not _is_tool_success("plain text output")) is False
+    assert (not _is_tool_success("[1, 2, 3]")) is False  # JSON array, not envelope
 
 
 def test_is_error_result_other_status_values():
     """Only ``"error"`` counts; ``"warning"`` / ``"degenerate"`` etc. are
     not error envelopes (the worker still credits them as a tool call)."""
-    assert _is_error_result('{"status": "degenerate", "warning": "T=0"}') is False
-    assert _is_error_result('{"status": "warning"}') is False
+    assert (not _is_tool_success('{"status": "degenerate", "warning": "T=0"}')) is False
+    assert (not _is_tool_success('{"status": "warning"}')) is False
 
 
 def test_is_error_result_ok_false_envelope_no_status_key():
@@ -170,17 +186,17 @@ def test_is_error_result_ok_false_envelope_no_status_key():
     is the exact envelope that let a failed tool call be silently credited
     as a completed data tool call before this fix."""
     assert (
-        _is_error_result('{"ok": false, "error": "eastmoney news fetch failed"}')
+        (not _is_tool_success('{"ok": false, "error": "eastmoney news fetch failed"}'))
         is True
     )
 
 
 def test_is_error_result_success_false_envelope_no_status_key():
-    assert _is_error_result('{"success": false, "error": "boom"}') is True
+    assert (not _is_tool_success('{"success": false, "error": "boom"}')) is True
 
 
 def test_is_error_result_ok_true_is_not_an_error():
-    assert _is_error_result('{"ok": true, "data": []}') is False
+    assert (not _is_tool_success('{"ok": true, "data": []}')) is False
 
 
 def test_is_error_result_nested_ok_false_no_false_positive():
@@ -188,7 +204,7 @@ def test_is_error_result_nested_ok_false_no_false_positive():
     the envelope's own ``ok``/``success`` matters, mirroring the existing
     nested-``status`` guarantee."""
     nested = '{"status": "ok", "data": {"ok": false, "detail": "x"}}'
-    assert _is_error_result(nested) is False
+    assert (not _is_tool_success(nested)) is False
 
 
 class _ResultTool(BaseTool):
@@ -224,12 +240,61 @@ class _ScriptedLLM:
                 finish_reason="stop",
             ),
         ]
+        self.requests = []
 
-    def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, timeout=None, on_text_chunk=None, on_waiting_chunk=None, **_callbacks):
+        self.requests.append(([dict(message) for message in messages], tools))
         return self._responses.pop(0)
 
     def close(self) -> None:
         """No-op: the scripted stub owns no HTTP client."""
+
+
+@pytest.mark.parametrize("repeats", [False, True], ids=["native-call", "repeated-markup"])
+def test_swarm_tool_syntax_gets_one_correction_with_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repeats: bool,
+) -> None:
+    """Retry a progress-prefaced capture through the normal node turn."""
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(_ResultTool('{"status": "ok"}'))
+    llm = _ScriptedLLM()
+    markup = (
+        "Backtest ran. Now computing phase-by-phase performance.\n\n"
+        '<｜｜DSML｜｜ calls>\n'
+        '<｜｜DSML｜｜ invoke name="bash">\n'
+        '<｜｜DSML｜｜ parameter name="command" string="true">pwd</｜｜DSML｜｜ parameter>\n'
+        '</｜｜DSML｜｜ invoke>\n'
+        '</｜｜DSML｜｜ calls>'
+    )
+    llm._responses.insert(0, LLMResponse(content=markup))
+    if repeats:
+        llm._responses.insert(1, LLMResponse(content=markup))
+    monkeypatch.setattr(worker_mod, "ChatLLM", lambda **kwargs: llm)
+    monkeypatch.setattr(worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry)
+    events: list[SwarmEvent] = []
+
+    result = run_node(
+        SwarmAgentSpec(
+            id="analyst", role="Analyst", system_prompt="Analyse the result.",
+            tools=["market_probe"], max_iterations=4,
+        ),
+        SwarmTask(id="task", agent_id="analyst", prompt_template="Probe the market."),
+        {}, {}, tmp_path, policy=ToolPolicy.from_config(get_env_config()),
+        event_callback=events.append,
+    )
+
+    assert result.iterations == (2 if repeats else 3)
+    messages, tools = llm.requests[1]
+    assert tools
+    assert sum(
+        "was not executed" in msg.get("content", "") and "tool-calling interface" in msg["content"]
+        for msg in messages
+    ) == 1
+    assert sum(event.type == "item.completed" for event in events) == (0 if repeats else 1)
+    assert result.status == ("incomplete" if repeats else "completed")
+    assert markup not in result.summary
+    if repeats:
+        assert "tool-call syntax" in result.error
 
 
 @pytest.mark.parametrize(
@@ -254,7 +319,7 @@ def test_tool_result_event_status_and_evidence_credit_agree(
     expected_event_status: str,
     expected_worker_status: str,
 ) -> None:
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool(result, raises=raises))
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -262,7 +327,8 @@ def test_tool_result_event_status_and_evidence_credit_agree(
     monkeypatch.setattr(worker_mod, "ChatLLM", lambda *args, **kwargs: _ScriptedLLM())
 
     events: list[SwarmEvent] = []
-    worker_result = run_worker(
+    worker_result = run_node(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",
@@ -279,8 +345,8 @@ def test_tool_result_event_status_and_evidence_credit_agree(
         event_callback=events.append,
     )
 
-    tool_result = next(event for event in events if event.type == "tool_result")
-    assert tool_result.data["status"] == expected_event_status
+    tool_result = next(event for event in events if event.type == "item.completed")
+    assert tool_result.data["item"]["status"] == expected_event_status
     assert worker_result.status == expected_worker_status
 
 
@@ -294,7 +360,7 @@ def test_collect_artifacts_recurses_and_returns_sorted_run_relative_paths(
     (artifact_dir / "nested" / "report.json").write_text("{}", encoding="utf-8")
     (artifact_dir / "other" / "report.json").write_text("{}", encoding="utf-8")
 
-    assert _collect_artifacts(tmp_path / "run", artifact_dir) == [
+    assert collect_artifacts(tmp_path / "run", artifact_dir) == [
         "artifacts/analyst/nested/report.json",
         "artifacts/analyst/other/report.json",
         "artifacts/analyst/summary.md",
@@ -312,19 +378,19 @@ def test_collect_artifacts_rejects_symlink_escape(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are not available on this platform")
 
-    assert _collect_artifacts(tmp_path / "run", artifact_dir) == []
+    assert collect_artifacts(tmp_path / "run", artifact_dir) == []
 
 
 # ---------------------------------------------------------------------------
-# ChatLLM lifecycle: run_worker must close the per-task LLM (regression #1141)
+# ChatLLM lifecycle: run_node must close the per-task LLM (regression #1141)
 # ---------------------------------------------------------------------------
 
 
-def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
+def test_run_node_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
     """A successful run must close the per-task ChatLLM exactly once."""
-    import src.swarm.worker as worker_mod
+    import src.swarm.node as worker_mod
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool("done", raises=False))
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -339,7 +405,8 @@ def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
         worker_mod, "ChatLLM", lambda *args, **kwargs: _TrackingLLM()
     )
 
-    worker_result = run_worker(
+    worker_result = run_node(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",
@@ -358,11 +425,11 @@ def test_run_worker_closes_llm_on_success(monkeypatch, tmp_path: Path) -> None:
     assert len(closed) == 1, f"close must be called exactly once, got {len(closed)}"
 
 
-def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) -> None:
+def test_run_node_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) -> None:
     """close() must fire even when the run dies on a tool exception."""
-    import src.swarm.worker as worker_mod
+    import src.swarm.node as worker_mod
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_ResultTool("boom", raises=True))
     monkeypatch.setattr(
         worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
@@ -377,7 +444,8 @@ def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) ->
         worker_mod, "ChatLLM", lambda *args, **kwargs: _TrackingLLM()
     )
 
-    worker_result = run_worker(
+    worker_result = run_node(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(
             id="analyst",
             role="Analyst",

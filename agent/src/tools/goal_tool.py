@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import json
 from pathlib import Path
 from typing import Any, Callable
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.goal import AuditRow, EvidenceInput, GoalStatus, GoalStore, RiskTier, StaleGoalError
 from src.goal.context import default_goal_criteria
 from src.tools.path_utils import safe_run_dir
@@ -69,7 +71,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _trace_fields_from_runtime(kwargs: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+def _trace_fields_from_runtime(kwargs: dict[str, Any], *, roots: FileRoots) -> tuple[str | None, str | None, str | None]:
     """Resolve host-injected run metadata into ledger-verifiable evidence fields."""
     run_id = str(kwargs.get("run_id") or "").strip() or None
     artifact_path = str(kwargs.get("artifact_path") or "").strip() or None
@@ -78,7 +80,7 @@ def _trace_fields_from_runtime(kwargs: dict[str, Any]) -> tuple[str | None, str 
     run_dir_raw = str(kwargs.get("run_dir") or "").strip()
     run_dir: Path | None = None
     if run_dir_raw:
-        run_dir = safe_run_dir(run_dir_raw)
+        run_dir = safe_run_dir(run_dir_raw, roots=roots)
         if run_id is None:
             run_id = run_dir.name
 
@@ -108,7 +110,7 @@ def _trace_fields_from_runtime(kwargs: dict[str, Any]) -> tuple[str | None, str 
     return run_id, artifact_path, artifact_hash
 
 
-class _GoalToolBase(BaseTool):
+class _GoalToolBase(FileBoundTool, BaseTool):
     """Shared helpers for local goal tools."""
 
     repeatable = True
@@ -116,6 +118,7 @@ class _GoalToolBase(BaseTool):
     def __init__(
         self,
         *,
+        roots: FileRoots,
         default_session_id: str | None = None,
         store: GoalStore | None = None,
         event_callback: Callable[[str, dict[str, Any]], None] | None = None,
@@ -127,6 +130,7 @@ class _GoalToolBase(BaseTool):
             store: Optional store override for tests.
             event_callback: Optional host callback for live UI updates.
         """
+        super().__init__(roots=roots)
         self._default_session_id = default_session_id
         self._store = store or GoalStore()
         self._event_callback = event_callback
@@ -514,9 +518,10 @@ class AddGoalEvidenceTool(_GoalToolBase):
                 if index < 1 or index > len(criteria):
                     return _json_error(f"criterion_index out of range: {index}")
                 criterion_id = str(criteria[index - 1]["criterion_id"])
-            run_id, artifact_path, artifact_hash = _trace_fields_from_runtime(kwargs)
+            run_id, artifact_path, artifact_hash = _trace_fields_from_runtime(kwargs, roots=self.roots)
 
             record = self._store.append_evidence(
+                roots=self.roots,
                 session_id=session_id,
                 goal_id=goal_id,
                 expected_goal_id=expected_goal_id,

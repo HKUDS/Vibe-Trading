@@ -1,10 +1,4 @@
-"""``/show``, ``/skill``, ``/pine`` — read-only inspect commands.
-
-All three already exist as fully-featured ``cmd_*`` callables in
-``cli._legacy``; this module is a thin shim so the slash router can
-dispatch by command name without importing the legacy module top-level
-(which is heavy — it pulls in providers, swarm, etc.).
-"""
+"""``/show``, ``/skill``, ``/pine`` — read-only inspect commands."""
 
 from __future__ import annotations
 
@@ -22,15 +16,24 @@ def _resolve_console() -> Console:
 
 
 def cmd_show(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """``/show <run_id>`` — replay a prior run via the legacy handler."""
+    """Display a prior run through the inspection handler.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Run ID as the first argument.
+
+    Returns:
+        Zero when the inspection handler returns, or one if the ID is omitted or inspection raises
+        an exception.
+    """
     console = _resolve_console()
     if not args:
         console.print(Text("Usage: /show <run_id>", style="bold red"))
         return 1
     try:
-        from cli._legacy import cmd_show as legacy_show
+        from cli.commands.inspection import cmd_show as show_run
 
-        legacy_show(args[0])
+        show_run(args[0])
         return 0
     except Exception as exc:  # noqa: BLE001
         console.print(Text(f"/show failed: {exc}", style="bold red"))
@@ -38,10 +41,18 @@ def cmd_show(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_skill(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """``/skill`` — list bundled + user skills (legacy ``cmd_skills``)."""
+    """List bundled and user skills.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Unused slash-command arguments.
+
+    Returns:
+        Zero after listing skills, or one if the listing raises an exception.
+    """
     console = _resolve_console()
     try:
-        from cli._legacy import cmd_skills
+        from cli.commands.inspection import cmd_skills
 
         cmd_skills()
         return 0
@@ -51,15 +62,24 @@ def cmd_skill(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def cmd_pine(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """``/pine <run_id>`` — emit Pine Script for a prior backtest."""
+    """Display a prior run's Pine Script artifact.
+
+    Args:
+        ctx: Unused interactive context.
+        *args: Run ID as the first argument.
+
+    Returns:
+        Zero when the inspection handler returns, or one if the ID is omitted or inspection raises
+        an exception.
+    """
     console = _resolve_console()
     if not args:
         console.print(Text("Usage: /pine <run_id>", style="bold red"))
         return 1
     try:
-        from cli._legacy import cmd_pine as legacy_pine
+        from cli.commands.inspection import cmd_pine as show_pine
 
-        legacy_pine(args[0])
+        show_pine(args[0])
         return 0
     except Exception as exc:  # noqa: BLE001
         console.print(Text(f"/pine failed: {exc}", style="bold red"))
@@ -74,7 +94,16 @@ _DISPATCH = {
 
 
 def run(ctx: Any = None, command: str = "show", *args: str) -> int:
-    """Dispatch ``run("show", run_id)`` / ``run("skill")`` etc."""
+    """Dispatch a run or skill inspection slash command.
+
+    Args:
+        ctx: Interactive context passed to the handler.
+        command: Command name without the leading slash.
+        *args: Arguments passed to the handler.
+
+    Returns:
+        Handler exit status, or one for an unknown command.
+    """
     handler = _DISPATCH.get(command)
     if handler is None:
         console = _resolve_console()

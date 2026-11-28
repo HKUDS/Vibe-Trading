@@ -1,12 +1,13 @@
-"""Session lifecycle orchestration for message flow, attempt creation, and execution scheduling.
-
-V5: Uses AgentLoop instead of the fixed pipeline behind the generate skill.
-"""
+"""Coordinate session leases, input queues, and execution attempts."""
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
+from functools import partial
+
 import asyncio
-import concurrent.futures
+import copy
 import logging
 import threading
 import time
@@ -14,73 +15,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.session.checkpoint import ResponseCheckpoint
+from src.kernel import events as vocabulary
+from src.session.attempts import AttemptRunner
+from src.session.event_projection import ThreadEvents
 from src.session.events import EventBus
+from src.session.factory import SessionAgentFactory, compact_recorded_history
+from src.session.maintenance import compact_history
 from src.session.models import (
     Attempt,
     AttemptStatus,
     Message,
     Principal,
     Session,
+    SessionBusyError,
 )
+from src.session.pending_inputs import (
+    PENDING_INPUTS_FILENAME,
+    PendingInput,
+    PendingInputQueue,
+)
+from src.session.recovery import recover_interrupted_attempts, recover_pending_inputs
+from src.session.runtime import SessionRuntime, SessionRuntimes
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
 
 if TYPE_CHECKING:
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
-# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
-_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
 logger = logging.getLogger(__name__)
 
 
-#: Terminal attempt status -> SSE event name. Cancellation is its own event so
-#: the UI can distinguish a user stop from a failure, both live and on reload.
-_TERMINAL_EVENTS = {
-    "completed": "attempt.completed",
-    "cancelled": "attempt.cancelled",
-    "failed": "attempt.failed",
-}
-
-
-def _cancel_session_swarm_runs(session_id: str) -> int:
-    """Signal every live swarm run started by this session.
-
-    Imported lazily: ``src.swarm.runtime`` pulls in worker/tool modules that
-    would create an import cycle at module load, and this helper is only needed
-    on the cancel path.
+class SessionService:
+    """Own the active attempts and durable input queue for a session store.
 
     Args:
-        session_id: Session whose swarm runs should stop.
-
-    Returns:
-        Number of runs that received a cancel signal.
-    """
-    try:
-        from src.swarm.runtime import cancel_runs_for_session
-    except Exception:  # pragma: no cover - swarm extra missing in slim installs
-        logger.debug("Swarm runtime unavailable; skipping swarm cancel", exc_info=True)
-        return 0
-    return cancel_runs_for_session(session_id)
-
-
-class SessionBusyError(RuntimeError):
-    """Raised when a session already has an in-flight run.
-
-    One AgentLoop per session: a second concurrent send is rejected rather
-    than queued, because two loops writing the same session would interleave
-    their messages and attempts. Callers surface this as HTTP 409 so the user
-    can wait for the running attempt or cancel it first.
-    """
-
-
-class SessionService:
-    """Session lifecycle service.
-
-    Attributes:
-        store: Session persistence store.
-        event_bus: SSE event bus.
-        runs_dir: Root runs directory.
+        store: Store for session metadata, attempts, and durable threads.
+        event_bus: Event bus for session and live stream events.
+        runs_dir: Root runs directory used to locate background-task storage and compaction runs.
+        policy: Tool policy shared by conversation turns and compaction.
     """
 
     def __init__(
@@ -88,131 +60,72 @@ class SessionService:
         store: SessionStore,
         event_bus: EventBus,
         runs_dir: Path,
+        *,
+        policy: ToolPolicy,
     ) -> None:
-        """Initialize the session service.
-
-        Args:
-            store: Session persistence store.
-            event_bus: SSE event bus.
-            runs_dir: Root runs directory.
-        """
+        """Initialize the session service."""
+        self.policy = policy
         self.store = store
         self.event_bus = event_bus
+        self.thread_events = ThreadEvents(event_bus, store.thread_path)
         self.runs_dir = runs_dir
-        # _active_loops is the cancellation handle only. It is populated after
-        # the registry is built, which is far too late to serve as the
-        # concurrency gate, so in-flight sessions are tracked separately and
-        # reserved synchronously in send_message.
-        self._active_loops: Dict[str, "AgentLoop"] = {}
-        # Task handles are kept from the moment the run is scheduled, so a run
-        # still building its registry can be cancelled. _active_loops only
-        # exists once construction finished, which is far too late to be the
-        # only cancellation route: a hung discovery would otherwise hold the
-        # claim forever and lock the session behind 409.
+        # Reserve synchronously in send_message. The runtime handle arrives after discovery.
+        self._active_loops: Dict[str, "AgentRuntime"] = {}
+        # A task handle also allows cancellation during registry discovery.
         self._active_tasks: Dict[str, "asyncio.Task"] = {}
-        # Only task cancellation requested through cancel_current is a user
-        # cancellation. Event-loop shutdown also raises CancelledError, but
-        # that attempt must remain recoverable on the next process start.
+        # Event-loop shutdown must leave the attempt recoverable.
         self._user_cancel_requests: set[str] = set()
         self._inflight: set[str] = set()
         self._inflight_lock = threading.Lock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
+        self._runtimes = SessionRuntimes(store.thread_log)
         self._shutting_down = False
-        # Durable records live under the runtime root that owns runs_dir, so a
-        # test pointing runs_dir at a temp root gets its own isolated store.
+        # Use the run directory's runtime root to isolate stores.
         from src.tools.background_tools import init_background_store
 
-        self._background_store = init_background_store(Path(runs_dir).parent)
-        self._recover_interrupted_attempts()
+        init_background_store(Path(runs_dir).parent)
+        self.pending_inputs = PendingInputQueue(
+            lambda session_id: store.thread_path(session_id).parent / PENDING_INPUTS_FILENAME
+        )
+        self._factory = SessionAgentFactory(
+            policy=policy,
+            store=store, event_bus=event_bus, thread_events=self.thread_events,
+            runs_dir=runs_dir, runtime=self._runtimes.get, pending_inputs=self.pending_inputs,
+            active_loops=self._active_loops, background_handles=self._background_handles,
+        )
+        self._attempts = AttemptRunner(
+            store=store, runtime=self._runtimes.get, thread_events=self.thread_events,
+            search_index=self._search_index, list_pending_inputs=self.pending_inputs.public_items,
+            user_cancel_requests=self._user_cancel_requests,
+        )
+        recover_interrupted_attempts(store, self.runtime, self._search_index)
+        recover_pending_inputs(store, self.pending_inputs)
 
-    def _recover_interrupted_attempts(self) -> None:
-        """Finalize attempts that could not outlive the previous process.
-
-        A newly constructed service has no live AgentLoop instances. Any
-        attempt still marked pending or running therefore belongs to the
-        previous process. Convert it to an explicit terminal state and expose
-        the most recent durable response snapshot in conversation history.
-        """
-        recoverable = {AttemptStatus.PENDING, AttemptStatus.RUNNING}
-        for attempt in self.store.list_attempts():
-            if attempt.status not in recoverable:
-                continue
-            partial = self.store.get_partial_response(
-                attempt.session_id, attempt.attempt_id
-            )
-            has_partial = bool(partial)
-            existing_reply = self.store.get_message_for_attempt(
-                attempt.session_id, attempt.attempt_id
-            )
-            if existing_reply is None:
-                reply = Message(
-                    session_id=attempt.session_id,
-                    role="assistant",
-                    content=self._format_interrupted_message(partial),
-                    linked_attempt_id=attempt.attempt_id,
-                    metadata={
-                        "status": AttemptStatus.INTERRUPTED.value,
-                        "partial": has_partial,
-                        "recovery_reason": "service_restart",
-                    },
-                )
-                self.store.append_message(reply)
-                self._search_index.index_message(
-                    attempt.session_id, "assistant", reply.content
-                )
-                attempt.mark_interrupted("service restarted before attempt completed")
-            else:
-                # The append-only reply is committed before attempt.json. If a
-                # process exits between those writes, finish the second half
-                # from the reply's terminal metadata instead of mislabelling a
-                # complete response as interrupted.
-                reply_status = existing_reply.metadata.get("status")
-                if reply_status == AttemptStatus.COMPLETED.value:
-                    attempt.mark_completed(summary=existing_reply.content)
-                elif reply_status == AttemptStatus.CANCELLED.value:
-                    attempt.mark_cancelled(reason="cancelled by user")
-                elif reply_status == AttemptStatus.FAILED.value:
-                    attempt.mark_failed(error="execution failed")
-                else:
-                    attempt.mark_interrupted(
-                        "service restarted before attempt completed"
-                    )
-            self.store.update_attempt(attempt)
-            self.store.delete_partial_response(attempt.session_id, attempt.attempt_id)
-
-    @staticmethod
-    def _format_interrupted_message(partial: Optional[str]) -> str:
-        """Build the transcript message for a recovered attempt.
+    def register_tool(self, tool: Any) -> str:
+        """Register one explicit host tool for subsequent attempts.
 
         Args:
-            partial: Durable assistant text captured before restart.
+            tool: Host tool instance to expose in subsequent attempts.
 
         Returns:
-            User-facing interruption notice, including partial text when any.
+            The registered tool name.
         """
-        if partial:
-            return (
-                "Vibe Trading restarted before this response finished. "
-                "The partial response recovered below may be incomplete:\n\n"
-                f"{partial}\n\n"
-                "Review it before sending a follow-up or retrying the request."
-            )
-        return (
-            "Vibe Trading restarted before this response finished, so no "
-            "complete assistant response was saved. Review any completed tool "
-            "actions before retrying the request."
-        )
+        return self._factory.register_tool(tool)
 
-    def _reserve_session(self, session_id: str) -> None:
-        """Claim a session for one in-flight run.
+    def runtime(self, session_id: str) -> SessionRuntime:
+        """Return the session's runtime, rebuilding it from its thread if needed.
 
         Args:
-            session_id: Session to claim.
+            session_id: Session ID.
 
-        Raises:
-            SessionBusyError: If the session is already claimed.
+        Returns:
+            The session runtime.
         """
+        return self._runtimes.get(session_id)
+
+    def _reserve_session(self, session_id: str) -> None:
+        """Claim a session for one in-flight run."""
         with self._inflight_lock:
             if self._shutting_down:
                 raise SessionBusyError("shutting down; no new runs are accepted")
@@ -222,29 +135,17 @@ class SessionService:
                 )
             self._inflight.add(session_id)
 
-    def _publish_background_completion(self, owner_id: str, payload: dict) -> None:
-        """Route a background task's terminal state to its owning session.
-
-        The AgentLoop that started the task may already have exited by the time
-        the command finishes, so this cannot depend on a later iteration draining
-        the queue. The payload keeps the attempt that started the task, which is
-        the attempt the completion belongs to, not whichever one is current.
-        """
-        if not owner_id.startswith("session:"):
-            return
-        session_id = owner_id[len("session:"):]
-        self.event_bus.emit(session_id, "background.completed", payload)
-
     def shutdown(self, *, timeout: float = 5.0) -> list[str]:
         """Stop accepting work, cancel owned background work, and wait for reaping.
 
-        Does not tear down the event bus or thread pools this service may share
-        with other hosts. Returns task ids still running after the wait, so an
-        incomplete cleanup is reported instead of being called a success.
+        Args:
+            timeout: Seconds to wait for active attempts and background tasks to stop.
+
+        Returns:
+            Identifiers of attempts and background tasks still pending after cancellation.
         """
         with self._inflight_lock:
             self._shutting_down = True
-        with self._inflight_lock:
             tasks = [task for task in self._active_tasks.values() if not task.done()]
         for active_loop in list(self._active_loops.values()):
             active_loop.cancel()
@@ -257,18 +158,12 @@ class SessionService:
                    if not task.done()]
         for background in list(self._background_handles.values()):
             remaining = max(0.0, deadline - time.monotonic())
-            # cancel_all, not shutdown: these handles sit over the process-wide
-            # table, and closing it would stop unrelated hosts in this process.
-            # New work is refused by the _shutting_down gate in send_message.
+            # Closing the process-wide task table would stop unrelated sessions.
             pending.extend(background.cancel_all(timeout=remaining)["pending"])
         return pending
 
     def _release_session(self, session_id: str) -> None:
-        """Release a session claim. Safe to call when no claim is held.
-
-        Args:
-            session_id: Session to release.
-        """
+        """Release a session claim. Safe to call when no claim is held."""
         with self._inflight_lock:
             self._inflight.discard(session_id)
 
@@ -282,13 +177,8 @@ class SessionService:
 
         Args:
             title: Session title.
-            config: Session configuration.
-            owner: Principal the session belongs to, from the authenticated
-                request. Optional because sessions are also created by the CLI
-                and by internal paths that have no request context; those get
-                ``None``, which reads as "owner unknown" and is deliberately
-                distinct from a principal that authenticated but cannot be
-                attributed to a person (see ``Principal.attributable``).
+            config: Session configuration, including any per-session overrides.
+            owner: Owning principal from the authenticated request, if known.
 
         Returns:
             The newly created Session.
@@ -300,16 +190,151 @@ class SessionService:
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
-        """Return a session by ID."""
+        """Return a session by ID.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The stored session, or None when no session record is available.
+        """
         return self.store.get_session(session_id)
 
     def update_session(self, session: Session) -> None:
-        """Persist session metadata and refresh its search label."""
+        """Persist session metadata and refresh its search label.
+
+        Args:
+            session: Session carrying the metadata and title to persist.
+        """
         self.store.update_session(session)
         self._search_index.index_session(session.session_id, session.title)
 
+    def fork_session(
+        self,
+        source_session_id: str,
+        turn_id: str,
+        *,
+        title: str = "",
+    ) -> Session:
+        """Create an independent session copied through one completed turn.
+
+        Args:
+            source_session_id: ID of the session to copy.
+            turn_id: ID of the completed turn through which to copy history and state.
+            title: Fork title. Defaults to the source title or ID with a fork suffix.
+
+        Returns:
+            The newly created session with its source session and turn IDs.
+
+        Raises:
+            ValueError: If the source session or turn is missing or the turn ended without
+                completing.
+            SessionBusyError: If the source turn is still running.
+        """
+        source = self.store.get_session(source_session_id)
+        if source is None:
+            raise ValueError(f"Session {source_session_id} not found")
+        source_items = self.store.thread_log(source_session_id).read()
+        turn_items = [item for item in source_items if item.turn_id == turn_id]
+        if not any(item.type == "turn_start" for item in turn_items):
+            raise ValueError(f"Turn {turn_id} not found in session {source_session_id}")
+        end = next((item for item in turn_items if item.type == "turn_end"), None)
+        if end is None:
+            raise SessionBusyError("Cannot fork from a turn that is still running")
+        if end.get("status") != "completed":
+            raise ValueError(f"Turn {turn_id} is not completed")
+        copied = [item for item in source_items if item.seq <= end.seq]
+        fork = Session(
+            title=title or f"{source.title or source_session_id} (fork)",
+            config=copy.deepcopy(source.config),
+            owner=source.owner,
+            forked_from_session_id=source_session_id,
+            forked_from_turn_id=turn_id,
+        )
+        self.store.create_session(fork)
+        target_log = self.store.thread_log(fork.session_id)
+        workspace_dir = str(target_log.path.parent / "workspace")
+        try:
+            for item in copied:
+                payload = copy.deepcopy(item.data)
+                if item.type == "state":
+                    payload["workspace_dir"] = workspace_dir
+                    payload["workspace"] = workspace_dir
+                target_log.append(item.type, item.turn_id, **payload)
+        except BaseException:
+            self.store.delete_session(fork.session_id)
+            raise
+        self._search_index.index_session(fork.session_id, fork.title)
+        self.event_bus.emit(
+            fork.session_id,
+            "session.forked",
+            {
+                "session_id": fork.session_id,
+                "source_session_id": source_session_id,
+                "source_turn_id": turn_id,
+            },
+        )
+        return fork
+
+    def _maintenance_busy(self, session_id: str) -> bool:
+        """Return whether a turn or queued input makes maintenance unsafe."""
+        with self._inflight_lock:
+            if session_id in self._inflight:
+                return True
+        task = self._active_tasks.get(session_id)
+        return bool(
+            (task is not None and not task.done())
+            or session_id in self._active_loops
+            or self.pending_inputs.waiting(session_id)
+        )
+
+    async def compact_session(self, session_id: str, focus: str = "") -> Dict[str, Any]:
+        """Compact a session's replayed history through the existing L3 path.
+
+        Args:
+            session_id: Session whose replayed history should be compacted.
+            focus: Optional topic to prioritize in the summary.
+
+        Returns:
+            Session ID, summary, durable item sequence, and stripped focus text.
+
+        Raises:
+            ValueError: If the session is missing or has insufficient history to compact.
+            SessionBusyError: If a turn is running or queued input is waiting.
+        """
+        session = self.store.get_session(session_id)
+        if session is None:
+            raise ValueError(f"Session {session_id} not found")
+        if self._maintenance_busy(session_id):
+            raise SessionBusyError(
+                "Cannot compact while a turn is running or queued input is waiting"
+            )
+        compacted = await compact_history(
+            session, focus, runtime_for=self.runtime, runs_dir=Path(self.runs_dir),
+            compact=partial(compact_recorded_history, policy=self.policy), policy=self.policy,
+        )
+        self.thread_events.sync(session_id)
+        self.event_bus.emit(
+            session_id,
+            "session.compacted",
+            {"summary": compacted.get("summary"), "seq": compacted.seq},
+        )
+        return {
+            "session_id": session_id,
+            "summary": compacted.get("summary") or "",
+            "seq": compacted.seq,
+            "focus": focus.strip(),
+        }
+
     def list_sessions(self, limit: int = 50) -> list[Session]:
-        """List all sessions."""
+        """List sessions by most recent update.
+
+        Args:
+            limit: Maximum number of sessions to return.
+
+        Returns:
+            Stored sessions in descending update-time order.
+        """
         return self.store.list_sessions(limit)
 
     def delete_session(self, session_id: str) -> bool:
@@ -319,20 +344,18 @@ class SessionService:
             session_id: Session to delete.
 
         Returns:
-            Whether the on-disk session existed and was deleted.
+            True if a session directory existed and deletion was attempted, otherwise False.
 
         Raises:
-            SessionBusyError: If a run could recreate the deleted content.
-            Exception: If the search purge fails; the on-disk session remains
-                available so the user can retry instead of receiving false success.
+            SessionBusyError: If the session has an in-flight run.
         """
         with self._inflight_lock:
             if session_id in self._inflight:
                 raise SessionBusyError("Stop the active run before deleting its session")
-            # Purge even when the directory is absent: a retry can clear stale
-            # index rows left by an older version or an interrupted deletion.
+            # Retry stale index cleanup even if the session directory is gone.
             self._search_index.remove_session(session_id)
             deleted = self.store.delete_session(session_id)
+            self._runtimes.discard(session_id)
             self.event_bus.clear(session_id)
             background = self._background_handles.pop(session_id, None)
             if background is not None:
@@ -346,23 +369,27 @@ class SessionService:
         role: str = "user",
         *,
         include_shell_tools: bool = False,
+        queue_if_busy: bool = False,
     ) -> Dict[str, Any]:
-        """Send a message to a session and trigger execution.
+        """Start a user turn or enqueue its message durably when busy.
 
         Args:
             session_id: Session ID.
-            content: Message content.
-            role: Message role.
-            include_shell_tools: Whether this attempt may use shell tools.
+            content: Message content validated by the caller, including queued inputs.
+            role: Message role. User messages can start or join a turn, and other roles are recorded
+                directly.
+            include_shell_tools: Shell entitlement of the sending request.
+            queue_if_busy: Allow durable enqueue when the session is busy.
 
         Returns:
-            Dictionary containing message_id and attempt_id.
+            A message and attempt receipt, a queued receipt with a 1-based position, or just the
+            message ID for other roles.
 
         Raises:
             ValueError: If the session does not exist.
-            SessionBusyError: If the session already has a run in progress.
-                Callers surface this as HTTP 409; the user can wait for the
-                running attempt or cancel it first.
+            SessionBusyError: If queueing is disabled for a busy session or the service is shutting
+                down.
+            PendingInputLimitError: If the durable queue is full.
         """
         session = self.store.get_session(session_id)
         if not session:
@@ -370,555 +397,263 @@ class SessionService:
         if self._shutting_down:
             raise SessionBusyError("shutting down; no new runs are accepted")
 
-        # Claim the session before persisting anything. Reserving after the
-        # user message is appended (or relying on _active_loops, which is only
-        # populated once the registry is built) lets two concurrent sends both
-        # store a message and create an attempt.
-        if role == "user":
-            self._reserve_session(session_id)
-        handed_off = False
-
-        try:
-            message = Message(session_id=session_id, role=role, content=content)
-            self.store.append_message(message)
+        if role != "user":
+            message_id = Message(session_id=session_id, role=role, content=content).message_id
+            log = self.store.thread_log(session_id)
+            turn_id = message_id
+            log.append("turn_start", turn_id, prompt="")
+            if role == "assistant":
+                log.append("assistant", turn_id, content=content, phase="final")
+            else:
+                log.append("inject", turn_id, role=role, content=content)
+            log.append("turn_end", turn_id, status="completed")
             self._search_index.index_message(session_id, role, content)
-            self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
+            self._announce_message(session_id, message_id, role, content)
+            return {"message_id": message_id}
 
-            if role != "user":
-                return {"message_id": message.message_id}
-
-            attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
-            self.store.create_attempt(attempt)
-            session.config["include_shell_tools"] = include_shell_tools
-            session.last_attempt_id = attempt.attempt_id
-            session.updated_at = datetime.now(timezone.utc).isoformat()
-            self.store.update_session(session)
-            self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
-
-            task = asyncio.create_task(
-                self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
+        # Claim before persisting so concurrent sends cannot both start attempts.
+        try:
+            self._reserve_session(session_id)
+        except SessionBusyError:
+            if not queue_if_busy or self._shutting_down:
+                raise
+            return self._queue_input(
+                session_id, content,
+                running_turn=session.last_attempt_id,
+                include_shell_tools=include_shell_tools,
             )
-            self._active_tasks[session_id] = task
-            # _run_attempt now owns the claim and releases it in its finally.
+        handed_off = False
+        try:
+            if queue_if_busy and self.pending_inputs.waiting(session_id):
+                # Messages queued earlier still wait (a stop or a restart kept
+                # them): they go first, so the conversation keeps send order.
+                started = self._start_queued_turn(session)
+                handed_off = started is not None
+                return self._queue_input(
+                    session_id, content,
+                    running_turn=started["attempt_id"] if started else None,
+                    include_shell_tools=include_shell_tools,
+                )
+            result = self._start_turn(session, content, include_shell_tools=include_shell_tools)
             handed_off = True
-            return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+            return result
         finally:
-            if role == "user" and not handed_off:
+            if not handed_off:
                 self._release_session(session_id)
 
-    def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
-        """Return the message history."""
-        return self.store.get_messages(session_id, limit)
+    def _announce_message(self, session_id: str, message_id: str, role: str, content: str) -> None:
+        self.event_bus.emit(session_id, "message.received", {
+            "message_id": message_id, "role": role, "content": content,
+        })
 
-    def cancel_current(self, session_id: str) -> bool:
-        """Cancel the currently running AgentLoop for a session.
+    def _start_turn(
+        self,
+        session: Session,
+        content: str,
+        *,
+        include_shell_tools: bool,
+        attempt: Optional[Attempt] = None,
+        queued: Optional[PendingInput] = None,
+    ) -> Dict[str, Any]:
+        """Record the user message and schedule its turn."""
+        session_id = session.session_id
+        message_id = Message(session_id=session_id, role="user", content=content).message_id
+        self._announce_message(session_id, message_id, "user", content)
+
+        if attempt is None:
+            attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+        if queued is not None:
+            attempt.queued_input_id = queued.input_id
+        self.store.create_attempt(attempt)
+        session.config["include_shell_tools"] = include_shell_tools
+        session.last_attempt_id = attempt.attempt_id
+        session.updated_at = datetime.now(timezone.utc).isoformat()
+        self.store.update_session(session)
+        self.thread_events.sync(session_id)
+        task = asyncio.create_task(
+            self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
+        )
+        self._active_tasks[session_id] = task
+        return {"message_id": message_id, "attempt_id": attempt.attempt_id}
+
+    def _start_queued_turn(self, session: Session) -> Optional[Dict[str, Any]]:
+        """Start a turn from the oldest waiting input. The caller holds the claim."""
+        session_id = session.session_id
+        attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id)
+        pending = self.pending_inputs.claim_next(session_id, attempt.attempt_id, after_seq=0)
+        if pending is None:
+            return None
+        attempt.prompt = pending.content
+        try:
+            result = self._start_turn(
+                session, pending.content,
+                include_shell_tools=pending.include_shell_tools,
+                attempt=attempt, queued=pending,
+            )
+        except BaseException:
+            if self.store.get_attempt(session_id, attempt.attempt_id) is None:
+                self.pending_inputs.release(session_id, pending.input_id)
+            raise
+        self.pending_inputs.complete(session_id, pending.input_id)
+        return result
+
+    def _start_next_input(self, session_id: str) -> None:
+        """After a turn ended on its own, let the oldest waiting input start one."""
+        try:
+            if self._shutting_down or not self.pending_inputs.waiting(session_id):
+                return
+            session = self.store.get_session(session_id)
+            if session is None:
+                return
+            try:
+                self._reserve_session(session_id)
+            except SessionBusyError:
+                return  # Another send started a turn; it takes the queue.
+            started = None
+            try:
+                started = self._start_queued_turn(session)
+            finally:
+                if started is None:
+                    self._release_session(session_id)
+        except Exception:  # noqa: BLE001 - the inputs stay queued and listed
+            logger.warning("Could not start a turn from the queue of %s", session_id, exc_info=True)
+
+    def _queue_input(
+        self,
+        session_id: str,
+        content: str,
+        *,
+        running_turn: Optional[str],
+        include_shell_tools: bool,
+    ) -> Dict[str, Any]:
+        """Accept a message for a busy session and announce it."""
+        pending = self.pending_inputs.add(
+            session_id, content,
+            queued_during=running_turn,
+            include_shell_tools=include_shell_tools,
+        )
+        waiting = self.pending_inputs.waiting(session_id)
+        position = next(
+            (index for index, item in enumerate(waiting, start=1) if item.input_id == pending.input_id),
+            len(waiting),
+        )
+        self.thread_events.emit(
+            session_id,
+            vocabulary.ITEM_STARTED,
+            {
+                "attempt_id": running_turn,
+                "kind": vocabulary.ITEM_STARTED,
+                "live_id": f"input:{pending.input_id}",
+                "item": {
+                    "type": "user",
+                    "input_id": pending.input_id,
+                    "content": content,
+                    "status": "queued",
+                    "position": position,
+                },
+            },
+        )
+        return {
+            "status": "queued",
+            "input_id": pending.input_id,
+            "attempt_id": running_turn,
+            "position": position,
+        }
+
+    def list_pending_inputs(self, session_id: str) -> list[Dict[str, Any]]:
+        """Return the messages waiting to join a session, oldest first.
 
         Args:
             session_id: Session ID.
 
         Returns:
-            Whether cancellation succeeded. True means an active loop, task,
-            swarm run, or owned background task received a cancel signal.
+            Client views of the pending inputs, including those being delivered.
+        """
+        return self.pending_inputs.public_items(session_id)
+
+    def discard_pending_input(self, session_id: str, input_id: str) -> Optional[Dict[str, Any]]:
+        """Remove a waiting message at the user's request.
+
+        Args:
+            session_id: Session ID.
+            input_id: The input to remove.
+
+        Returns:
+            The removed input's view, or None if it is unknown or being delivered.
+        """
+        removed = self.pending_inputs.discard(session_id, input_id)
+        if removed is None:
+            return None
+        if removed.queued_during:
+            self.thread_events.emit(
+                session_id,
+                vocabulary.ITEM_COMPLETED,
+                {
+                    "attempt_id": removed.queued_during,
+                    "kind": vocabulary.DISCARDED_KIND,
+                    "live_id": f"input:{removed.input_id}",
+                    "item": {"type": "user", "input_id": removed.input_id, "status": "discarded"},
+                },
+            )
+        return removed.public()
+
+    def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
+        """Return the message history.
+
+        Args:
+            session_id: Session ID.
+            limit: Maximum number of recent messages to return.
+
+        Returns:
+            Projected transcript messages in display order.
+        """
+        return self.store.get_messages(session_id, limit)
+
+    def cancel_current(self, session_id: str) -> bool:
+        """Request cancellation of work owned by a session.
+
+        Args:
+            session_id: Session ID whose active turn or background work should be cancelled.
+
+        Returns:
+            True if cancellation was requested for an active runtime, an in-flight attempt, a
+            background task, or a swarm run the session started (also one its turn left running).
         """
         background_handle = self._background_handles.get(session_id)
         background_cancelled = False
         if background_handle is not None:
             background_cancelled = bool(background_handle.cancel_all().get("requested"))
+        # A swarm keeps spending after the tool that launched it returns, so stopping the
+        # session's turn stops the swarms it started as well (owner decision, 2026-11-26).
+        from src.swarm.runtime import cancel_runs_for_session
+
+        swarms_cancelled = cancel_runs_for_session(session_id) > 0
         loop = self._active_loops.get(session_id)
         if loop is not None:
             loop.cancel()
-            # The loop only stops the ReAct cycle; tools that spawned their own
-            # background work (swarm) keep burning tokens unless told directly.
-            _cancel_session_swarm_runs(session_id)
             return True
-        # No loop yet: the run is still building its registry. Cancel the task
-        # itself so the claim is released instead of stranding the session.
+        # Cancel discovery itself if the runtime does not exist yet.
         task = self._active_tasks.get(session_id)
         if task is not None and not task.done():
             self._user_cancel_requests.add(session_id)
             task.cancel()
-            _cancel_session_swarm_runs(session_id)
             return True
-        # Loop already returned (budget exhausted, turn ended) but a swarm it
-        # started may still be running in the background.
-        if _cancel_session_swarm_runs(session_id):
-            return True
-        return background_cancelled
+        return background_cancelled or swarms_cancelled
 
     async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
-        """Execute an Attempt in the background.
-
-        The whole body runs under try/finally: this coroutine owns the
-        in-flight claim taken in :meth:`send_message`, and a failure anywhere —
-        including in the pre-run bookkeeping below — must not leave the session
-        permanently busy.
-        """
-        started_at = time.perf_counter()
+        """Execute an Attempt in the background."""
         try:
-            attempt.mark_running()
-            # Wall-clock start (epoch seconds) is the one timing fact clients
-            # cannot reconstruct on their own: a client that (re)connects
-            # mid-attempt resumes its elapsed timer from it, and history
-            # hydration derives the finished attempt's duration from it rather
-            # than from the first tool call. It lives on the persisted attempt
-            # so it survives the event ring buffer that first announced it.
-            wall_started_at = attempt.started_at or time.time()
-            self.store.update_attempt(attempt)
-            self.event_bus.emit(
-                session.session_id,
-                "attempt.started",
-                {"attempt_id": attempt.attempt_id, "started_at": wall_started_at},
+            await self._attempts.run(
+                session, attempt, self._factory.run, include_shell_tools=include_shell_tools,
             )
-            messages = self.store.get_messages(session.session_id)
-            result = await self._run_with_agent(
-                attempt,
-                messages=messages,
-                include_shell_tools=include_shell_tools,
-                session_config=dict(session.config),
-            )
-            status = result.get("status")
-            if status == "success":
-                attempt.mark_completed(summary=result.get("content", ""))
-            elif status == "cancelled":
-                # A cooperative cancel is not an outage; AttemptStatus.CANCELLED
-                # existed but was dead because every non-success landed in the
-                # failure branch.
-                attempt.mark_cancelled(reason=result.get("reason", "cancelled by user"))
-            else:
-                attempt.mark_failed(error=result.get("reason", "unknown"))
-            attempt.run_dir = result.get("run_dir")
-            if result.get("metrics"):
-                # Metrics were loaded from the run directory but never reached
-                # the attempt, so the reply metadata below was always empty.
-                attempt.metrics = result["metrics"]
-
-            reply_metadata = {}
-            if attempt.run_dir:
-                reply_metadata["run_id"] = Path(attempt.run_dir).name
-            reply_metadata["status"] = attempt.status.value
-            if attempt.metrics:
-                reply_metadata["metrics"] = attempt.metrics
-            reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
-            reply_metadata["started_at"] = wall_started_at
-            runtime_keys = (
-                "provider",
-                "configured_model",
-                "model",
-                "model_source",
-                "reasoning_effort",
-            )
-            for key in runtime_keys:
-                value = result.get(key)
-                if value is not None:
-                    reply_metadata[key] = value
-
-            reply = Message(
-                session_id=session.session_id, role="assistant",
-                content=self._format_result_message(attempt),
-                linked_attempt_id=attempt.attempt_id,
-                metadata=reply_metadata,
-                # Every terminal attempt keeps its steps. A failed run saved an
-                # empty trail, so after a reload the history said "0 steps"
-                # for a run that made eight rounds of tool calls — hiding the
-                # one thing a failure report needs.
-                tool_trail=result.get("tool_trail", []),
-            )
-            reports = [entry["artifact"] for entry in reply.tool_trail
-                       if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
-            if reports:
-                reply.metadata["generated_reports"] = reports
-                # Persist and stream the same concrete download links even if
-                # the model forgot to include them in its final answer.
-                links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
-                         for report in reports]
-                reply.content += "\n\n" + "\n\n".join(dict.fromkeys(links))
-            self.store.append_message(reply)
-            # The append-only transcript is the user-visible source of truth.
-            # Commit it before attempt.json so startup recovery can finish a
-            # process interrupted between the two writes.
-            self.store.update_attempt(attempt)
-            self.store.delete_partial_response(session.session_id, attempt.attempt_id)
-            self._search_index.index_message(session.session_id, "assistant", reply.content)
-            self.event_bus.emit(
-                session.session_id,
-                _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
-                {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                 "summary": reply.content, "error": attempt.error, "run_dir": attempt.run_dir,
-                 "started_at": wall_started_at, "ended_at": time.time(),
-                 **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
-            )
-
-        except asyncio.CancelledError:
-            if session.session_id in self._user_cancel_requests:
-                # cancel_current() cancels this task when the run has not
-                # reached its AgentLoop yet. Keep that explicit user action
-                # distinct from event-loop cancellation during server shutdown.
-                attempt.mark_cancelled(reason="cancelled by user")
-                self.store.update_attempt(attempt)
-                self.store.delete_partial_response(
-                    session.session_id, attempt.attempt_id
-                )
-                self.event_bus.emit(
-                    session.session_id,
-                    "attempt.cancelled",
-                    {"attempt_id": attempt.attempt_id, "status": attempt.status.value},
-                )
-            else:
-                logger.info(
-                    "Leaving attempt %s recoverable after service task cancellation",
-                    attempt.attempt_id,
-                )
-            raise
-        except Exception as exc:
-            attempt.mark_failed(error=str(exc))
-            self.store.update_attempt(attempt)
-            self.store.delete_partial_response(session.session_id, attempt.attempt_id)
-            self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
         finally:
-            if attempt.status != AttemptStatus.COMPLETED:
+            if attempt.status not in (AttemptStatus.COMPLETED, AttemptStatus.WAITING_USER):
                 background = self._background_handles.get(session.session_id)
                 if background is not None:
                     background.cancel_all()
-            # The only release path for the claim taken in send_message.
             self._active_tasks.pop(session.session_id, None)
             self._user_cancel_requests.discard(session.session_id)
             self._release_session(session.session_id)
-
-    async def _run_with_agent(
-        self,
-        attempt: Attempt,
-        messages: list = None,
-        *,
-        include_shell_tools: bool = False,
-        session_config: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Execute an attempt with the V5 AgentLoop.
-
-        Args:
-            attempt: Current execution attempt.
-            messages: Session message history.
-            include_shell_tools: Whether the registry may include shell tools.
-            session_config: Optional session-level config overrides. MCP server
-                definitions under the ``mcpServers`` key are merged on top of
-                the user config file via ``load_runtime_agent_config`` so each
-                session can extend or override the global MCP server list.
-
-        Returns:
-            Result dictionary containing status, run_dir, run_id, metrics, and related fields.
-        """
-        from src.tools import build_registry
-        from src.tools.background_tools import BackgroundScope, get_background_manager
-        from src.providers.chat import ChatLLM
-        from src.agent.loop import AgentLoop
-        from src.memory.persistent import PersistentMemory
-        from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
-
-        llm = ChatLLM()
-        try:
-            pm = PersistentMemory()
-
-            session_id = attempt.session_id
-            attempt_id = attempt.attempt_id
-            loop = asyncio.get_running_loop()
-            tool_trail: list[Dict[str, Any]] = []
-            checkpoint = ResponseCheckpoint(self.store, attempt)
-
-            safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
-            agent_config = load_runtime_agent_config(overrides=safe_overrides)
-
-            def event_callback(event_type: str, data: Dict[str, Any]) -> None:
-                """Forward AgentLoop events to the SSE event bus."""
-                try:
-                    checkpoint.handle_event(event_type, data)
-                except OSError as exc:
-                    # A checkpoint failure must not hide the live response or stop
-                    # the agent. The terminal attempt write still gets a chance.
-                    logger.warning(
-                        "Could not checkpoint response for attempt %s: %s",
-                        attempt_id,
-                        exc,
-                    )
-                if event_type in {"tool_call", "tool_result"}:
-                    self._record_tool_trail_event(tool_trail, event_type, data)
-                data["attempt_id"] = attempt_id
-                self.event_bus.emit(session_id, event_type, data)
-
-            def _mcp_collision_warn(msg: str) -> None:
-                """Forward MCP server-name collision warnings to the operator event channel."""
-                self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
-
-            # One flag per turn, shared by the AgentLoop and the swarm tool. The
-            # loop's own cancel() sets it, so a user stop reaches long-running tools
-            # without a second cancellation channel that can drift out of sync.
-            turn_cancel = threading.Event()
-
-            # Background tasks belong to the session, not to the attempt: a later
-            # attempt must still read what an earlier one started. The attempt id is
-            # kept on each task so cancellation can be attributed later.
-            background_scope = BackgroundScope(
-                owner_id=f"session:{session_id}", attempt_id=attempt_id
-            )
-            background = get_background_manager(Path(self.runs_dir).parent).for_scope(
-                background_scope,
-                on_completion=self._publish_background_completion,
-            )
-            self._background_handles[session_id] = background
-
-            registry = await loop.run_in_executor(
-                _AGENT_EXECUTOR,
-                lambda: build_registry(
-                    persistent_memory=pm,
-                    include_shell_tools=include_shell_tools,
-                    agent_config=agent_config,
-                    session_id=session_id,
-                    event_callback=event_callback,
-                    warn_callback=_mcp_collision_warn,
-                    cancel_event=turn_cancel,
-                    background_manager=background,
-                    background_scope=background_scope,
-                ),
-            )
-
-            from src.config.accessor import get_env_config
-
-            agent = AgentLoop(
-                registry=registry,
-                llm=llm,
-                event_callback=event_callback,
-                max_iterations=get_env_config().agent_tuning.vibe_trading_agent_max_iterations,
-                persistent_memory=pm,
-                cancel_event=turn_cancel,
-                background_manager=background,
-            )
-            self._active_loops[session_id] = agent
-
-            # Build the message history context.
-            history = self._convert_messages_to_history(messages) if messages else None
-
-            try:
-                result = await loop.run_in_executor(
-                    _AGENT_EXECUTOR,
-                    lambda: agent.run(
-                        user_message=attempt.prompt,
-                        history=history,
-                        session_id=session_id,
-                    ),
-                )
-            except asyncio.CancelledError:
-                agent.cancel()
-                raise
-            finally:
-                self._active_loops.pop(session_id, None)
-                try:
-                    checkpoint.flush()
-                except OSError as exc:
-                    logger.warning(
-                        "Could not flush response checkpoint for attempt %s: %s",
-                        attempt_id,
-                        exc,
-                    )
-
-            result["tool_trail"] = tool_trail
-
-            # Load metrics from the run output when available.
-            if result.get("run_dir"):
-                metrics = self._load_metrics(Path(result["run_dir"]))
-                if metrics:
-                    result["metrics"] = metrics
-
-            return result
-        finally:
-            await llm.aclose()
-
-    @staticmethod
-    def _record_tool_trail_event(
-        tool_trail: list[Dict[str, Any]],
-        event_type: str,
-        data: Dict[str, Any],
-    ) -> None:
-        """Consolidate live tool events into a compact history record.
-
-        Args:
-            tool_trail: Mutable per-attempt trail.
-            event_type: Agent event type (`tool_call` or `tool_result`).
-            data: Already-redacted live event payload.
-        """
-        tool = str(data.get("tool") or "")
-        if not tool:
-            return
-
-        call_id_value = data.get("call_id")
-        call_id = call_id_value if isinstance(call_id_value, str) and call_id_value else None
-
-        if event_type == "tool_call":
-            entry: Dict[str, Any] = {
-                "tool": tool,
-                "status": "running",
-                "arguments": (
-                    dict(data["arguments"])
-                    if isinstance(data.get("arguments"), dict)
-                    else {}
-                ),
-                "timestamp": int(time.time() * 1000),
-            }
-            if call_id:
-                entry["call_id"] = call_id
-            tool_trail.append(entry)
-            return
-
-        match = None
-        if call_id:
-            match = next(
-                (
-                    entry
-                    for entry in tool_trail
-                    if entry.get("call_id") == call_id
-                    and entry.get("status") == "running"
-                ),
-                None,
-            )
-        if match is None:
-            match = next(
-                (
-                    entry
-                    for entry in tool_trail
-                    if entry.get("tool") == tool
-                    and entry.get("status") == "running"
-                ),
-                None,
-            )
-        if match is None:
-            match = {
-                "tool": tool,
-                "arguments": {},
-                "timestamp": int(time.time() * 1000),
-            }
-            tool_trail.append(match)
-
-        match["status"] = "ok" if data.get("status") == "ok" else "error"
-        elapsed_ms = data.get("elapsed_ms")
-        if isinstance(elapsed_ms, (int, float)) and not isinstance(elapsed_ms, bool):
-            match["elapsed_ms"] = max(0, int(elapsed_ms))
-        match["preview"] = str(data.get("preview") or "")
-        if match["status"] == "ok" and isinstance(data.get("artifact"), dict):
-            match["artifact"] = dict(data["artifact"])
-        if call_id:
-            match["call_id"] = call_id
-
-    @staticmethod
-    def _convert_messages_to_history(messages: list) -> list[Dict[str, Any]]:
-        """Convert Session messages into OpenAI-format history.
-
-        Keeps the readable ``[prev_run: {run_id}]`` marker instead of removing it
-        completely (and adds it to assistant replies whose metadata records the
-        run, so a later turn can find that run's artifacts), and trims by character budget instead of a hard six-message cap
-        so the LLM can still see previous artifact paths and strategy content during
-        iterative updates.
-
-        Args:
-            messages: Session message list without the current turn.
-
-        Returns:
-            OpenAI-format messages trimmed from the newest items within the token budget.
-        """
-        import re
-        from pathlib import Path
-
-        def _shorten_run_dir(match: re.Match) -> str:
-            path_str = match.group(0).replace("Run directory:", "").strip()
-            run_id = Path(path_str).name if path_str else ""
-            return f"[prev_run: {run_id}]" if run_id else ""
-
-        history = []
-        for msg in messages[:-1]:
-            role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-            content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-            if not content.strip() or role not in ("user", "assistant"):
-                continue
-            content = re.sub(r"Run directory:\s*\S+", _shorten_run_dir, content).strip()
-            # The run id is only in message metadata; without it the next turn cannot name the run to reuse.
-            meta = msg.get("metadata") if isinstance(msg, dict) else getattr(msg, "metadata", None)
-            run_id = (meta or {}).get("run_id")
-            marker = f"[prev_run: {run_id}]"
-            if (
-                role == "assistant"
-                and content
-                and isinstance(run_id, str)
-                and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", run_id)
-                and marker not in content
-            ):
-                content = f"{marker}\n{content}"
-            if content:
-                history.append({"role": role, "content": content})
-
-        # Trim from the newest messages within a character budget of roughly 3000 tokens.
-        MAX_HISTORY_CHARS = 12000
-        total_chars = 0
-        trimmed: list = []
-        for msg in reversed(history):
-            content = msg.get("content", "")
-            remaining = MAX_HISTORY_CHARS - total_chars
-            if len(content) <= remaining:
-                trimmed.append(msg)
-                total_chars += len(content)
-                continue
-            # A single oversized message must not wipe the whole window: when
-            # nothing has been kept yet, the newest turn survives truncated
-            # rather than the agent starting with no history at all.
-            if not trimmed:
-                trimmed.append({**msg, "content": content[:remaining] + "\n[... truncated]"})
-            break
-        return list(reversed(trimmed))
-
-    @staticmethod
-    def _load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
-        """Load metrics.csv from a run directory.
-
-        A run's metrics row can carry a non-numeric column (e.g.
-        ``benchmark_ticker``) alongside the numeric metrics, so each field is
-        converted independently: one unconvertible field is skipped rather
-        than discarding every metric in the row.
-        """
-        import csv
-        metrics_path = run_dir / "artifacts" / "metrics.csv"
-        if not metrics_path.exists():
-            return None
-        try:
-            with open(metrics_path, "r", encoding="utf-8") as f:
-                rows = list(csv.DictReader(f))
-        except Exception:
-            return None
-        if not rows:
-            return None
-        metrics: Dict[str, Any] = {}
-        for key, value in rows[0].items():
-            if not value:
-                continue
-            try:
-                metrics[key] = float(value)
-            except (TypeError, ValueError):
-                continue
-        return metrics or None
-
-    @staticmethod
-    def _format_result_message(attempt: Attempt) -> str:
-        """Format the final execution result message.
-
-        Args:
-            attempt: The terminal attempt.
-
-        Returns:
-            The reply text shown in the transcript.
-        """
-        if attempt.status == AttemptStatus.COMPLETED:
-            if attempt.summary:
-                return attempt.summary
-            # Do not dress an empty answer up as a finished strategy run: say
-            # that nothing came back so the user knows to retry or rephrase.
-            return (
-                "The run finished without producing any text output. "
-                "Check the run artifacts, or rephrase the request and try again."
-            )
-        if attempt.status == AttemptStatus.CANCELLED:
-            return "Run cancelled."
-        return f"Execution failed: {attempt.error or 'unknown error'}"
+            # Leave waiting inputs queued after an explicit stop.
+            if attempt.status in (AttemptStatus.COMPLETED, AttemptStatus.FAILED):
+                self._start_next_input(session.session_id)

@@ -1,4 +1,4 @@
-"""AgentLoop content-filter skip-and-continue behavior.
+"""AgentRuntime content-filter skip-and-continue behavior.
 
 When the LLM returns a content-filtered response (content_filter_triggered=True),
 the agent loop should skip that iteration and continue instead of breaking.
@@ -6,12 +6,16 @@ the agent loop should skip that iteration and continue instead of breaking.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any, Callable
 
 import pytest
 
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from tests.message_roles_helpers import assert_system_messages_only_lead
 
 
@@ -85,13 +89,13 @@ def _run(
     llm: Any,
     max_iterations: int = 5,
 ) -> dict[str, Any]:
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     pm = PersistentMemory()
-    agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+    agent = AgentRuntime(
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=max_iterations,
         persistent_memory=pm,
@@ -103,9 +107,9 @@ def _run(
 
 
 def _read_trace(run_dir: str) -> list[dict[str, Any]]:
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import records_at
 
-    return TraceWriter.read(Path(run_dir))
+    return records_at(Path(run_dir))
 
 
 def test_content_filter_skip_and_continue(
@@ -261,9 +265,9 @@ def test_auto_compact_summary_hard_deadline(
     import time
 
     import src.agent.tuning as tuning_module
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.agent.tools import ToolRegistry
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import recorder_at
 
     class _HangingSummaryLLM:
         def __init__(self) -> None:
@@ -278,7 +282,7 @@ def test_auto_compact_summary_hard_deadline(
             return LLMResponse(content="late summary")
 
     llm = _HangingSummaryLLM()
-    agent = AgentLoop(registry=ToolRegistry(), llm=llm)
+    agent = AgentRuntime(registry=ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), llm=llm)
     monkeypatch.setattr(tuning_module, "LLM_TIMEOUT_SECONDS", 0.3, raising=False)
 
     messages: list[dict[str, Any]] = [
@@ -289,10 +293,10 @@ def test_auto_compact_summary_hard_deadline(
         {"role": "assistant", "content": "a2 " * 4000},
     ]
     trace_dir = tmp_path / "compact_trace"
-    trace = TraceWriter(trace_dir)
+    trace = recorder_at(trace_dir)
 
     start = time.monotonic()
-    agent._auto_compact(messages, trace_dir, trace, focus_topic="", iteration=1)
+    agent._context_compactor.auto_compact(messages, trace_dir, trace, focus_topic="", iteration=1)
     elapsed = time.monotonic() - start
 
     assert llm.chat_calls == 1, "summary thread must have started"

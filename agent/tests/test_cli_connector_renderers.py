@@ -8,12 +8,14 @@ Longbridge (and other ``broker_sdk`` connectors) return ``quantity``/``cost_pric
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.connectors as _cmd_connectors
+
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from cli import _legacy
 
 pytestmark = pytest.mark.unit
 
@@ -21,10 +23,10 @@ pytestmark = pytest.mark.unit
 def test_first_present_keeps_zero_and_skips_none() -> None:
     row = {"position": 0.0, "quantity": 5.0}
     # A real zero position must win over the fallback key, not be skipped.
-    assert _legacy._first_present(row, "position", "quantity") == 0.0
-    assert _legacy._first_present({"quantity": 5.0}, "position", "quantity") == 5.0
-    assert _legacy._first_present({"position": None, "quantity": 5.0}, "position", "quantity") == 5.0
-    assert _legacy._first_present({}, "position", "quantity") is None
+    assert _cmd_connectors._first_present(row, "position", "quantity") == 0.0
+    assert _cmd_connectors._first_present({"quantity": 5.0}, "position", "quantity") == 5.0
+    assert _cmd_connectors._first_present({"position": None, "quantity": 5.0}, "position", "quantity") == 5.0
+    assert _cmd_connectors._first_present({}, "position", "quantity") is None
 
 
 def test_connector_positions_renders_longbridge_schema(capsys) -> None:
@@ -44,9 +46,9 @@ def test_connector_positions_renders_longbridge_schema(capsys) -> None:
         ],
     }
     with patch("src.trading.service.get_positions", return_value=longbridge_result):
-        rc = _legacy.cmd_connector_positions("longbridge-paper-trade")
+        rc = _cmd_connectors.cmd_connector_positions("longbridge-paper-trade")
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "AAPL.US" in out
     assert "20" in out       # quantity → Qty
@@ -69,9 +71,9 @@ def test_connector_account_renders_balances_table(capsys) -> None:
             }
         ],
     }
-    rc = _legacy._print_connector_account(longbridge_account)
+    rc = _cmd_connectors._print_connector_account(longbridge_account)
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "No account summary returned." not in out
     assert "USD" in out
@@ -97,9 +99,9 @@ def test_connector_account_renders_ccxt_asset_balances(capsys) -> None:
         "balances": nonzero_balances(ccxt_balance),
     }
 
-    rc = _legacy._print_connector_account(binance_account)
+    rc = _cmd_connectors._print_connector_account(binance_account)
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "Net Assets" not in out, "a coin quantity must not be labelled net assets"
     btc = next(line for line in out.splitlines() if "BTC" in line)
@@ -133,9 +135,9 @@ def test_connector_account_renders_futu_assets(capsys) -> None:
         ],
     }
 
-    rc = _legacy._print_connector_account(futu_account)
+    rc = _cmd_connectors._print_connector_account(futu_account)
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "No account summary returned." not in out
     row = next(line for line in out.splitlines() if "HKD" in line)
@@ -152,9 +154,9 @@ def test_connector_account_renders_trading212_cash_and_metadata(capsys) -> None:
         "metadata": {"currencyCode": "EUR", "id": 4242},
     }
 
-    rc = _legacy._print_connector_account(trading212_account)
+    rc = _cmd_connectors._print_connector_account(trading212_account)
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "No account summary returned." not in out
     assert "cash.free" in out and "1000.5" in out
@@ -169,9 +171,9 @@ def test_connector_account_still_handles_ibkr_summary(capsys) -> None:
         "accounts": ["DU123"],
         "summary": [{"account": "DU123", "tag": "NetLiquidation", "value": "50000", "currency": "USD"}],
     }
-    rc = _legacy._print_connector_account(ibkr_account)
+    rc = _cmd_connectors._print_connector_account(ibkr_account)
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "NetLiquidation" in out
     assert "50000" in out
@@ -194,9 +196,9 @@ def test_connector_account_renders_direct_sdk_account_mapping(capsys) -> None:
         },
     }
 
-    rc = _legacy._print_connector_account(alpaca_account)
+    rc = _cmd_connectors._print_connector_account(alpaca_account)
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "No account summary returned." not in out
     assert "PA123" in out
@@ -221,12 +223,12 @@ def test_connector_check_uses_sdk_diagnostics_without_oauth_rows(capsys) -> None
     }
 
     with (
-        patch("cli._legacy._selected_profile_or", return_value=profile),
+        patch('cli.commands.connectors._selected_profile_or', return_value=profile),
         patch("src.trading.service.check_connection", return_value=report),
     ):
-        rc = _legacy.cmd_connector_check("alpaca-paper-trade")
+        rc = _cmd_connectors.cmd_connector_check("alpaca-paper-trade")
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "Connector profile is ready." in out
     assert "alpaca-py" in out
@@ -248,15 +250,15 @@ def test_connector_check_uses_sdk_diagnostics_without_oauth_rows(capsys) -> None
 
 def test_enum_text_strips_sdk_enum_reprs_but_keeps_symbols_and_numbers() -> None:
     # SDK enums arrive already stringified by the broker_sdk layer.
-    assert _legacy._enum_text("OrderSide.BUY") == "BUY"
-    assert _legacy._enum_text("OrderStatus.PARTIALLY_FILLED") == "PARTIALLY_FILLED"
+    assert _cmd_connectors._enum_text("OrderSide.BUY") == "BUY"
+    assert _cmd_connectors._enum_text("OrderStatus.PARTIALLY_FILLED") == "PARTIALLY_FILLED"
     # A class-name prefix must look like CamelCase, so class-B tickers survive.
-    assert _legacy._enum_text("BRK.B") == "BRK.B"
-    assert _legacy._enum_text("BRK.A") == "BRK.A"
+    assert _cmd_connectors._enum_text("BRK.B") == "BRK.B"
+    assert _cmd_connectors._enum_text("BRK.A") == "BRK.A"
     # Decimals and already-plain values are returned untouched.
-    assert _legacy._enum_text("716.64") == "716.64"
-    assert _legacy._enum_text("BUY") == "BUY"
-    assert _legacy._enum_text(None) == ""
+    assert _cmd_connectors._enum_text("716.64") == "716.64"
+    assert _cmd_connectors._enum_text("BUY") == "BUY"
+    assert _cmd_connectors._enum_text(None) == ""
 
 
 def test_connector_orders_renders_flat_broker_sdk_row(capsys) -> None:
@@ -276,9 +278,9 @@ def test_connector_orders_renders_flat_broker_sdk_row(capsys) -> None:
         ],
     }
     with patch("src.trading.service.get_open_orders", return_value=alpaca_result):
-        rc = _legacy.cmd_connector_orders("alpaca-paper-trade")
+        rc = _cmd_connectors.cmd_connector_orders("alpaca-paper-trade")
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "AAPL" in out       # symbol on the flat row, not under contract
     assert "BUY" in out        # side → Action, enum prefix stripped
@@ -306,9 +308,9 @@ def test_connector_orders_keeps_class_b_ticker_intact(capsys) -> None:
         ],
     }
     with patch("src.trading.service.get_open_orders", return_value=result):
-        rc = _legacy.cmd_connector_orders("alpaca-paper-trade")
+        rc = _cmd_connectors.cmd_connector_orders("alpaca-paper-trade")
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "BRK.B" in out  # must not be stripped to "B"
     assert "SELL" in out
@@ -333,9 +335,9 @@ def test_connector_orders_still_renders_the_nested_ibkr_row(capsys) -> None:
         ],
     }
     with patch("src.trading.service.get_open_orders", return_value=ibkr_result):
-        rc = _legacy.cmd_connector_orders("ibkr-local")
+        rc = _cmd_connectors.cmd_connector_orders("ibkr-local")
 
-    assert rc == _legacy.EXIT_SUCCESS
+    assert rc == _cmd_common.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "MSFT" in out
     assert "DU123" in out

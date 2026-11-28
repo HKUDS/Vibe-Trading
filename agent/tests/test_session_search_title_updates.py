@@ -1,5 +1,11 @@
 """Shipping rename routes must keep search's conversation labels current."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
+from tests.recording_helpers import seed_message
+
 import asyncio
 import json
 import sys
@@ -8,7 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
-from src.api.sessions_routes import UpdateSessionRequest, register_sessions_routes
+from src.api.session_actions import UpdateSessionRequest
+from src.api.sessions_routes import register_sessions_routes
 from src.session.events import EventBus
 from src.session.search import SessionSearchIndex
 from src.session.service import SessionService
@@ -22,6 +29,7 @@ def owned_title_routes(tmp_path, monkeypatch):
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: index)
     monkeypatch.setattr("src.session.search.get_shared_index", lambda: index)
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -33,9 +41,7 @@ def owned_title_routes(tmp_path, monkeypatch):
     # store/index to avoid invoking an agent or provider during fixture setup.
     from src.session.models import Message
 
-    service.store.append_message(
-        Message(session_id=session.session_id, role="user", content=original)
-    )
+    seed_message(service.store, Message(session_id=session.session_id, role="user", content=original))
     index.index_message(session.session_id, "user", original)
     before = index.search("volatility")[0]
     host = SimpleNamespace(
@@ -65,6 +71,9 @@ def test_registered_title_route_updates_actual_search(
         from src.providers import chat
 
         class OwnedTitleProvider:
+            def __init__(self, *, policy):
+                self.policy = policy
+
             def chat(self, messages, timeout):
                 return SimpleNamespace(content=title)
 
@@ -116,6 +125,9 @@ def test_auto_title_wait_preserves_live_session_updates(
     provider_closed = threading.Event()
 
     class OwnedTitleProvider:
+        def __init__(self, *, policy):
+            self.policy = policy
+
         def chat(self, messages, timeout):
             provider_started.set()
             assert provider_release.wait(3)
@@ -167,12 +179,12 @@ def test_auto_title_wait_preserves_live_session_updates(
         assert current.title == expected
         assert result["status"] == ("kept" if manual_rename else "updated")
         assert provider_closed.is_set()
-        assert len(service.get_messages(session.session_id)) == 2
+        assert len(service.get_messages(session.session_id)) == 1
         match = json.loads(SessionSearchTool().execute(query="volatility"))["results"][
             0
         ]
         assert match["title"] == expected
-        assert match["message_count"] == 2
+        assert match["message_count"] == 1
         assert match["started_at"] == before.started_at
         assert (
             service.store.get_session(sibling.session_id).title

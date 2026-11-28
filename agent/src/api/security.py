@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 import hmac
 import ipaddress
 import logging
@@ -553,14 +555,9 @@ def _trusted_docker_loopback_ip(ip: ipaddress._BaseAddress) -> bool:
     return ip in gateway_fn()
 
 
-def _env_shell_tools_enabled() -> bool:
-    """Return whether server-side shell tools are explicitly enabled."""
-    return get_env_config().api.vibe_trading_enable_shell_tools
-
-
-def _shell_tools_enabled_for_request(request: Request) -> bool:
-    """Return whether this API request may expose shell tools to the agent."""
-    return _env_shell_tools_enabled()
+def _shell_tools_enabled_for_request(request: Request, *, policy: ToolPolicy) -> bool:
+    """Return the serving host's shell grant for this request."""
+    return policy.shell_tools_enabled
 
 
 # ============================================================================

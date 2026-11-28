@@ -410,7 +410,8 @@ def test_live_authorize_missing_robinhood_config_prints_safe_seed(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from cli._legacy import EXIT_USAGE_ERROR, cmd_live_authorize
+    from cli.commands.common import EXIT_USAGE_ERROR
+    from cli.commands.live import cmd_live_authorize
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
@@ -430,7 +431,8 @@ def test_live_authorize_wildcard_robinhood_config_prints_safe_seed(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from cli._legacy import EXIT_USAGE_ERROR, cmd_live_authorize
+    from cli.commands.common import EXIT_USAGE_ERROR
+    from cli.commands.live import cmd_live_authorize
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     config_path = tmp_path / ".vibe-trading" / "agent.json"

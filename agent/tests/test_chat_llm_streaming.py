@@ -12,7 +12,8 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import AIMessageChunk
 
-from src.providers.chat import ChatLLM, ProviderStreamError
+from src.providers.response import parse_response
+from src.providers.response import ProviderStreamError
 
 
 class _FakeStreamingLLM:
@@ -71,7 +72,7 @@ def test_parse_dsml_tool_call_content_as_structured_tool_call() -> None:
         "</｜｜DSML｜｜tool_calls>/"
     )
 
-    response = ChatLLM._parse_response(AIMessageChunk(content=content))
+    response = parse_response(AIMessageChunk(content=content))
 
     assert response.content == ""
     assert len(response.tool_calls) == 1
@@ -92,7 +93,7 @@ def test_parse_dsml_tool_call_requires_pure_tool_call_payload() -> None:
         "</｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>"
     )
 
-    response = ChatLLM._parse_response(AIMessageChunk(content=content))
+    response = parse_response(AIMessageChunk(content=content))
 
     assert response.content == content
     assert response.tool_calls == []
@@ -119,6 +120,82 @@ def test_stream_dsml_tool_call_content_is_not_emitted_as_text() -> None:
     assert text_chunks == []
     assert response.content == ""
     assert response.tool_calls[0].name == "bash"
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=["complete", "split-stream"])
+def test_captured_dsml_calls_normalize_without_streaming_markup(streaming: bool) -> None:
+    """Replay the Ark capture's wrapper, tag spacing, and string attribute."""
+    content = (
+        '<｜｜DSML｜｜ calls>\n'
+        '<｜｜DSML｜｜ invoke name="bash">\n'
+        '<｜｜DSML｜｜ parameter name="command" string="true">pwd</｜｜DSML｜｜ parameter>\n'
+        '</｜｜DSML｜｜ invoke>\n'
+        '</｜｜DSML｜｜ calls>'
+    )
+    text_chunks: list[str] = []
+    if streaming:
+        fake = _FakeStreamingLLM([AIMessageChunk(content=piece) for piece in [
+            content[:2], content[2:13], content[13:16], content[16:],
+        ]])
+        response = _client(fake).stream_chat(
+            [{"role": "user", "content": "hi"}], on_text_chunk=text_chunks.append
+        )
+    else:
+        response = parse_response(AIMessageChunk(content=content))
+
+    assert text_chunks == []
+    assert response.content == ""
+    assert response.finish_reason == "tool_calls"
+    assert [(call.name, call.arguments) for call in response.tool_calls] == [
+        ("bash", {"command": "pwd"}),
+    ]
+
+
+def test_ascii_dsml_preserves_typed_json_and_explicit_strings() -> None:
+    """Decode typed arguments and keep JSON-looking strings as text."""
+    content = (
+        '< || DSML || tool_calls >'
+        '<||DSML||invoke name="probe">'
+        '<||DSML||parameter name="options" string="false">{"n":2,"flags":[true,null]}</||DSML||parameter>'
+        '<||DSML||parameter name="label" string="true">false</||DSML||parameter>'
+        '</||DSML||invoke></ || DSML || tool_calls >'
+    )
+    response = parse_response(AIMessageChunk(content=content))
+
+    assert response.tool_calls[0].arguments == {
+        "options": {"n": 2, "flags": [True, None]},
+        "label": "false",
+    }
+
+
+_DSML_TEST_INVOKE = (
+    '<||DSML||invoke name="probe">'
+    '<||DSML||parameter name="text" string="true">ok</||DSML||parameter>'
+    '</||DSML||invoke>'
+)
+
+
+@pytest.mark.parametrize(
+    "damaged_tail",
+    [
+        '<||DSML||invoke name="probe">',
+        '<||DSML||invoke name="probe"><||DSML||parameter name="text">missing close</||DSML||invoke>',
+        '<||DSML||invoke name="probe" name="other"></||DSML||invoke>',
+        '<||DSML||invoke name="probe" broken></||DSML||invoke>',
+        '<||DSML||invoke name="probe"><||DSML||parameter name="text" string="false">[</||DSML||parameter></||DSML||invoke>',
+        'unexpected prose inside the wrapper',
+        '</||DSML||tool_calls><||DSML||calls>',
+    ],
+    ids=["invoke", "parameter", "duplicate-attribute", "bad-attribute", "invalid-json", "stray-text", "mismatched-wrapper"],
+)
+def test_malformed_dsml_never_returns_a_valid_prefix_call(damaged_tail: str) -> None:
+    """Reject the entire payload even when an earlier invoke was complete."""
+    content = '<||DSML||tool_calls>' + _DSML_TEST_INVOKE + damaged_tail + '</||DSML||tool_calls>'
+
+    response = parse_response(AIMessageChunk(content=content))
+
+    assert response.tool_calls == []
+    assert response.content == content
 
 
 def test_anthropic_content_blocks_stream_with_native_tool_call() -> None:
@@ -235,7 +312,7 @@ def test_provider_stream_error_retryable_classification(
     ("content_filter", "", True), ("stop", "text", False),
 ])
 def test_content_filter_flag_follows_finish_reason(reason, content, filtered):
-    response = ChatLLM._parse_response(
+    response = parse_response(
         AIMessageChunk(content=content, response_metadata={"finish_reason": reason})
     )
     assert response.content == content
@@ -312,6 +389,121 @@ def test_only_explicit_provider_waiting_reaches_activity_callback():
     assert response.content == "final"
 
 
+@pytest.mark.parametrize("stop", ["node_deadline", "turn_cancel"])
+@pytest.mark.parametrize("status", [429, 500])
+def test_sdk_retry_wait_ends_with_supervised_stream(stop, status):
+    """Use SDK attempts on the wire to detect retries after the caller stops.
+
+    Args:
+        stop: Signal that stops the caller while the SDK is backing off.
+        status: HTTP response status that triggers the SDK retry.
+    """
+    import time
+
+    import httpx
+
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
+    from src.swarm.node import NodeModel, NodeStop
+
+    attempts = []
+    workers = []
+    first_attempt = threading.Event()
+    cancel = threading.Event()
+    retry_after = 0.5
+
+    def respond(request):
+        attempts.append(time.monotonic() - started)
+        workers.append(threading.current_thread())
+        first_attempt.set()
+        return httpx.Response(status, headers={"retry-after": str(retry_after)})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        adapter = ChatOpenAIWithReasoning(
+            model="gpt-test", api_key="offline", base_url="https://example.invalid/v1",
+            http_client=transport, max_retries=2,
+        )
+        client = _client(adapter)
+        messages = [{"role": "user", "content": "Hi"}]
+
+        def cancel_turn():
+            if first_attempt.wait(2):
+                time.sleep(0.05)
+                cancel.set()
+
+        started = time.monotonic()
+        if stop == "node_deadline":
+            node_stop = NodeStop(None, 0.2)
+            model = NodeModel(client, node_stop, lambda *args: None, None)
+            try:
+                model.stream_chat(messages, timeout=None, idle_timeout_s=None,
+                                  on_text_chunk=lambda _: None, should_cancel=node_stop.is_set)
+            except ProviderStreamError as error:
+                assert "timeout" in str(error)
+            assert node_stop.expired
+        else:
+            canceller = threading.Thread(target=cancel_turn)
+            canceller.start()
+            try:
+                assert not client.stream_chat(messages, should_cancel=cancel.is_set).content
+            finally:
+                canceller.join()
+        caller_elapsed = time.monotonic() - started
+        assert workers
+        workers[0].join(2)
+        worker_elapsed = time.monotonic() - started
+
+    print(f"{stop} HTTP {status}: caller={caller_elapsed:.3f}s worker={worker_elapsed:.3f}s "
+          f"attempts={[round(offset, 3) for offset in attempts]}")
+    assert caller_elapsed < retry_after
+    assert len(attempts) == 1
+    assert not workers[0].is_alive()
+    assert worker_elapsed < retry_after
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_sdk_retry_coverage_is_preserved(stream):
+    """Check two consecutive retries, including 409 and an explicit retry header.
+
+    Args:
+        stream: Whether the request uses the supervised stream or plain chat.
+    """
+    import json
+
+    import httpx
+
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(409, headers={"retry-after-ms": "1"})
+        if len(requests) == 2:
+            return httpx.Response(400, headers={"x-should-retry": "true", "retry-after-ms": "1"})
+        choice = {"index": 0, "finish_reason": "stop"}
+        packet = {"id": "offline", "created": 0, "model": "gpt-test", "choices": [choice]}
+        if stream:
+            choice["delta"] = {"content": "hello"}
+            packet["object"] = "chat.completion.chunk"
+            return httpx.Response(200, text=f"data: {json.dumps(packet)}\n\ndata: [DONE]\n\n",
+                                  headers={"content-type": "text/event-stream"})
+        choice["message"] = {"role": "assistant", "content": "hello"}
+        packet["object"] = "chat.completion"
+        return httpx.Response(200, json=packet)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        adapter = ChatOpenAIWithReasoning(
+            model="gpt-test", api_key="offline", base_url="https://example.invalid/v1",
+            http_client=transport, max_retries=2,
+        )
+        client = _client(adapter)
+        request = client.stream_chat if stream else client.chat
+        assert request([{"role": "user", "content": "Hi"}], timeout=2).content == "hello"
+
+    assert len(requests) == 3
+
+
 @pytest.mark.parametrize("adapter_kind", ["compatible", "native"])
 @pytest.mark.parametrize("terminal", [True, False])
 @pytest.mark.parametrize("tool_call", [True, False])
@@ -319,7 +511,7 @@ def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call, adap
     """Replay a clean EOF through the real SDK; truncated JSON is not a call."""
     import json
     import httpx
-    from src.providers.llm import ChatOpenAIWithReasoning
+    from src.providers.adapters.openai import ChatOpenAIWithReasoning
 
     requests = []
     delta = ({"tool_calls": [{"index": 0, "id": "call-partial", "type": "function",
@@ -364,32 +556,46 @@ def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call, adap
 
 @pytest.mark.parametrize("status", ["completed", "incomplete"])
 def test_responses_terminal_status_remains_valid(status):
-    """Responses has terminal status rather than Chat Completions finish_reason."""
+    """Keep the distinction between completed and incomplete Responses status.
+
+    Args:
+        status: Terminal status reported without a finish reason.
+    """
     chunk = AIMessageChunk(content="Answer")
     chunk.response_metadata = {"status": status}
     fake = _FakeStreamingLLM([chunk])
     fake._llm_type = "openai-chat"
-    assert _client(fake).stream_chat([{"role": "user", "content": "Hi"}]).content == "Answer"
+    result = _client(fake).stream_chat([{"role": "user", "content": "Hi"}])
+    assert result.content == "Answer"
+    assert result.finish_reason == ("incomplete" if status == "incomplete" else "stop")
 
 
 @pytest.mark.parametrize("metadata,args,valid", [
     ({"finish_reason": "tool_calls"}, '{"path":"a.txt"}', True),
     ({"finish_reason": "length"}, '{"path":"a.txt"}', False),
     ({"stop_reason": "max_tokens"}, '{"path":"a.txt"}', False),
+    ({"finish_reason": "max_output_tokens"}, '{"path":"a.txt"}', False),
     ({"status": "incomplete"}, '{"path":"a.txt"}', False),
     ({"finish_reason": "tool_calls"}, '{"path":"a.txt', False),
     ({"finish_reason": "tool_calls"}, 'invalid-json', False),
 ])
 def test_only_complete_tool_arguments_can_execute(metadata, args, valid):
+    """Require both a complete response and valid JSON for tool execution.
+
+    Args:
+        metadata: Finish and status metadata reported by the adapter.
+        args: Raw tool arguments received over the stream.
+        valid: Whether the parser should accept the tool call.
+    """
     chunk = AIMessageChunk(content="", response_metadata=metadata, tool_call_chunks=[
         {"id": "call-1", "index": 0, "name": "write_file", "args": args},
     ])
     if valid:
-        assert ChatLLM._parse_response(chunk).tool_calls[0].arguments == {"path": "a.txt"}
+        assert parse_response(chunk).tool_calls[0].arguments == {"path": "a.txt"}
     else:
         with pytest.raises(ValueError, match="tool.call"):
-            ChatLLM._parse_response(chunk)
-    cancelled = ChatLLM._parse_response(chunk, cancelled=True)
+            parse_response(chunk)
+    cancelled = parse_response(chunk, cancelled=True)
     assert not cancelled.has_tool_calls and cancelled.finish_reason == "stop"
 
 

@@ -10,6 +10,9 @@ tests pin that contract so future drift fails loudly.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 import inspect
 import json
 
@@ -29,10 +32,14 @@ class _RecordingRegistry:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def execute(self, name: str, args: dict) -> str:
         self.calls.append((name, args))
         return json.dumps({"status": "ok"})
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def test_wrapper_forwards_registered_contract(monkeypatch) -> None:
@@ -88,13 +95,16 @@ def _write_synthetic_csvs(tmp_path) -> tuple[str, str]:
     return str(factor_csv), str(return_csv)
 
 
-def test_well_formed_call_runs_end_to_end(tmp_path) -> None:
+def test_well_formed_call_runs_end_to_end(tmp_path, monkeypatch) -> None:
     """The issue scenario: a well-formed MCP call reaches the implementation.
 
     Uses the real tool registry against synthetic CSVs. Pre-fix this raised
     ``KeyError: 'factor_csv'``; post-fix it returns ``status == "ok"`` and
-    writes the analysis artifacts.
+    writes the analysis artifacts. The output directory is an authorized
+    write root, as every factor_analysis output directory has to be.
     """
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(tmp_path))
+    monkeypatch.setattr(mcp_server, "_registry", None)
     factor_csv, return_csv = _write_synthetic_csvs(tmp_path)
     output_dir = tmp_path / "out"
 

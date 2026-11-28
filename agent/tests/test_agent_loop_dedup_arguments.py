@@ -22,16 +22,20 @@ Harness mirrors test_agent_loop_deterministic_cache._drive.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 
 
 class _PagedTool(BaseTool):
@@ -52,36 +56,28 @@ class _PagedTool(BaseTool):
 
 
 def _drive(
-    agent: AgentLoop,
+    agent: AgentRuntime,
     tool_name: str,
     run_dir: Path,
     arg_sets: list[dict],
 ) -> tuple[list[dict], list[dict]]:
     """Run a sequence of tool calls through the loop's tool-call path."""
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict] = []
-    react_trace: list[dict] = []
     for index, arguments in enumerate(arg_sets, start=1):
-        agent._process_tool_calls(
-            [SimpleNamespace(id=f"call_{index}", name=tool_name, arguments=arguments)],
-            ContextBuilder,
-            messages,
-            trace,
-            react_trace,
-            index,
-        )
+        run_recorded_tools(agent, [SimpleNamespace(id=f"call_{index}", name=tool_name, arguments=arguments)], ContextBuilder, messages, trace, index)
     trace.close()
-    return messages, list(TraceWriter.read(run_dir))
+    return messages, list(records_at(run_dir))
 
 
 @pytest.fixture()
 def agent_factory(tmp_path: Path):
-    """Return a builder for an AgentLoop wired to a run dir and one tool."""
+    """Return a builder for an AgentRuntime wired to a run dir and one tool."""
 
-    def _build(tool: BaseTool) -> tuple[AgentLoop, Path]:
-        registry = ToolRegistry()
+    def _build(tool: BaseTool) -> tuple[AgentRuntime, Path]:
+        registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
         registry.register(tool)
-        agent = AgentLoop(
+        agent = AgentRuntime(
             registry=registry,
             llm=SimpleNamespace(),
             max_iterations=4,

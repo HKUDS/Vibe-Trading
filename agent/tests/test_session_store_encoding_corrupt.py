@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from tests.recording_helpers import seed_message
+
 import pytest
 
 from src.session.models import Attempt, Message, Session
@@ -49,11 +51,11 @@ def test_bad_message_encoding_preserves_neighbors_limits_and_original_bytes(
 ) -> None:
     store = SessionStore(tmp_path / "sessions")
     store.create_session(Session(session_id="sample"))
-    store.append_message(Message(session_id="sample", content="之前 😀"))
-    path = store._messages_file("sample")
+    seed_message(store, Message(session_id="sample", content="之前 😀"))
+    path = store.thread_path("sample")
     with path.open("ab") as log:
         log.write(bad_line)
-    store.append_message(Message(session_id="sample", content="之后 café"))
+    seed_message(store, Message(session_id="sample", content="之后 café"))
     original = path.read_bytes()
 
     assert [m.content for m in store.get_messages("sample")] == [
@@ -63,4 +65,4 @@ def test_bad_message_encoding_preserves_neighbors_limits_and_original_bytes(
         "之后 café"
     ]
     assert path.read_bytes() == original
-    assert "Skipping corrupted message" in caplog.text
+    assert "Skipping corrupted thread record" in caplog.text

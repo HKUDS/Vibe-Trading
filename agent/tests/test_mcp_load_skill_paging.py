@@ -39,7 +39,7 @@ def test_mcp_load_skill_short_skill_still_whole_and_uncorrupted():
     """A skill under the cap must still return complete, byte-identical
     content — the registry envelope adds paging metadata (mode, offset,
     next_offset, complete) even for a whole document, but must not alter it."""
-    from src.agent.skills import SkillsLoader
+    from src.product.resources.skills import SkillsLoader
 
     raw = _load_skill(name="candlestick")
     payload = json.loads(raw)

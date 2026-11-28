@@ -43,6 +43,11 @@ anywhere in ``kwargs``::
     {"__series__": {"index": [...], "values": [...]}}
     {"__dataframe__": {"index": [...], "columns": [...], "data": [[...], ...]}}
 
+A valuation judgement travels as an envelope too, so ``valuation.dcf.run_dcf``
+can take its ``terminal_growth`` / ``exit_multiple``::
+
+    {"__assumption__": {"name": "terminal_growth", "value": 0.03, "basis": "...", "source": "..."}}
+
 A plain list stays a plain list, because most functions accept a sequence and
 coercing every list into a Series would break the ones that do not.
 """
@@ -56,7 +61,7 @@ import math
 from enum import Enum
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 
 __all__ = ["ALLOWED_MODULES", "QuantlibCallTool"]
 
@@ -142,11 +147,11 @@ def _decode(value: Any) -> Any:
     """Turn JSON envelopes into the pandas objects some functions require.
 
     Args:
-        value: A decoded-JSON value, possibly a ``__series__`` or
-            ``__dataframe__`` envelope, possibly nested inside a container.
+        value: A decoded-JSON value, possibly a ``__series__``, ``__dataframe__``
+            or ``__assumption__`` envelope, possibly nested inside a container.
 
     Returns:
-        The value with any envelope replaced by the pandas object it describes.
+        The value with any envelope replaced by the object it describes.
 
     Raises:
         ValueError: If an envelope is malformed.
@@ -166,6 +171,13 @@ def _decode(value: Any) -> Any:
             return pd.DataFrame(
                 spec["data"], index=spec.get("index"), columns=spec.get("columns")
             )
+        if "__assumption__" in value:
+            from src.quantlib.valuation.contracts import Assumption
+
+            spec = value["__assumption__"]
+            if not isinstance(spec, dict) or not {"name", "value", "basis"} <= set(spec):
+                raise ValueError("__assumption__ needs 'name', 'value' and 'basis'")
+            return Assumption(name=spec["name"], value=spec["value"], basis=spec["basis"], source=spec.get("source"))
         return {k: _decode(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode(v) for v in value]
@@ -267,13 +279,14 @@ def _encode(value: Any, budget: _Budget) -> Any:
     return str(value)
 
 
-class QuantlibCallTool(BaseTool):
+class QuantlibCallTool(FileBoundTool, BaseTool):
     """Call any public function of the tested finance-math layer."""
 
     name = "quantlib_call"
     description = (
         "For named rate comparisons, units.compare_rates returns higher/lower/equal and signed differences in explicit units. Use left_label/right_label and file references for saved values. "
-        "Run a function from the tested finance-math library (src/quantlib): "
+        "Load the `quantlib-index` skill for the complete function index, then run "
+        "a function from the tested finance-math library (src/quantlib): "
         "Black-Scholes and implied vol, bond math and curve fitting, Altman Z "
         "and Merton/KMV, stationarity/cointegration/GARCH/regime switching, "
         "VaR/CVaR/EVT and VaR backtesting (Kupiec/Christoffersen/Basel), "
@@ -285,9 +298,8 @@ class QuantlibCallTool(BaseTool):
         "deflated Sharpe and PBO, "
         "purged cross-validation, and the valuation engine (DCF / comps / "
         "three-statement). Computes from supplied values or saved JSON/CSV observations; "
-        "no network or shell. Start with action='list' to see modules, then "
-        "action='list' with a module to see its functions, then "
-        "action='describe' for a signature. "
+        "no network or shell. Use action='call' with the indexed module and function. "
+        "Use action='describe' only when the loaded index lacks a signature. "
         'Example: quantlib_call(action="call", module="risk", '
         'function="historical_var", kwargs={"returns": [0.01, -0.02], "confidence": 0.95}).'
     )
@@ -448,7 +460,7 @@ class QuantlibCallTool(BaseTool):
         try:
             from src.tools.data_refs import resolve_data_refs
             sources: list[dict] = []
-            resolved = resolve_data_refs(raw_kwargs, run_dir, sources)
+            resolved = resolve_data_refs(raw_kwargs, run_dir, sources, roots=self.roots)
             decoded = {str(k): _decode(v) for k, v in resolved.items()}
         except ValueError as exc:
             return self._error(f"bad argument envelope: {exc}")
@@ -482,8 +494,8 @@ class QuantlibCallTool(BaseTool):
                 f"result exceeded {_MAX_RESULT_LEAVES} values and was truncated; "
                 "narrow the inputs or request a summary statistic instead"
             )
-        from src.agent.result_artifacts import persist_calculation_result
-        return persist_calculation_result(json.dumps(payload, ensure_ascii=False), run_dir)
+        from src.product.result_artifacts import persist_calculation_result
+        return persist_calculation_result(json.dumps(payload, ensure_ascii=False), run_dir, roots=self.roots)
 
     @staticmethod
     def _error(message: str, **extra: Any) -> str:

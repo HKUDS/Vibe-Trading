@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import cli.commands.connectors as _cmd_connectors
+
 import httpx
 import pytest
 
@@ -129,7 +131,6 @@ def test_missing_credentials_make_no_network_call(monkeypatch):
 
 def test_cli_reads_use_named_vault_connection_and_render_raw_books(monkeypatch, capsys):
     from types import SimpleNamespace
-    from cli import _legacy
     from src.trading import connections
 
     class Vault:
@@ -152,10 +153,10 @@ def test_cli_reads_use_named_vault_connection_and_render_raw_books(monkeypatch, 
         return httpx.Response(200, json={"status": "true", "data": data})
 
     _transport(monkeypatch, handle)
-    assert _legacy.cmd_connector_positions(PROFILE, connection_id="mstock-main") == 0
+    assert _cmd_connectors.cmd_connector_positions(PROFILE, connection_id="mstock-main") == 0
     output = capsys.readouterr().out
     assert "net_positions" in output and "broker_books_unaggregated" in output
-    assert _legacy.cmd_connector_account(PROFILE, connection_id="mstock-main") == 0
+    assert _cmd_connectors.cmd_connector_account(PROFILE, connection_id="mstock-main") == 0
     output = capsys.readouterr().out
     assert "fund_limits" in output and "123.45" in output
     assert "vault-token" not in output and "vault-key" not in output

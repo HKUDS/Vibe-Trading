@@ -14,6 +14,10 @@ each one reaches the branch it claims to cover.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import sys
 from types import ModuleType, SimpleNamespace
@@ -332,10 +336,10 @@ def test_extract_shadow_strategy_rejects_malformed_integers(
         raise AssertionError("the journal must not be parsed for malformed options")
 
     monkeypatch.setattr(sat, "extract_shadow_profile", fail_extract)
-    monkeypatch.setattr(sat, "safe_user_path", lambda raw: journal)
+    monkeypatch.setattr(sat, "safe_user_path", lambda raw, *, roots: journal)
 
     payload = json.loads(
-        sat.ExtractShadowStrategyTool().execute(journal_path=str(journal), **{field: float("inf")})
+        sat.ExtractShadowStrategyTool(roots=FileRoots.from_config(get_env_config().api)).execute(journal_path=str(journal), **{field: float("inf")})
     )
 
     assert payload["status"] == "error"
@@ -351,7 +355,7 @@ def test_scan_shadow_signals_rejects_malformed_per_market(monkeypatch: pytest.Mo
     monkeypatch.setattr(sat, "load_profile", fail_load)
 
     payload = json.loads(
-        sat.ScanShadowSignalsTool().execute(shadow_id="shadow-1", per_market=float("inf"))
+        sat.ScanShadowSignalsTool(roots=FileRoots.from_config(get_env_config().api)).execute(shadow_id="shadow-1", per_market=float("inf"))
     )
 
     assert payload["status"] == "error"
@@ -370,7 +374,7 @@ def test_scan_shadow_signals_absent_per_market_defaults_to_three(monkeypatch: py
 
     monkeypatch.setattr(sat, "scan_today_signals", fake_scan)
 
-    payload = json.loads(sat.ScanShadowSignalsTool().execute(shadow_id="shadow-1"))
+    payload = json.loads(sat.ScanShadowSignalsTool(roots=FileRoots.from_config(get_env_config().api)).execute(shadow_id="shadow-1"))
 
     assert payload["status"] == "ok"
     assert seen == {"shadow_id": "shadow-1", "target_date": None, "per_market": 3}

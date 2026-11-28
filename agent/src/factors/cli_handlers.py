@@ -77,12 +77,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load_cli_env() -> None:
-    """Load dotenv values before a CLI path reads configuration.
-
-    The ``alpha`` dispatch path skips ``cli._legacy._ensure_cli_env``, so
-    ``alpha bench`` / ``alpha compare`` must load ``~/.vibe-trading/.env``
-    themselves before reading credentials.
-    """
+    'Load dotenv values before a CLI path reads configuration.\n\n    The ``alpha`` dispatch path skips ``cli.commands.execution._ensure_cli_env``, so\n    ``alpha bench`` / ``alpha compare`` must load ``~/.vibe-trading/.env``\n    themselves before reading credentials.\n    '
     try:
         from src.providers.settings import _ensure_dotenv
 

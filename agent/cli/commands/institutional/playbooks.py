@@ -1,30 +1,4 @@
-"""Playbook definitions for the institutional research slash commands.
-
-Pure data — this module imports nothing from :mod:`cli`, so
-:mod:`cli.commands.slash_router` can pull the command specs at its own import
-time without a circular import.
-
-Each :class:`Playbook` carries four things that make the command more than a
-prompt forwarder:
-
-1. ``steps`` — an ordered execution skeleton where every step names its
-   inputs, the computation, and the artifact it must produce.
-2. ``worked_example`` — a fully arithmetic-consistent numeric walkthrough.
-   Every number below was computed and reconciled by hand; the totals tie out
-   (the Brinson decomposition sums exactly to the active return, the earnings
-   bridge sums exactly to the EPS delta). Both the user and the agent can
-   reproduce them, which is what makes the skeleton checkable.
-3. ``tools`` — the real registered tool names the agent should reach for.
-   Verified against ``src/tools/*`` (``get_financial_statements``,
-   ``get_stock_profile``, ``get_market_data``, ``get_sec_filings``,
-   ``get_macro_series``, ``screen_market``, ``get_stock_news``,
-   ``get_research_reports``, ``portfolio_risk_xray``).
-4. ``gap_policy`` — what to do when a number cannot be fetched. The shared
-   default forbids filling gaps from model memory.
-
-Numbers in the worked examples are illustrative teaching figures, not
-quotes for any real security.
-"""
+"""Playbook definitions for the institutional research slash commands."""
 
 from __future__ import annotations
 
@@ -33,14 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Step:
-    """One step of a playbook's execution skeleton.
-
-    Attributes:
-        title: Short imperative label, e.g. ``"Fix the peer set"``.
-        inputs: What the step consumes (data, prior-step artifacts).
-        compute: The transformation to perform.
-        output: The artifact the step must produce before moving on.
-    """
+    """Describe a playbook step and the artifact it must produce."""
 
     title: str
     inputs: str
@@ -50,20 +17,7 @@ class Step:
 
 @dataclass(frozen=True)
 class Playbook:
-    """A single institutional workflow exposed as a slash command.
-
-    Attributes:
-        slug: Slash command keyword, without the leading ``/``.
-        summary: One-line description shown in ``/help`` and the typeahead.
-        usage: Usage line, e.g. ``"/dcf <ticker> [horizon=5y] [wacc=9%]"``.
-        examples: Concrete invocations to show when arguments are missing.
-        ask: Friendly follow-up question printed when arguments are missing.
-        objective: One sentence stating what a finished run delivers.
-        steps: Ordered execution skeleton.
-        worked_example: Pre-rendered lines of the numeric walkthrough.
-        tools: Registered tool names the agent should prefer.
-        aliases: Extra keywords resolving to this command.
-    """
+    """Define an institutional slash workflow and its worked example."""
 
     slug: str
     summary: str
@@ -78,7 +32,11 @@ class Playbook:
 
     @property
     def handler_module(self) -> str:
-        """Dotted path of the module exposing ``run(ctx, *args)``."""
+        """Locate the slash-command handler for this playbook.
+
+        Returns:
+            Dotted module path exposing run(ctx, *args).
+        """
         return f"cli.commands.institutional.{self.slug}"
 
 

@@ -16,6 +16,8 @@ from pydantic import ValidationError
 
 from src.api import alpha_routes as api
 from src.tools import build_registry
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
 from src.factors import bench_runner, cli_handlers as cli, registry
 from src.tools import alpha_bench_tool as tool
 from tests.test_alpha_bench_nifty100 import (
@@ -366,7 +368,7 @@ def test_cli_outputs_do_not_expose_constituent_exception_details(
 def test_discovered_tool_schemas_advertise_nifty100_without_changing_old_descriptions(
     tool_name, previous_description
 ):
-    discovered = build_registry()
+    discovered = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     definitions = {
         entry["function"]["name"]: entry["function"]
         for entry in discovered.get_definitions()

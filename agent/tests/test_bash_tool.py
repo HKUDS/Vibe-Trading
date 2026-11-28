@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from tests.module_os_helpers import patch_module_os
 
 import json
+from pathlib import Path
 import subprocess
 from unittest.mock import MagicMock
 
@@ -79,7 +84,7 @@ def test_rejects_broad_python_process_termination(
     popen = MagicMock(side_effect=AssertionError("unsafe command reached subprocess"))
     monkeypatch.setattr(bash_tool.subprocess, "Popen", popen)
 
-    result = json.loads(BashTool().execute(command=command))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command=command))
 
     assert result["status"] == "error"
     assert "cancel_background" in result["error"]
@@ -101,7 +106,7 @@ def test_allows_non_broad_process_commands(
     fake = _FakePopen()
     _install_fake_popen(monkeypatch, fake)
 
-    result = json.loads(BashTool().execute(command=command))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command=command))
 
     assert result["status"] == "ok"
     assert result["exit_code"] == 0
@@ -125,7 +130,7 @@ def test_timeout_kills_process_tree(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(bash_tool, "_kill_process_tree", _fake_kill)
 
-    result = json.loads(BashTool().execute(command="echo hang"))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="echo hang"))
 
     assert result["status"] == "error"
     assert result["error_code"] == "tool_timeout"
@@ -138,7 +143,7 @@ def test_heredoc_unsupported_on_windows(monkeypatch: pytest.MonkeyPatch) -> None
     popen = MagicMock(side_effect=AssertionError("heredoc reached subprocess"))
     monkeypatch.setattr(bash_tool.subprocess, "Popen", popen)
 
-    result = json.loads(BashTool().execute(command="cat <<EOF\nhello\nEOF"))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="cat <<EOF\nhello\nEOF"))
 
     assert result["status"] == "error"
     assert result["error_code"] == "heredoc_unsupported"
@@ -153,6 +158,32 @@ def test_heredoc_allowed_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakePopen()
     _install_fake_popen(monkeypatch, fake)
 
-    result = json.loads(BashTool().execute(command="cat <<EOF\nhello\nEOF"))
+    result = json.loads(BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox).execute(command="cat <<EOF\nhello\nEOF"))
 
     assert result["status"] == "ok"
+
+
+@pytest.mark.skipif(bash_tool.os.name == "nt", reason="POSIX shell contract")
+def test_posix_description_names_the_shell_that_runs(tmp_path: Path) -> None:
+    """The POSIX description matches the shell that executes the heredoc.
+
+    Args:
+        tmp_path: Working directory for the shell command.
+    """
+    tool = BashTool(sandbox=ToolPolicy.from_config(get_env_config()).sandbox)
+
+    assert "cmd.exe" not in tool.description
+    assert "/bin/sh" in tool.description
+    assert "heredocs are supported" in tool.description
+    result = json.loads(tool.execute(command="cat <<'END'\nscript output\nEND", run_dir=str(tmp_path)))
+    assert result["status"] == "ok"
+    assert result["stdout"] == "script output\n"
+
+
+def test_windows_description_keeps_the_cmd_exe_heredoc_rule() -> None:
+    """The cmd.exe wording, and its heredoc refusal, remain for a Windows host."""
+    windows = bash_tool._shell_description("nt")
+
+    assert "cmd.exe" in windows and "Heredocs (<<) are not supported" in windows
+    assert "/bin/sh" not in windows
+    assert BashTool.description.startswith(bash_tool._shell_description(bash_tool.os.name))

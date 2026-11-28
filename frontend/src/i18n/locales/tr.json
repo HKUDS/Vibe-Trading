@@ -1160,6 +1160,20 @@
     "reasoningStrength": "Akıl yürütme düzeyi",
     "unknownProvider": "Bilinmeyen sağlayıcı",
     "unknownModel": "Bilinmeyen model",
+    "sessionModel": "Oturum modeli",
+    "inheritedModel": "Devralınan",
+    "changeModel": "Modeli değiştir",
+    "provider": "Sağlayıcı",
+    "model": "Model seçimi",
+    "useInheritedModel": "Devralınan modeli kullan",
+    "modelUpdated": "Oturum modeli güncellendi",
+    "modelUpdateFailed": "Oturum modeli güncellenemedi",
+    "compactContext": "Bağlamı sıkıştır",
+    "contextCompacted": "Bağlam sıkıştırıldı",
+    "compactFailed": "Bağlam sıkıştırılamadı",
+    "forkFromHere": "Buradan çatalla",
+    "sessionForked": "Oturum çatallandı",
+    "forkFailed": "Oturum çatallanamadı",
     "connectionLostReconnect": "Bağlantı kesildi, yeniden bağlanıyor…",
     "connectionRestored": "Bağlantı yeniden kuruldu",
     "agentWorking": "Çalışmaya başlıyorum…",
@@ -1179,6 +1193,8 @@
     "describeGoal": "Bu oturuma eklenecek araştırma hedefini açıklayın",
     "placeholder": "Örn. 000001.SZ üzerinde 2024 yılı için basit hareketli ortalama stratejisini test et",
     "send": "Mesaj gönder",
+    "answerPlaceholder": "Yanıt yazın",
+    "toolResultImageAlt": "Araç sonucu",
     "messageInputLabel": "Aracıya mesaj",
     "inputHint": "Göndermek için Enter · Yeni satır için Shift+Enter",
     "editGoalObjectiveLabel": "Araştırma hedefini düzenle",
@@ -1244,7 +1260,10 @@
       "failed": "Başarısız",
       "steps": "{{count}} adım",
       "continue": "Devam et",
-      "reattach": "Yeniden bağlan"
+      "reattach": "Yeniden bağlan",
+      "interrupted": "Kesildi — bu tur bitmeden sunucu yeniden başlatıldı",
+      "interruptedStep": "Bitmeden kesildi",
+      "partial": "Tur durdurulurken kesildi"
     },
     "resumeConnector": "Bağlantıyı sürdür",
     "resumeConnectorTitle": "Acil durdurmayı kaldır ve bağlantı faaliyetlerini yeniden etkinleştir",
@@ -1253,6 +1272,20 @@
     "messageTooLong": "Mesaj, ekler ve ekip talimatlarıyla birlikte {{limit}} karakteri aşıyor. Göndermeden önce kısaltın.",
     "tokenUsage": {
       "live": "belirteç"
+    },
+    "turnFailed": "Yürütme başarısız oldu",
+    "notice": {
+      "compaction": "Önceki konuşma özetlendi"
+    },
+    "queue": {
+      "placeholder": "Mesaj ekleyin — mevcut adımdan sonra katılır",
+      "label": "Sıradaki mesajlar",
+      "queued": "Sırada",
+      "delivering": "Konuşmaya katılıyor…",
+      "discard": "Sıradaki mesajı kaldır",
+      "discardFailed": "Bu mesaj zaten konuşmaya katılıyor",
+      "failed": "Mesaj sıraya alınamadı",
+      "send": "Sıraya al"
     }
   },
   "runDetail": {
@@ -2100,6 +2133,7 @@
     "presets": {
       "investment_committee": "Yatırım komitesi incelemesi",
       "quant_strategy_desk": "Nicel strateji masası",
+      "research": "Araştırma",
       "value_investing_committee": "Değer yatırımı komitesi"
     }
   },

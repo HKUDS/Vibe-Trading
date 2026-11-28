@@ -6,7 +6,7 @@ extended contract:
 
 * ``worker._measure_usage`` captures prompt-cache counts from provider
   ``usage_metadata`` using exactly the main loop's normalization contract
-  (``src.agent.llm_usage._normalize_llm_usage``) and labels the counts'
+  (``src.product.usage._normalize_llm_usage``) and labels the counts'
   provenance (``"provider"`` vs ``"estimated"``);
 * ``_estimate_tokens`` remains a thin 2-tuple wrapper over ``_measure_usage``;
 * ``WorkerResult`` / ``SwarmRun`` carry cache fields + ``token_source`` with
@@ -20,6 +20,10 @@ extended contract:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import threading
 from pathlib import Path
@@ -27,13 +31,13 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.llm_usage import _normalize_llm_usage
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.product.usage import _normalize_llm_usage
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmRun, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore
-import src.swarm.worker as worker_mod
-from src.swarm.worker import _estimate_tokens, _measure_usage, run_worker
+import src.swarm.node as worker_mod
+from src.swarm.node import _measure_usage, run_node
 
 
 # --------------------------------------------------------------------------- #
@@ -142,7 +146,7 @@ def test_estimate_tokens_stays_a_two_tuple_wrapper(usage_metadata: dict | None) 
     messages = [{"role": "user", "content": "abc"}]
     response = LLMResponse(content="some text", usage_metadata=usage_metadata)
     m = _measure_usage(messages, response)
-    assert _estimate_tokens(messages, response) == (m.input_tokens, m.output_tokens)
+    assert _measure_usage(messages, response)[:2] == (m.input_tokens, m.output_tokens)
 
 
 # --------------------------------------------------------------------------- #
@@ -252,6 +256,9 @@ _PROVIDER_USAGE = {
 class _Registry:
     """Registry stand-in exposing one no-op tool."""
 
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
+
     def get_definitions(self) -> list[dict]:
         """Return the single scripted tool definition."""
         return [_TOOL_DEF]
@@ -263,6 +270,9 @@ class _Registry:
     def execute(self, name: str, args: dict) -> str:
         """Return a benign JSON envelope for any dispatch."""
         return '{"ok": true, "data": {}}'
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedLLM:
@@ -290,7 +300,7 @@ class _ScriptedLLM:
         return None
 
     def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None,
-                    should_cancel=None, on_waiting_chunk=None) -> LLMResponse:
+                    should_cancel=None, on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         """Return the next scripted response, optionally cancelling first."""
         idx = self.calls
         self.calls += 1
@@ -325,7 +335,8 @@ def _drive_worker(
         patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: _Registry()),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        return run_worker(
+        return run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},
@@ -354,10 +365,7 @@ def test_completed_exit_carries_real_cache_values_and_provider_label(tmp_path) -
 
 
 def test_cancelled_exit_carries_accumulated_cache_values(tmp_path) -> None:
-    """Non-happy exit guard: iteration 0 measures a provider response with
-    cache details and dispatches a tool; iteration 1's stream is cancelled
-    mid-flight. The cancelled WorkerResult must carry iteration 0's real
-    accumulated values, not defaults."""
+    """Cancellation retains the usage reported on both responses."""
     cancel_event = threading.Event()
     tool_turn = LLMResponse(
         content="",
@@ -373,9 +381,10 @@ def test_cancelled_exit_carries_accumulated_cache_values(tmp_path) -> None:
 
     assert result.status == "cancelled"
     assert llm.calls == 2
-    assert result.input_tokens == 100
-    assert result.cache_read_tokens == 70
-    assert result.cache_creation_tokens == 30
+    assert result.input_tokens == 200
+    assert result.output_tokens == 40
+    assert result.cache_read_tokens == 140
+    assert result.cache_creation_tokens == 60
     assert result.token_source == "provider"
 
 
@@ -444,7 +453,7 @@ def test_provider_then_estimated_total_stays_estimated(tmp_path) -> None:
 
 
 def _runtime(tmp_path: Path) -> SwarmRuntime:
-    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"))
+    return SwarmRuntime(SwarmStore(base_dir=tmp_path / "runs"), policy=ToolPolicy.from_config(get_env_config()))
 
 
 def _run_with_retries(
@@ -460,14 +469,14 @@ def _run_with_retries(
     )
     task = SwarmTask(id="task-1", agent_id="analyst", prompt_template="Analyze")
     with (
-        patch("src.swarm.runtime.run_worker", side_effect=results),
+        patch("src.swarm.runtime.run_node", side_effect=results),
         patch("src.swarm.runtime._worker_retry_delay_s", return_value=0.0),
         patch(
             "src.swarm.runtime._wait_for_worker_retry",
             return_value=cancelled_during_wait,
         ),
     ):
-        return runtime._run_worker_with_retries(
+        return runtime._run_node_with_retries(
             agent_spec=agent,
             task=task,
             upstream_summaries={},

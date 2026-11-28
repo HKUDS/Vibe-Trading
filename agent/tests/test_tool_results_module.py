@@ -1,16 +1,10 @@
-"""Pin the re-export contract of the tool-results extraction (issue #1624).
-
-``loop.py`` used to define these helpers inline; they now live in
-``src.agent.tool_results`` and are re-exported by ``loop.py`` so every
-existing ``from src.agent.loop import ...`` keeps resolving. These tests
-fail if the two modules ever drift apart, e.g. someone deletes a re-export
-or redefines a helper in ``loop.py`` instead of moving it.
-"""
+"""Pin tool-result ownership after removal of loop compatibility exports."""
 
 import pytest
 
-import src.agent.loop as loop
-import src.agent.tool_results as tool_results
+import src.agent.runtime as loop
+import src.product.tool_results as tool_results
+from src.tools import _arguments
 
 MOVED_CONSTANTS = [
     "_FORCED_TEXT_TOOL_CALL_RE",
@@ -24,18 +18,20 @@ MOVED_FUNCTIONS = [
     "_is_tool_success",
     "_looks_like_tool_call_syntax",
     "_named_target_paths",
-    "_normalize_tool_run_dir",
     "_previously_archived",
     "_archive_backtest_result",
 ]
 
 
 @pytest.mark.parametrize("name", MOVED_CONSTANTS + MOVED_FUNCTIONS)
-def test_loop_reexports_moved_name(name):
-    assert getattr(loop, name) is getattr(tool_results, name)
+def test_moved_name_is_owned_without_a_loop_compatibility_export(name):
+    assert getattr(tool_results, name) is not None
+    assert name not in vars(loop)
 
 
 def test_moved_surface_is_complete():
+    assert callable(_arguments.normalize_tool_run_dir)
+    assert "_normalize_tool_run_dir" not in vars(tool_results)
     public_helpers = [
         n
         for n in dir(tool_results)

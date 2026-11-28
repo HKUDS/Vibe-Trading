@@ -270,6 +270,33 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
     );
   }
 
+  if (msg.type === "commentary") {
+    // What the agent said between steps: part of the turn, quieter than the answer.
+    return (
+      <div className="flex gap-3" data-commentary={msg.meta?.partial ? "partial" : "step"}>
+        <div className="w-8 shrink-0" aria-hidden="true" />
+        <div className="flex-1 min-w-0 border-s-2 border-border/40 ps-3 text-muted-foreground [&_.prose]:text-muted-foreground [&_.prose_p]:text-[14.5px]">
+          <MarkdownContent content={msg.content} />
+          {msg.meta?.partial && (
+            <p className="mt-1 text-[11px] text-muted-foreground/70">
+              {i18n.t("agent.activity.partial" as never)}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.type === "notice") {
+    return (
+      <div role="note" className="flex items-center gap-3 text-[11px] text-muted-foreground/80" title={msg.content || undefined}>
+        <span className="h-px flex-1 bg-border/60" aria-hidden="true" />
+        <span>{i18n.t("agent.notice.compaction" as never)}</span>
+        <span className="h-px flex-1 bg-border/60" aria-hidden="true" />
+      </div>
+    );
+  }
+
   if (msg.type === "run_complete" && msg.runId) {
     return <RunCompleteCard msg={msg} />;
   }

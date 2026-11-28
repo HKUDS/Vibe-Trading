@@ -1194,6 +1194,20 @@
     "reasoningStrength": "جهد الاستدلال",
     "unknownProvider": "مزوّد غير معروف",
     "unknownModel": "نموذج غير معروف",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "فُقد الاتصال، جارٍ إعادة الاتصال…",
     "connectionRestored": "تمت استعادة الاتصال",
     "agentWorking": "جارٍ بدء العمل…",
@@ -1213,6 +1227,8 @@
     "describeGoal": "صف هدف البحث لإرفاقه بهذه الجلسة",
     "placeholder": "مثال: اختبر استراتيجية بسيطة للمتوسط المتحرك على 000001.SZ خلال عام 2024",
     "send": "إرسال",
+    "answerPlaceholder": "اكتب إجابة",
+    "toolResultImageAlt": "نتيجة الأداة",
     "messageInputLabel": "رسالة إلى الوكيل",
     "inputHint": "Enter للإرسال · Shift+Enter لسطر جديد",
     "editGoalObjectiveLabel": "تعديل هدف البحث",
@@ -1279,7 +1295,10 @@
       "failed": "فشل",
       "steps": "{{count}} خطوات",
       "continue": "متابعة",
-      "reattach": "إعادة الاتصال"
+      "reattach": "إعادة الاتصال",
+      "interrupted": "انقطع — أُعيد تشغيل الخادم قبل انتهاء هذا الدور",
+      "interruptedStep": "انقطع قبل أن يكتمل",
+      "partial": "انقطع عند إيقاف الدور"
     },
     "resumeConnector": "استئناف الموصل",
     "resumeConnectorTitle": "مسح مفتاح الإيقاف واستئناف نشاط الموصل",
@@ -1287,6 +1306,20 @@
     "failedToResumeConnector": "فشل استئناف الموصل.",
     "tokenUsage": {
       "live": "رموز"
+    },
+    "turnFailed": "فشل التنفيذ",
+    "notice": {
+      "compaction": "لُخّصت المحادثة السابقة"
+    },
+    "queue": {
+      "placeholder": "أضف رسالة — تنضم بعد الخطوة الحالية",
+      "label": "الرسائل المنتظرة",
+      "queued": "في الانتظار",
+      "delivering": "تنضم إلى المحادثة…",
+      "discard": "إزالة الرسالة المنتظرة",
+      "discardFailed": "هذه الرسالة تنضم إلى المحادثة بالفعل",
+      "failed": "تعذّر وضع الرسالة في الانتظار",
+      "send": "أضف إلى الانتظار"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "مراجعة لجنة الاستثمار",
       "quant_strategy_desk": "مكتب الاستراتيجيات الكمية",
+      "research": "البحث",
       "value_investing_committee": "لجنة الاستثمار القيمي"
     }
   },

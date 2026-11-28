@@ -6,7 +6,7 @@ The :class:`OpenBBQueryAdapter` is responsible for:
   replaying the full history the request carried into it;
 * injecting workspace context (explicit context items, widget metadata,
   dashboard info) into the user's message;
-* triggering the Vibe-Trading ``AgentLoop`` via ``SessionService.send_message``;
+* triggering the Vibe-Trading ``AgentRuntime`` via ``SessionService.send_message``;
 * consuming the session event bus and translating each event into OpenBB SSE
   objects until the underlying attempt completes or fails.
 
@@ -28,11 +28,11 @@ their public API.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, AsyncGenerator, List, Optional
 
 from openbb_ai.helpers import message_chunk, reasoning_step
 
-from src.session.models import Message
 
 from .context_injector import WorkspaceContextInjector
 from .event_mapper import SSEEventMapper
@@ -48,7 +48,7 @@ _ROLE_AI = "ai"
 # replayed as turns; their payload is folded into the context prefix instead.
 _ROLE_TO_VIBE = {_ROLE_HUMAN: "user", _ROLE_AI: "assistant"}
 
-_TERMINAL_EVENTS = {"attempt.completed", "attempt.failed", "attempt.cancelled"}
+_TERMINAL_EVENTS = {"run.completed", "run.failed", "run.cancelled"}
 
 # Session titles surface in the Vibe-Trading UI; keep them short but identifiable.
 _TITLE_MAX_CHARS = 48
@@ -141,18 +141,18 @@ class OpenBBQueryAdapter:
             ``openbb_ai`` SSE objects.
         """
         saw_text = False
-        async for event in self.session_service.event_bus.subscribe(session_id):
+        async for event in self.session_service.thread_events.stream(session_id, cursor=0):
             event_type = event.event_type
             data = event.data or {}
 
             if event_type == "heartbeat":
                 continue
 
-            ev_attempt = data.get("attempt_id")
+            ev_attempt = data.get("attempt_id") or data.get("turn_id")
             if attempt_id and ev_attempt and ev_attempt != attempt_id:
                 continue
 
-            if event_type == "text_delta" and data.get("delta"):
+            if event_type == "item.delta" and data.get("kind") == "text.delta" and data.get("delta"):
                 saw_text = True
 
             for sse in self.event_mapper.map(event_type, data):
@@ -178,14 +178,14 @@ class OpenBBQueryAdapter:
         Yields:
             ``openbb_ai`` SSE objects.
         """
-        if event_type == "attempt.failed":
+        if event_type == "run.failed":
             error = data.get("error") or "The agent run failed."
             yield reasoning_step(message=f"Run failed: {error}", event_type="ERROR")
             if not saw_text:
                 yield message_chunk(text=f"The agent run failed: {error}")
             return
 
-        if event_type == "attempt.cancelled":
+        if event_type == "run.cancelled":
             # A stop is terminal too; without this the stream would keep
             # emitting heartbeats until the client gave up.
             yield reasoning_step(message="Run cancelled.", event_type="WARNING")
@@ -193,7 +193,7 @@ class OpenBBQueryAdapter:
                 yield message_chunk(text="The agent run was cancelled.")
             return
 
-        # attempt.completed: only send the summary if nothing was streamed.
+        # run.completed: only send the summary if nothing was streamed.
         if not saw_text:
             summary = data.get("summary") or ""
             if summary:
@@ -250,9 +250,14 @@ class OpenBBQueryAdapter:
             if not content:
                 continue
             try:
-                self.session_service.store.append_message(
-                    Message(session_id=session_id, role=vibe_role, content=content)
-                )
+                thread = self.session_service.store.thread_log(session_id)
+                turn_id = f"openbb-replay-{replayed}-{uuid.uuid4().hex[:8]}"
+                thread.append("turn_start", turn_id, prompt="")
+                if vibe_role == "user":
+                    thread.append("user", turn_id, content=content, llm_content=content)
+                if vibe_role == "assistant":
+                    thread.append("assistant", turn_id, content=content, tool_calls=[], phase="final")
+                thread.append("turn_end", turn_id, status="completed")
                 replayed += 1
             except Exception as exc:
                 logger.warning("Failed to replay history message: %s", exc)

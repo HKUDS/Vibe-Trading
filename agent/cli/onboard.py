@@ -1,16 +1,4 @@
-"""First-launch onboarding wizard.
-
-Triggered automatically when ``~/.vibe-trading/.env`` does not exist. Five
-back-steppable steps (provider → model → key → timeout → optional Tushare),
-matching §3.2 of the 2026-05-19 UI/UX design proposal.
-
-Each step persists immediately to ``~/.vibe-trading/.env.partial`` and the
-file is atomically renamed to ``.env`` only on completion, so a crash mid-
-wizard never leaves a corrupt ``.env`` behind. API key entry is masked.
-
-Prefers ``questionary`` when available; otherwise drives prompt_toolkit
-directly so Esc / Left-arrow can be bound to a back-step sentinel.
-"""
+"""First-launch onboarding wizard."""
 
 from __future__ import annotations
 
@@ -28,9 +16,7 @@ BACK = object()
 CANCEL = object()
 
 
-# ---------------------------------------------------------------------------
 # Provider catalogue — projected from the shared provider registry
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -59,9 +45,7 @@ TIMEOUT_CHOICES: Final[tuple[tuple[str, str], ...]] = (
 )
 
 
-# ---------------------------------------------------------------------------
 # Filesystem helpers (atomic partial save → final rename)
-# ---------------------------------------------------------------------------
 
 
 def _env_dir() -> Path: return Path.home() / ".vibe-trading"
@@ -92,19 +76,13 @@ def _finalize(values: dict[str, str]) -> Path:
     return _env_path()
 
 
-# ---------------------------------------------------------------------------
 # Selector with back-step (custom prompt_toolkit Application)
-# ---------------------------------------------------------------------------
 
 
 def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
                        default_index: int = 0,
                        console: Console | None = None) -> str | object:
-    """Vertically-scrollable selector. Returns chosen value, BACK, or CANCEL.
-
-    Keybindings: ↑/↓ navigate, Enter confirm, Esc/← back, Ctrl+C cancel.
-    Falls back to a numeric stdin prompt if prompt_toolkit is unavailable.
-    """
+    """Vertically-scrollable selector."""
     cons = console or get_console()
     cons.print()
     cons.print(Text(f"? {prompt}", style=Theme.label))
@@ -208,9 +186,7 @@ def _select_numeric(choices: Sequence[tuple[str, str]], default_index: int,
     return _select_numeric(choices, default_index, console)
 
 
-# ---------------------------------------------------------------------------
 # Masked / plain prompts
-# ---------------------------------------------------------------------------
 
 
 def _prompt_secret(prompt: str, *, console: Console) -> str | object:
@@ -287,9 +263,7 @@ def _prompt_text(prompt: str, *, default: str = "",
             return CANCEL
 
 
-# ---------------------------------------------------------------------------
 # Wizard
-# ---------------------------------------------------------------------------
 
 
 def _validate_key(provider: Provider, key: str) -> str | None:
@@ -314,10 +288,14 @@ def _intro_header(console: Console) -> None:
 
 
 def run_onboarding(*, console: Console | None = None) -> Path | None:
-    """Run the 5-step wizard. Returns the written ``.env`` path or None.
+    """Configure a provider, model, credentials, and timeout through a five-step wizard.
 
-    Returns ``None`` when the user cancels (Ctrl+C / Esc at step 1) so the
-    caller can exit cleanly without writing a partial config.
+    Args:
+        console: Console override. Defaults to the shared CLI console.
+
+    Returns:
+        Path to the finalized environment file, or None if the wizard is cancelled before
+        finalization.
     """
     cons = console or get_console()
     _intro_header(cons)

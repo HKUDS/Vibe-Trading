@@ -809,6 +809,34 @@ def test_service_place_order_live_routes_through_gate(monkeypatch) -> None:
     assert out["environment"] == "live"
 
 
+def test_service_cancel_live_routes_through_live_action_gate(monkeypatch) -> None:
+    """A live cancel reaches the connector only through the shared action gate."""
+    conn = _FakeConnector()
+    conn.cancelled = []
+    conn.cancel_order = lambda config, order_id, **kwargs: (
+        conn.cancelled.append((order_id, kwargs)) or {"status": "ok", "order_id": order_id}
+    )
+    conn.build_config = lambda profile_config, overrides: object()
+    monkeypatch.setattr(service, "_sdk_module", lambda connector: conn)
+    seen: dict[str, object] = {}
+
+    def fake_execute_live_action(**kwargs):
+        seen.update(kwargs)
+        return {"status": "ok", "gated": True}
+
+    monkeypatch.setattr(gate, "execute_live_action", fake_execute_live_action)
+    out = service.cancel_order(
+        "OID-1", "alpaca-live-trade", symbol="AAPL", session_id="session-1"
+    )
+
+    assert out["gated"] is True
+    assert conn.cancelled == []
+    assert seen["remote_tool"] == "cancel_order"
+    assert seen["risk_reducing"] is True
+    assert seen["session_id"] == "session-1"
+    assert seen["audit_kind"] == "order_cancelled"
+
+
 def test_no_longbridge_live_trade_profile() -> None:
     from src.trading import profiles
 

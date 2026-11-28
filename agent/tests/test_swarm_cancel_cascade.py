@@ -1,18 +1,10 @@
-"""Regression tests for #2055 — a user stop must actually stop a swarm run.
-
-The bug had three layers, and this file pins the two backend ones:
-
-1. ``SessionService.cancel_current`` only cancelled the ``AgentLoop``; the swarm
-   the loop had started kept running.
-2. ``SwarmTool.execute`` polled in a ``time.sleep`` loop, so even a cancelled
-   session left the tool (and its worker threads) burning tokens until the wait
-   budget ran out.
-
-The frontend half (a stop button that calls the cancel endpoint) lives in the
-web client and is covered by its own tests.
-"""
+"""Swarm cancellation during a turn and by run ID after the tool returns."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 
 import json
 import threading
@@ -32,6 +24,13 @@ from src.swarm.models import (
     WorkerResult,
 )
 from src.tools.swarm_tool import SwarmTool
+
+
+
+def _indexed_run_ids(rt, session_id: str) -> list[str]:
+    """Read the in-process cancel index that ``cancel_indexed_run`` consults."""
+    with rt._ACTIVE_RUNS_LOCK:
+        return [rid for rid, (sid, _) in rt._ACTIVE_RUNS.items() if sid == session_id]
 
 
 def _iso(dt: datetime) -> str:
@@ -100,7 +99,7 @@ def test_execute_returns_cancelled_without_waiting_for_the_poll(tmp_path, monkey
     monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: ({}, None))
 
     stop = threading.Event()
-    tool = SwarmTool(session_id="sess-1", cancel_event=stop)
+    tool = SwarmTool(policy=ToolPolicy.from_config(get_env_config()), session_id="sess-1", cancel_event=stop)
 
     def cancel_soon():
         time.sleep(0.05)
@@ -120,7 +119,7 @@ def test_execute_returns_cancelled_without_waiting_for_the_poll(tmp_path, monkey
     # to that means the flag was not being watched.
     assert elapsed < 1.0, f"cancel took {elapsed:.2f}s"
     # A cancelled run is terminal, so it must not linger in the index.
-    assert rt.active_run_ids("sess-1") == []
+    assert _indexed_run_ids(rt, "sess-1") == []
 
 
 @pytest.mark.parametrize("finish_before_wait", [False, True])
@@ -133,7 +132,7 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
     monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: ({}, None))
 
     run = _running_run("r-timeout")
-    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_: run)
+    monkeypatch.setattr(rt, "build_run_from_preset", lambda *_, **__: run)
     layer_started = threading.Event()
     finish_layer = threading.Event()
     threads = []
@@ -155,12 +154,12 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
     monkeypatch.setattr(rt.SwarmRuntime, "_execute_layer", execute_layer)
     monkeypatch.setattr(swarm_tool, "_max_wait_seconds", wait_budget)
 
-    tool = SwarmTool(session_id="sess-2", cancel_event=threading.Event())
+    tool = SwarmTool(policy=ToolPolicy.from_config(get_env_config()), session_id="sess-2", cancel_event=threading.Event())
     try:
         payload = json.loads(tool.execute(prompt="test local run"))
         assert payload["status"] == ("completed" if finish_before_wait else "running")
         assert payload["wait_budget_exhausted"] is True
-        assert rt.active_run_ids("sess-2") == ([] if finish_before_wait else [run.id])
+        assert _indexed_run_ids(rt, "sess-2") == ([] if finish_before_wait else [run.id])
     finally:
         finish_layer.set()
         for thread in threads:
@@ -170,29 +169,12 @@ def test_run_stays_indexed_only_while_running(tmp_path, monkeypatch, finish_befo
     saved_run = store_mod.SwarmStore(base_dir=tmp_path).load_run(run.id)
     assert saved_run is not None
     assert saved_run.status == RunStatus.completed
-    assert rt.active_run_ids("sess-2") == []
+    assert _indexed_run_ids(rt, "sess-2") == []
 
 
 # ---------------------------------------------------------------------------
 # 2. The run index the session uses to reach a run it no longer polls
 # ---------------------------------------------------------------------------
-
-
-def test_cancel_runs_for_session_only_touches_its_own_runs():
-    signalled: list[str] = []
-
-    def cancel(run_id):
-        signalled.append(run_id)
-        return True
-
-    rt.register_active_run("r1", "sess-a", lambda: cancel("r1"))
-    rt.register_active_run("r2", "sess-b", lambda: cancel("r2"))
-
-    assert rt.cancel_runs_for_session("sess-a") == 1
-    assert signalled == ["r1"]
-    # Signalled runs leave the index so a second stop is a no-op.
-    assert rt.cancel_runs_for_session("sess-a") == 0
-    assert rt.active_run_ids("sess-b") == ["r2"]
 
 
 def test_cancel_indexed_run_reaches_a_foreign_runtime_run():
@@ -204,7 +186,7 @@ def test_cancel_indexed_run_reaches_a_foreign_runtime_run():
 
 
 # ---------------------------------------------------------------------------
-# 3. SessionService.cancel_current cascades
+# 3. Session stop acts on the turn, while explicit swarm stop acts on the run
 # ---------------------------------------------------------------------------
 
 
@@ -228,39 +210,45 @@ def _bare_service():
     return service
 
 
-def test_cancel_current_cancels_the_swarm_of_that_session(monkeypatch):
-    seen: list[str] = []
-
-    def fake_cancel_runs_for_session(session_id):
-        seen.append(session_id)
-        return 1
-
-    monkeypatch.setattr(rt, "cancel_runs_for_session", fake_cancel_runs_for_session)
-
+def test_cancel_current_only_stops_the_current_turn():
     service = _bare_service()
     loop = _FakeLoop()
     service._active_loops["sess-1"] = loop
 
     assert service.cancel_current("sess-1") is True
     assert loop.cancelled is True
-    assert seen == ["sess-1"]
 
 
-def test_cancel_current_stops_a_swarm_whose_turn_already_ended(monkeypatch):
-    """No loop, no task — the run outlived the turn and is still cancellable."""
-    monkeypatch.setattr(rt, "cancel_runs_for_session", lambda session_id: 2)
-
+@pytest.mark.parametrize("has_active_turn", [False, True])
+def test_cancel_current_stops_the_swarm_its_turn_started(has_active_turn):
+    """Owner decision 2026-11-26: stopping a session also stops a swarm its turn left running."""
     service = _bare_service()
+    if has_active_turn:
+        service._active_loops["sess-2"] = _FakeLoop()
+    stopped = threading.Event()
 
-    assert service.cancel_current("sess-2") is True
+    def cancel_run():
+        stopped.set()
+        return True
+
+    rt.register_active_run("detached", "sess-2", cancel_run)
+    try:
+        assert service.cancel_current("sess-2") is True
+        assert stopped.is_set()
+        assert rt.cancel_indexed_run("detached") is False  # left the index once signalled
+    finally:
+        rt.unregister_active_run("detached")
 
 
-def test_cancel_current_reports_false_when_nothing_is_running(monkeypatch):
-    monkeypatch.setattr(rt, "cancel_runs_for_session", lambda session_id: 0)
-
+def test_cancel_current_leaves_other_sessions_swarms_running():
     service = _bare_service()
-
-    assert service.cancel_current("sess-3") is False
+    stopped = threading.Event()
+    rt.register_active_run("other", "sess-3", lambda: stopped.set() or True)
+    try:
+        assert service.cancel_current("sess-2") is False
+        assert not stopped.is_set()
+    finally:
+        rt.unregister_active_run("other")
 
 
 # ---------------------------------------------------------------------------
@@ -269,11 +257,11 @@ def test_cancel_current_reports_false_when_nothing_is_running(monkeypatch):
 
 
 def test_agent_loop_accepts_a_shared_cancel_event():
-    """AgentLoop must reuse the caller's flag, otherwise cancel() cannot reach
+    """AgentRuntime must reuse the caller's flag, otherwise cancel() cannot reach
     the tools that were built before the loop existed."""
     import inspect
 
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
 
-    signature = inspect.signature(AgentLoop.__init__)
+    signature = inspect.signature(AgentRuntime.__init__)
     assert "cancel_event" in signature.parameters

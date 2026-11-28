@@ -10,11 +10,12 @@ reported them as missing despite a valid file on disk.
 
 from __future__ import annotations
 
+import cli.commands.connectors as _cmd_connectors
+
 import argparse
 
 import pytest
 
-from cli import _legacy
 
 pytestmark = pytest.mark.unit
 
@@ -38,10 +39,10 @@ def test_dispatch_connector_loads_dotenv_before_running_the_subcommand(
     monkeypatch.setattr(
         "src.providers.settings._ensure_dotenv", lambda: calls.append("dotenv")
     )
-    monkeypatch.setattr(_legacy, "cmd_connector_list", _record_list)
+    monkeypatch.setattr(_cmd_connectors, "cmd_connector_list", _record_list)
 
     assert (
-        _legacy._dispatch_connector(argparse.Namespace(connector_command="list")) == 0
+        _cmd_connectors._dispatch_connector(argparse.Namespace(connector_command="list")) == 0
     )
     assert calls == ["dotenv", "list"]
 
@@ -70,12 +71,12 @@ def test_connector_path_resolves_longbridge_credentials_from_dotenv(
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr("src.providers.settings._ENV_CANDIDATES", [env_file])
     monkeypatch.setattr("src.providers.settings._dotenv_loaded", False)
-    monkeypatch.setattr(_legacy, "cmd_connector_list", lambda: 0)
+    monkeypatch.setattr(_cmd_connectors, "cmd_connector_list", lambda: 0)
 
     before = resolve_longbridge_credentials(runtime_root=runtime_root)
     assert before.credentials is None, "precondition: credentials must start unset"
 
-    _legacy._dispatch_connector(argparse.Namespace(connector_command="list"))
+    _cmd_connectors._dispatch_connector(argparse.Namespace(connector_command="list"))
 
     after = resolve_longbridge_credentials(runtime_root=runtime_root)
     assert after.source == "environment"
@@ -107,9 +108,9 @@ def test_dispatch_connector_never_overrides_a_real_environment_variable(
     monkeypatch.delenv("LONGBRIDGE_ACCESS_TOKEN", raising=False)
     monkeypatch.setattr("src.providers.settings._ENV_CANDIDATES", [env_file])
     monkeypatch.setattr("src.providers.settings._dotenv_loaded", False)
-    monkeypatch.setattr(_legacy, "cmd_connector_list", lambda: 0)
+    monkeypatch.setattr(_cmd_connectors, "cmd_connector_list", lambda: 0)
 
-    _legacy._dispatch_connector(argparse.Namespace(connector_command="list"))
+    _cmd_connectors._dispatch_connector(argparse.Namespace(connector_command="list"))
 
     resolution = resolve_longbridge_credentials(runtime_root=runtime_root)
     assert resolution.credentials is not None

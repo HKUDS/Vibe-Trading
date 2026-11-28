@@ -1,12 +1,19 @@
 """Multi-strategy requests compute comparisons without a second tool call."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 
 import pytest
 from fastmcp import Client
 
-from src.agent.result_artifacts import deliver_tool_result
+from src.product.result_artifacts import deliver_tool_result
 from src.agent.tools import ToolRegistry
 from src.tools.options_payoff_tool import OptionsPayoffTool
 from src.tools.read_file_tool import ReadFileTool
@@ -114,8 +121,8 @@ def test_all_five_comparisons_reach_the_model_receipt(tmp_path, monkeypatch):
     params = request()
     params["alternatives"] = [{"label": f"candidate {i}", "legs": B} for i in range(5)]
     raw = OptionsPayoffTool().execute(**params)
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)))
     receipt = json.loads(deliver_tool_result(raw, tmp_path, registry))
     assert receipt["comparisons"] == json.loads(raw)["comparisons"]
     assert len(receipt["comparisons"]) == 5
@@ -133,7 +140,7 @@ def test_http_and_mcp_use_the_same_single_call_comparison(monkeypatch):
     result = client.post("/options/payoff", json=request())
     assert result.status_code == 200
     assert result.json()["comparisons"] == expected
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(OptionsPayoffTool())
     monkeypatch.setattr(mcp_server, "_get_registry", lambda: registry)
 

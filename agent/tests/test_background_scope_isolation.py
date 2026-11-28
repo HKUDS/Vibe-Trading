@@ -9,6 +9,10 @@ ownership boundary rather than any particular storage layout.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import sys
 import time
@@ -183,20 +187,20 @@ class TestOwnerIsolation:
 class TestRegistryBinding:
     def test_filtered_registry_and_loop_keep_the_bound_handle(self) -> None:
         from types import SimpleNamespace
-        from src.agent.loop import AgentLoop
+        from src.agent.runtime import AgentRuntime
         from src.tools import build_filtered_registry
         from src.tools.background_tools import BackgroundScope
 
         handle = BackgroundManager(scope=BackgroundScope(owner_id="filtered-owner"))
         registry = build_filtered_registry(["background_run", "check_background"],
-                                           include_shell_tools=True, background_manager=handle)
+                                           include_shell_tools=True, background_manager=handle, policy=ToolPolicy.from_config(get_env_config()))
         assert registry.background.scope == handle.scope
         assert registry.background is registry.get("check_background").background
-        loop = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+        loop = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
         assert loop._background_manager is registry.background
 
     def test_scope_is_absent_from_the_model_visible_tool_schema(self) -> None:
-        registry = build_registry(include_shell_tools=True)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True)
 
         for name in ("background_run", "check_background", "cancel_background"):
             tool = registry.get(name)
@@ -213,6 +217,7 @@ class TestRegistryBinding:
         host_handle = BackgroundManager(scope=scope)
 
         registry = build_registry(
+            policy=ToolPolicy.from_config(get_env_config()),
             include_shell_tools=True,
             background_manager=host_handle,
             background_scope=scope,
@@ -224,8 +229,8 @@ class TestRegistryBinding:
         assert run_tool.background is registry.get("check_background").background
 
     def test_registry_without_an_explicit_scope_is_still_owner_scoped(self) -> None:
-        first = build_registry(include_shell_tools=True)
-        second = build_registry(include_shell_tools=True)
+        first = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True)
+        second = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True)
 
         first_scope = first.get("background_run").background.scope
         second_scope = second.get("background_run").background.scope
@@ -234,7 +239,7 @@ class TestRegistryBinding:
         assert first_scope.owner_id.startswith("isolated:")
 
     def test_session_id_becomes_the_owner_when_no_scope_is_given(self) -> None:
-        registry = build_registry(session_id="session-xyz", include_shell_tools=True)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), session_id="session-xyz", include_shell_tools=True)
 
         scope = registry.get("background_run").background.scope
         assert scope.owner_id == "session:session-xyz"
@@ -242,12 +247,13 @@ class TestRegistryBinding:
     def test_agent_loop_drains_the_same_handle_the_tools_write_to(self) -> None:
         from types import SimpleNamespace
 
-        from src.agent.loop import AgentLoop
+        from src.agent.runtime import AgentRuntime
         from src.tools.background_tools import BackgroundScope
 
         scope = BackgroundScope(owner_id="session-wired", attempt_id="attempt-1")
         handle = BackgroundManager(scope=scope)
         registry = build_registry(
+            policy=ToolPolicy.from_config(get_env_config()),
             include_shell_tools=True,
             background_manager=handle,
             background_scope=scope,
@@ -257,7 +263,7 @@ class TestRegistryBinding:
             registry.get("background_run").background, _echo_command("wired")
         )
 
-        loop = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=1)
+        loop = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=1)
 
         # The loop drains exactly the handle the tool wrote to, so the result
         # reaches this conversation and not another one.
@@ -272,14 +278,14 @@ class TestRegistryBinding:
         assert stranger.drain_notifications() == []
 
     def test_shell_tool_policy_is_unchanged_by_scoping(self) -> None:
-        registry = build_registry()
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
         # Only the two process-control tools sit behind the shell opt-in.
         assert registry.get("background_run") is None
         assert registry.get("cancel_background") is None
         assert registry.get("check_background") is not None
 
-        enabled = build_registry(include_shell_tools=True)
+        enabled = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True)
         for name in ("background_run", "check_background", "cancel_background"):
             assert enabled.get(name) is not None, name
 
@@ -301,3 +307,12 @@ class TestScopeContract:
         assert first.scope.owner_id.startswith("isolated:")
         assert second.scope.owner_id.startswith("isolated:")
         assert BackgroundScope(owner_id="explicit") != first.scope
+
+
+def test_background_completion_redacts_before_preview_and_delivery():
+    manager = BackgroundManager()
+    task_id = _run_to_completion(manager, _echo_command("ok api_key=fixture-private-value"))
+    [notice] = manager.drain_notifications()
+    assert notice["result"] == "ok api_key=[redacted]"
+    for view in (notice, manager.check(task_id), manager.check()):
+        assert "fixture-private-value" not in str(view)

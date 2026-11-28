@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import cli.commands.dispatch as _cmd_dispatch
+
 import json
 
 import pytest
@@ -55,11 +57,11 @@ def test_agent_schema_exposes_pdf_protection_choice():
 
 
 def test_cli_creates_protected_pdf_job(tmp_path, monkeypatch, capsys, email_target):
-    from cli import _legacy
+    pass
 
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
     monkeypatch.setattr(service, "email_pdf_password_configured", lambda: True, raising=False)
-    code = _legacy.main([
+    code = _cmd_dispatch.main([
         "playbook", "create", "premarket-brief", "--delivery-target-ref", "reports",
         "--delivery-format", "pdf", "--protect-pdf", "--dry-run", "--json",
     ])

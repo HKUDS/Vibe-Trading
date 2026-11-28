@@ -10,6 +10,10 @@ sync; these tests fail fast if either side drifts again.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 
 import pytest
@@ -19,7 +23,7 @@ from src.swarm.presets import PRESETS_DIR, list_presets, load_preset
 
 # Lock to the canonical roster shipped today. Bump intentionally if a preset
 # is added or removed so a release that silently drops files is caught here.
-EXPECTED_PRESET_COUNT = 30
+EXPECTED_PRESET_COUNT = 31
 
 
 def test_presets_dir_lives_inside_swarm_package() -> None:
@@ -243,7 +247,7 @@ def test_every_preset_tool_exists_in_local_registry() -> None:
     prompt may depend on. Every bundled preset tool must resolve."""
     from src.tools import build_registry
 
-    registry = build_registry(include_shell_tools=True)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=True)
     for entry in list_presets():
         preset = load_preset(entry["name"])
         for agent in preset["agents"]:

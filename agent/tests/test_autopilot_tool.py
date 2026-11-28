@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -93,7 +100,7 @@ def test_run_research_autopilot_uses_host_injected_session_id(
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     hypothesis = _seed_hypothesis(tmp_path, monkeypatch, universe="CSI 300")
 
-    registry = build_registry(session_id="sess_autopilot")
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), session_id="sess_autopilot")
     tool = registry.get("run_research_autopilot")
     assert tool is not None
 
@@ -143,7 +150,7 @@ def test_generate_backtest_config_run_dir_passes_safe_run_dir(
     assert payload["status"] == "ok"
     # The exact handoff the agent performs next; before the fix this raised
     # "run_dir ... is outside allowed run roots".
-    resolved = safe_run_dir(payload["run_dir"])
+    resolved = safe_run_dir(payload["run_dir"], roots=FileRoots.from_config(get_env_config().api))
     assert resolved == Path(payload["run_dir"]).resolve()
 
 

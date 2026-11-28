@@ -192,6 +192,51 @@ class NoAvailableSourceError(Exception):
     """Raised when no data source is available for a given market."""
 
 
+#: Cache identity of an unadjusted series. The #1541 raw companions of the
+#: tencent / eastmoney / akshare loaders have always been cached under it, so a
+#: raw request reuses those entries and never reads an adjusted one.
+RAW_CACHE_FIELDS = ("raw",)
+
+
+def wants_raw(adjustment: str | None) -> bool:
+    """Read a loader's ``adjustment`` argument.
+
+    A loader that declares ``raw_markets`` accepts ``fetch(...,
+    adjustment="raw")``; ``None`` keeps its default caliber.
+
+    Args:
+        adjustment: ``None`` or ``"raw"``.
+
+    Returns:
+        True when unadjusted bars were requested.
+
+    Raises:
+        ValueError: Any other value, so an unimplemented caliber is never
+            silently served as the default one.
+    """
+    if adjustment is None:
+        return False
+    if adjustment == "raw":
+        return True
+    raise ValueError(f"unsupported adjustment request: {adjustment!r}")
+
+
+def stamp_raw(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+    """Return a copy of an unadjusted frame that states its caliber.
+
+    Args:
+        frame: Bars the loader fetched with its unadjusted request parameter.
+
+    Returns:
+        A copy with ``attrs["adjustment"] = "raw"``, or ``None`` for no bars.
+    """
+    if frame is None or frame.empty:
+        return None
+    out = frame.copy()
+    out.attrs = {**frame.attrs, "adjustment": "raw"}
+    return out
+
+
 def validate_date_range(start_date: str, end_date: str) -> None:
     """Validate that start_date <= end_date.
 

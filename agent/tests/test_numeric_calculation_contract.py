@@ -1,5 +1,12 @@
 """Numeric interpretation inputs are computed by tools, never by a prose gate."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import json
 import math
@@ -8,7 +15,7 @@ import pytest
 from fastmcp import Client
 from scipy.stats import genpareto
 
-from src.agent.result_artifacts import deliver_tool_result
+from src.product.result_artifacts import deliver_tool_result
 from src.agent.tools import ToolRegistry
 from src.quantlib.risk import fit_gpd_tail
 from src.quantlib.units import compare_rates
@@ -51,7 +58,7 @@ def test_gpd_reports_scale_and_both_means_separately():
 def test_infinite_fitted_mean_is_explicit_over_tool_transport(monkeypatch):
     monkeypatch.setattr("src.quantlib.risk.genpareto.fit", lambda *a, **kw: (1.2, 0, 0.02))
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call", module="risk", function="fit_gpd_tail", kwargs={"returns": list(range(-100, 1))}
         )
     )
@@ -93,8 +100,8 @@ def test_exact_scenarios_reuse_payoff_and_do_not_depend_on_chart(entry, fee, tmp
         assert row["return_percent"] == pytest.approx(pnl / entry)
     from src.tools.read_file_tool import ReadFileTool
 
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)))
     delivered = json.loads(deliver_tool_result(raw, tmp_path, registry))
     assert delivered["expiry_scenarios"] == result["expiry_scenarios"]
     assert delivered["calculation_basis"]["entry_spot"] == entry
@@ -115,9 +122,9 @@ def test_invalid_expiry_prices_are_input_errors(spots):
 def test_mcp_real_tool_supports_exact_prices_and_rate_comparison(monkeypatch, tmp_path):
     import mcp_server
 
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(OptionsPayoffTool())
-    registry.register(QuantlibCallTool())
+    registry.register(QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)))
     monkeypatch.setattr(mcp_server, "_get_registry", lambda: registry)
 
     async def run():
@@ -157,8 +164,8 @@ def test_saved_payoffs_flow_into_named_comparison_without_transcribing(tmp_path,
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     from src.tools.read_file_tool import ReadFileTool
 
-    registry = ToolRegistry()
-    registry.register(ReadFileTool())
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)))
     args_a = collar()
     args_b = collar()
     args_b["legs"] = [
@@ -187,7 +194,7 @@ def test_saved_payoffs_flow_into_named_comparison_without_transcribing(tmp_path,
         "input_unit": "decimal",
     }
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call", module="units", function="compare_rates", kwargs=kwargs, run_dir=str(tmp_path)
         )
     )
@@ -201,7 +208,7 @@ def test_saved_payoffs_flow_into_named_comparison_without_transcribing(tmp_path,
     kwargs["left"], kwargs["right"] = kwargs["right"], kwargs["left"]
     kwargs["left_label"], kwargs["right_label"] = "A", "B"
     reverse = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call", module="units", function="compare_rates", kwargs=kwargs, run_dir=str(tmp_path)
         )
     )

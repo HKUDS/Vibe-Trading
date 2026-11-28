@@ -1,4 +1,4 @@
-"""Regression coverage for Gemini thought_signature replay in AgentLoop history."""
+"""Regression coverage for Gemini thought_signature replay in AgentRuntime history."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ import json
 
 from langchain_core.messages import AIMessage, convert_to_messages
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import _attach_tool_call_thought_signatures
-from src.providers.chat import ChatLLM, ToolCallRequest
+from src.product.context import ContextBuilder
+from src.providers.messages import attach_tool_call_thought_signatures
+from src.kernel.contracts import ToolCallRequest
+from src.providers.response import parse_response
 
 
 def _raw_tool_call(
@@ -99,7 +100,7 @@ def test_in_memory_ai_message_path_preserves_thought_signature() -> None:
         },
     )
 
-    response = ChatLLM._parse_response(ai_message)
+    response = parse_response(ai_message)
     replay = ContextBuilder.format_assistant_tool_calls(response.tool_calls, content="")
 
     assert response.tool_calls[0].extra_content["thought_signature"] == "sig-from-ai-message"
@@ -126,7 +127,7 @@ def test_loop_helper_attaches_thought_signature_to_dict_history() -> None:
         ToolCallRequest(id="tc_2", name="get_news", arguments={"symbol": "MSFT"}),
     ]
 
-    attached = _attach_tool_call_thought_signatures(message, tool_calls)
+    attached = attach_tool_call_thought_signatures(message, tool_calls)
     raw_tool_calls = attached["additional_kwargs"]["tool_calls"]
 
     assert raw_tool_calls[0]["extra_content"]["thought_signature"] == "sig-only-first"

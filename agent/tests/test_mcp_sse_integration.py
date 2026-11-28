@@ -12,6 +12,10 @@ These tests spawn an actual FastMCP SSE server process
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +58,7 @@ def test_remote_sse_tool_appears_in_registry(tmp_path: Path) -> None:
     ) as server:
         cfg_path = _make_agent_json(tmp_path, "fake_sse", port=server.port)
         agent_config = load_agent_config(config_path=cfg_path)
-        registry = build_registry(agent_config=agent_config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
         assert "mcp_fake_sse_echo" in registry.tool_names, server.diagnostics()
 
@@ -72,7 +76,7 @@ def test_remote_sse_tool_is_callable_and_returns_expected_result(tmp_path: Path)
     ) as server:
         cfg_path = _make_agent_json(tmp_path, "fake_sse", port=server.port)
         agent_config = load_agent_config(config_path=cfg_path)
-        registry = build_registry(agent_config=agent_config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
         echo_tool = registry.get("mcp_fake_sse_echo")
         assert echo_tool is not None, f"mcp_fake_sse_echo not found in registry\n{server.diagnostics()}"
@@ -94,7 +98,7 @@ def test_enabled_tools_filter_limits_remote_sse_tools(tmp_path: Path) -> None:
     ) as server:
         cfg_path = _make_agent_json(tmp_path, "fake_sse", port=server.port, enabledTools=["echo"])
         agent_config = load_agent_config(config_path=cfg_path)
-        registry = build_registry(agent_config=agent_config)
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config)
 
         mcp_names = [name for name in registry.tool_names if name.startswith("mcp_fake_sse_")]
         assert "mcp_fake_sse_echo" in mcp_names, server.diagnostics()

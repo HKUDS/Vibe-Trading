@@ -1,5 +1,9 @@
 """Agent-facing structured financial research artifact tool regression tests."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 
 from src.research_artifacts.financial_facts import decode_financial_facts
@@ -177,7 +181,7 @@ def test_financial_tool_requires_document_object(tmp_path, monkeypatch):
 def test_agent_tool_is_discoverable_without_changing_narrative_tool():
     from src.tools import build_registry
 
-    registry = build_registry(include_shell_tools=False)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=False)
     assert "save_financial_research_artifact" in registry.tool_names
     assert "save_research_artifact" in registry.tool_names
     schema = registry.get("save_financial_research_artifact").to_openai_schema()

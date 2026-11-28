@@ -1200,6 +1200,20 @@
     "reasoningStrength": "Tingkat Reasoning",
     "unknownProvider": "Provider tidak diketahui",
     "unknownModel": "Model tidak diketahui",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "Koneksi terputus, menghubungkan kembali…",
     "connectionRestored": "Koneksi pulih",
     "agentWorking": "Mulai bekerja…",
@@ -1219,6 +1233,8 @@
     "describeGoal": "Jelaskan tujuan riset yang ingin dikaitkan dengan sesi ini",
     "placeholder": "mis. Uji strategi moving average sederhana pada 000001.SZ selama 2024",
     "send": "Kirim pesan",
+    "answerPlaceholder": "Ketik jawaban",
+    "toolResultImageAlt": "Hasil alat",
     "messageInputLabel": "Pesan untuk Agent",
     "inputHint": "Enter untuk mengirim · Shift+Enter untuk baris baru",
     "editGoalObjectiveLabel": "Edit objektif tujuan riset",
@@ -1285,7 +1301,10 @@
       "failed": "Gagal",
       "steps": "{{count}} langkah",
       "continue": "Lanjutkan",
-      "reattach": "Lampirkan kembali"
+      "reattach": "Lampirkan kembali",
+      "interrupted": "Terputus — server dimulai ulang sebelum giliran ini selesai",
+      "interruptedStep": "Terputus sebelum selesai",
+      "partial": "Terpotong saat giliran dihentikan"
     },
     "resumeConnector": "Lanjutkan connector",
     "resumeConnectorTitle": "Nonaktifkan penghentian darurat dan aktifkan kembali aktivitas connector",
@@ -1293,6 +1312,20 @@
     "failedToResumeConnector": "Gagal melanjutkan connector.",
     "tokenUsage": {
       "live": "token"
+    },
+    "turnFailed": "Eksekusi gagal",
+    "notice": {
+      "compaction": "Percakapan sebelumnya telah diringkas"
+    },
+    "queue": {
+      "placeholder": "Tambahkan pesan — akan bergabung setelah langkah saat ini",
+      "label": "Pesan dalam antrean",
+      "queued": "Dalam antrean",
+      "delivering": "Bergabung ke percakapan…",
+      "discard": "Hapus pesan dalam antrean",
+      "discardFailed": "Pesan ini sudah bergabung ke percakapan",
+      "failed": "Tidak dapat mengantrekan pesan",
+      "send": "Antrekan pesan"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "Tinjauan Komite Investasi",
       "quant_strategy_desk": "Desk Strategi Quant",
+      "research": "Riset",
       "value_investing_committee": "Komite Value Investing"
     }
   },

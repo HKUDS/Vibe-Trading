@@ -23,6 +23,10 @@ IMPORTANT notes:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import importlib
 import sys
 from pathlib import Path
@@ -44,7 +48,7 @@ def test_build_registry_without_agent_config_loads_local_tools_only() -> None:
     """
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
 
     names = registry.tool_names
     assert names, "Registry must not be empty when no agent_config is supplied"
@@ -60,7 +64,7 @@ def test_build_registry_without_agent_config_does_not_raise() -> None:
     from src.tools import build_registry
 
     try:
-        registry = build_registry()
+        registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     except Exception as exc:  # noqa: BLE001
         pytest.fail(f"build_registry() raised unexpectedly: {exc!r}")
 
@@ -71,7 +75,7 @@ def test_build_registry_without_agent_config_returns_well_known_local_tools() ->
     """Well-known local tool names must survive a no-config build_registry call."""
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     names = set(registry.tool_names)
 
     expected = {"load_skill", "backtest", "web_search", "read_file"}
@@ -202,25 +206,22 @@ def test_mcp_server_module_default_shell_tools_off() -> None:
 def test_mcp_resolve_shell_tools_off_without_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """No CLI flag + no env var => shell tools stay off, regardless of transport."""
     mod = _import_mcp_server()
-    monkeypatch.setattr(mod, "_env_shell_tools_enabled", lambda: False)
 
-    assert mod._resolve_include_shell_tools(False) is False
+    assert mod._resolve_include_shell_tools(False, env_opt_in=False) is False
 
 
 def test_mcp_resolve_shell_tools_cli_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """The --enable-shell-tools flag turns shell tools on even with env unset."""
     mod = _import_mcp_server()
-    monkeypatch.setattr(mod, "_env_shell_tools_enabled", lambda: False)
 
-    assert mod._resolve_include_shell_tools(True) is True
+    assert mod._resolve_include_shell_tools(True, env_opt_in=False) is True
 
 
 def test_mcp_resolve_shell_tools_env_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """VIBE_TRADING_ENABLE_SHELL_TOOLS=1 turns shell tools on without the flag."""
     mod = _import_mcp_server()
-    monkeypatch.setattr(mod, "_env_shell_tools_enabled", lambda: True)
 
-    assert mod._resolve_include_shell_tools(False) is True
+    assert mod._resolve_include_shell_tools(False, env_opt_in=True) is True
 
 
 def test_mcp_registry_omits_shell_tools_under_default_policy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -230,7 +231,7 @@ def test_mcp_registry_omits_shell_tools_under_default_policy(monkeypatch: pytest
     monkeypatch.delenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", raising=False)
     mod = _import_mcp_server()
 
-    registry = build_registry(include_shell_tools=mod._include_shell_tools)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), include_shell_tools=mod._include_shell_tools)
 
     assert "bash" not in registry.tool_names
     assert "background_run" not in registry.tool_names
@@ -242,10 +243,14 @@ class _RecordingRegistry:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def execute(self, name: str, payload: dict[str, Any]) -> str:
         self.calls.append((name, payload))
         return "{}"
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 def test_trading_mcp_wrappers_do_not_send_implicit_local_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

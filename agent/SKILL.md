@@ -1,7 +1,7 @@
 ---
 name: vibe-trading
 version: 0.1.19
-description: Professional finance research toolkit — backtesting (13 engines + benchmark comparison panel), factor analysis, Alpha Zoo (478 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 89 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 27 market-data sources (tushare, yfinance, okx, binance, akshare, baostock, tencent, mootdx, ccxt, futu, mt5, local, eastmoney, sina, stooq, yahoo, pykrx, india_broker, longbridge, nobitex, wallex, plus optional-key finnhub/alphavantage/tiingo/fmp/gildata).
+description: Professional finance research toolkit — backtesting (13 engines + benchmark comparison panel), factor analysis, Alpha Zoo (478 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 92 finance skills, 31 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 27 market-data sources (tushare, yfinance, okx, binance, akshare, baostock, tencent, mootdx, ccxt, futu, mt5, local, eastmoney, sina, stooq, yahoo, pykrx, india_broker, longbridge, nobitex, wallex, plus optional-key finnhub/alphavantage/tiingo/fmp/gildata).
 dependencies:
   python: ">=3.11"
   pip:
@@ -23,7 +23,7 @@ mcp:
 
 # Vibe-Trading
 
-Professional finance research toolkit with AI-powered backtesting (13 engines), multi-agent teams, 89 specialized skills, the **Alpha Zoo** (478 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic / fundamental with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
+Professional finance research toolkit with AI-powered backtesting (13 engines), multi-agent teams, 92 specialized skills, the **Alpha Zoo** (478 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic / fundamental with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
 
 ## Setup
 
@@ -53,7 +53,7 @@ Add to your agent's MCP config:
 
 ### API Key Requirements
 
-Core research MCP tools work with zero API keys for HK/US/Canada/crypto. After `pip install`, backtesting, market data, factor analysis, options pricing, chart patterns, web search, document reading, trade journal analysis, shadow-account extraction/backtest/report, the Alpha Zoo (478 pre-built alphas), and all 89 skills are ready to use. IBKR tools require a local TWS / IB Gateway session; `run_swarm` requires an LLM key.
+Core research MCP tools work with zero API keys for HK/US/Canada/crypto. After `pip install`, backtesting, market data, factor analysis, options pricing, chart patterns, web search, document reading, trade journal analysis, shadow-account extraction/backtest/report, the Alpha Zoo (478 pre-built alphas), and all 92 skills are ready to use. IBKR tools require a local TWS / IB Gateway session; `run_swarm` requires an LLM key.
 
 | Feature | Key needed | When |
 |---------|-----------|------|
@@ -98,7 +98,7 @@ Example workflow:
 4. Use `backtest()` to run and get metrics (Sharpe, return, drawdown, etc.)
 
 ### Multi-Agent Swarm Teams
-30 pre-built agent teams for complex research:
+31 pre-built agent teams for complex research:
 - **Investment Committee**: bull/bear debate → risk review → PM decision
 - **Global Equities Desk**: A-share + HK/US + crypto → global strategist
 - **Crypto Trading Desk**: funding/basis + liquidation + flow → risk manager
@@ -106,9 +106,59 @@ Example workflow:
 - **Macro/Rates/FX Desk**: rates + FX + commodities → macro PM
 - **Quant Strategy Desk**: screening → factor research → backtest → risk audit
 - **Risk Committee**: drawdown, tail risk, regime analysis
+- **Research**: source collection → requested calculations → report; task tools and selected evidence enforce the handoff
 - And 23 more specialized teams
 
 Use `list_swarm_presets()` to see all teams, then `run_swarm()` to execute.
+
+For a collection → calculation → report workflow, select `research` and pass
+`data_request`, `analysis_request` and `report_request` in `variables`: data
+coverage in the first, the requested calculations in the second, the report
+question, audience and language in the third. All three are required; a run that
+lacks one is refused before any task starts, and none is inferred by copying the
+whole question into every task. Collection has no shell or calculation tool; the
+editor has only `read_file` and `write_file`. The analyst delivers `metrics.json`
+and `compute.py`; the runtime copies `metrics.json` into the editor's workspace,
+and the editor receives the metrics, the computation source, the collected source
+metadata and the successful shell record whose output hash matches the metric
+file. A missing execution record stays an explicit gap. This preset skips the
+run-level recent-price prefetch and gets its data through the collection task.
+
+A preset task can narrow `tools` within its agent's whitelist (`[]` means no
+tools; omitted inherits; a tool outside the agent's list is refused when the run
+is built). `input_from: {alias: task_id}` keeps the full report-and-evidence
+handoff. To hand over only selected evidence instead:
+
+```yaml
+input_from:
+  data:
+    task: collect
+    kinds: [observation]
+  results:
+    task: analyze
+    files:
+      - {path: metrics.json, copy_to: metrics.json, execution: true}
+      - compute.py
+```
+
+`kinds` picks recorded tool observations (inherited sources included),
+`calculation` (the producer's own shell and `quantlib_call` records) and
+`analysis` (every file the producer wrote); `files` names producer-workspace
+files. Kinds and files are additive. A selected alias never receives the
+producer's prose report. A missing kind or file is listed under `unavailable`,
+never replaced by another source. `copy_to` copies the file into the consumer's
+workspace and refuses to overwrite a changed copy or a runtime path;
+`execution: true` binds the file to a successful shell record of its current
+hash, and a missing record is a gap, not a rerun. Selected values arrive within
+the tool-result size budget; a larger value keeps its file reference. The full
+copy of every upstream observation, calculation and file stays in
+`upstream/audit.json`. These record provenance, not semantic verification.
+Selectors are checked before dispatch (unknown task, task not upstream in the
+DAG, path outside the workspace). `read_file` and `__data_ref__` select one JSON
+value with an RFC 6901 `pointer`; a pointer that names nothing is an error, never
+the whole document. `/swarm inspect research` or
+`vibe-trading --swarm-inspect research` shows the task tools, input bindings,
+prefetch setting and DAG without a model call.
 
 ### Alpha Zoo (478 pre-built alphas)
 One-line cross-sectional IC / IR / alive-reversed-dead categorisation across five bundled zoos:
@@ -120,7 +170,7 @@ One-line cross-sectional IC / IR / alive-reversed-dead categorisation across fiv
 
 Each alpha ships with `__alpha_meta__` (formula LaTeX + theme + universe + warmup + columns required), guarded by an AST purity gate + 300-row lookahead sentinel test. Use the `vibe-trading alpha {list,show,bench,compare,export-manifest}` CLI, the `/alpha/*` REST routes (browser at `/alpha-zoo`), or compose multi-factor signals via `ZooSignalEngine.from_zoo(...)`.
 
-### Finance Skills (89)
+### Finance Skills (92)
 Comprehensive knowledge base covering:
 - Technical analysis (candlestick, Elliott wave, Ichimoku, SMC, harmonic, chanlun)
 - Quantitative methods (factor research, ML strategy, pair trading, multi-factor)
@@ -133,11 +183,11 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (85)
+## Available MCP Tools (86)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
-| `list_skills` | List all 89 finance skills | None |
+| `list_skills` | List all 92 finance skills | None |
 | `load_skill` | Load full skill documentation | None |
 | `start_research_goal` | Create an auditable research goal | None |
 | `get_research_goal` | Read the current research goal | None |
@@ -184,7 +234,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `read_url` | Fetch web page as Markdown | None |
 | `read_document` | Extract text from PDF/DOCX/XLSX/PPTX/images | None |
 | `write_file` | Write files (config, strategy code) | None |
-| `read_file` | Read file contents | None |
+| `read_file` | Read file contents, or one JSON value by RFC 6901 pointer | None |
 | `read_run_artifact` | Structured run-artifact reads (rows / downsample / meta) | None |
 | `list_backtest_runs` | Discover earlier backtest runs (paged, per session or all) and their `run_dir`s | None |
 | `list_strategies` | Browse discoverable strategies (Alpha Zoo + SDM store) | None |
@@ -199,6 +249,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `scan_shadow_signals` | Today's symbols matching the shadow's cadence | None |
 | `list_swarm_presets` | List multi-agent team presets | None |
 | `run_swarm` | Execute a multi-agent research team | LLM key |
+| `cancel_swarm` | Request cooperative cancellation by run ID | None |
 | `get_swarm_status` | Poll swarm run status without blocking | None |
 | `get_run_result` | Get final report and task summaries | None |
 | `list_runs` | List recent swarm runs with metadata | None |
@@ -231,7 +282,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 pip install vibe-trading-ai
 ```
 
-That's it — no API keys needed for HK/US/Canada/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 89 skills immediately.
+That's it — no API keys needed for HK/US/Canada/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 92 skills immediately.
 
 ## Loading Tools from External MCP Servers
 

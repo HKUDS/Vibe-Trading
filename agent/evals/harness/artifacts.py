@@ -7,8 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.session.replay import diagnostic_records
+from src.session.thread_schema import ThreadItem
+
 JSON_LIMIT_BYTES = 16 * 1024 * 1024
-TRACE_LIMIT_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -66,8 +68,15 @@ class ArtifactBundle:
         )
         identity = load_object(run_root, "artifacts/identity_evidence.json", "identity")
         llm_usage = load_object(run_root, "llm_usage.json", "llm_usage")
-        manifest = load_object(trace_root, "run_manifest.json", "manifest")
-        trace = _load_trace(trace_root, present, errors)
+        manifest = load_object(run_root, "run_manifest.json", "manifest")
+        if trace_dir is None:
+            try:
+                trace_root = thread_directory(run_root, req)
+            except (OSError, ValueError, TypeError) as exc:
+                errors["trace"] = str(exc)
+        context = (req or {}).get("context") or {}
+        turn_id = context.get("turn_id") if isinstance(context, dict) else None
+        trace = () if "trace" in errors else _load_thread_records(trace_root, present, errors, turn_id=turn_id)
         return cls(
             run_dir=run_root,
             trace_dir=trace_root,
@@ -81,6 +90,68 @@ class ArtifactBundle:
             errors=errors,
             identity=identity,
         )
+
+
+def _load_thread_records(
+    run_root: Path,
+    present: set[str],
+    errors: dict[str, str],
+    *, turn_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Project conversation thread items for evaluations. The thread is the sole
+    conversation record and includes diagnostics as event items.
+    """
+    try:
+        thread_path = _safe_known_path(run_root, "thread.jsonl")
+        if not thread_path.is_file():
+            return ()
+        if thread_path.stat().st_size > 64 * 1024 * 1024:
+            raise ValueError("thread.jsonl exceeds the 64 MiB safety limit")
+        items = []
+        with thread_path.open(encoding="utf-8") as stream:
+            for number, line in enumerate(stream, 1):
+                if not line.strip():
+                    continue
+                try:
+                    items.append(ThreadItem.from_dict(json.loads(line)))
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise ValueError(f"thread.jsonl:{number}: invalid thread record") from exc
+        starts = [item for item in items if item.type == "turn_start"]
+        if turn_id:
+            items = [item for item in items if item.turn_id == turn_id]
+            if not items:
+                raise ValueError("requested turn is absent from thread.jsonl")
+        elif starts:
+            items = [item for item in items if item.turn_id == starts[-1].turn_id]
+    except (OSError, ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        errors["trace"] = str(exc)
+        return ()
+    if not items:
+        return ()
+    records = diagnostic_records(items)
+    present.add("trace")
+    return tuple(records)
+
+
+def thread_directory(run_root: Path, request: dict | None = None) -> Path:
+    """Resolve local records or the session under the configured session root.
+
+    Request-supplied workspace paths never choose a filesystem read root.
+    """
+    if _safe_known_path(run_root, "thread.jsonl").is_file():
+        return run_root
+    if request is None and _safe_known_path(run_root, "req.json").is_file():
+        request = _read_json(run_root / "req.json")
+    context = request.get("context") if isinstance(request, dict) else None
+    session_id = context.get("session_id") if isinstance(context, dict) else None
+    if not isinstance(session_id, str) or not session_id:
+        return run_root
+    import re
+    from src.config.paths import get_sessions_dir
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", session_id) is None or session_id in {".", ".."}:
+        raise ValueError("invalid session identifier")
+    sessions = get_sessions_dir().resolve()
+    return _safe_known_path(sessions, session_id)
 
 
 def _require_directory(path: Path, label: str) -> Path:
@@ -105,73 +176,3 @@ def _read_json(path: Path) -> Any:
             f"{path.name} exceeds the {JSON_LIMIT_BYTES}-byte safety limit"
         )
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _load_trace(
-    trace_root: Path,
-    present: set[str],
-    errors: dict[str, str],
-) -> tuple[dict[str, Any], ...]:
-    try:
-        path = _safe_known_path(trace_root, "trace.jsonl")
-    except ValueError as exc:
-        errors["trace"] = str(exc)
-        return ()
-    if not path.exists():
-        return ()
-    present.add("trace")
-    try:
-        if path.stat().st_size > TRACE_LIMIT_BYTES:
-            raise ValueError(
-                f"trace.jsonl exceeds the {TRACE_LIMIT_BYTES}-byte safety limit"
-            )
-        records: list[dict[str, Any]] = []
-        for number, raw_line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
-            if not raw_line.strip():
-                continue
-            try:
-                record = json.loads(raw_line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"trace.jsonl:{number}: invalid JSON: {exc.msg}"
-                ) from exc
-            if not isinstance(record, dict):
-                raise ValueError(f"trace.jsonl:{number}: record must be an object")
-            record = dict(record)
-            record["_line"] = number
-            _resolve_trace_text(trace_root, record, "prompt")
-            _resolve_trace_text(trace_root, record, "content")
-            records.append(record)
-        starts = [
-            index
-            for index, record in enumerate(records)
-            if record.get("type") == "start"
-        ]
-        if starts:
-            records = records[starts[-1] :]
-        return tuple(records)
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        errors["trace"] = str(exc)
-        return ()
-
-
-def _resolve_trace_text(
-    trace_root: Path, record: dict[str, Any], field_name: str
-) -> None:
-    if field_name in record or f"{field_name}_path" not in record:
-        return
-    relative = record[f"{field_name}_path"]
-    if not isinstance(relative, str):
-        raise ValueError(
-            f"trace.jsonl:{record['_line']}: {field_name}_path must be a string"
-        )
-    path = _safe_known_path(trace_root, relative)
-    if not path.is_file():
-        raise ValueError(f"trace.jsonl:{record['_line']}: missing {field_name} sidecar")
-    if path.stat().st_size > JSON_LIMIT_BYTES:
-        raise ValueError(
-            f"trace.jsonl:{record['_line']}: {field_name} sidecar exceeds safety limit"
-        )
-    record[field_name] = path.read_text(encoding="utf-8")

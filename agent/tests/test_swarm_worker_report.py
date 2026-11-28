@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.swarm.worker import _preview_tool_arguments, _resolve_summary, _best_summary
+from src.swarm.node import _preview_tool_arguments, _resolve_summary, _best_summary
 
 
 def test_resolve_summary_reads_report_md(tmp_path: Path) -> None:

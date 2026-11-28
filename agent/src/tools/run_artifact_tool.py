@@ -25,6 +25,8 @@ mid-record, never broken JSON), following ``src/tools/_result_paging.py``.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import csv
 import json
 import math
@@ -32,7 +34,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.tools.path_utils import safe_run_dir
 
@@ -453,7 +455,7 @@ def read_run_artifact(
     format: str = "rows",
     offset: int = 0,
     max_rows: int = 1000,
-    columns: list[str] | None = None,
+    columns: list[str] | None = None, *, roots: FileRoots,
 ) -> str:
     """Read one run artifact as structured, budget-bounded JSON.
 
@@ -486,7 +488,7 @@ def read_run_artifact(
         )
 
     try:
-        run_root = safe_run_dir(run_dir)
+        run_root = safe_run_dir(run_dir, roots=roots)
     except ValueError as exc:
         return _error(str(exc), "Pass the run_dir a backtest/tool call returned.")
 
@@ -565,7 +567,7 @@ def read_run_artifact(
     return _fit_rows_payload(envelope_base, page, offset, total_rows, budget)
 
 
-class RunArtifactTool(BaseTool):
+class RunArtifactTool(FileBoundTool, BaseTool):
     """Chunked/downsampled reader for backtest run artifacts."""
 
     name = "read_run_artifact"
@@ -634,4 +636,5 @@ class RunArtifactTool(BaseTool):
             offset=kwargs.get("offset", 0),
             max_rows=kwargs.get("max_rows", 1000),
             columns=kwargs.get("columns"),
+            roots=self.roots,
         )

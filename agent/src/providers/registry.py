@@ -1,8 +1,4 @@
-"""Shared, credential-free provider catalog for runtime, CLI and Web settings.
-
-Protocol exceptions live in adapters; declarative provider facts live in
-``llm_providers.json``. Reading this module never loads credentials or SDKs.
-"""
+"""Shared, credential-free provider catalog for runtime, CLI and Web settings."""
 
 from __future__ import annotations
 
@@ -40,8 +36,14 @@ def _catalog() -> tuple[dict[str, Any], ...]:
 
 
 def provider_catalog() -> list[dict[str, Any]]:
-    """Return independent public metadata records without runtime-only fields."""
-    private = {"capabilities", "aliases", "runtime_variants", "setup", "onboarding"}
+    """Return independent public metadata records without runtime-only fields.
+
+    Returns:
+        Independent copies of the public provider records with defaults for backend and automatic
+        model listing.
+    """
+    private = {"capabilities", "aliases", "runtime_variants", "setup", "onboarding", "model_capabilities",
+               "infer_model_prefixes", "infer_model_substrings"}
     return [
         {"backend": "openai_compatible", "automatic_model_list": False,
          **deepcopy({k: v for k, v in row.items() if k not in private})}
@@ -50,7 +52,11 @@ def provider_catalog() -> list[dict[str, Any]]:
 
 
 def provider_names() -> frozenset[str]:
-    """Public identifiers, including legacy aliases, safe for runtime metadata."""
+    """Public identifiers, including legacy aliases, safe for runtime metadata.
+
+    Returns:
+        The set of catalog provider names, aliases, and runtime variants.
+    """
     return frozenset(
         name
         for row in _catalog()
@@ -58,8 +64,28 @@ def provider_names() -> frozenset[str]:
     )
 
 
+def provider_requires_key(provider: str) -> bool:
+    """Report whether a catalog provider needs an API key.
+
+    Args:
+        provider: Catalog name, alias or runtime variant.
+
+    Returns:
+        The catalog row's api_key_required flag, or True for a name the catalog does not list.
+    """
+    for row in _catalog():
+        if provider in (row["name"], *row.get("aliases", ()), *row.get("runtime_variants", {})):
+            return bool(row["api_key_required"])
+    return True
+
+
 def setup_choices() -> list[dict[str, Any]]:
-    """Project legacy setup options without duplicating models or endpoints."""
+    """Build the catalog entries shown in legacy setup.
+
+    Returns:
+        Setup entries in configured order with labels, model and endpoint defaults, and credential
+        field hints.
+    """
     rows = sorted((r for r in _catalog() if r.get("setup")), key=lambda r: r["setup"]["order"])
     return [
         {
@@ -77,7 +103,12 @@ def setup_choices() -> list[dict[str, Any]]:
 
 
 def onboarding_choices() -> list[dict[str, Any]]:
-    """Project first-launch wizard options while preserving its ordering."""
+    """Project first-launch wizard options while preserving its ordering.
+
+    Returns:
+        Wizard options in configured order, including default endpoints and deduplicated suggested
+        models.
+    """
     rows = sorted((r for r in _catalog() if r.get("onboarding")), key=lambda r: r["onboarding"]["order"])
     return [
         {
@@ -97,40 +128,7 @@ def onboarding_choices() -> list[dict[str, Any]]:
 
 @dataclass(frozen=True)
 class ProviderCapabilities:
-    """Provider-specific payload and diagnostic behavior.
-
-    Args:
-        name: Canonical provider name.
-        api_key_env: Provider-specific API key environment variable.
-        base_url_env: Provider-specific base URL environment variable.
-        capture_reasoning: Whether inbound reasoning fields should be preserved.
-        send_reasoning_content: Whether outbound assistant history must include
-            ``reasoning_content``.
-        gemini_thought_signatures: Whether Gemini OpenAI-compatible tool-call
-            thought signatures should be round-tripped.
-        normalize_assistant_content: Whether assistant ``content=None`` should
-            be normalized to ``""`` for strict providers.
-        openrouter_reasoning_body: Whether ``extra_body.reasoning`` is a valid
-            OpenRouter request option.
-        top_level_reasoning_effort: Whether the provider accepts a top-level
-            ``reasoning_effort`` field on ``/v1/chat/completions``. **A positive
-            allowlist, and it stays one.** Speaking the OpenAI wire format does
-            not imply accepting every OpenAI field: an endpoint that validates
-            its request body strictly rejects the unknown key and the call
-            fails, so a provider gets this only once someone has watched a real
-            request to it succeed. Leave it False until then — the cost of False
-            is that ``LANGCHAIN_REASONING_EFFORT`` has no effect there, and the
-            cost of a wrong True is that every request fails.
-        reasoning_effort_models: Optional per-model scoping for
-            ``top_level_reasoning_effort``. ``None`` (the default) means every
-            model of the provider accepts the field; a tuple means only models
-            whose name starts with one of the entries do — prefixes, so
-            ``"kimi-k3.1-pro"`` also covers ``kimi-k3.1-pro-highspeed``. An
-            unmatched model is a no-op, not an error, mirroring the asymmetry
-            of the provider-level flag. Ignored when the flag is False.
-        default_headers: Provider-scoped headers passed to ChatOpenAI.
-        native_adapter_package: Optional native adapter package to report.
-    """
+    """Declare verified endpoint capabilities for all models or selected model prefixes."""
 
     name: str
     api_key_env: Optional[str]
@@ -146,19 +144,18 @@ class ProviderCapabilities:
     native_adapter_package: Optional[str] = None
     default_base_url: str = ""
     backend: str = "openai_compatible"
+    official_hosts: tuple[str, ...] = ()
+    min_temperature: Optional[float] = None
+    forced_temperature: Optional[float] = None
+    forced_temperature_models: Optional[str] = None
+    moonshot_user_agent: bool = False
 
 
-# Distribution name from pyproject.toml [project].name.
 _DISTRIBUTION_NAME = "vibe-trading-ai"
 
 
 def _package_version() -> str:
-    """Return the installed distribution version for User-Agent headers.
-
-    Returns:
-        Installed ``vibe-trading-ai`` version string, or ``"dev"`` when the
-        package metadata is unavailable (e.g. an uninstalled source checkout).
-    """
+    """Return the installed distribution version for User-Agent headers."""
     try:
         return version(_DISTRIBUTION_NAME)
     except PackageNotFoundError:
@@ -169,25 +166,29 @@ _VIBE_USER_AGENT = f"Vibe-Trading/{_package_version()}"
 
 
 def _infer_from_model(model: str) -> str | None:
+    """Name the provider a bare model id implies: catalog prefixes first, then substrings."""
     lowered = model.strip().lower()
     if not lowered:
         return None
-    if lowered.startswith("gemini"):
-        return "gemini"
-    if lowered.startswith("deepseek"):
-        return "deepseek"
-    if lowered.startswith("nvidia/"):
-        return "nvidia"
-    if lowered.startswith("glm"):
-        return "zhipu"
-    if "kimi" in lowered or "moonshot" in lowered:
-        return "moonshot"
+    for key, matches in (("infer_model_prefixes", str.startswith), ("infer_model_substrings", str.__contains__)):
+        for row in _catalog():
+            if any(matches(lowered, marker) for marker in row.get(key, ())):
+                return row["name"]
     return None
 
 
 @lru_cache(maxsize=256)
 def get_provider_capabilities(provider: str | None = None, model: str | None = None) -> ProviderCapabilities:
-    """Read one provider's connection and protocol facts, preserving legacy inference."""
+    """Read one provider's connection and protocol facts, preserving legacy inference.
+
+    Args:
+        provider: Provider label or alias. An empty or OpenAI label allows inference from the model.
+        model: Model name used for inference and model-specific overrides.
+
+    Returns:
+        Connection defaults and protocol capabilities for the resolved provider, falling back to
+        OpenAI for unknown names.
+    """
     name = (provider or "").strip().lower().replace("_", "-")
     if name == "custom":
         return ProviderCapabilities("custom", None, "OPENAI_BASE_URL", capture_reasoning=True)
@@ -200,14 +201,13 @@ def get_provider_capabilities(provider: str | None = None, model: str | None = N
             return get_provider_capabilities(row["name"], model)
         if name != row["name"]:
             continue
-        caps = deepcopy(row.get("capabilities", {}))
-        if name == "minimax" and model == "MiniMax-M3.1-Flash":
-            caps = {"capture_reasoning": True, "send_reasoning_content": True}
+        caps = deepcopy({**row.get("capabilities", {}), **row.get("model_capabilities", {}).get(model, {})})
         caps["default_headers"] = {
             k: v.replace("{user_agent}", _VIBE_USER_AGENT) for k, v in caps.get("default_headers", {}).items()
         }
-        if caps.get("reasoning_effort_models") is not None:
-            caps["reasoning_effort_models"] = tuple(caps["reasoning_effort_models"])
+        for key in ("reasoning_effort_models", "official_hosts"):
+            if caps.get(key) is not None:
+                caps[key] = tuple(caps[key])
         return ProviderCapabilities(
             caps.pop("name", name), row.get("api_key_env"), row["base_url_env"],
             default_base_url=row["default_base_url"], backend=row.get("backend", "openai_compatible"), **caps,
@@ -216,6 +216,15 @@ def get_provider_capabilities(provider: str | None = None, model: str | None = N
 
 
 def provider_env_names(provider: str | None, model: str | None = None) -> tuple[str | None, str]:
-    """Return the API-key and base-URL env names for a provider/model pair."""
+    """Return the API-key and base-URL env names for a provider/model pair.
+
+    Args:
+        provider: Provider label or alias.
+        model: Optional model used for provider inference.
+
+    Returns:
+        The API key environment variable, or None for an adapter without one, and the base URL
+        environment variable.
+    """
     caps = get_provider_capabilities(provider, model)
     return caps.api_key_env, caps.base_url_env

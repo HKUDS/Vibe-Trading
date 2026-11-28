@@ -21,14 +21,18 @@ No network access: every assertion is a local file read.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import re
 from pathlib import Path
 from typing import List
 
 import pytest
 
-from src.agent.frontmatter import parse_frontmatter
-from src.agent.skills import SkillsLoader
+from src.product.resources.frontmatter import parse_frontmatter
+from src.product.resources.skills import SkillsLoader
 from src.tools.read_file_tool import ReadFileTool
 
 import json
@@ -187,7 +191,7 @@ def test_router_links_are_relative_to_the_router(target: str) -> None:
 @pytest.mark.parametrize("target", _router_link_targets())
 def test_router_links_resolve_through_read_file(target: str) -> None:
     """Each router link is reachable via the read_file tool's skills root."""
-    body = json.loads(ReadFileTool().execute(path=target))
+    body = json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=target))
     assert body["status"] == "ok", f"{target} did not resolve: {body}"
     assert body["content"].strip()
 

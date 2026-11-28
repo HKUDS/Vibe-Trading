@@ -1,6 +1,6 @@
 """Tests for escalating stream-retry delays and Retry-After honoring.
 
-Issue #1208: both LLM stream-retry sites (``AgentLoop.run`` and the swarm
+Issue #1208: both LLM stream-retry sites (``AgentRuntime.run`` and the swarm
 worker) used a constant one-shot delay, so a sustained provider outage burned
 the patience budget in seconds. The delay now escalates across consecutive
 retryable failures (capped exponential) and honors the provider's
@@ -8,6 +8,12 @@ retryable failures (capped exponential) and honors the provider's
 """
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
+import src.agent.tuning as _owner_tuning
 
 import types
 from pathlib import Path
@@ -18,11 +24,12 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-import src.agent.loop as loop_mod
+import src.agent.runtime as loop_mod
 import src.agent.tuning as tuning_mod
-import src.swarm.worker as worker_mod
+import src.swarm.node as worker_mod
 from src.config.env_schema import AgentTuningConfig, SwarmConfig
-from src.providers.chat import LLMResponse, ProviderStreamError, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
+from src.providers.response import ProviderStreamError
 
 # Substantive prose so _classify_deliverable accepts the tool-less worker.
 FINAL_TEXT = (
@@ -37,6 +44,9 @@ FINAL_TEXT = (
 class _EmptyRegistry:
     """Minimal stand-in for the swarm ToolRegistry (execute returns ok)."""
 
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
+
     def get_definitions(self) -> list[dict]:
         """Return an empty tool-definition list."""
         return []
@@ -48,6 +58,9 @@ class _EmptyRegistry:
     def get(self, name: str):
         """Return no tool metadata."""
         return None
+
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
 
 
 class _ScriptedWorkerLLM:
@@ -72,7 +85,7 @@ class _ScriptedWorkerLLM:
         """No-op: the stub owns no HTTP client."""
         return None
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
         """Play the next scripted entry, or repeat the final response."""
         self.calls += 1
         if self._script:
@@ -121,7 +134,7 @@ def _tool_response(idx: int) -> LLMResponse:
     )
 
 
-def _run_worker(
+def _run_node(
     monkeypatch,
     tmp_path: Path,
     llm: _ScriptedWorkerLLM,
@@ -140,9 +153,9 @@ def _run_worker(
         ``time.sleep`` duration observed inside the worker.
     """
     sleeps: list[float] = []
-    monkeypatch.setattr(worker_mod.time, "sleep", lambda s: sleeps.append(s))
-    monkeypatch.setattr(worker_mod, "_STREAM_RETRY_DELAY_S", 1.0)
-    monkeypatch.setattr(worker_mod, "_STREAM_RETRY_MAX_DELAY_S", 8.0)
+    monkeypatch.setattr(worker_mod.NodeStop, "wait", lambda self, delay: bool(sleeps.append(delay)))
+    monkeypatch.setenv("SWARM_STREAM_RETRY_DELAY_S", "1")
+    monkeypatch.setenv("SWARM_STREAM_RETRY_MAX_DELAY_S", "8")
     agent_spec = worker_mod.SwarmAgentSpec(
         id="analyst",
         role="Synthesis analyst",
@@ -157,7 +170,8 @@ def _run_worker(
         patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: _EmptyRegistry()),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        result = worker_mod.run_worker(
+        result = worker_mod.run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},
@@ -171,7 +185,7 @@ def test_first_failure_sleeps_configured_base(monkeypatch, tmp_path):
     """One retryable failure → exactly one sleep of the configured base (1.0)."""
     llm = _ScriptedWorkerLLM([_transient_error(), LLMResponse(content=FINAL_TEXT)])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [1.0]
@@ -181,7 +195,7 @@ def test_existing_single_failure_still_retried_once(monkeypatch, tmp_path):
     """One retryable failure → exactly two stream_chat calls (no multi-retry)."""
     llm = _ScriptedWorkerLLM([_transient_error(), LLMResponse(content=FINAL_TEXT)])
 
-    result, _ = _run_worker(monkeypatch, tmp_path, llm)
+    result, _ = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert llm.calls == 2
@@ -201,7 +215,7 @@ def test_delay_escalates_across_consecutive_iterations(monkeypatch, tmp_path):
         _transient_error(), LLMResponse(content=FINAL_TEXT),
     ])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm, max_iterations=4)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm, max_iterations=4)
 
     assert result.status == "completed"
     assert sleeps == [1.0, 2.0, 4.0]
@@ -211,7 +225,7 @@ def test_streak_resets_after_clean_iteration(monkeypatch, tmp_path):
     """A clean first-attempt iteration resets the streak to the base delay."""
     llm = _ScriptedWorkerLLM([_tool_response(0), _transient_error()])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm, max_iterations=3)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm, max_iterations=3)
 
     assert result.status == "completed"
     assert sleeps == [1.0]
@@ -221,7 +235,7 @@ def test_non_retryable_error_no_sleep_no_escalation(monkeypatch, tmp_path):
     """A deterministic 4xx fails the worker with no sleep recorded."""
     llm = _ScriptedWorkerLLM([_bad_request_error()])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm, max_iterations=3)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm, max_iterations=3)
 
     assert result.status == "failed"
     assert sleeps == []
@@ -231,7 +245,7 @@ def test_retry_after_honored(monkeypatch, tmp_path):
     """A 429 with Retry-After: 7 sleeps exactly 7 seconds."""
     llm = _ScriptedWorkerLLM([_rate_limit_error("7")])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [7.0]
@@ -241,7 +255,7 @@ def test_retry_after_clamped_to_max(monkeypatch, tmp_path):
     """A Retry-After larger than the configured cap is clamped to the cap."""
     llm = _ScriptedWorkerLLM([_rate_limit_error("500")])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [8.0]
@@ -251,7 +265,7 @@ def test_garbage_retry_after_falls_back_to_backoff(monkeypatch, tmp_path):
     """A non-numeric Retry-After header falls back to the exponential delay."""
     llm = _ScriptedWorkerLLM([_rate_limit_error("soon")])
 
-    result, sleeps = _run_worker(monkeypatch, tmp_path, llm)
+    result, sleeps = _run_node(monkeypatch, tmp_path, llm)
 
     assert result.status == "completed"
     assert sleeps == [1.0]
@@ -296,7 +310,7 @@ def test_retry_after_s_extraction(response, expected):
 
 
 # ---------------------------------------------------------------------------
-# AgentLoop site
+# AgentRuntime site
 # ---------------------------------------------------------------------------
 
 
@@ -325,8 +339,7 @@ class _FlakyLoopLLM:
         timeout: int | None = None,
         idle_timeout_s: float | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        on_waiting_chunk=None,
-    ) -> LLMResponse:
+        on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         """Raise the next queued error or return the final response."""
         self.calls += 1
         if self._errors:
@@ -344,7 +357,7 @@ def _run_loop(
     llm: _FlakyLoopLLM,
     events: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> tuple[dict[str, Any], list[float]]:
-    """Run an AgentLoop turn, recording sleep durations.
+    """Run an AgentRuntime turn, recording sleep durations.
 
     Args:
         monkeypatch: pytest monkeypatch fixture (patches sleep + delay knobs).
@@ -355,7 +368,7 @@ def _run_loop(
     Returns:
         Tuple of ``(result, sleeps)``.
     """
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
@@ -364,11 +377,11 @@ def _run_loop(
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 1.0, raising=False)
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_MAX_DELAY_S", 8.0, raising=False)
     pm = PersistentMemory()
-    agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+    agent = AgentRuntime(
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         event_callback=(
-            (lambda event_type, data: events.append((event_type, data)))
+            (lambda event_type, data: events.append((data.get("kind", event_type), data)))
             if events is not None
             else None
         ),
@@ -379,14 +392,14 @@ def _run_loop(
     # ``time.sleep``: the escalated delay reaches 30s by default and Stop must
     # be observed the moment it is set, not one full delay later. Record that
     # wait so the assertions below still read as "we waited N seconds".
-    _real_wait = agent._cancel_event.wait
+    _real_wait = agent.activity.cancel.wait
 
     def _record_wait(timeout=None):  # noqa: ANN001 - test seam
         if timeout is not None:
             sleeps.append(timeout)
         return _real_wait(0)
 
-    monkeypatch.setattr(agent._cancel_event, "wait", _record_wait)
+    monkeypatch.setattr(agent.activity.cancel, "wait", _record_wait)
     run_dir = tmp_path / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
     agent.memory.run_dir = str(run_dir)
@@ -394,7 +407,7 @@ def _run_loop(
 
 
 def test_loop_first_failure_sleeps_base(monkeypatch, tmp_path: Path) -> None:
-    """One transient failure in AgentLoop → exactly one sleep of base (1.0)."""
+    """One transient failure in AgentRuntime → exactly one sleep of base (1.0)."""
     llm = _FlakyLoopLLM([_transient_error()], "Final answer.")
 
     result, sleeps = _run_loop(monkeypatch, tmp_path, llm)
@@ -413,7 +426,7 @@ def test_loop_retry_after_honored_and_emitted(monkeypatch, tmp_path: Path) -> No
 
     assert result["status"] == "success"
     assert sleeps == [7.0]
-    reset = next(data for event_type, data in events if event_type == "stream_reset")
+    reset = next(data for event_type, data in events if event_type == "text.reset")
     assert reset["retry_delay_s"] == 7.0
 
 
@@ -433,10 +446,10 @@ def test_loop_backoff_helper_escalates_and_caps(monkeypatch) -> None:
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 1.0, raising=False)
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_MAX_DELAY_S", 8.0, raising=False)
 
-    assert loop_mod._stream_retry_backoff_s(1) == 1.0
-    assert loop_mod._stream_retry_backoff_s(2) == 2.0
-    assert loop_mod._stream_retry_backoff_s(3) == 4.0
-    assert loop_mod._stream_retry_backoff_s(7) == 8.0
+    assert _owner_tuning._stream_retry_backoff_s(1) == 1.0
+    assert _owner_tuning._stream_retry_backoff_s(2) == 2.0
+    assert _owner_tuning._stream_retry_backoff_s(3) == 4.0
+    assert _owner_tuning._stream_retry_backoff_s(7) == 8.0
 
 
 # ---------------------------------------------------------------------------
@@ -493,15 +506,15 @@ def test_loop_cancel_during_retry_delay_returns_without_waiting_it_out(
     """
     llm = _FlakyLoopLLM([_transient_error()], "Final answer.")
 
-    from src.agent.loop import AgentLoop
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_DELAY_S", 30.0, raising=False)
     monkeypatch.setattr(tuning_mod, "STREAM_RETRY_MAX_DELAY_S", 30.0, raising=False)
     pm = PersistentMemory()
-    agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+    agent = AgentRuntime(
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=3,
         persistent_memory=pm,
@@ -511,15 +524,15 @@ def test_loop_cancel_during_retry_delay_returns_without_waiting_it_out(
     agent.memory.run_dir = str(run_dir)
 
     waited: list[float] = []
-    _real_wait = agent._cancel_event.wait
+    _real_wait = agent.activity.cancel.wait
 
     def _cancel_on_wait(timeout=None):  # noqa: ANN001 - test seam
         if timeout is not None:
             waited.append(timeout)
-        agent._cancel_event.set()  # the user presses Stop mid-backoff
+        agent.activity.cancel.set()  # the user presses Stop mid-backoff
         return _real_wait(0)
 
-    monkeypatch.setattr(agent._cancel_event, "wait", _cancel_on_wait)
+    monkeypatch.setattr(agent.activity.cancel, "wait", _cancel_on_wait)
 
     start = _perf()
     agent.run(user_message="hello")

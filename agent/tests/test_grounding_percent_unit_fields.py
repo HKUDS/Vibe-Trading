@@ -15,6 +15,10 @@ fraction reading, so the fix never widens acceptance for ambiguous units.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -24,7 +28,7 @@ from evals.grounding import GroundingLedger
 
 
 def _ledger_with_rows(tmp_path: Path, rows: list[dict]) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze 600519.SH")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze 600519.SH")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["600519.SH"]},

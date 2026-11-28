@@ -7,6 +7,8 @@ import { getApiAuthKey, withAuthTicket } from "@/lib/apiAuth";
 
 type EventHandler = (data: Record<string, unknown>) => void;
 type Handlers = Record<string, EventHandler>;
+/** A stream URL, or a function read on every (re)connect so it can carry a resume cursor. */
+export type SSEUrl = string | (() => string);
 
 export type SSEStatus = "disconnected" | "connected" | "reconnecting";
 
@@ -28,7 +30,7 @@ export function useSSE(config?: SSEConfig) {
   const opts = { ...DEFAULTS, ...config };
   const sourceRef = useRef<EventSource | null>(null);
   const handlersRef = useRef<Handlers>({});
-  const urlRef = useRef<string>("");
+  const urlRef = useRef<SSEUrl>("");
   const closedRef = useRef(true);
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,11 +86,10 @@ export function useSSE(config?: SSEConfig) {
 
     // Only subscribe to event types the backend actually emits
     const knownTypes = [
-      "text_delta", "reasoning_delta", "stream_reset", "thinking_done", "tool_call", "tool_result", "compact",
-      "tool_heartbeat", "tool_progress", "llm_usage", "llm_waiting",
+      "item.started", "item.delta", "item.completed",
+      "run.started", "run.completed", "run.failed", "run.cancelled",
+      "run.usage",
       "swarm.started", "swarm.event",
-      "attempt.created", "attempt.started", "attempt.completed", "attempt.failed",
-      "attempt.cancelled",
       "message.received", "session.created",
       "goal.created", "goal.evidence", "goal.updated",
       "mandate.proposal", "mandate.committed", "scheduled_research.proposal", "live.halted", "live.resumed", "live.action",
@@ -136,7 +137,8 @@ export function useSSE(config?: SSEConfig) {
   const doConnect = useCallback((generation: number) => {
     if (closedRef.current || generation !== generationRef.current) return;
 
-    const baseUrl = buildUrl(urlRef.current);
+    const url = urlRef.current;
+    const baseUrl = buildUrl(typeof url === "function" ? url() : url);
 
     // When an API key is stored we must first mint a single-use SSE ticket —
     // EventSource can't send an Authorization header. In loopback dev mode (no
@@ -173,7 +175,7 @@ export function useSSE(config?: SSEConfig) {
     }, delay);
   }, [opts.initialRetryMs, opts.backoffFactor, opts.maxRetryMs, setStatus, doConnect]);
 
-  const connect = useCallback((url: string, handlers: Handlers) => {
+  const connect = useCallback((url: SSEUrl, handlers: Handlers) => {
     const generation = ++generationRef.current;
     closedRef.current = true;
     sourceRef.current?.close();

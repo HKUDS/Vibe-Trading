@@ -20,6 +20,10 @@ assert acceptance cannot see itself opening on everything.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -74,7 +78,7 @@ def _market_payload() -> str:
 
 
 def _ledger(tmp_path: Path, *, message: str = "分析 159516.SZ 并给出买入价") -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=message)
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": [SYMBOL]},
@@ -660,7 +664,7 @@ def test_a_fabricated_figure_is_refused_under_all_the_same_words(
 
 
 def _prompt_blocks() -> list[str]:
-    from src.agent.context import _SYSTEM_PROMPT
+    from src.product.context import _SYSTEM_PROMPT
 
     return [
         "```figures" + chunk.split("```")[0] + "```"

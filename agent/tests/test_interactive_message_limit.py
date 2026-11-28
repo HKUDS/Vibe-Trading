@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
-from src.api.sessions_routes import MAX_MESSAGE_CHARS
+from src.session.input_rules import MAX_MESSAGE_CHARS
 
 
 @pytest.fixture
@@ -17,6 +17,18 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(api_server, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(api_server, "RUNS_DIR", tmp_path / "runs")
     return TestClient(api_server.app, client=("127.0.0.1", 50000))
+
+
+@pytest.mark.parametrize(("path", "method"), [
+    ("/sessions", "POST"),
+    ("/sessions/example", "GET"),
+    ("/sessions/example/model", "GET"),
+    ("/sessions/example/messages", "POST"),
+])
+def test_session_route_precedence_preserves_allow_header(client, path, method):
+    response = client.request("TRACE", path)
+    assert response.status_code == 405
+    assert response.headers["Allow"] == method
 
 
 @pytest.mark.parametrize("content", ["x" * 5001, "研" * 100_000, "📈" * 100_000])

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from types import SimpleNamespace
 
@@ -171,7 +175,7 @@ def test_live_broker_mcp_wrappers_are_hidden_from_agent_registry(monkeypatch: py
 
     monkeypatch.setattr("src.tools.mcp.build_mcp_tool_wrappers", fail_build_wrappers)
 
-    registry = build_registry(agent_config=agent_config, include_shell_tools=False)
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()), agent_config=agent_config, include_shell_tools=False)
 
     assert "trading_positions" in registry.tool_names
     assert not any(name.startswith("mcp_robinhood_") for name in registry.tool_names)

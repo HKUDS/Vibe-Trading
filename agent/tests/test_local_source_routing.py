@@ -9,6 +9,10 @@ Covers the two halves of the bug:
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 from typing import Dict, List
 
 import pandas as pd
@@ -257,7 +261,7 @@ class TestNoNetworkFallbackIsPerSymbolToo:
         )
 
         with pytest.raises(NoAvailableSourceError, match="MSFT.US"):
-            fetch_data_map(self._config(source=source))
+            fetch_data_map(self._config(source=source), roots=FileRoots.from_config(get_env_config().api))
 
     def test_a_fallback_source_still_reaches_the_chain(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -297,7 +301,7 @@ class TestNoNetworkFallbackIsPerSymbolToo:
         monkeypatch.setattr("backtest.runner.LOADER_REGISTRY", {"yahoo": _Fallback})
         monkeypatch.setattr("backtest.runner.FALLBACK_CHAINS", {"us_equity": ["yahoo"]})
 
-        result = fetch_data_map(self._config(source="tencent"))
+        result = fetch_data_map(self._config(source="tencent"), roots=FileRoots.from_config(get_env_config().api))
 
         assert reached == ["MSFT.US"]
         assert sorted(result.data_map) == ["AAPL.US", "MSFT.US"]

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from cli import _legacy
+import cli.commands.common as _cmd_common
+import cli.commands.connectors as _cmd_connectors
+import cli.commands.execution as _cmd_execution
+import cli.commands.parser as _cmd_parser
+
 from src.trading.connections import ConnectionStore
 from src.trading.credentials import CredentialStore
 
@@ -20,7 +24,7 @@ class _MemoryCredentials:
 
 
 def test_connector_setup_parser_exposes_a_safe_local_onboarding_command():
-    args = _legacy._build_parser().parse_args(
+    args = _cmd_parser.build_parser().parse_args(
         [
             "connector",
             "setup",
@@ -50,15 +54,15 @@ def test_connector_setup_prompts_locally_and_never_writes_secrets_to_registry(
     monkeypatch.setattr(connections, "ConnectionStore", lambda: store)
     monkeypatch.setattr(service, "check_connection", lambda *args, **kwargs: {"status": "ok"})
     answers = iter(("key-value", "secret-value", "passphrase-value"))
-    monkeypatch.setattr(_legacy.Prompt, "ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr(_cmd_common.Prompt, "ask", lambda *args, **kwargs: next(answers))
 
-    result = _legacy.cmd_connector_setup(
+    result = _cmd_connectors.cmd_connector_setup(
         "okx-live-sdk-readonly",
         connection_id="main-okx",
         label="Main OKX",
     )
 
-    assert result == _legacy.EXIT_SUCCESS
+    assert result == _cmd_common.EXIT_SUCCESS
     assert credentials.load("main-okx", ("api_key", "api_secret", "passphrase")) == {
         "api_key": "key-value",
         "api_secret": "secret-value",
@@ -76,7 +80,7 @@ def test_connector_setup_saves_the_endpoint_used_by_the_agent_read_path(tmp_path
 
     store = ConnectionStore(tmp_path / "connections.json", credential_store=CredentialStore(_MemoryCredentials()))
     monkeypatch.setattr(connections, "ConnectionStore", lambda: store)
-    args = _legacy._build_parser().parse_args(
+    args = _cmd_parser.build_parser().parse_args(
         [
             "connector",
             "setup",
@@ -90,8 +94,8 @@ def test_connector_setup_saves_the_endpoint_used_by_the_agent_read_path(tmp_path
             "--skip-check",
         ]
     )
-    monkeypatch.setattr(_legacy, "_ensure_cli_env", lambda: None)
-    assert _legacy._dispatch_connector(args) == _legacy.EXIT_SUCCESS
+    monkeypatch.setattr(_cmd_execution, "_ensure_cli_env", lambda: None)
+    assert _cmd_connectors._dispatch_connector(args) == _cmd_common.EXIT_SUCCESS
     assert store.get("gateway").endpoint == {"host": "localhost", "port": 4002}
     seen = []
 

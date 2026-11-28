@@ -28,8 +28,7 @@ from src.security.workspace_access import (
     WORKSPACE_SCOPE_METADATA_KEY,
     WorkspaceScopeError,
 )
-from src.session.goal_state import goal_state_ws_blob
-from src.session.webui_turns import websocket_turn_wall_started_at
+from src.product.goals import goal_state_ws_blob
 from src.utils.media_decode import (
     FileSizeExceeded,
     save_base64_data_url,
@@ -339,17 +338,9 @@ class WebSocketChannel(BaseChannel):
             return
         await self.send_goal_state(chat_id, blob)
 
-    async def _maybe_push_turn_run_wall_clock(self, chat_id: str) -> None:
-        """Replay ``goal_status: running`` when a turn is still active (same-process refresh)."""
-        t0 = websocket_turn_wall_started_at(chat_id)
-        if t0 is None:
-            return
-        await self.send_goal_status(chat_id, "running", started_at=t0)
-
     async def _hydrate_after_subscribe(self, chat_id: str) -> None:
         """Replay goal/run strip state after subscribe (same-process refresh)."""
         await self._maybe_push_active_goal_state(chat_id)
-        await self._maybe_push_turn_run_wall_clock(chat_id)
 
     async def _send_event(self, connection: Any, event: str, **fields: Any) -> None:
         """Send a control event (attached, error, ...) to a single connection."""
@@ -722,7 +713,6 @@ class WebSocketChannel(BaseChannel):
                 lambda: self._workspaces.scope_for_set_request(
                     envelope,
                     chat_id=cid,
-                    chat_running=websocket_turn_wall_started_at(cid) is not None,
                     controls_available=self._workspace_controls_available(connection),
                 ),
                 chat_id=cid,
@@ -778,7 +768,6 @@ class WebSocketChannel(BaseChannel):
                 lambda: self._workspaces.scope_for_message(
                     envelope,
                     chat_id=cid,
-                    chat_running=websocket_turn_wall_started_at(cid) is not None,
                     controls_available=self._workspace_controls_available(connection),
                 ),
                 chat_id=cid,

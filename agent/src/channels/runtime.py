@@ -19,7 +19,7 @@ from src.channels.manager import ChannelManager
 from src.channels.pairing import PAIRING_COMMAND_META_KEY, handle_pairing_command
 from src.config.paths import get_data_dir
 from src.session.models import Message, Session
-from src.session.service import SessionBusyError
+from src.session.models import SessionBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ class ChannelRuntime:
             attempt_id = result.get("attempt_id") if isinstance(result, dict) else None
             from src.channels.attempt_progress import AttemptProgress
 
-            events = getattr(self.session_service, "event_bus", None)
+            events = getattr(self.session_service, "thread_events", None)
             is_visible = (partial(self.manager.should_send_progress, msg.channel)
                           if self.manager is not None else None)
             progress = (AttemptProgress(self.bus, events, msg, session_id, attempt_id,

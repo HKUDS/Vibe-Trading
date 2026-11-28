@@ -11,6 +11,10 @@ loses nothing, and a small window still compacts before it overflows.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 import logging
 import re
@@ -19,8 +23,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import src.agent.context_budget as cb
-from src.agent.context_budget import (
+import src.session.context_budget as cb
+from src.session.context_budget import (
     CompactionBudget,
     ContextMeter,
     estimate_tokens,
@@ -28,12 +32,12 @@ from src.agent.context_budget import (
     parse_context_limit,
     resolve_window,
 )
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 import src.agent.tuning as tuning_mod
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import records_at
 from src.config.accessor import reset_env_config
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 
 #: Real input tokens of the first request of a research run on 2026-09-29
 #: (deepseek-v4-pro llm_usage.json: 47,661) — system prompt plus 107 tool schemas.
@@ -121,6 +125,17 @@ def test_cost_cap_bounds_a_huge_window() -> None:
 def test_a_window_smaller_than_the_static_prompt_still_has_a_floor() -> None:
     budget = CompactionBudget(window=32_000, source="t", max_tokens=200_000, static_tokens=STATIC_TOKENS)
     assert budget.conversation == cb.MIN_CONVERSATION_TOKENS
+
+
+@pytest.mark.parametrize("window,max_tokens,static_tokens", [
+    (128_000, 4_000, 1_000),     # a small cost ceiling: the floor put every layer above it
+    (12_000, 200_000, 5_000),    # a small window: the summary line sat above the window itself
+    (32_000, 200_000, STATIC_TOKENS),  # the static prompt alone exceeds the budget
+])
+def test_small_cost_ceiling_triggers_compaction_before_refusing_request(window, max_tokens, static_tokens) -> None:
+    """The conversation floor must not lift a layer past the prompt the run may grow to."""
+    budget = CompactionBudget(window=window, source="t", max_tokens=max_tokens, static_tokens=static_tokens)
+    assert budget.micro_at <= budget.collapse_at <= budget.compact_at <= budget.total
 
 
 # --------------------------------------------------------------------------
@@ -250,15 +265,15 @@ def _run(tmp_path: Path, monkeypatch, *, provider: str, model: str, payload_char
         monkeypatch.setenv("VIBE_TRADING_CONTEXT_WINDOW", str(env_window))
     reset_env_config()
     tool = FilingTool(payload_chars)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     llm = ComparisonLLM(model, CODES, overflow_above=overflow_above, overflow_message=overflow_message)
-    loop = AgentLoop(registry=registry, llm=llm, max_iterations=30)
+    loop = AgentRuntime(registry=registry, llm=llm, max_iterations=30)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     loop.memory.run_dir = str(run_dir)
     result = loop.run("Compare these twelve game companies' annual indicators.")
-    return result, tool, llm, loop, TraceWriter.read(run_dir)
+    return result, tool, llm, loop, records_at(run_dir)
 
 
 def _cleared_codes(loop_messages_trace: list[dict]) -> list[str]:
@@ -309,7 +324,7 @@ def test_a_context_length_error_teaches_the_window_and_the_run_recovers(tmp_path
 
     assert result["status"] == "success", result.get("reason")
     assert overflow and overflow[0]["stated_limit"] == 90_000
-    assert loop._learned_context_window == 90_000
+    assert loop._context_compactor.learned_context_window == 90_000
     assert llm.overflows == 1  # recovered once, never overflowed again
     assert max(llm.sent_tokens) <= 90_000
     # A summary keeps static prompt + ~20K tail, so on a 90K window the prompt
@@ -332,7 +347,7 @@ def test_a_gemini_token_limit_error_teaches_the_window_and_the_run_recovers(tmp_
 
     assert result["status"] == "success", result.get("reason")
     assert overflow and overflow[0]["stated_limit"] == 90_000
-    assert loop._learned_context_window == 90_000
+    assert loop._context_compactor.learned_context_window == 90_000
     assert llm.overflows == 1
 
 
@@ -356,25 +371,25 @@ def test_a_model_asking_to_compact_a_small_prompt_is_declined(tmp_path, monkeypa
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "openai-codex/gpt-6-sol")
     reset_env_config()
     tool = FilingTool(4_000)
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     events: list[tuple[str, dict]] = []
-    loop = AgentLoop(registry=registry, llm=CompactingLLM("openai-codex/gpt-6-sol", CODES[:4]),
+    loop = AgentRuntime(registry=registry, llm=CompactingLLM("openai-codex/gpt-6-sol", CODES[:4]),
                      max_iterations=30, event_callback=lambda n, d: events.append((n, d)))
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     loop.memory.run_dir = str(run_dir)
     loop.run("Compare four companies.")
-    trace = TraceWriter.read(run_dir)
+    trace = records_at(run_dir)
 
     assert [e for e in trace if e.get("type") == "compact_declined"]
     assert not [e for e in trace if e.get("type") in ("compact", "compact_requested")]
     # The step is visible: a compact call used to emit no tool_call event at all.
-    assert ("tool_call", "compact") in [(n, d.get("tool")) for n, d in events]
+    assert ("tool.started", "compact") in [(d.get("kind"), d.get("item", {}).get("name")) for n, d in events]
 
 
 def test_layer_one_clears_oldest_results_only_until_the_prompt_fits() -> None:
-    from src.agent.loop import KEEP_RECENT, _is_cleared, _microcompact
+    from src.session.compaction_ops import KEEP_RECENT, _is_cleared, _microcompact
 
     messages = [{"role": "system", "content": "s"}]
     for i in range(10):

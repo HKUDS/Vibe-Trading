@@ -6,6 +6,8 @@ Can be called before coding (to inform strategy design) or after backtest (to an
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 import math
 from typing import Any, Dict
@@ -13,7 +15,7 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools.path_utils import safe_run_dir
 
 
@@ -328,7 +330,7 @@ _PATTERN_FUNCS = {
 # Tool implementation
 # ---------------------------------------------------------------------------
 
-def run_pattern(run_dir: str, patterns: str = "all", window: int = 10) -> str:
+def run_pattern(run_dir: str, patterns: str = "all", window: int = 10, *, roots: FileRoots) -> str:
     """Run chart pattern detection on OHLCV data in run_dir.
 
     Args:
@@ -340,7 +342,7 @@ def run_pattern(run_dir: str, patterns: str = "all", window: int = 10) -> str:
         JSON-formatted detection results.
     """
     try:
-        run_path = safe_run_dir(run_dir)
+        run_path = safe_run_dir(run_dir, roots=roots)
     except ValueError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
@@ -393,7 +395,7 @@ def run_pattern(run_dir: str, patterns: str = "all", window: int = 10) -> str:
         )
 
 
-class PatternTool(BaseTool):
+class PatternTool(FileBoundTool, BaseTool):
     """Chart pattern recognition tool."""
 
     name = "pattern"
@@ -447,4 +449,4 @@ class PatternTool(BaseTool):
                     {"status": "error", "error": f"window must be an integer, got {window_raw!r}"},
                     ensure_ascii=False,
                 )
-        return run_pattern(run_dir=run_dir, patterns=patterns, window=window)
+        return run_pattern(run_dir=run_dir, patterns=patterns, window=window, roots=self.roots)

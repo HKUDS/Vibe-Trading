@@ -1200,6 +1200,20 @@
     "reasoningStrength": "عمق استدلال",
     "unknownProvider": "ارائه‌دهنده ناشناخته",
     "unknownModel": "مدل ناشناخته",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "اتصال قطع شد، در حال اتصال دوباره…",
     "connectionRestored": "اتصال برقرار شد",
     "agentWorking": "شروع به کار…",
@@ -1219,6 +1233,8 @@
     "describeGoal": "هدف پژوهشی پیوست‌شده به این نشست را توصیف کنید",
     "placeholder": "مثلاً آزمون یک استراتژی ساده میانگین متحرک روی 000001.SZ در سال ۲۰۲۴",
     "send": "ارسال پیام",
+    "answerPlaceholder": "پاسخ را وارد کنید",
+    "toolResultImageAlt": "نتیجه ابزار",
     "messageInputLabel": "پیام به ایجنت",
     "inputHint": "Enter برای ارسال · Shift+Enter برای خط جدید",
     "editGoalObjectiveLabel": "ویرایش هدف پژوهشی",
@@ -1285,7 +1301,10 @@
       "failed": "ناموفق",
       "steps": "{{count}} گام",
       "continue": "ادامه",
-      "reattach": "اتصال دوباره"
+      "reattach": "اتصال دوباره",
+      "interrupted": "قطع شد — سرور پیش از پایان این نوبت دوباره راه‌اندازی شد",
+      "interruptedStep": "پیش از پایان قطع شد",
+      "partial": "هنگام توقف نوبت قطع شد"
     },
     "resumeConnector": "ازسرگیری کانکتور",
     "resumeConnectorTitle": "کلید قطع را پاک کنید و فعالیت کانکتور را دوباره فعال کنید",
@@ -1293,6 +1312,20 @@
     "failedToResumeConnector": "ازسرگیری کانکتور ناموفق بود.",
     "tokenUsage": {
       "live": "توکن"
+    },
+    "turnFailed": "اجرا ناموفق بود",
+    "notice": {
+      "compaction": "گفت‌وگوی قبلی خلاصه شد"
+    },
+    "queue": {
+      "placeholder": "پیامی اضافه کنید — پس از مرحلهٔ فعلی اضافه می‌شود",
+      "label": "پیام‌های در صف",
+      "queued": "در صف",
+      "delivering": "در حال پیوستن به گفت‌وگو…",
+      "discard": "حذف پیام در صف",
+      "discardFailed": "این پیام در حال پیوستن به گفت‌وگو است",
+      "failed": "قرار دادن پیام در صف ممکن نشد",
+      "send": "افزودن به صف"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "بررسی کمیته سرمایه‌گذاری",
       "quant_strategy_desk": "میز استراتژی کمّی",
+      "research": "پژوهش",
       "value_investing_committee": "کمیته سرمایه‌گذاری ارزشی"
     }
   },

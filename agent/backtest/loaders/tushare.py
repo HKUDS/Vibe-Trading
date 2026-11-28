@@ -11,7 +11,13 @@ from typing import Any, Callable, Dict, List, Optional
 import pandas as pd
 
 from backtest.loaders._symbol_utils import _is_etf_listed
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import (
+    RAW_CACHE_FIELDS,
+    cached_loader_fetch,
+    stamp_raw,
+    validate_date_range,
+    wants_raw,
+)
 from backtest.loaders.cn_adjust import apply_qfq
 from backtest.loaders.registry import register
 from src.data_gateway.reads import managed_reader
@@ -130,6 +136,9 @@ class DataLoader:
     # Tushare daily() documents vol in board lots (HKUDS/Vibe-Trading#1062).
     # hk_equity (hk_daily) stays undeclared until empirically verified.
     volume_units = {"a_share": "lots"}
+    # ``fetch(..., adjustment="raw")`` serves daily()/fund_daily() bars before
+    # cn_adjust.apply_qfq; those endpoints are unadjusted at origin.
+    raw_markets = frozenset({"a_share"})
     requires_auth = True
 
     def is_available(self) -> bool:
@@ -155,6 +164,7 @@ class DataLoader:
         *,
         interval: str = "1D",
         fields: Optional[List[str]] = None,
+        adjustment: Optional[str] = None,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch A-share / HK equity bars via Tushare API.
 
@@ -164,21 +174,31 @@ class DataLoader:
             end_date: End date (YYYY-MM-DD).
             fields: Extra fundamental columns (daily only).
             interval: Bar size (1D/1m/5m/15m/30m/1H), default ``1D``.
+            adjustment: ``"raw"`` serves daily bars without the adj_factor
+                forward adjustment (stamped ``raw``) and refuses minute bars,
+                whose caliber is unmeasured; ``None`` keeps the default.
 
         Returns:
             Mapping code -> OHLCV DataFrame.
+
+        Raises:
+            ValueError: Malformed dates or an unsupported ``adjustment``.
         """
         validate_date_range(start_date, end_date)
+        raw = wants_raw(adjustment)
 
         # Tencent/sina-style daily aliases; bare ``1d`` must not take the minute path.
         if str(interval).strip().lower() in {"1d", "d", "day", "daily"}:
             interval = "1D"
+        elif raw:
+            self.fetch_errors = {code: "adjustment_unsupported" for code in codes}
+            return {}
         elif interval != "1D":
             return self._fetch_minutes(codes, start_date, end_date, interval)
 
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
-        cache_fields = list(fields or [])
+        cache_fields = [*RAW_CACHE_FIELDS, *(fields or [])] if raw else list(fields or [])
         result: Dict[str, pd.DataFrame] = {}
 
         # Every code goes through the opt-in cache helper, which is a direct
@@ -187,11 +207,11 @@ class DataLoader:
         for code in codes:
             def _fetch_one(code: str = code) -> Optional[pd.DataFrame]:
                 try:
-                    df = self._fetch_daily_frame(code, sd, ed)
+                    df = self._fetch_daily_frame(code, sd, ed, adjusted=not raw)
                     if df is None:
                         return None
                     merged = self._merge_basic_fields(
-                        {code: df}, [code], start_date, end_date, cache_fields
+                        {code: df}, [code], start_date, end_date, list(fields or [])
                     )
                     return merged.get(code)
                 except Exception as exc:
@@ -207,6 +227,8 @@ class DataLoader:
                 fields=cache_fields,
                 fetch=_fetch_one,
             )
+            if raw:
+                df = stamp_raw(df)
             if df is not None and not df.empty:
                 result[code] = df
 
@@ -217,8 +239,20 @@ class DataLoader:
         code: str,
         start_date: str,
         end_date: str,
+        adjusted: bool = True,
     ) -> Optional[pd.DataFrame]:
-        """Fetch and normalize one daily OHLCV frame, routing by symbol type."""
+        """Fetch and normalize one daily OHLCV frame, routing by symbol type.
+
+        Args:
+            code: Tushare ts_code.
+            start_date: ``YYYYMMDD`` start.
+            end_date: ``YYYYMMDD`` end.
+            adjusted: Forward-adjust equities and funds through
+                :func:`apply_qfq`; False returns the endpoint's unadjusted bars.
+
+        Returns:
+            The OHLCV frame, or ``None`` when nothing usable was served.
+        """
         if _is_us_equity(code) or _is_crypto(code):
             logger.warning("tushare does not support %s (US/crypto); skipping", code)
             return None
@@ -255,7 +289,7 @@ class DataLoader:
         ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(
             subset=["open", "high", "low", "close"]
         )
-        if adjust is None:
+        if adjust is None or not adjusted:
             return ohlcv
 
         try:

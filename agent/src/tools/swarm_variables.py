@@ -150,6 +150,19 @@ _MACRO_HORIZON_PATTERNS: list[tuple[str, list[str]]] = [
     ("quarterly", [r"\bquarterly\b", r"\bquarters?\b", r"\bQ[1-4]\b", "季度"]),
 ]
 
+_DURATION_NUMBER = r"\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[一二两三四五六七八九十]+"
+_DESK_DURATION = rf"(?:{_DURATION_NUMBER})\s*(?:(?:days?|weeks?|months?|years?)\b|天|周|星期|个月|年)(?!半)"
+_DESK_HORIZON_RE = re.compile(
+    rf"(?:\bnext\b|未来|接下来)\s*(?P<forward>{_DESK_DURATION})"
+    rf"|(?<![a-z0-9.\-])(?P<outlook>{_DESK_DURATION})\s*(?:展望|走势|(?:outlook|forecast)\b)",
+    re.IGNORECASE,
+)
+_CRYPTO_PAIR_RE = re.compile(r"(?<![A-Z0-9/-])[A-Z0-9]{2,12}-(?:USDT|USDC|USD)(?![A-Z0-9/-])", re.IGNORECASE)
+_EARNINGS_TARGET_RE = re.compile(
+    r"(?<![\w.])([A-Z]{1,5}\.US|\d{3,5}\.HK|\d{6}\.(?:SZ|SH|BJ)|[A-Z]{2,5})"
+    r"(?:['’]s)?\s+(?:(Q[1-4])\s+)?(?i:earnings)\b"
+)
+
 
 def _extract_market(prompt: str) -> str:
     """Extract target market label from prompt.
@@ -286,7 +299,7 @@ def _explicit_horizon(prompt: str) -> str | None:
     numbers.update({word: i for i, word in enumerate("零一二三四五六七八九")})
     numbers["两"] = 2
     match = re.search(
-        r"(?<!\d)(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[一二两三四五六七八九十]+)"
+        rf"(?<!\d)({_DURATION_NUMBER})"
         r"\s*(?:个)?\s*(days?|weeks?|months?|years?|天|日|周|星期|月|年)",
         prompt, re.IGNORECASE,
     )
@@ -443,6 +456,26 @@ def _snippet(prompt: str, max_len: int = 240) -> str:
     return s if len(s) <= max_len else s[: max_len - 3] + "..."
 
 
+def _desk_horizon(prompt: str) -> str | None:
+    """Use a single forward duration, ignoring calendar months and unrelated durations."""
+    horizons = {_explicit_horizon(match.group("forward") or match.group("outlook"))
+                for match in _DESK_HORIZON_RE.finditer(prompt)} - {None}
+    return next(iter(horizons)) if len(horizons) == 1 else None
+
+
+def _earnings_target(prompt: str) -> str | None:
+    """Keep the stated quarter with a ticker tied directly to the earnings request."""
+    from src.swarm.grounding import extract_symbols_from_user_vars
+
+    matches = set(_EARNINGS_TARGET_RE.findall(prompt))
+    if len(matches) != 1 or len(extract_symbols_from_user_vars({"goal": prompt})) != 1:
+        return None
+    symbol, quarter = matches.pop()
+    if not extract_symbols_from_user_vars({"target": symbol}):
+        return None
+    return f"{symbol} ({quarter} earnings)" if quarter else symbol
+
+
 def build_variables(preset_name: str, prompt: str) -> dict[str, str]:
     """Build template variables from prompt for the matched preset.
 
@@ -453,13 +486,33 @@ def build_variables(preset_name: str, prompt: str) -> dict[str, str]:
     Returns:
         Dict of template variables required by the YAML preset.
     """
-    market = _extract_market(prompt)
-    risk = _extract_risk_tolerance(prompt)
     goal = prompt.strip()
     g = _snippet(goal, 2000)
+    if preset_name == "crypto_trading_desk":
+        pairs = {pair.upper() for pair in _CRYPTO_PAIR_RE.findall(goal)}
+        variables = {"target": next(iter(pairs))} if len(pairs) == 1 else {}
+        horizon = _desk_horizon(goal)
+        if horizon:
+            variables["timeframe"] = horizon
+        return variables
+    if preset_name == "earnings_research_desk":
+        target = _earnings_target(goal)
+        return {"target": target} if target else {}
+    if preset_name == "macro_rates_fx_desk":
+        variables = {"goal": g}
+        horizon = _desk_horizon(goal)
+        if horizon:
+            variables["timeframe"] = horizon
+        return variables
+
+    market = _extract_market(prompt)
+    risk = _extract_risk_tolerance(prompt)
 
     # Preset-specific variable sets (see agent/src/swarm/presets/*.yaml).
     builders: dict[str, dict[str, str]] = {
+        # Stage requests are supplied separately; copying the whole request into each stage
+        # would recreate the overlapping work the preset separates.
+        "research": {},
         "global_allocation_committee": {"goal": g, "risk_tolerance": risk},
         "equity_research_team": {"market": market, "goal": g},
         "quant_strategy_desk": {"market": market, "goal": g},

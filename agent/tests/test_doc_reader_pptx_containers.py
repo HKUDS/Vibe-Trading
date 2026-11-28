@@ -1,5 +1,9 @@
 """Real slide text remains visible when its shape is a group or native table."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 
 import pytest
@@ -39,7 +43,7 @@ def read_deck(tmp_path, monkeypatch, presentation, expected_tokens=()):
                 if element.text
             )
     assert stored == list(expected_tokens)
-    return json.loads(DocReaderTool().execute(file_path=str(path)))
+    return json.loads(DocReaderTool(roots=FileRoots.from_config(get_env_config().api)).execute(file_path=str(path)))
 
 
 def test_nested_groups_keep_child_text_once_in_shape_order(tmp_path, monkeypatch):

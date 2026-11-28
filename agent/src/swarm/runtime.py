@@ -1,11 +1,8 @@
-"""Swarm DAG orchestration runtime.
-
-Core orchestrator: schedules workers by topological layer, parallel within each
-layer and serial between layers. Execution runs in a background daemon thread
-with cancellation and event callback support.
-"""
+"""Swarm DAG orchestration runtime."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
 
 import logging
 import random
@@ -19,6 +16,7 @@ from concurrent.futures import (
     as_completed,
 )
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Callable
 
@@ -26,7 +24,10 @@ from src.config.accessor import get_env_config
 from src.config.schema import AgentConfig
 from src.providers.settings import _ensure_dotenv
 from src.providers.llm import uses_responses_api
-from src.swarm import checkpoint, grounding
+from src.session.thread import ThreadLog
+from src.session.thread_schema import ThreadItemError
+from src.swarm import grounding
+from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts, collect_node_artifacts, node_thread
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -50,30 +51,37 @@ from src.swarm.task_store import (
 )
 from src.tools.mcp import invalidate_mcp_specs_cache
 from src.tools.redaction import redact_internal_paths
-from src.swarm.worker import _CancellationSignal, agent_artifact_dir, clear_agent_artifacts, run_worker
+from src.tools.workspace_writes import workspace_write_receipt
+from src.swarm.node import (
+    UNKNOWN_TOOL_OUTCOME, UsageMeasure, _CancellationSignal, partial_summary, run_node, unknown_outcome,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# Swarm runs that are still in flight, keyed by run id and owned by the session
-# that started them. ``SwarmRuntime`` keeps its cancel events per instance, and
-# ``run_swarm`` builds one instance per tool call — so an HTTP cancel handler
-# holding a different runtime cannot reach a run started by the agent, and once
-# the tool call returns (wait budget exhausted) nobody polls that instance at
-# all. This module-level index is the only handle that outlives both: the owning
-# session can still stop the run while its worker threads are burning tokens.
+# Index in-flight runs by ID so another runtime can cancel them after the launching tool returns.
 _ACTIVE_RUNS: dict[str, tuple[str, Callable[[], bool]]] = {}
 _ACTIVE_RUNS_LOCK = threading.Lock()
 
 
 def register_active_run(run_id: str, session_id: str, cancel: Callable[[], bool]) -> None:
-    """Index a freshly started run under the session that owns it."""
+    """Index a freshly started run under the session that owns it.
+
+    Args:
+        run_id: Run ID to index.
+        session_id: ID of the owning session.
+        cancel: Callback that signals cancellation and reports whether it succeeded.
+    """
     with _ACTIVE_RUNS_LOCK:
         _ACTIVE_RUNS[run_id] = (session_id, cancel)
 
 
 def unregister_active_run(run_id: str) -> None:
-    """Drop a run from the index once it is terminal or no longer ours."""
+    """Drop a run from the index once it is terminal or no longer ours.
+
+    Args:
+        run_id: Run ID to remove if present.
+    """
     with _ACTIVE_RUNS_LOCK:
         _ACTIVE_RUNS.pop(run_id, None)
 
@@ -81,10 +89,12 @@ def unregister_active_run(run_id: str) -> None:
 def cancel_indexed_run(run_id: str) -> bool:
     """Signal one indexed run regardless of which runtime started it.
 
-    The HTTP cancel endpoint owns an app-level ``SwarmRuntime`` singleton, while
-    agent-initiated runs live in the instance built inside the tool call. Without
-    this fallback the endpoint answers 404 for exactly the runs a user is most
-    likely to want stopped.
+    Args:
+        run_id: Run ID to remove from the index and signal.
+
+    Returns:
+        True if the callback reports success. False if there was no entry or the callback failed or
+        returned false.
     """
     with _ACTIVE_RUNS_LOCK:
         entry = _ACTIVE_RUNS.pop(run_id, None)
@@ -97,39 +107,18 @@ def cancel_indexed_run(run_id: str) -> bool:
         return False
 
 
-def active_run_ids(session_id: str) -> list[str]:
-    """Return the run ids currently indexed for ``session_id``."""
-    with _ACTIVE_RUNS_LOCK:
-        return [rid for rid, (sid, _) in _ACTIVE_RUNS.items() if sid == session_id]
-
-
 def cancel_runs_for_session(session_id: str) -> int:
-    """Signal every indexed run of ``session_id``; return how many were reached.
+    """Signal every indexed run a session started, including ones its launching tool left running.
 
-    Cancellation is requested for all of them before any is waited on, so a
-    session with parallel runs stops them together instead of serially. Runs
-    that accepted the signal leave the index: nothing else can be done for them,
-    and keeping dead ids around would make ``cancel_current`` report success for
-    a stop that changes nothing.
+    Args:
+        session_id: ID of the owning session.
+
+    Returns:
+        How many runs accepted the cancellation signal.
     """
     with _ACTIVE_RUNS_LOCK:
-        targets = [
-            (rid, cancel)
-            for rid, (sid, cancel) in _ACTIVE_RUNS.items()
-            if sid == session_id
-        ]
-    signalled: list[str] = []
-    for run_id, cancel in targets:
-        try:
-            if cancel():
-                signalled.append(run_id)
-        except Exception:
-            logger.warning("Swarm cancel callback failed for session %s", session_id, exc_info=True)
-    if signalled:
-        with _ACTIVE_RUNS_LOCK:
-            for run_id in signalled:
-                _ACTIVE_RUNS.pop(run_id, None)
-    return len(signalled)
+        run_ids = [run_id for run_id, (owner, _) in _ACTIVE_RUNS.items() if owner == session_id]
+    return sum(cancel_indexed_run(run_id) for run_id in run_ids)
 
 
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
@@ -145,11 +134,7 @@ def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
 
 
 def _worker_retry_delay_s(retry_number: int) -> float:
-    """Return an equal-jitter exponential delay for a worker-level retry.
-
-    Equal jitter keeps half of the exponential delay while spreading
-    concurrent swarm workers across the remaining half of the window.
-    """
+    """Return an equal-jitter exponential delay for a worker-level retry."""
     delay_ceiling = _worker_retry_delay_ceiling_s(retry_number)
     return random.uniform(delay_ceiling / 2, delay_ceiling)
 
@@ -163,6 +148,10 @@ def _worker_retry_budget_s(max_retries: int) -> float:
 
 
 _LAYER_STOP_POLL_S = 0.05
+_LAYER_DEADLINE_ERROR = "Worker exceeded layer deadline of "
+_UNKNOWN_OUTCOME = (
+    ". Its outcome is unknown. Check task artifacts and any external side effects before retrying."
+)
 
 
 class _LayerStop:
@@ -218,13 +207,7 @@ def _wait_for_worker_retry(
 
 
 def _merge_token_source(current: str | None, incoming: str | None) -> str | None:
-    """Merge two usage-provenance labels conservatively.
-
-    ``None`` (unlabeled) never overwrites a real label, and a single
-    ``"estimated"`` contribution contaminates the cumulative total — mixed
-    provider+estimated sums are labeled ``"estimated"`` so consumers never
-    mistake a partly-heuristic total for exact billing data.
-    """
+    """Merge two usage-provenance labels conservatively."""
     if incoming is None:
         return current
     if current is None or incoming == "estimated":
@@ -232,38 +215,50 @@ def _merge_token_source(current: str | None, incoming: str | None) -> str | None
     return current
 
 
+class _RunUsage:
+    """Combine node calls and serialize usage with run snapshots."""
+
+    def __init__(self, run: SwarmRun, store: SwarmStore, parent: Callable[[dict], None] | None):
+        self.run = run
+        self.store = store
+        self.parent = parent
+        self._lock = threading.Lock()
+        self._reported: set[str] = set()
+        self._finalized = False
+
+    def record(self, task_id: str, measured: UsageMeasure, raw: dict) -> None:
+        with self._lock:
+            self._reported.add(task_id)
+            self._add(measured)
+            if self._finalized:
+                self.store.update_run(self.run)
+        if self.parent is not None:
+            self.parent(raw)
+
+    def settle(self, task_id: str, result: WorkerResult) -> None:
+        with self._lock:
+            if task_id not in self._reported:
+                self._add(result)
+
+    def persist(self, *, final: bool = False) -> None:
+        with self._lock:
+            self.store.update_run(self.run)
+            self._finalized = final
+
+    def _add(self, usage: UsageMeasure | WorkerResult) -> None:
+        self.run.total_input_tokens += usage.input_tokens
+        self.run.total_output_tokens += usage.output_tokens
+        self.run.cache_read_tokens += usage.cache_read_tokens
+        self.run.cache_creation_tokens += usage.cache_creation_tokens
+        self.run.token_source = _merge_token_source(self.run.token_source, usage.token_source)
+
+
 def _rehome_artifact_paths(
     artifact_paths: list[str],
     source_run_dir: Path,
     target_run_dir: Path,
 ) -> list[str]:
-    """Copy a kept task's run-relative artifacts into *target_run_dir*.
-
-    Workers persist artifacts as POSIX paths relative to the run directory
-    (``artifacts/<agent>/<task>/<file>``; see ``worker._collect_artifacts``). A
-    resumed run must not reference the old run's directory — the old run
-    stays as a record and may be deleted later.
-
-    The stored artifact list is on-disk state that may be stale or tampered,
-    so every entry is validated before use:
-    - Only paths under the ``artifacts/`` subtree are accepted, resolved to a
-      real path on BOTH sides: ``artifacts/../run.json`` normalizes into the
-      run root (control-file clobber) and a symlinked component such as
-      ``artifacts/analyst -> tasks`` redirects the copy onto task files. The
-      resolved source and resolved destination must each land inside BOTH the
-      run directory and its ``artifacts/`` subtree — the run-root bound stops a
-      symlinked ``artifacts/`` dir (e.g. ``artifacts -> /outside``) from
-      redefining the safe boundary, the subtree bound stops redirection onto
-      control/task files. Anything else (``run.json``, ``events.jsonl``,
-      ``tasks/*.json``, absolute paths, ``..``, symlink redirection) is a
-      control-file or path-traversal vector and is dropped — re-homing a kept
-      artifact must never clobber the new run's own state files or write
-      outside the run.
-    - Missing files are dropped rather than re-homed.
-
-    Returns:
-        New run-relative artifact paths, preserving the input order.
-    """
+    """Copy a kept task's run-relative artifacts into *target_run_dir*."""
     rehomed: list[str] = []
     source_root = source_run_dir.resolve()
     target_root = target_run_dir.resolve()
@@ -297,9 +292,7 @@ def _rehome_artifact_paths(
             continue
         dst = target_run_dir / rel
         try:
-            # Validate containment BEFORE mkdir: creating parent dirs through a
-            # symlinked component (e.g. artifacts -> /outside) would already
-            # write outside the run dir.
+            # Check containment before mkdir so symlinked parents cannot write outside the run.
             resolved_dst = dst.resolve(strict=False)
             if not (
                 resolved_dst.is_relative_to(target_root)
@@ -320,13 +313,7 @@ def _rehome_artifact_paths(
 
 
 def _agent_spec_changed(prev: SwarmAgentSpec, new: SwarmAgentSpec) -> bool:
-    """Return whether an agent's defining configuration differs between runs.
-
-    Only the fields that determine what/with-what the agent produces are
-    compared: role, system prompt, tool/skill whitelists, model choice,
-    retry budget, and timeout. A kept task result is only valid if the agent
-    that produced it still means the same thing.
-    """
+    """Return whether an agent's defining configuration differs between runs."""
     return (
         prev.role != new.role
         or prev.system_prompt != new.system_prompt
@@ -347,30 +334,15 @@ def _task_definition_changed(
     prev_run: SwarmRun,
     new_run: SwarmRun,
 ) -> bool:
-    """Return whether a task's semantic definition differs between runs.
-
-    Compares both the fields that define *what the task is* — the agent that
-    executes it, the prompt template, and the DAG wiring (``depends_on`` and
-    ``input_from``) — and the agent spec that executes it (see
-    ``_agent_spec_changed``). Runtime state (status, summary, blocked_by,
-    completed_at, …) is deliberately excluded.
-
-    When neither the old nor the new agent pins ``model_name`` (bundled presets
-    leave it unset), the task runs on the run-level default captured in
-    ``SwarmRun.model`` / ``.provider`` — so a global model/provider swap
-    between the original run and the replay also invalidates kept results.
-    Per-agent overrides are compared by ``_agent_spec_changed`` already.
-
-    A replayed run must keep a completed task only when the task, its agent,
-    and the effective model that produced it still mean the same thing —
-    otherwise the kept result is stale with respect to the current run.
-    """
+    """Return whether a task's semantic definition differs between runs."""
     if (
         prev_run.user_vars != new_run.user_vars
         or prev.agent_id != new.agent_id
         or prev.prompt_template != new.prompt_template
         or prev.depends_on != new.depends_on
         or prev.input_from != new.input_from
+        or prev.tools != new.tools
+        or prev_run.prefetch_grounding != new_run.prefetch_grounding
     ):
         return True
     prev_agent = prev_agents.get(prev.agent_id)
@@ -387,15 +359,13 @@ def _task_definition_changed(
 
 
 class SwarmRuntime:
-    """Swarm DAG orchestration engine.
+    """Orchestrate swarm task DAGs in a background thread per run.
 
-    Manages the full lifecycle of a swarm run: creation, scheduling, execution,
-    and cancellation. Each run executes in an independent background daemon thread;
-    tasks within a layer run in parallel via ThreadPoolExecutor.
-
-    Attributes:
-        _store: SwarmStore persistence layer.
-        _max_workers: Maximum concurrent workers in ThreadPoolExecutor.
+    Args:
+        store: Swarm run persistence store.
+        max_workers: Maximum number of tasks executed concurrently per run.
+        agent_config: Optional agent configuration passed to workers.
+        policy: Tool policy applied to the swarm.
     """
 
     def __init__(
@@ -403,19 +373,11 @@ class SwarmRuntime:
         store: SwarmStore,
         max_workers: int = 4,
         agent_config: AgentConfig | None = None,
+        *,
+        policy: ToolPolicy,
     ) -> None:
-        """Initialize SwarmRuntime.
-
-        Args:
-            store: SwarmStore instance for run persistence.
-            max_workers: Maximum concurrent worker threads.
-            agent_config: Optional resolved agent config carrying remote MCP
-                server definitions. Boot-time / operator-trusted; never derived
-                from a swarm caller. Forwarded to every worker on every run so
-                the worker can assemble a registry that includes remote MCP
-                tools. ``None`` (the default) preserves the current
-                local-tool-only behavior byte-for-byte.
-        """
+        """Initialize SwarmRuntime."""
+        self.policy = policy
         self._store = store
         self._max_workers = max_workers
         self._agent_config = agent_config
@@ -432,34 +394,48 @@ class SwarmRuntime:
         resume_from: SwarmRun | None = None,
         *,
         session_id: str | None = None,
+        record_usage: Callable[[dict], None] | None = None,
     ) -> SwarmRun:
-        """Start a swarm run. Returns immediately, execution happens in background.
+        """Start a swarm run in a background thread.
 
         Args:
             preset_name: YAML preset name to execute.
             user_vars: User-provided variables for prompt templates.
-            live_callback: Optional callback invoked for each event in real-time.
+            live_callback: Optional callback invoked for live events.
             include_shell_tools: Whether workers may register shell tools.
-            resume_from: Optional prior ``failed`` / ``cancelled`` run to resume.
-                Its completed tasks (and their artifacts) are carried into the
-                new run as-is. Compatible unfinished tasks continue from saved
-                context; tasks without checkpoints restart from retained reports.
-                ``None`` (default) starts a fully fresh run.
-            session_id: Owning session, if the run should be reachable after
-                its initiating tool call returns.
+            resume_from: Optional prior run whose completed work and compatible task threads can be
+                reused.
+            session_id: Owning session, if the run should be indexed for cancellation.
+            record_usage: Optional usage sink bound to the turn that launched the run.
 
         Returns:
-            The created SwarmRun instance (status=pending initially).
+            Newly created run, initially pending.
 
         Raises:
-            FileNotFoundError: If preset does not exist.
-            ValueError: If DAG validation fails.
+            FileNotFoundError: If the preset does not exist.
+            ValueError: If a required preset variable is missing, DAG or task validation fails,
+                or the prior run lacks supported node threads or contains an unknown tool outcome.
+            RuntimeError: If the background thread cannot be started.
         """
+        if resume_from is not None:
+            prior_dir = self._store.run_dir(resume_from.id)
+            for task in resume_from.tasks:
+                # The deadline diagnostic is already persisted on historical runs.
+                error = task.error or ""
+                if error.startswith(_LAYER_DEADLINE_ERROR) and error.endswith(_UNKNOWN_OUTCOME):
+                    raise ValueError(f"Cannot resume task {task.id}: {error}")
+                path = node_thread(prior_dir, task.agent_id, task.id)
+                try:
+                    unresolved = path.is_file() and unknown_outcome(ThreadLog(path).read(strict=True))
+                except (OSError, ThreadItemError):
+                    unresolved = True
+                if error == UNKNOWN_TOOL_OUTCOME or unresolved:
+                    raise ValueError(f"Cannot resume task {task.id}: {UNKNOWN_TOOL_OUTCOME}")
+            if not (prior_dir / "nodes").is_dir():
+                raise ValueError("Cannot resume a swarm run created before the AgentRuntime cutover. Start a new run explicitly.")
+
         _ensure_dotenv()
-        # Reap any previously running runs whose host process died without
-        # finalizing them. Threshold is computed per-run from agent timeouts +
-        # heartbeat interval (see SwarmStore.compute_stale_threshold), so a
-        # legitimately slow long-running task is not killed.
+        # Allow for task timeouts and heartbeats when deciding whether an active run is stale.
         try:
             reaped = self._store.reap_stale_running_runs()
             if reaped:
@@ -467,15 +443,10 @@ class SwarmRuntime:
         except Exception:
             logger.warning("Stale-run reaper failed", exc_info=True)
 
-        run = build_run_from_preset(preset_name, user_vars)
+        run = build_run_from_preset(preset_name, user_vars, validate_variables=True)
         validate_dag(run.tasks)
 
-        # Capture which provider/model the run was launched against so the
-        # serialized run.json carries enough context for cost audits and
-        # post-hoc debugging. Read directly from the same env vars the
-        # provider layer uses (src/providers/llm.py:136,195) — that way an
-        # override applied via os.environ still shows up. Per-agent overrides
-        # remain visible on SwarmAgentSpec.model_name.
+        # Pin the provider settings used at launch for cost audits, including environment overrides.
         _cfg = get_env_config()
         run.provider = public_provider_metadata(_cfg.llm.langchain_provider.lower())
         run.model = public_model_metadata(_cfg.llm.langchain_model_name)
@@ -487,11 +458,12 @@ class SwarmRuntime:
         )
 
         self._store.create_run(run)
+        (self._store.run_dir(run.id) / "nodes").mkdir(exist_ok=True)
 
         cancel_event = threading.Event()
         thread = threading.Thread(
             target=self._run_with_cleanup,
-            args=(run, cancel_event, include_shell_tools, resume_from),
+            args=(run, cancel_event, include_shell_tools, resume_from, record_usage),
             name=f"swarm-{run.id}",
             daemon=True,
         )
@@ -522,10 +494,24 @@ class SwarmRuntime:
         cancel_event: threading.Event,
         include_shell_tools: bool,
         resume_from: SwarmRun | None,
+        record_usage: Callable[[dict], None] | None = None,
     ) -> None:
+        finished = threading.Event()
+
+        def watch_cancel_request() -> None:
+            while not finished.is_set():
+                if self._store.cancel_requested(run.id):
+                    cancel_event.set()
+                    return
+                finished.wait(0.2)
+
+        watcher = threading.Thread(target=watch_cancel_request, name=f"swarm-cancel-{run.id}", daemon=True)
+        watcher.start()
         try:
-            self._execute_run(run, cancel_event, include_shell_tools, resume_from)
+            self._execute_run(run, cancel_event, include_shell_tools, resume_from, record_usage)
         finally:
+            finished.set()
+            watcher.join()
             self._forget_run(run.id)
 
     def cancel_run(self, run_id: str) -> bool:
@@ -535,7 +521,8 @@ class SwarmRuntime:
             run_id: ID of the run to cancel.
 
         Returns:
-            True if cancellation was signalled, False if run not found.
+            True if cancellation was signalled, or False if this runtime has no cancellation event
+            for the run.
         """
         with self._lock:
             cancel_event = self._cancel_events.get(run_id)
@@ -572,17 +559,7 @@ class SwarmRuntime:
         task_id: str | None = None,
         data: dict | None = None,
     ) -> SwarmEvent:
-        """Create a SwarmEvent with current timestamp.
-
-        Args:
-            event_type: Event type string.
-            agent_id: Optional agent identifier.
-            task_id: Optional task identifier.
-            data: Optional additional data.
-
-        Returns:
-            SwarmEvent instance.
-        """
+        """Create a SwarmEvent with current timestamp."""
         return SwarmEvent(
             type=event_type,
             agent_id=agent_id,
@@ -597,73 +574,46 @@ class SwarmRuntime:
         cancel_event: threading.Event,
         include_shell_tools: bool = False,
         resume_from: SwarmRun | None = None,
+        record_usage: Callable[[dict], None] | None = None,
     ) -> None:
-        """Core orchestration loop (runs in background thread).
-
-        Steps:
-            1. Update run status to running
-            2. Initialize TaskStore, save all tasks
-            3. Compute topological layers
-            4. For each layer:
-               a. Check cancellation
-               b. Submit all tasks to ThreadPoolExecutor
-               c. Collect results, resolve dependencies, update store
-            5. Update run status to completed/failed
-
-        Args:
-            run: SwarmRun to execute.
-            cancel_event: Threading event for cancellation signalling.
-            include_shell_tools: Whether workers may register shell tools.
-            resume_from: Optional prior run whose completed tasks are kept
-                (see :meth:`_apply_resume_overlay`). ``None`` executes fresh.
-        """
+        """Schedule the DAG by layer in the run’s background thread."""
         run_id = run.id
         run_dir = self._store.run_dir(run_id)
+        usage = _RunUsage(run, self._store, record_usage)
 
-        # Ensure fresh MCP tool discovery for this run — prior run's cached
-        # specs may be stale if operator edited mcp_servers config between runs.
+        # Rediscover MCP tools because operator configuration can change between runs.
         invalidate_mcp_specs_cache()
 
-        # Mark as running
         run.status = RunStatus.running
         self._store.update_run(run)
         self._emit_event(run_id, self._make_event("run_started"))
 
-        if resume_from is not None and run.user_vars == resume_from.user_vars:
+        if not run.prefetch_grounding:
+            # A preset that names its own sources gets no unrequested price snapshot.
+            run.grounding_data = None
+        elif resume_from is not None and run.user_vars == resume_from.user_vars:
             # Continue the same research snapshot, rather than mix fresh prices
             # with retained upstream reports and invalidate saved context.
             run.grounding_data = resume_from.grounding_data
         else:
             self._prefetch_grounding_data(run)
 
-        # Initialize task store
         task_store = TaskStore(run_dir)
         for task in run.tasks:
             task_store.save_task(task)
 
-        # Build agent lookup
         agent_map: dict[str, SwarmAgentSpec] = {a.id: a for a in run.agents}
 
-        # Render the grounding block once and pass it to every worker on
-        # this run. The block is empty when no symbols were detected, in
-        # which case workers see no extra section.
+        # Share one grounding snapshot among all workers.
         grounding_block = grounding.format_grounding_block(run.grounding_data or {})
 
-        # Compute execution layers
         layers = topological_layers(run.tasks)
-        task_summaries: dict[str, str] = {}
         all_succeeded = True
 
         try:
-            # The overlay runs inside the try so a failure here finalizes the
-            # run (run_error event + failed status) instead of leaving a
-            # zombie "running" run on disk. run.tasks is re-synced from the
-            # store afterwards: _cancel_remaining_tasks and the final snapshot
-            # read in-memory task state, which must see kept tasks as
-            # completed — otherwise a cancellation in the pre-layer window
-            # would relabel them cancelled.
+            # Finalize overlay failures and sync kept tasks before cancellation can relabel them.
             if resume_from is not None:
-                self._apply_resume_overlay(run, run_dir, task_store, resume_from, task_summaries)
+                self._apply_resume_overlay(run, run_dir, task_store, resume_from)
                 run.tasks = task_store.load_all()
 
             for layer_idx, layer_task_ids in enumerate(layers):
@@ -677,7 +627,7 @@ class SwarmRuntime:
                     # too, and the finalize step below lands on `cancelled`.
                     cancel_event.set()
                     logger.info("Run %s cancelled at layer %d", run_id, layer_idx)
-                    self._cancel_remaining_tasks(task_store, layer_task_ids, run.tasks)
+                    self._cancel_remaining_tasks(task_store, run.tasks)
                     all_succeeded = False
                     break
 
@@ -689,134 +639,58 @@ class SwarmRuntime:
                     ),
                 )
 
-                # Execute all tasks in this layer in parallel
                 layer_results = self._execute_layer(
                     run=run,
                     task_store=task_store,
                     agent_map=agent_map,
                     layer_task_ids=layer_task_ids,
-                    task_summaries=task_summaries,
                     run_dir=run_dir,
                     cancel_event=cancel_event,
                     include_shell_tools=include_shell_tools,
                     grounding_block=grounding_block,
+                    usage=usage,
                 )
 
-                # Process results
                 for tid, result in layer_results.items():
-                    # Accumulate token counts to run totals
-                    run.total_input_tokens += result.input_tokens
-                    run.total_output_tokens += result.output_tokens
-                    run.cache_read_tokens += result.cache_read_tokens
-                    run.cache_creation_tokens += result.cache_creation_tokens
-                    run.token_source = _merge_token_source(
-                        run.token_source, result.token_source
-                    )
+                    usage.settle(tid, result)
 
-                    if result.status == "completed":
-                        task_summaries[tid] = result.summary
-                        now_iso = datetime.now(timezone.utc).isoformat()
-                        task_store.update_status(
-                            tid,
-                            TaskStatus.completed,
-                            summary=result.summary,
-                            completed_at=now_iso,
-                            artifacts=result.artifact_paths,
-                            worker_iterations=result.iterations,
-                        )
+                    completed = result.status == "completed"
+                    cancelled = result.status == "cancelled"
+                    error = None
+                    update = {
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "summary": result.summary,
+                        "artifacts": result.artifact_paths,
+                        "worker_iterations": result.iterations,
+                    }
+                    if completed:
+                        status = TaskStatus.completed
+                    elif cancelled:
+                        status = TaskStatus.cancelled
+                    else:
+                        status = TaskStatus.failed
+                        error = redact_internal_paths(result.error)
+                        update["error"] = error or f"worker did not complete (status={result.status})"
+
+                    task_store.update_status(tid, status, **update)
+                    if completed:
                         resolve_dependencies(run_dir / "tasks", tid)
-                        self._emit_event(
-                            run_id,
-                            self._make_event(
-                                "task_completed",
-                                task_id=tid,
-                                data={
-                                    "status": result.status,
-                                    "iterations": result.iterations,
-                                    "input_tokens": result.input_tokens,
-                                    "output_tokens": result.output_tokens,
-                                    "cache_read_tokens": result.cache_read_tokens,
-                                    "cache_creation_tokens": result.cache_creation_tokens,
-                                    "token_source": result.token_source,
-                                },
-                            ),
-                        )
-                    elif result.status == "cancelled":
-                        # The worker stopped because cancel_run() was
-                        # signalled mid-flight; that is a user stop, not a
-                        # worker error. Persist it as cancelled — the same
-                        # terminal state _cancel_remaining_tasks gives tasks
-                        # that never started — so the dashboard, the run
-                        # summary and a later resume all see one consistent
-                        # story instead of a spurious "worker did not
-                        # complete" failure.
-                        all_succeeded = False
-                        task_store.update_status(
-                            tid,
-                            TaskStatus.cancelled,
-                            summary=result.summary,
-                            completed_at=datetime.now(timezone.utc).isoformat(),
-                            artifacts=result.artifact_paths,
-                            worker_iterations=result.iterations,
-                        )
-                        self._emit_event(
-                            run_id,
-                            self._make_event(
-                                "task_cancelled",
-                                task_id=tid,
-                                data={
-                                    "status": result.status,
-                                    "iterations": result.iterations,
-                                    "input_tokens": result.input_tokens,
-                                    "output_tokens": result.output_tokens,
-                                    "cache_read_tokens": result.cache_read_tokens,
-                                    "cache_creation_tokens": result.cache_creation_tokens,
-                                    "token_source": result.token_source,
-                                },
-                            ),
-                        )
                     else:
                         all_succeeded = False
-                        task_store.update_status(
-                            tid,
-                            TaskStatus.failed,
-                            error=redact_internal_paths(result.error)
-                            or f"worker did not complete (status={result.status})",
-                            completed_at=datetime.now(timezone.utc).isoformat(),
-                            worker_iterations=result.iterations,
-                            summary=result.summary,
-                            artifacts=result.artifact_paths,
-                        )
-                        self._emit_event(
-                            run_id,
-                            self._make_event(
-                                "task_failed",
-                                task_id=tid,
-                                data={
-                                    "error": redact_internal_paths(result.error),
-                                    "input_tokens": result.input_tokens,
-                                    "output_tokens": result.output_tokens,
-                                    "cache_read_tokens": result.cache_read_tokens,
-                                    "cache_creation_tokens": result.cache_creation_tokens,
-                                    "token_source": result.token_source,
-                                },
-                            ),
-                        )
+                    data = ({"error": error} if status == TaskStatus.failed
+                            else {"status": result.status, "iterations": result.iterations})
+                    data.update({name: getattr(result, name) for name in UsageMeasure._fields})
+                    self._emit_event(
+                        run_id, self._make_event(f"task_{status.value}", task_id=tid, data=data),
+                    )
 
-                # Missing/nonterminal dependencies still prevent dispatch.
-                # Retained completed tasks are also absent from layer_results,
-                # but are not failures.
+                # Retained completed tasks also have no new layer result.
                 for tid in layer_task_ids:
-                    if tid in layer_results:
-                        continue
-                    if task_store.load_task(tid).status == TaskStatus.completed:
-                        continue
-                    all_succeeded = False
+                    if tid not in layer_results and task_store.load_task(tid).status != TaskStatus.completed:
+                        all_succeeded = False
 
-                # Snapshot run.json at the layer boundary so list_runs and any
-                # client that reads run.json directly sees fresh task statuses
-                # without per-task I/O spam. One write per layer is cheap.
-                self._sync_run_tasks_snapshot(run, task_store)
+                # Publish task statuses once per layer for run readers without per-task writes.
+                self._sync_run_tasks_snapshot(run, task_store, usage)
 
         except Exception as exc:
             logger.error("Run %s failed with exception", run_id, exc_info=True)
@@ -838,26 +712,19 @@ class SwarmRuntime:
         run.status = final_status
         run.completed_at = datetime.now(timezone.utc).isoformat()
 
-        # Sync tasks back to run model
         run.tasks = task_store.load_all()
 
         from src.swarm.delivery import refresh_report
         refresh_report(run, layers[-1] if layers else [])
 
-        self._store.update_run(run)
+        usage.persist(final=True)
         self._emit_event(run_id, self._make_event("run_completed", data={"status": final_status.value, "report_is_partial": run.report_is_partial, "final_report": run.final_report}))
 
-    def _sync_run_tasks_snapshot(self, run: SwarmRun, task_store: TaskStore) -> None:
-        """Mirror live ``tasks/*.json`` back into ``run.json`` at a safe point.
-
-        Called at layer boundaries only — not per-task — to keep run.json a
-        useful coarse snapshot for ``list_runs`` and CLI/Web callers that
-        don't hydrate per request. Failures are logged but never fatal: the
-        per-task files are still the live source of truth.
-        """
+    def _sync_run_tasks_snapshot(self, run: SwarmRun, task_store: TaskStore, usage: _RunUsage) -> None:
+        """Mirror live ``tasks/*.json`` back into ``run.json`` at a safe point."""
         try:
             run.tasks = task_store.load_all()
-            self._store.update_run(run)
+            usage.persist()
         except Exception:
             logger.warning("Layer-boundary run.json sync failed", exc_info=True)
 
@@ -867,37 +734,8 @@ class SwarmRuntime:
         run_dir: Path,
         task_store: TaskStore,
         resume_from: SwarmRun,
-        task_summaries: dict[str, str],
     ) -> None:
-        """Carry completed tasks from *resume_from* into *run* before execution.
-
-        Completed results are retained only with unchanged completed inputs.
-        Compatible unfinished tasks also retain their saved conversation and
-        files; tasks without a checkpoint restart from upstream reports. Two
-        invalidation rules apply:
-        - A completed task is NOT kept when its definition changed since the
-          original run — the task's own defining fields (agent, prompt
-          template, DAG wiring) or the agent spec that executes it (role,
-          system prompt, tools, skills, model, retries, timeout) — because a
-          kept result must still mean the same thing.
-        - A completed task is NOT kept when any of its transitive upstreams
-          re-executes, because its kept summary was produced from the upstream's
-          old output and would be stale relative to the fresh upstream output
-          flowing into it (and unchanged dependents cascade the same way).
-        Kept tasks are re-marked ``completed`` with their original
-        summary/artifacts (artifacts re-homed into this run's directory so the
-        new run is self-contained), kept ids are resolved out of downstream
-        ``blocked_by`` edges, and their summaries are seeded into
-        ``task_summaries`` so ``input_from`` context flows to re-executed
-        dependents. Tasks with no counterpart in the original run (added to the
-        preset since) run fresh.
-
-        Degradation: a wholly missing or unreadable prior task store falls back
-        to a fully fresh run (logged, never fatal). Individual tasks absent
-        from an otherwise-readable store (e.g. preset evolution that removed
-        them) simply have no kept counterpart and re-execute — that is not a
-        store failure, so it does not trigger the fresh-run fallback.
-        """
+        """Carry completed tasks from *resume_from* into *run* before execution."""
         prev_run_dir = self._store.run_dir(resume_from.id)
         if not prev_run_dir.exists():
             logger.warning(
@@ -934,11 +772,7 @@ class SwarmRuntime:
                 continue
             to_keep.add(task.id)
 
-        # Phase 2: a kept result is only valid if every transitive upstream is
-        # also kept — a dependent whose upstream re-executes must itself
-        # re-execute, or its kept summary would be stale with respect to the
-        # fresh upstream output flowing into it. Iterate to fixpoint (DAGs are
-        # small; worst case is quadratic).
+        # Invalidate retained results transitively when an upstream task reruns.
         invalidated = True
         while invalidated:
             invalidated = False
@@ -963,6 +797,7 @@ class SwarmRuntime:
                 continue
             prev = prev_by_id[task.id]
             artifact_paths = _rehome_artifact_paths(prev.artifacts, prev_run_dir, run_dir)
+            self._copy_node_thread(prev_run_dir, run_dir, task)
             task_store.update_status(
                 task.id,
                 TaskStatus.completed,
@@ -973,10 +808,6 @@ class SwarmRuntime:
                 blocked_by=[],
             )
             resolve_dependencies(run_dir / "tasks", task.id)
-            # Mirror _execute_run's live seeding (unconditional key): a kept
-            # task must contribute its input_from key to re-executed dependents
-            # even when the stored summary is empty or None.
-            task_summaries[task.id] = prev.summary or ""
             kept += 1
             self._emit_event(
                 run.id,
@@ -990,8 +821,7 @@ class SwarmRuntime:
                     },
                 ),
             )
-        # An unfinished task can reuse its checkpoint only when its inputs
-        # and definition are unchanged. Never continue against stale upstreams.
+        # Resume unfinished tasks only when their inputs and definitions still match.
         for task in run.tasks:
             prev = prev_by_id.get(task.id)
             if prev is None or task.id in to_keep or prev.status == TaskStatus.completed:
@@ -1000,14 +830,11 @@ class SwarmRuntime:
                 continue
             if _task_definition_changed(prev, task, prev_agents, new_agents, resume_from, run):
                 continue
-            prior_dir = agent_artifact_dir(prev_run_dir, task.agent_id, task.id)
-            if not (prior_dir / checkpoint.FILENAME).is_file():
+            if not self._copy_node_thread(prev_run_dir, run_dir, task):
                 continue
-            paths = list(prev.artifacts)
-            for file in prior_dir.rglob("*"):
-                if file.is_file():
-                    paths.append(str(file.relative_to(prev_run_dir)))
-            artifacts = _rehome_artifact_paths(list(dict.fromkeys(paths)), prev_run_dir, run_dir)
+            workspace = agent_artifact_dir(prev_run_dir, task.agent_id, task.id)
+            paths = collect_node_artifacts(prev_run_dir, workspace)
+            artifacts = _rehome_artifact_paths(paths, prev_run_dir, run_dir)
             task_store.update_status(task.id, TaskStatus.pending, summary=prev.summary, artifacts=artifacts)
         if kept:
             logger.info(
@@ -1016,6 +843,19 @@ class SwarmRuntime:
                 resume_from.id,
                 kept,
             )
+
+    @staticmethod
+    def _copy_node_thread(source: Path, target: Path, task: SwarmTask) -> bool:
+        original = node_thread(source, task.agent_id, task.id)
+        if not original.is_file():
+            return False
+        destination = node_thread(target, task.agent_id, task.id)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, destination)
+        receipt = workspace_write_receipt(original)
+        if receipt.is_file():
+            shutil.copyfile(receipt, workspace_write_receipt(destination))
+        return True
 
     def _prefetch_grounding_data(self, run: SwarmRun) -> None:
         """Fetch run-level grounding data without blocking ``start_run``."""
@@ -1033,11 +873,8 @@ class SwarmRuntime:
             )
             symbols = symbols[:symbol_limit]
 
-        # Multi-symbol grounding fetch can take 30s+ on slow loaders. Wrap it
-        # in a heartbeat so events.jsonl gets fresh entries during the fetch
-        # — without this, the stale-run reaper would false-positive-mark a
-        # healthy fresh run that's just waiting on OHLCV API calls.
-        from src.agent.progress import HeartbeatTimer
+        # Emit heartbeats during grounding so the stale-run sweep leaves a healthy fetch alone.
+        from src.kernel.progress import HeartbeatTimer
 
         def _on_grounding_heartbeat(payload: dict) -> None:
             self._emit_event(
@@ -1076,31 +913,13 @@ class SwarmRuntime:
         task_store: TaskStore,
         agent_map: dict[str, SwarmAgentSpec],
         layer_task_ids: list[str],
-        task_summaries: dict[str, str],
         run_dir: Path,
         cancel_event: threading.Event,
         include_shell_tools: bool = False,
         grounding_block: str = "",
+        usage: _RunUsage | None = None,
     ) -> dict[str, WorkerResult]:
-        """Execute all tasks in a single layer in parallel, with retry on failure.
-
-        Each task is retried up to agent_spec.max_retries times if the worker
-        returns status="failed". A "task_retry" event is emitted before each retry.
-
-        Args:
-            run: The SwarmRun being executed.
-            task_store: TaskStore for task persistence.
-            agent_map: Agent specs keyed by agent_id.
-            layer_task_ids: Task IDs in this layer.
-            task_summaries: Accumulated task summaries from previous layers.
-            run_dir: Run directory path.
-            cancel_event: Cancellation event.
-            include_shell_tools: Whether workers may register shell tools.
-            grounding_block: Pre-rendered "Ground Truth" markdown for workers.
-
-        Returns:
-            Mapping of task_id -> WorkerResult for all tasks in this layer.
-        """
+        """Execute all tasks in a single layer in parallel, with retry on failure."""
         results: dict[str, WorkerResult] = {}
         layer_stop = _LayerStop(
             cancel_event,
@@ -1113,15 +932,12 @@ class SwarmRuntime:
         # Don't wait on work that could still be blocked in I/O after expiry.
         executor = ThreadPoolExecutor(max_workers=self._max_workers)
         futures: dict[Future[WorkerResult], str] = {}
+        task_agents: dict[str, str] = {}
         layer_budget = 0  # seconds — max per-task (retries × timeout) across layer
         try:
             for tid in layer_task_ids:
                 task = task_store.load_task(tid)
 
-                # Replay support: a task kept completed by the resume overlay
-                # must not be re-dispatched — its summary and artifacts were
-                # carried into this run and its summary seeded into
-                # task_summaries before layers started.
                 if task.status == TaskStatus.completed:
                     continue
 
@@ -1167,7 +983,6 @@ class SwarmRuntime:
                     )
                     continue
 
-                # Mark task as in_progress
                 task_store.update_status(
                     tid,
                     TaskStatus.in_progress,
@@ -1179,10 +994,9 @@ class SwarmRuntime:
                     self._make_event("task_started", agent_id=agent_spec.id, task_id=tid),
                 )
 
-                # Carry available work and name missing/unfinished inputs. A
-                # downstream model may synthesize it, but must not invent results.
+                # Name missing inputs so the downstream model does not invent their results.
                 upstream: dict[str, str] = {}
-                for context_key, source_task_id in task.input_from.items():
+                for context_key, source_task_id in task.input_tasks().items():
                     source = task_store.load_task(source_task_id)
                     if source.status == TaskStatus.completed:
                         upstream[context_key] = source.summary or ""
@@ -1196,7 +1010,7 @@ class SwarmRuntime:
                         )
 
                 future = executor.submit(
-                    self._run_worker_with_retries,
+                    self._run_node_with_retries,
                     agent_spec=agent_spec,
                     task=task,
                     upstream_summaries=upstream,
@@ -1207,17 +1021,17 @@ class SwarmRuntime:
                     include_shell_tools=include_shell_tools,
                     grounding_block=grounding_block,
                     cancel_event=layer_stop,
+                    **({"record_usage": partial(usage.record, tid)} if usage is not None else {}),
                 )
                 futures[future] = tid
+                task_agents[tid] = agent_spec.id
                 per_task_budget = (
                     agent_spec.timeout_seconds * (agent_spec.max_retries + 1)
                     + _worker_retry_budget_s(agent_spec.max_retries)
                 )
                 layer_budget = max(layer_budget, per_task_budget)
 
-            # Collect results with a hard layer-level deadline — defends against
-            # worker threads stuck in C extensions / blocked I/O that bypass the
-            # in-loop timeout check (issue #42).
+            # Bound layer waits because blocked worker I/O can bypass in-loop timeouts (issue #42).
             deadline_buffer = 60
             layer_deadline = layer_budget + deadline_buffer if layer_budget else None
 
@@ -1238,16 +1052,19 @@ class SwarmRuntime:
                 for pending, tid in futures.items():
                     if tid in results:
                         continue
-                    pending.cancel()
+                    cancelled_before_start = pending.cancel()
                     logger.error(
                         "Worker for task %s exceeded layer deadline (%ds)",
                         tid,
                         layer_deadline,
                     )
+                    error = f"{_LAYER_DEADLINE_ERROR}{layer_deadline}s"
+                    if not cancelled_before_start:
+                        error += _UNKNOWN_OUTCOME
                     results[tid] = WorkerResult(
                         status="timeout",
-                        summary="",
-                        error=f"Worker exceeded layer deadline of {layer_deadline}s",
+                        summary=partial_summary(run_dir, task_agents[tid], tid),
+                        error=error,
                     )
         except KeyboardInterrupt:
             cancel_event.set()
@@ -1258,7 +1075,7 @@ class SwarmRuntime:
 
         return results
 
-    def _run_worker_with_retries(
+    def _run_node_with_retries(
         self,
         agent_spec: SwarmAgentSpec,
         task: SwarmTask,
@@ -1270,37 +1087,12 @@ class SwarmRuntime:
         include_shell_tools: bool = False,
         grounding_block: str = "",
         cancel_event: _CancellationSignal | None = None,
+        record_usage: Callable[[UsageMeasure, dict], None] | None = None,
     ) -> WorkerResult:
-        """Run a worker with automatic retry on failure.
-
-        Retries up to agent_spec.max_retries times. Emits a "task_retry" event
-        before each retry attempt. Token counts are accumulated across all
-        attempts.
-
-        Args:
-            agent_spec: Agent role specification.
-            task: The task to execute.
-            upstream_summaries: Summaries from upstream tasks.
-            user_vars: User-provided template variables.
-            run_dir: Run directory path.
-            event_callback: Optional event callback.
-            run_id: Run identifier for event emission.
-            include_shell_tools: Whether the worker may register shell tools.
-            grounding_block: Pre-rendered "Ground Truth" markdown spliced
-                into the worker's system prompt. Empty string when no
-                symbols were extracted from user_vars.
-            cancel_event: Cooperative stop signal for the run or this layer.
-                Forwarded to run_worker() and checked before another attempt.
-
-        Returns:
-            WorkerResult from the last attempt.
-        """
+        """Run a worker with automatic retry on failure."""
         max_retries = agent_spec.max_retries
-        cumulative_input_tokens = 0
-        cumulative_output_tokens = 0
-        cumulative_cache_read_tokens = 0
-        cumulative_cache_creation_tokens = 0
-        cumulative_token_source: str | None = None
+        totals = dict.fromkeys(UsageMeasure._fields[:-1], 0)
+        token_source = None
         result: WorkerResult | None = None
 
         def stop_requested() -> bool:
@@ -1310,14 +1102,11 @@ class SwarmRuntime:
             if result is None:
                 return WorkerResult(status="cancelled", summary="")
             return result.model_copy(update={
-                "status": WorkerStatus.cancelled,
-                "input_tokens": cumulative_input_tokens,
-                "output_tokens": cumulative_output_tokens,
-                "cache_read_tokens": cumulative_cache_read_tokens,
-                "cache_creation_tokens": cumulative_cache_creation_tokens,
-                "token_source": cumulative_token_source,
+                **totals, "token_source": token_source, "status": WorkerStatus.cancelled,
             })
 
+        successful_reads: dict[tuple[str, str], str] = {}
+        thread_path = node_thread(run_dir, agent_spec.id, task.id)
         # Each task owns its artifact directory, so only retries need to clear it.
         for attempt in range(max_retries + 1):
             if stop_requested():
@@ -1350,17 +1139,16 @@ class SwarmRuntime:
                     return cancelled_result()
                 # Checkpointed retries continue the saved conversation and files.
                 artifact_dir = agent_artifact_dir(run_dir, agent_spec.id, task.id)
-                if not (artifact_dir / checkpoint.FILENAME).is_file():
+                if not thread_path.is_file():
                     if stop_requested():
                         return cancelled_result()
                     clear_agent_artifacts(artifact_dir)
+                    successful_reads.clear()
 
-            resume_kwargs = {}
-            if (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
-                resume_kwargs["resume"] = True
             if stop_requested():
                 return cancelled_result()
-            result = run_worker(
+            result = run_node(
+                policy=self.policy,
                 agent_spec=agent_spec,
                 task=task,
                 upstream_summaries=upstream_summaries,
@@ -1371,56 +1159,27 @@ class SwarmRuntime:
                 grounding_block=grounding_block,
                 agent_config=self._agent_config,
                 cancel_event=cancel_event,
-                **resume_kwargs,
+                resume=thread_path.is_file(),
+                successful_reads=successful_reads,
+                **({"record_usage": record_usage} if record_usage is not None else {}),
             )
 
-            cumulative_input_tokens += result.input_tokens
-            cumulative_output_tokens += result.output_tokens
-            cumulative_cache_read_tokens += result.cache_read_tokens
-            cumulative_cache_creation_tokens += result.cache_creation_tokens
-            cumulative_token_source = _merge_token_source(
-                cumulative_token_source, result.token_source
-            )
+            for field in totals:
+                totals[field] += getattr(result, field)
+            token_source = _merge_token_source(token_source, result.token_source)
+            if result.status != "failed" or result.error == UNKNOWN_TOOL_OUTCOME:
+                break
 
-            if result.status != "failed":
-                # Success (or timeout/token_limit/completed) — no more retries
-                result = result.model_copy(
-                    update={
-                        "input_tokens": cumulative_input_tokens,
-                        "output_tokens": cumulative_output_tokens,
-                        "cache_read_tokens": cumulative_cache_read_tokens,
-                        "cache_creation_tokens": cumulative_cache_creation_tokens,
-                        "token_source": cumulative_token_source,
-                    }
-                )
-                return result
-
-        # All retries exhausted, return the last failed result with cumulative tokens
         if result is not None:
-            result = result.model_copy(
-                update={
-                    "input_tokens": cumulative_input_tokens,
-                    "output_tokens": cumulative_output_tokens,
-                    "cache_read_tokens": cumulative_cache_read_tokens,
-                    "cache_creation_tokens": cumulative_cache_creation_tokens,
-                    "token_source": cumulative_token_source,
-                }
-            )
+            result = result.model_copy(update={**totals, "token_source": token_source})
         return result  # type: ignore[return-value]
 
     def _cancel_remaining_tasks(
         self,
         task_store: TaskStore,
-        current_layer_ids: list[str],
         all_tasks: list[SwarmTask],
     ) -> None:
-        """Mark all non-completed tasks as cancelled.
-
-        Args:
-            task_store: TaskStore for persistence.
-            current_layer_ids: Task IDs in the current (interrupted) layer.
-            all_tasks: All tasks in the run.
-        """
+        """Mark all non-completed tasks as cancelled."""
         for task in all_tasks:
             if task.status not in (TaskStatus.completed, TaskStatus.failed):
                 try:

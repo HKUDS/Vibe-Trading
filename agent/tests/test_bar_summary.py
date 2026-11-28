@@ -1,5 +1,9 @@
 """Returned-series summaries reduce inspection turns without hiding gaps or sampling."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -7,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.data_gateway.bar_summary import summarize_bars
-from src.agent.result_artifacts import persist_calculation_result
+from src.product.result_artifacts import persist_calculation_result
 from src.config.limits import TOOL_RESULT_LIMIT
 
 
@@ -21,7 +25,7 @@ def test_full_series_summary_is_delivered_without_reading_parts(tmp_path, monkey
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     raw = payload()
     raw["_summary"] = summarize_bars(raw, "5m")
-    response = json.loads(persist_calculation_result(json.dumps(raw), tmp_path))
+    response = json.loads(persist_calculation_result(json.dumps(raw), tmp_path, roots=FileRoots.from_config(get_env_config().api)))
     summary = response["_summary"]["BTC-USDT"]
     assert summary["source_rows"] == summary["returned_rows"] == 288
     assert summary["first_time"] == "2026-11-13T00:00:00"
@@ -64,7 +68,7 @@ def test_sampling_never_claims_consecutive_coverage():
 def test_large_multisymbol_summary_still_respects_tool_envelope(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     raw = {"_summary": {str(i): {"text": "x"*200} for i in range(100)}}
-    response = persist_calculation_result(json.dumps(raw), tmp_path)
+    response = persist_calculation_result(json.dumps(raw), tmp_path, roots=FileRoots.from_config(get_env_config().api))
     assert len(response) <= TOOL_RESULT_LIMIT
     assert "_summary_omitted" in json.loads(response)
 
@@ -91,6 +95,6 @@ def test_summary_receipt_keeps_missing_symbol_diagnostics(tmp_path, monkeypatch)
     raw["_unresolved"] = ["BHP.AX"]
     raw["_diagnostics"] = {"BHP.AX": [{"reason": "unsupported_market"}]}
     raw["_summary"] = summarize_bars(raw, "5m")
-    response = json.loads(persist_calculation_result(json.dumps(raw), tmp_path))
+    response = json.loads(persist_calculation_result(json.dumps(raw), tmp_path, roots=FileRoots.from_config(get_env_config().api)))
     assert response["_unresolved"] == ["BHP.AX"]
     assert response["_diagnostics"] == raw["_diagnostics"]

@@ -4,7 +4,7 @@ Covers ``redact_payload`` (recursive sensitive-key scrubbing),
 ``is_sensitive_arg`` (sink-aware key-name classification) and
 ``redact_tool_result`` (the single tool-result choke point), now consumed by
 the swarm worker, the live-action audit ledger and the agent loop from one
-module. The end-to-end tests at the bottom drive the real ``AgentLoop`` +
+module. The end-to-end tests at the bottom drive the real ``AgentRuntime`` +
 ``TraceWriter`` and assert that a planted secret reaches neither the persisted
 trace nor an event preview.
 """
@@ -18,9 +18,12 @@ from typing import Any
 
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
-from src.agent.trace import TraceWriter
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
+
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tool
 from src.tools.redaction import (
     RESULT_SINK,
     is_sensitive_arg,
@@ -361,7 +364,7 @@ def test_redact_tool_result_none_and_empty_safe() -> None:
 
 # --------------------------------------------------------------------------- #
 # End-to-end: a planted secret must reach neither the persisted trace nor an
-# event preview, through the real AgentLoop + TraceWriter.
+# event preview, through the real AgentRuntime + TraceWriter.
 # --------------------------------------------------------------------------- #
 
 _PLAINTEXT_KEY_SECRET = "pk-live-plaintext-9df3"
@@ -386,6 +389,7 @@ class _StubRegistry:
 
     def __init__(self, result: str) -> None:
         self._result = result
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     def get(self, tool_name: str) -> _Tool:
         del tool_name
@@ -395,13 +399,16 @@ class _StubRegistry:
         del tool_name, args
         return self._result
 
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
+
 
 def _run_one_tool_call(
     registry: _StubRegistry,
     tc: SimpleNamespace,
     run_dir: Path,
 ) -> tuple[list[tuple[str, dict]], list[dict], list[dict]]:
-    """Drive one tool call through ``AgentLoop`` with a real ``TraceWriter``.
+    """Drive one tool call through ``AgentRuntime`` with a real ``TraceWriter``.
 
     Args:
         registry: Stub registry supplying the tool result.
@@ -409,24 +416,23 @@ def _run_one_tool_call(
         run_dir: Existing directory receiving ``trace.jsonl`` and sidecars.
 
     Returns:
-        ``(events, messages, react_trace)`` — emitted SSE events, the
+        ``(events, messages, records)`` — emitted SSE events, the
         LLM-facing message list, and the react trace.
     """
     events: list[tuple[str, dict]] = []
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=registry,  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         max_iterations=1,
         event_callback=lambda event_type, data: events.append((event_type, data)),
     )
     agent.memory.run_dir = str(run_dir)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
 
-    agent._execute_single(tc, ContextBuilder, messages, trace, react_trace, 1)
+    run_recorded_tool(agent, tc, ContextBuilder, messages, trace, 1)
     trace.close()
-    return events, messages, react_trace
+    return events, messages, records_at(run_dir)
 
 
 def _persisted_text(run_dir: Path) -> str:
@@ -438,6 +444,49 @@ def _persisted_text(run_dir: Path) -> str:
     )
 
 
+def test_tool_progress_redacts_secrets_before_streaming(tmp_path: Path) -> None:
+    """Progress crosses the same public boundary as the final tool result."""
+    from src.kernel.progress import emit_progress
+
+    class ProgressRegistry(_StubRegistry):
+        def execute(self, tool_name, args):
+            emit_progress("fetching", current=1, total=2,
+                          message="Connecting api_key=progress-secret")
+            return super().execute(tool_name, args)
+
+    events, _, _ = _run_one_tool_call(
+        ProgressRegistry('{"status": "ok"}'),
+        SimpleNamespace(id="progress", name="fetch_quote", arguments={}),
+        tmp_path,
+    )
+    progress = [data["progress"] for kind, data in events
+                if kind == "item.delta" and data.get("kind") == "tool.progress"
+                and data["progress"].get("stage") == "fetching"]
+    assert len(progress) == 1
+    assert progress[0]["message"] == "Connecting api_key=[redacted]"
+    assert progress[0]["current"] == 1
+    assert progress[0]["total"] == 2
+    assert "progress-secret" not in json.dumps(events)
+
+
+def test_tool_images_persist_only_artifact_references(tmp_path: Path) -> None:
+    """Inline image bytes cannot hide in the thread's image metadata."""
+    inline = "aW5saW5lLWltYWdlLWJ5dGVz"
+    image = {"path": str(tmp_path / "plot.png"), "mime_type": "image/png",
+             "alt": "plot", "data": inline}
+    events, messages, _ = _run_one_tool_call(
+        _StubRegistry(json.dumps({"status": "ok", "images": [image]})),
+        SimpleNamespace(id="image", name="render_chart", arguments={}), tmp_path,
+    )
+    persisted = _persisted_text(tmp_path)
+    assert inline not in persisted
+    assert inline not in json.dumps(messages)
+    assert inline not in json.dumps(events)
+    items = [json.loads(line) for line in (tmp_path / "thread.jsonl").read_text().splitlines()]
+    result = next(item for item in items if item["type"] == "tool_result")
+    assert result["images"] == [{key: value for key, value in image.items() if key != "data"}]
+
+
 def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     tmp_path: Path,
 ) -> None:
@@ -446,7 +495,7 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     run_dir.mkdir()
     tc = SimpleNamespace(id="tc_plain", name="fetch_quote", arguments={"symbol": "AAPL"})
 
-    events, messages, react_trace = _run_one_tool_call(
+    events, messages, records = _run_one_tool_call(
         _StubRegistry(_PLAINTEXT_RESULT), tc, run_dir
     )
 
@@ -455,16 +504,16 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     assert _PLAINTEXT_BEARER_SECRET not in persisted
     assert "[redacted]" in persisted
 
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     tool_result = next(entry for entry in entries if entry["type"] == "tool_result")
     assert 'api_key="[redacted]"' in tool_result["result"]
     assert "Bearer [redacted]" in tool_result["result"]
     # The failure context survives redaction — the trace stays diagnosable.
     assert "connect failed" in tool_result["result"]
 
-    previews = [data["preview"] for event_type, data in events if event_type == "tool_result"]
+    previews = [data["item"]["content"] for event_type, data in events if event_type == "item.completed" and data.get("kind") in {"tool.completed", "tool.failed"}]
     assert previews, "expected a tool_result event"
-    for preview in previews + [item["result_preview"] for item in react_trace]:
+    for preview in previews + [item["preview"] for item in records if item["type"] == "tool_result"]:
         assert _PLAINTEXT_KEY_SECRET not in preview
         assert _PLAINTEXT_BEARER_SECRET not in preview
 
@@ -491,12 +540,12 @@ def test_write_file_content_argument_never_lands_in_the_trace(tmp_path: Path) ->
 
     assert _WRITE_FILE_DOC_SECRET not in _persisted_text(run_dir)
 
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     tool_call = next(entry for entry in entries if entry["type"] == "tool_call")
     assert tool_call["args"]["content"] == "[redacted]"
     assert tool_call["args"]["path"] == "notes.md"
 
-    call_events = [data for event_type, data in events if event_type == "tool_call"]
+    call_events = [data for event_type, data in events if event_type == "item.started" and data.get("kind") == "tool.started"]
     assert call_events, "expected a tool_call event"
     assert _WRITE_FILE_DOC_SECRET not in json.dumps(call_events, default=str)
 
@@ -599,7 +648,7 @@ def test_metadata_exception_is_exact_and_cannot_hide_a_credential_suffix(key: st
 
 
 def test_metadata_validation_reaches_swarm_argument_previews() -> None:
-    from src.swarm.worker import _preview_tool_arguments
+    from src.swarm.node import _preview_tool_arguments
 
     preview = _preview_tool_arguments({
         "token_budget": "opaque-test-credential",
@@ -618,11 +667,11 @@ def test_metadata_validation_reaches_trace_events_and_result_previews(tmp_path: 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     tc = SimpleNamespace(id="tc_metadata", name="fetch_quote", arguments=payload)
-    events, _, react_trace = _run_one_tool_call(_StubRegistry(json.dumps(payload)), tc, run_dir)
-    for surface in [_persisted_text(run_dir), json.dumps(events), json.dumps(react_trace)]:
+    events, _, records = _run_one_tool_call(_StubRegistry(json.dumps(payload)), tc, run_dir)
+    for surface in [_persisted_text(run_dir), json.dumps(events), json.dumps(records)]:
         assert "opaque-test-credential" not in surface
         assert "nested-test-credential" not in surface
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     call = next(entry for entry in entries if entry["type"] == "tool_call")
     result = next(entry for entry in entries if entry["type"] == "tool_result")
     assert call["args"]["totalInputTokens"] == 23
@@ -652,3 +701,10 @@ def test_metadata_validation_reaches_all_audit_sinks(tmp_path: Path, monkeypatch
         assert "opaque-test-credential" not in json.dumps(record)
         assert "nested-test-credential" not in json.dumps(record)
         assert record["broker_request"]["tokenUsage"]["totalInputTokens"] == 77
+
+
+def test_goal_usage_count_is_public_only_as_a_numeric_result():
+    assert redact_payload({"tokens_used": 11}, sink=RESULT_SINK) == {"tokens_used": 11}
+    for value in ("fixture-private", True, -1, {"value": 11}):
+        assert redact_payload({"tokens_used": value}, sink=RESULT_SINK) == {"tokens_used": "[redacted]"}
+    assert is_sensitive_arg("tokens_used", value=11)

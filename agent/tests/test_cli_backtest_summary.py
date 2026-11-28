@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.execution as _cmd_execution
+
 import subprocess
 from pathlib import Path
 
 from rich.console import Console
 from unittest.mock import Mock
 
-from cli._legacy import _read_metric_values
+from cli.commands.inspection import _read_metric_values
 
 _METRICS_CSV = (
     "total_return,annual_return,sharpe,max_drawdown,win_rate,trade_count\n"
@@ -26,7 +29,7 @@ def _run_with_metrics(tmp_path: Path) -> Path:
 def _forbid_spawn(monkeypatch) -> None:
     """Fail the test if anything starts a process from a print path.
 
-    The original implementation launched `cli._legacy serve` detached, with
+    The original implementation launched `cli.commands.dispatch serve` detached, with
     stdout discarded and no shutdown, so every run that produced a backtest could
     leave an unauthenticated loopback API listening after the CLI exited.
     """
@@ -85,7 +88,7 @@ def test_interactive_result_prints_english_metrics_and_a_hint(
 def test_single_prompt_run_prints_the_hint_without_serving(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from cli import _legacy
+    pass
     from src import preflight
 
     _forbid_spawn(monkeypatch)
@@ -97,13 +100,13 @@ def test_single_prompt_run_prints_the_hint_without_serving(
         "content": "Done.",
     }
     monkeypatch.setattr(preflight, "run_preflight", lambda console: [])
-    monkeypatch.setattr(_legacy, "_ensure_session_id", lambda prompt: "session")
-    monkeypatch.setattr(_legacy, "_run_agent", lambda *args, **kwargs: result)
-    monkeypatch.setattr(_legacy, "_print_result", Mock())
+    monkeypatch.setattr(_cmd_execution, "_ensure_session_id", lambda prompt: "session")
+    monkeypatch.setattr(_cmd_execution, "_run_agent", lambda *args, **kwargs: result)
+    monkeypatch.setattr(_cmd_execution, "_print_result", Mock())
     test_console = Console(record=True, force_terminal=False, color_system=None, width=100)
-    monkeypatch.setattr(_legacy, "console", test_console)
+    monkeypatch.setattr(_cmd_common, "console", test_console)
 
-    exit_code = _legacy.cmd_run("Backtest AAPL", 10)
+    exit_code = _cmd_execution.cmd_run("Backtest AAPL", 10)
     output = test_console.export_text()
 
     assert exit_code == 0

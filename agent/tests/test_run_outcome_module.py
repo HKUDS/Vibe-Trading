@@ -1,11 +1,9 @@
 """Pin the extraction contract of the run-outcome module (issue #1624).
 
-``AgentLoop._run_bound`` used to resolve its terminal status, end event,
+``AgentRuntime._run_bound`` used to resolve its terminal status, end event,
 and result dict inline in a 100-line tail; that ladder now lives in
-``src.agent.run_outcome`` and is called from ``loop.py``. These tests pin
-each branch of the ladder directly — something the pre-extraction layout
-could only exercise by stubbing a whole LLM — plus the re-export surface
-``loop.py`` must keep importing.
+``src.product.outcome`` and is called from ``loop.py``. These tests pin
+each branch of the ladder directly and the owning module's surface.
 """
 
 from __future__ import annotations
@@ -16,9 +14,8 @@ from typing import Optional
 
 import pytest
 
-import src.agent.loop as loop
-import src.agent.run_outcome as run_outcome
-from src.agent.run_outcome import (
+import src.product.outcome as run_outcome
+from src.product.outcome import (
     OutcomeInputs,
     RunOutcome,
     build_end_event,
@@ -26,7 +23,7 @@ from src.agent.run_outcome import (
     resolve_final_status,
 )
 
-RE_EXPORTS = [
+OWNED_SYMBOLS = [
     "OutcomeInputs",
     "RunOutcome",
     "build_end_event",
@@ -35,10 +32,10 @@ RE_EXPORTS = [
 ]
 
 
-@pytest.mark.parametrize("name", RE_EXPORTS)
-def test_loop_reexports(name: str) -> None:
-    """Every moved name resolves through ``src.agent.loop`` (back-compat)."""
-    assert getattr(loop, name) is getattr(run_outcome, name)
+@pytest.mark.parametrize("name", OWNED_SYMBOLS)
+def test_outcome_symbols_belong_to_the_owner(name: str) -> None:
+    """The extracted implementation is defined by its owning module."""
+    assert getattr(run_outcome, name).__module__ == "src.product.outcome"
 
 
 def _inputs(**over: object) -> OutcomeInputs:
@@ -170,14 +167,14 @@ class TestBuildEndEvent:
 class TestBuildResultDict:
     def _runtime(self) -> SimpleNamespace:
         return SimpleNamespace(
-            provider="openai", configured_model="gpt-test", reasoning_effort="low"
+            provider="openai", configured_model="gpt-test", reasoning_effort="low",
+            selection="configured",
         )
 
     def test_fields_and_model_source(self) -> None:
         r = build_result_dict(
             RunOutcome("success", None, "success", False),
             Path("/tmp/runs/abc123"),
-            [{"type": "answer"}],
             4,
             12,
             "the answer",
@@ -197,7 +194,6 @@ class TestBuildResultDict:
         r = build_result_dict(
             RunOutcome("success", None, "success", False),
             Path("/tmp/runs/x"),
-            [],
             1,
             12,
             "",
@@ -212,7 +208,6 @@ class TestBuildResultDict:
         r = build_result_dict(
             RunOutcome("success", "degraded for a reason", "success", True),
             Path("/tmp/runs/x"),
-            [],
             1,
             12,
             "text",

@@ -29,13 +29,24 @@ _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 class CustomProviderStore:
-    """Store custom-provider metadata on disk and API keys in the OS vault."""
+    """Store custom-provider metadata on disk and API keys in the OS vault.
+
+    Args:
+        path: Optional metadata file path. Defaults to the runtime root's provider configuration
+            file.
+        backend: Optional backing implementation for the credential store.
+    """
 
     def __init__(self, path: Path | None = None, backend: Any = None) -> None:
         self.path = path or (get_runtime_root() / CONFIG_FILENAME)
         self.credentials = CredentialStore(backend)
 
     def list_public(self) -> list[dict[str, Any]]:
+        """List the client-facing custom provider profiles.
+
+        Returns:
+            Profiles ordered by ID, with metadata, credential availability, and active status.
+        """
         payload = self._read()
         profiles = payload.get("profiles", {})
         return [
@@ -64,7 +75,23 @@ class CustomProviderStore:
         api_key: str,
         last_tested_at: str | None = None,
     ) -> dict[str, Any]:
-        """Save tested metadata and vault credentials without changing an active profile."""
+        """Save tested metadata and vault credentials without changing an active profile.
+
+        Args:
+            profile_id: Profile ID, trimmed and lowercased. It must match the profile ID pattern and
+                differ from the active ID.
+            label: Display label containing 1 to 100 characters after trimming.
+            base_url: Nonempty endpoint URL, stored without trailing slashes.
+            model: Nonempty provider model name.
+            api_key: Nonempty API key, trimmed and stored in the vault.
+            last_tested_at: Timestamp to store, defaulting to the current time.
+
+        Returns:
+            The saved profile's public metadata.
+
+        Raises:
+            ValueError: If an input is invalid or the profile ID is active.
+        """
         with STORE_LOCK:
             profile_id = profile_id.strip().lower()
             if not _ID_RE.fullmatch(profile_id):
@@ -88,6 +115,17 @@ class CustomProviderStore:
             return next(item for item in self.list_public() if item["id"] == profile_id)
 
     def get(self, profile_id: str) -> dict[str, Any]:
+        """Load a custom provider profile and its API key.
+
+        Args:
+            profile_id: Profile ID, matched after trimming and lowercasing.
+
+        Returns:
+            The profile ID, stored metadata, and API key.
+
+        Raises:
+            ValueError: If the profile is unknown or its API key is missing.
+        """
         profile_id = profile_id.strip().lower()
         item = self._read().get("profiles", {}).get(profile_id)
         if not isinstance(item, dict):
@@ -98,6 +136,17 @@ class CustomProviderStore:
         return {"id": profile_id, **item, "api_key": api_key}
 
     def activate(self, profile_id: str) -> dict[str, Any]:
+        """Record a stored custom profile as active.
+
+        Args:
+            profile_id: ID of the saved profile to activate.
+
+        Returns:
+            The profile ID and stored metadata with the API key omitted.
+
+        Raises:
+            ValueError: If the profile is unknown or its API key is missing.
+        """
         profile = self.get(profile_id)
         payload = self._read()
         payload["active_id"] = profile_id.strip().lower()
@@ -124,6 +173,15 @@ def _now() -> str:
 
 
 def active_provider_credentials() -> dict[str, str] | None:
+    """Load the active custom provider's connection credentials.
+
+    Returns:
+        The active profile's base URL, model, and API key.
+
+    Raises:
+        RuntimeError: If no profile is marked active.
+        ValueError: If that profile is unknown or has no API key.
+    """
     store = CustomProviderStore()
     payload = store._read()
     active_id = str(payload.get("active_id") or "").strip()
@@ -217,7 +275,21 @@ async def _perform_completion_test(*, base_url: str, model: str, api_key: str) -
 def activate_custom_provider(
     profile_id: str, *, store: CustomProviderStore, settings: SettingsStore | None = None
 ) -> dict[str, Any]:
-    """Activate one vault profile and roll back metadata if settings cannot persist."""
+    """Activate one vault profile and roll back metadata if settings cannot persist.
+
+    Args:
+        profile_id: ID of the saved profile to make active.
+        store: Profile store whose active ID will be updated.
+        settings: Settings store for persisting and applying the selection. Defaults to the
+            canonical store.
+
+    Returns:
+        Activation status, profile ID, model, and base URL.
+
+    Raises:
+        ValueError: If the profile is unknown or lacks an API key.
+        Exception: If provider settings cannot be persisted.
+    """
     settings = settings or SettingsStore()
     with CONFIG_LOCK, STORE_LOCK:
         profile = store.get(profile_id)

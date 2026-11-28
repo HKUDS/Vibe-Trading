@@ -7,7 +7,7 @@ const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
   getRunPreview: vi.fn(),
-  getSessionMessages: vi.fn(),
+  getSessionThread: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
 }));
 
@@ -19,7 +19,11 @@ const sseMock = vi.hoisted(() => ({
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return { ...actual, api: apiMock };
+  const { threadFixture } = await import("./threadFixture");
+  return { ...actual, api: { ...apiMock,
+    getSessionThread: async (sid: string) => threadFixture(await apiMock.getSessionThread(sid)),
+    listPendingInputs: async () => ({ items: [] }),
+  } };
 });
 
 vi.mock("@/hooks/useSSE", () => ({
@@ -106,7 +110,7 @@ describe("Agent runtime identity session transitions", () => {
       env_path: "agent/.env",
       providers: [],
     });
-    apiMock.getSessionMessages.mockImplementation((sid: string) => (
+    apiMock.getSessionThread.mockImplementation((sid: string) => (
       sid === "session-one" ? Promise.resolve([storedReply(sid)]) : Promise.resolve([])
     ));
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
@@ -117,7 +121,7 @@ describe("Agent runtime identity session transitions", () => {
 
   it("hides the previous identity while the next session load is still pending", async () => {
     const slowLoad = deferred<ReturnType<typeof storedReply>[]>();
-    apiMock.getSessionMessages.mockImplementation((sid: string) => (
+    apiMock.getSessionThread.mockImplementation((sid: string) => (
       sid === "session-one" ? Promise.resolve([storedReply(sid)]) : slowLoad.promise
     ));
     const { router, identity } = await renderLoadedFirstSession();
@@ -135,7 +139,7 @@ describe("Agent runtime identity session transitions", () => {
 
   it("keeps runtime identity clear when the next session load fails", async () => {
     const failedLoad = deferred<ReturnType<typeof storedReply>[]>();
-    apiMock.getSessionMessages.mockImplementation((sid: string) => (
+    apiMock.getSessionThread.mockImplementation((sid: string) => (
       sid === "session-one" ? Promise.resolve([storedReply(sid)]) : failedLoad.promise
     ));
     const { router, identity } = await renderLoadedFirstSession();
@@ -194,7 +198,7 @@ describe("Agent runtime identity session transitions", () => {
 
     it("cancels the previous session scroll while the next history is pending", async () => {
       const next = deferred<ReturnType<typeof storedReply>[]>();
-      apiMock.getSessionMessages.mockImplementation((sid: string) => (
+      apiMock.getSessionThread.mockImplementation((sid: string) => (
         sid === "session-one" ? Promise.resolve([storedReply(sid)]) : next.promise
       ));
       const raf = vi.spyOn(window, "requestAnimationFrame");
@@ -209,7 +213,7 @@ describe("Agent runtime identity session transitions", () => {
 
     it("ignores a history response that arrives after unmount", async () => {
       const pending = deferred<ReturnType<typeof storedReply>[]>();
-      apiMock.getSessionMessages.mockReturnValue(pending.promise);
+      apiMock.getSessionThread.mockReturnValue(pending.promise);
       const view = await mountSession();
       const messages = useAgentStore.getState().messages;
       view.unmount();
@@ -226,7 +230,7 @@ describe("Agent runtime identity session transitions", () => {
       useAgentStore.getState().cacheSession("session-one", [
         { id: "cached", type: "answer", content: "cached reply", timestamp: 1 },
       ]);
-      apiMock.getSessionMessages.mockReturnValue(new Promise(() => {}));
+      apiMock.getSessionThread.mockReturnValue(new Promise(() => {}));
       const raf = vi.spyOn(window, "requestAnimationFrame");
       const view = await mountSession();
       view.unmount();

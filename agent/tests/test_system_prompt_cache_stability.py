@@ -9,24 +9,27 @@ marks on the system message — for everything after the ``## State`` section.
 
 The fix: the volatile summary rides the first **user** message wrapped in an
 ``<agent-state>`` envelope (same convention as ``<recalled-memories>``), and
-the system template no longer has a ``## State`` section. The system prompt is
-now byte-identical across runs as long as the registry, skills, and date
-minute do not change.
+the system template no longer has a ``## State`` section. The system prompt is now byte-identical across turns. The minute-resolution
+current date rides in the user-message envelope.
 """
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import pytest
 
-from src.agent.context import ContextBuilder
-from src.agent.memory import WorkspaceMemory
+from src.product.context import ContextBuilder
+from src.product.resources.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 
 pytestmark = pytest.mark.unit
 
 
 def _builder(memory: WorkspaceMemory) -> ContextBuilder:
-    return ContextBuilder(ToolRegistry(), memory)
+    return ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), memory)
 
 
 class TestSystemPromptCacheStability:
@@ -43,7 +46,7 @@ class TestSystemPromptCacheStability:
         m2.increment("backtest")
 
         # Freeze the clock so only run_dir/counters differ between the two.
-        import src.agent.context as ctx
+        import src.product.context as ctx
         from datetime import datetime, timezone
 
         frozen = datetime(2026, 10, 6, 12, 0, 0, tzinfo=timezone.utc)
@@ -87,7 +90,10 @@ class TestSystemPromptCacheStability:
     def test_empty_state_leaves_user_message_untouched(self) -> None:
         messages = _builder(WorkspaceMemory()).build_messages("analyze AAPL")
 
-        assert messages[-1]["content"] == "analyze AAPL"
+        content = messages[-1]["content"]
+        assert content.startswith("<agent-state>")
+        assert "current-date-time:" in content
+        assert content.endswith("analyze AAPL")
 
     def test_state_envelope_sits_before_recalled_memories(self) -> None:
         class _Recall:
@@ -103,7 +109,7 @@ class TestSystemPromptCacheStability:
 
         m = WorkspaceMemory()
         m.run_dir = "/runs/x"
-        builder = ContextBuilder(ToolRegistry(), m, persistent_memory=_PersistentMemory())
+        builder = ContextBuilder(ToolRegistry(policy=ToolPolicy.from_config(get_env_config())), m, persistent_memory=_PersistentMemory())
 
         user = builder.build_messages("analyze AAPL")[-1]["content"]
 

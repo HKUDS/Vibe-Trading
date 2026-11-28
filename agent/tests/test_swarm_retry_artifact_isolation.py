@@ -3,10 +3,10 @@ artifacts (report.md, or any other tool-written file) from a prior failed
 attempt for the same task, and two different tasks must never share an
 artifact directory.
 
-``_run_worker_with_retries`` re-invokes ``run_worker`` against the *same*
+``_run_node_with_retries`` re-invokes ``run_node`` against the *same*
 ``artifact_dir`` on every retry of one task (``mkdir(parents=True,
 exist_ok=True)``, no cleanup in between). ``_resolve_summary``/
-``_report_written``/``_collect_artifacts`` all read whatever is currently
+``_report_written``/``collect_artifacts`` all read whatever is currently
 sitting in that directory, with no way to tell which attempt wrote it.
 Without per-attempt isolation, a worker that fails after writing report.md,
 followed by a retry that fails immediately (a realistic sequence of two
@@ -23,14 +23,18 @@ same agent and dispatched concurrently would have one task's retry delete
 the other's in-flight output out from under it. Per-task directories have
 neither problem.
 
-The real ``_resolve_summary``/``_report_written``/``_collect_artifacts``
-are exercised for real inside the mocked ``run_worker`` below (only the
+The real ``_resolve_summary``/``_report_written``/``collect_artifacts``
+are exercised for real inside the mocked ``run_node`` below (only the
 expensive LLM/tool-loop internals are mocked out), so these tests prove the
 actual interaction between the retry loop's cleanup and worker.py's
 artifact-reading functions, not just one function in isolation.
 """
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 
 from pathlib import Path
 from unittest.mock import patch
@@ -40,17 +44,13 @@ import pytest
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore
-from src.swarm.worker import (
-    _collect_artifacts,
-    _resolve_summary,
-    agent_artifact_dir,
-    clear_agent_artifacts,
-)
+from src.swarm.artifacts import agent_artifact_dir, clear_agent_artifacts, collect_artifacts
+from src.swarm.node import _resolve_summary
 
 
 def _make_runtime(tmp_path: Path) -> SwarmRuntime:
     store = SwarmStore(base_dir=tmp_path / "swarm_runs")
-    return SwarmRuntime(store=store)
+    return SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
 
 
 def _make_agent_spec(max_retries: int) -> SwarmAgentSpec:
@@ -75,8 +75,8 @@ def _make_task(task_id: str = "task-1") -> SwarmTask:
 # --------------------------------------------------------------------------- #
 
 
-def test_agent_artifact_dir_matches_run_worker_construction(tmp_path: Path) -> None:
-    """The shared helper must resolve to the exact path run_worker() writes
+def test_agent_artifact_dir_matches_run_node_construction(tmp_path: Path) -> None:
+    """The shared helper must resolve to the exact path run_node() writes
     to, or the retry loop would clear the wrong directory entirely."""
     run_dir = tmp_path / "run-x"
     assert agent_artifact_dir(run_dir, "analyst", "task-1") == (
@@ -148,7 +148,7 @@ def test_stale_report_not_returned_after_retry(tmp_path: Path) -> None:
 
     calls = {"n": 0}
 
-    def fake_run_worker(**kwargs):
+    def fake_run_node(**kwargs):
         calls["n"] += 1
         artifact_dir.mkdir(parents=True, exist_ok=True)
         if calls["n"] == 1:
@@ -168,8 +168,8 @@ def test_stale_report_not_returned_after_retry(tmp_path: Path) -> None:
             error="attempt 2: provider error",
         )
 
-    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
-        result = runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", side_effect=fake_run_node):
+        result = runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},
@@ -201,7 +201,7 @@ def test_stale_non_report_artifact_not_leaked_after_retry(tmp_path: Path) -> Non
 
     calls = {"n": 0}
 
-    def fake_run_worker(**kwargs):
+    def fake_run_node(**kwargs):
         calls["n"] += 1
         artifact_dir.mkdir(parents=True, exist_ok=True)
         if calls["n"] == 1:
@@ -211,18 +211,18 @@ def test_stale_non_report_artifact_not_leaked_after_retry(tmp_path: Path) -> Non
             return WorkerResult(
                 status="failed",
                 summary="attempt 1 raw fallback",
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+                artifact_paths=collect_artifacts(run_dir, artifact_dir),
                 error="attempt 1: tool error",
             )
         return WorkerResult(
             status="failed",
             summary="attempt 2 real fallback",
-            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+            artifact_paths=collect_artifacts(run_dir, artifact_dir),
             error="attempt 2: provider error",
         )
 
-    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
-        result = runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", side_effect=fake_run_node):
+        result = runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},
@@ -255,7 +255,7 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
 
     calls = {"n": 0}
 
-    def fake_run_worker(**kwargs):
+    def fake_run_node(**kwargs):
         calls["n"] += 1
         artifact_dir.mkdir(parents=True, exist_ok=True)
         if calls["n"] == 1:
@@ -268,7 +268,7 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
             return WorkerResult(
                 status="failed",
                 summary=_resolve_summary(artifact_dir, "attempt 1 raw fallback"),
-                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+                artifact_paths=collect_artifacts(run_dir, artifact_dir),
                 error="attempt 1: provider error",
             )
         (artifact_dir / "report.md").write_text(
@@ -277,11 +277,11 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
         return WorkerResult(
             status="completed",
             summary=_resolve_summary(artifact_dir, "attempt 2 raw fallback"),
-            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+            artifact_paths=collect_artifacts(run_dir, artifact_dir),
         )
 
-    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
-        result = runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", side_effect=fake_run_node):
+        result = runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},
@@ -313,7 +313,7 @@ def test_earlier_task_artifacts_survive_a_later_task_on_the_same_agent(
     run_dir = tmp_path / "run-shared-agent"
     run_dir.mkdir()
 
-    def fake_run_worker(**kwargs):
+    def fake_run_node(**kwargs):
         task = kwargs["task"]
         artifact_dir = agent_artifact_dir(run_dir, "analyst", task.id)
         artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -324,14 +324,14 @@ def test_earlier_task_artifacts_survive_a_later_task_on_the_same_agent(
         return WorkerResult(
             status="completed",
             summary=_resolve_summary(artifact_dir, f"{task.id} raw fallback"),
-            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+            artifact_paths=collect_artifacts(run_dir, artifact_dir),
         )
 
     task1 = SwarmTask(id="task-1", agent_id="analyst", prompt_template="do x")
     task2 = SwarmTask(id="task-2", agent_id="analyst", prompt_template="do y")
 
-    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
-        result1 = runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", side_effect=fake_run_node):
+        result1 = runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task1,
             upstream_summaries={},
@@ -342,7 +342,7 @@ def test_earlier_task_artifacts_survive_a_later_task_on_the_same_agent(
             include_shell_tools=False,
             grounding_block="",
         )
-        result2 = runtime._run_worker_with_retries(
+        result2 = runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task2,
             upstream_summaries={},
@@ -389,7 +389,7 @@ def test_retrying_one_task_does_not_touch_a_concurrent_sibling_tasks_output(
 
     calls = {"n": 0}
 
-    def fake_run_worker(**kwargs):
+    def fake_run_node(**kwargs):
         calls["n"] += 1
         artifact_dir = agent_artifact_dir(run_dir, "analyst", "task-a")
         artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -399,11 +399,11 @@ def test_retrying_one_task_does_not_touch_a_concurrent_sibling_tasks_output(
         return WorkerResult(
             status="completed",
             summary=_resolve_summary(artifact_dir, "task-a fallback"),
-            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+            artifact_paths=collect_artifacts(run_dir, artifact_dir),
         )
 
-    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
-        runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", side_effect=fake_run_node):
+        runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task_a,
             upstream_summaries={},

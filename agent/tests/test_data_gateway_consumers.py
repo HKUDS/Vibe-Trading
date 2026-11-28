@@ -1,5 +1,9 @@
 """Real consumer boundaries: shared acquisition, compatibility and resource caps."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import json
 import threading
@@ -178,7 +182,7 @@ def test_api_and_agent_share_identical_bar_snapshot(gateway, monkeypatch):
     params = {"codes": ["AAPL.US"], "start_date": "2026-11-12", "end_date": "2026-11-13", "max_rows": 250}
     response = TestClient(app).post("/data/bars", json=params)
     assert response.status_code == 200
-    result = json.loads(MarketDataTool().execute(**params))
+    result = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(**params))
     assert result["AAPL.US"] == response.json()["data"]["AAPL.US"]
     assert result["_provenance"]["AAPL.US"]["source"] == "fixture"
     assert len(calls) == 1

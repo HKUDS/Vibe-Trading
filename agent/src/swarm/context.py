@@ -1,4 +1,4 @@
-"""Budget worker context without discarding a fresh batch of observations."""
+"""Budget node context without discarding a fresh batch of observations."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.agent.context_budget import CompactionBudget, ContextMeter, estimate_tokens, resolve_window
-from src.agent.result_artifacts import save_result_parts
+from src.session.context_budget import CompactionBudget, ContextMeter, estimate_tokens, resolve_window
+from src.product.result_artifacts import save_result_parts
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.tools.redaction import redact_tool_result
@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 _OFFLOADED = "[Worker context result saved: "
 
 
-class WorkerContext:
+class NodeContext:
     """Track real prompt size and save old observations before removing them.
 
-    A result stays visible for at least one successful model request. Under
-    pressure, older results may move to readable files inside this worker's
-    workspace. Neither a tool count nor a batch position implies obsolescence.
+    Args:
+        model: Worker model name, or a falsey value to use the configured model.
+        artifact_dir: Worker workspace in which offloaded results are saved.
+        can_read_files: Whether the worker can read the offloaded files.
     """
 
     def __init__(self, *, model: str, artifact_dir: Path, can_read_files: bool) -> None:
@@ -39,18 +40,41 @@ class WorkerContext:
         self.pending: set[str] = set()
 
     def budget(self, messages: list[dict], tools: list[dict] | None) -> CompactionBudget:
-        """Return the same window/cost ceiling used by the main agent."""
+        """Return the same window/cost ceiling used by the main agent.
+
+        Args:
+            messages: Current worker conversation.
+            tools: Tool schemas for the next request, if any.
+
+        Returns:
+            Compaction budget derived from the model window, configured token cap, and static prompt
+            cost.
+        """
         return CompactionBudget(
             window=self.window, source=self.window_source, max_tokens=self.max_tokens,
             static_tokens=self.meter.static(messages, estimate_tokens(tools or [])),
         )
 
     def tokens(self, messages: list[dict], tools: list[dict] | None) -> int:
-        """Estimate the next request from the last provider input-token count."""
+        """Estimate the next request from the last provider input-token count.
+
+        Args:
+            messages: Current worker conversation.
+            tools: Tool schemas for the next request, if any.
+
+        Returns:
+            Estimated input token count, calibrated by provider usage when available.
+        """
         return self.meter.tokens(messages, estimate_tokens(tools or []))
 
     def observe(self, messages: list[dict], tools: list[dict] | None, usage: dict | None) -> None:
-        """Record a successful request; its pending results have now been seen."""
+        """Record a successful request and release pending results for future compaction.
+
+        Args:
+            messages: Conversation sent to the provider.
+            tools: Tool schemas sent with the request, if any.
+            usage: Provider usage metadata containing input_tokens, if available.
+        """
         self.meter.observe((usage or {}).get('input_tokens'), messages,
                            tool_schema_tokens=estimate_tokens(tools or []))
         self.pending.clear()
@@ -60,14 +84,14 @@ class WorkerContext:
 
         Args:
             messages: Mutable current worker conversation.
-            tools: Exact schemas for the next model request.
+            tools: Exact schemas for the next model request, if any.
 
         Returns:
-            Receipts for results successfully saved to disk. An unavailable
-            reader or failed write leaves the original result in context.
+            Receipts for tool results replaced in context by file references, including the call ID,
+            saved paths, and original character count. Empty when no result was replaced.
         """
         budget = self.budget(messages, tools)
-        target = min(budget.micro_at, budget.total)
+        target = budget.micro_at
         if not self.can_read_files or self.tokens(messages, tools) <= target:
             return []
         receipts = []
@@ -85,7 +109,7 @@ class WorkerContext:
             try:
                 paths = self._save_result(redact_tool_result(content), digest)
             except (OSError, ValueError):
-                logger.warning('Could not preserve worker context result', exc_info=True)
+                logger.warning('Could not preserve node context result', exc_info=True)
                 continue
             marker = (
                 f'{_OFFLOADED}{json.dumps(paths)}] This result was returned earlier, not missing. '
@@ -99,12 +123,7 @@ class WorkerContext:
         return receipts
 
     def _save_result(self, content: str, digest: str) -> list[str]:
-        """Save parts that fit through the real read_file result envelope.
-
-        JSON escaping and the path count toward the shared result cap. Splitting
-        prevents a successfully saved observation from being truncated again
-        when the model reads it back. Existing symlinks cannot redirect writes.
-        """
+        """Save parts that fit through the real read_file result envelope."""
         return save_result_parts(
             content, self.artifact_dir / "context-results" / digest, self.artifact_dir,
         )

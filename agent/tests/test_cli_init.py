@@ -1,23 +1,25 @@
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.setup_memory as _cmd_setup_memory
+
 from pathlib import Path
 from unittest.mock import patch
 
-import cli
 
 
 def _provider_choice_number(provider: str) -> int:
     """Return the rendered one-based menu number for a provider."""
     return next(
         index
-        for index, choice in enumerate(cli._PROVIDER_CHOICES, start=1)
+        for index, choice in enumerate(_cmd_common._PROVIDER_CHOICES, start=1)
         if choice["provider"] == provider
     )
 
 
 class TestCliInit:
     def test_render_env_content_openrouter(self) -> None:
-        content = cli._render_env_content(
+        content = _cmd_common._render_env_content(
             {
                 "LANGCHAIN_TEMPERATURE": "0.0",
                 "LANGCHAIN_PROVIDER": "openrouter",
@@ -39,7 +41,7 @@ class TestCliInit:
         assert "MAX_RETRIES=2" in content
 
     def test_render_env_content_gemini(self) -> None:
-        content = cli._render_env_content(
+        content = _cmd_common._render_env_content(
             {
                 "LANGCHAIN_TEMPERATURE": "0.0",
                 "LANGCHAIN_PROVIDER": "gemini",
@@ -57,17 +59,17 @@ class TestCliInit:
         assert "LANGCHAIN_MODEL_NAME=gemini-3.5-flash" in content
 
     def test_validate_api_key_prefix(self) -> None:
-        assert cli._validate_api_key("sk-or-abc", "sk-or-") is True
-        assert cli._validate_api_key("bad-key", "sk-or-") is False
-        assert cli._validate_api_key("anything", None) is True
+        assert _cmd_setup_memory._validate_api_key("sk-or-abc", "sk-or-") is True
+        assert _cmd_setup_memory._validate_api_key("bad-key", "sk-or-") is False
+        assert _cmd_setup_memory._validate_api_key("anything", None) is True
 
     def test_cmd_init_writes_agent_env_for_openrouter(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
-        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=1), \
+        with patch.object(_cmd_common, "_INIT_ENV_PATH", env_path), \
+             patch.object(_cmd_common.IntPrompt, "ask", return_value=1), \
              patch.object(
-                 cli.Prompt,
+                 _cmd_common.Prompt,
                  "ask",
                  side_effect=[
                      "sk-or-test-key",
@@ -76,7 +78,7 @@ class TestCliInit:
                      "ts-token",
                  ],
              ):
-            result = cli.cmd_init()
+            result = _cmd_setup_memory.cmd_init()
 
         assert result == 0
         content = env_path.read_text(encoding="utf-8")
@@ -91,15 +93,15 @@ class TestCliInit:
 
         env_path.write_text("OPENROUTER_API_KEY=old-key\nLANGCHAIN_REASONING_EFFORT=high\n")
 
-        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.Confirm, "ask", return_value=True), \
+        with patch.object(_cmd_common, "_INIT_ENV_PATH", env_path), \
+             patch.object(_cmd_common.Confirm, "ask", return_value=True), \
              patch.object(
-                 cli.IntPrompt,
+                 _cmd_common.IntPrompt,
                  "ask",
                  return_value=_provider_choice_number("ollama"),
              ), \
              patch.object(
-                 cli.Prompt,
+                 _cmd_common.Prompt,
                  "ask",
                  side_effect=[
                      "http://localhost:11434",
@@ -108,7 +110,7 @@ class TestCliInit:
                      "",
                  ],
              ):
-            result = cli.cmd_init()
+            result = _cmd_setup_memory.cmd_init()
 
         assert result == 0
         content = env_path.read_text(encoding="utf-8")
@@ -122,14 +124,14 @@ class TestCliInit:
     def test_cmd_init_openai_codex_uses_supported_default_and_oauth(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
-        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
+        with patch.object(_cmd_common, "_INIT_ENV_PATH", env_path), \
              patch.object(
-                 cli.IntPrompt,
+                 _cmd_common.IntPrompt,
                  "ask",
                  return_value=_provider_choice_number("openai-codex"),
              ), \
              patch.object(
-                 cli.Prompt,
+                 _cmd_common.Prompt,
                  "ask",
                  side_effect=[
                      "https://chatgpt.com/backend-api/codex/responses",
@@ -137,7 +139,7 @@ class TestCliInit:
                      "",
                  ],
              ):
-            result = cli.cmd_init()
+            result = _cmd_setup_memory.cmd_init()
 
         assert result == 0
         content = env_path.read_text(encoding="utf-8")

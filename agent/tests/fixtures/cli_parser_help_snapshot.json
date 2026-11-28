@@ -1,0 +1,8971 @@
+{
+ "": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "version",
+    "help": "show program's version number and exit",
+    "kind": "_VersionAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--version"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "prompt",
+    "help": "Prompt text",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "-p",
+     "--prompt"
+    ],
+    "required": false,
+    "type": "str"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "prompt_file",
+    "help": "Read prompt text from a file",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "-f",
+     "--prompt-file"
+    ],
+    "required": false,
+    "type": "Path"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Print machine-readable JSON output",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "no_rich",
+    "help": "Disable Rich formatting",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--no-rich"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "chat",
+    "help": "Interactive chat mode",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--chat"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "cont",
+    "help": "Continue a run",
+    "kind": "_StoreAction",
+    "metavar": [
+     "RUN_ID",
+     "PROMPT"
+    ],
+    "nargs": 2,
+    "option_strings": [
+     "--continue"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "list",
+    "help": "List runs",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--list"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "show",
+    "help": "Show run details",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--show"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "code",
+    "help": "Show generated code",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--code"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "pine",
+    "help": "Show Pine Script for TradingView",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--pine"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "trace",
+    "help": "Replay a run trace",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--trace"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "skills",
+    "help": "List skills",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--skills"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "50",
+    "dest": "max_iter",
+    "help": "Maximum agent iterations",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--max-iter"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "swarm_presets",
+    "help": "List swarm presets",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--swarm-presets"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "swarm_inspect",
+    "help": "Inspect a swarm preset without running it",
+    "kind": "_StoreAction",
+    "metavar": "PRESET",
+    "nargs": null,
+    "option_strings": [
+     "--swarm-inspect"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "swarm_run",
+    "help": "Run a swarm preset",
+    "kind": "_StoreAction",
+    "metavar": [
+     "PRESET",
+     "VARS"
+    ],
+    "nargs": "+",
+    "option_strings": [
+     "--swarm-run"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "swarm_list",
+    "help": "List swarm runs",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--swarm-list"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "swarm_show",
+    "help": "Show a swarm run",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--swarm-show"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "swarm_cancel",
+    "help": "Cancel a swarm run",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--swarm-cancel"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "swarm_retry",
+    "help": "Retry a prior swarm run",
+    "kind": "_StoreAction",
+    "metavar": "RUN_ID",
+    "nargs": null,
+    "option_strings": [
+     "--swarm-retry"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "swarm_resume",
+    "help": "Keep completed tasks when retrying a swarm run",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--swarm-resume"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "sessions",
+    "help": "List sessions",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--sessions"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "session_chat",
+    "help": "Continue a session chat",
+    "kind": "_StoreAction",
+    "metavar": "SESSION_ID",
+    "nargs": null,
+    "option_strings": [
+     "--session-chat"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "upload",
+    "help": "Upload a file",
+    "kind": "_StoreAction",
+    "metavar": "FILE_PATH",
+    "nargs": null,
+    "option_strings": [
+     "--upload"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "sessions",
+     "run",
+     "serve",
+     "office",
+     "provider",
+     "data",
+     "channels",
+     "list",
+     "show",
+     "chat",
+     "update",
+     "init",
+     "setup",
+     "dev",
+     "memory",
+     "portfolio",
+     "connector",
+     "alpha",
+     "hypothesis",
+     "research-artifact",
+     "research-lab",
+     "playbook",
+     "strategy-evidence",
+     "paper"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": "Vibe-Trading CLI",
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "version",
+     "prompt",
+     "prompt_file",
+     "json",
+     "no_rich",
+     "chat",
+     "cont",
+     "list",
+     "show",
+     "code",
+     "pine",
+     "trace",
+     "skills",
+     "max_iter",
+     "swarm_presets",
+     "swarm_inspect",
+     "swarm_run",
+     "swarm_list",
+     "swarm_show",
+     "swarm_cancel",
+     "swarm_retry",
+     "swarm_resume",
+     "sessions",
+     "session_chat",
+     "upload"
+    ],
+    "title": "options"
+   }
+  ]
+ },
+ "/alpha": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "verbose",
+    "help": "Show full traceback on errors",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--verbose"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "show",
+     "bench",
+     "compare",
+     "export-manifest"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "alpha_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "alpha_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "verbose"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Alpha Zoo: list / show / bench / compare / export-manifest"
+ },
+ "/alpha/bench": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "zoo",
+    "help": "Zoo to benchmark (required unless --yes is passed)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--zoo"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "csi300",
+     "sp500",
+     "nifty100"
+    ],
+    "const": "None",
+    "default": "'csi300'",
+    "dest": "universe",
+    "help": "Universe (NIFTY 100: nifty100; default: csi300; one of csi300, sp500, nifty100)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--universe"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'2020-2025'",
+    "dest": "period",
+    "help": "Period spec: YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD (e.g. 2020-2025)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--period"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "20",
+    "dest": "top",
+    "help": "Top-N alphas to keep (default: 20)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--top"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "1",
+    "dest": "horizon",
+    "help": "Forward-return horizon in bars, range 1-252 (default: 1 = next-bar). h>1 computes h-bar forward returns and samples IC non-overlapping (end-anchored); 21 ≈ monthly, the conventional horizon for fundamental factors.",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--horizon"
+    ],
+    "required": false,
+    "type": "_horizon_arg"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict",
+    "help": "Strict gate: mandatory same-universe random control (bench_runner_strict)",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--strict"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "oos_split",
+    "help": "Strict mode only: split train/test at this date for the OOS confirmation gate",
+    "kind": "_StoreAction",
+    "metavar": "YYYY-MM-DD",
+    "nargs": null,
+    "option_strings": [
+     "--oos-split"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "training_cutoff",
+    "help": "Strict mode only: use this model training cutoff as the train/test boundary",
+    "kind": "_StoreAction",
+    "metavar": "YYYY-MM-DD",
+    "nargs": null,
+    "option_strings": [
+     "--training-cutoff"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "5",
+    "dest": "random_seeds",
+    "help": "Strict mode only: row-shuffled random controls per alpha (default: 5)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--random-seeds"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": [
+     "explore",
+     "strict",
+     "locked"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "research_mode",
+    "help": "Declared research mode (default: strict for --strict, otherwise explore; does not enforce locked evaluation)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--research-mode"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "factor_screening",
+     "single_factor_evaluation",
+     "neutralization",
+     "combination",
+     "composite_evaluation",
+     "backtest",
+     "monitoring"
+    ],
+    "const": "None",
+    "default": "'single_factor_evaluation'",
+    "dest": "research_stage",
+    "help": "Research stage recorded in the factor-research contract",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--research-stage"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "yes",
+    "help": "Skip the 'bench every alpha?' prompt when --zoo is omitted",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--yes"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "zoo",
+     "universe",
+     "period",
+     "top",
+     "horizon",
+     "strict",
+     "oos_split",
+     "training_cutoff",
+     "random_seeds",
+     "research_mode",
+     "research_stage",
+     "yes"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Benchmark alphas in a zoo"
+ },
+ "/alpha/compare": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "alpha_ids",
+    "help": "Alpha ids to compare (>= 2)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "*",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "compare_all",
+    "help": "Compare every alpha in the registry",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--all"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "zoo",
+    "help": "Filter comparison to one zoo (e.g. alpha101)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--zoo"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "csi300",
+     "sp500",
+     "nifty100"
+    ],
+    "const": "None",
+    "default": "'csi300'",
+    "dest": "universe",
+    "help": "Universe (NIFTY 100: nifty100; default: csi300; one of csi300, sp500, nifty100)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--universe"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'2020-2025'",
+    "dest": "period",
+    "help": "Period spec: YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD (e.g. 2020-2025)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--period"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "ir",
+     "ic_mean",
+     "ic_positive_ratio",
+     "ic_count"
+    ],
+    "const": "None",
+    "default": "'ir'",
+    "dest": "sort",
+    "help": "Rank by which metric (default: ir; one of ir, ic_mean, ic_positive_ratio, ic_count)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--sort"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "alpha_ids"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "compare_all",
+     "zoo",
+     "universe",
+     "period",
+     "sort"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Compare alphas head-to-head"
+ },
+ "/alpha/export-manifest": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "out",
+    "help": "Output JSON path",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--out"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "force",
+    "help": "Allow writing outside the repo root",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--force"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "out",
+     "force"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Export registry manifest as JSON"
+ },
+ "/alpha/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "zoo",
+    "help": "Filter by zoo (e.g. alpha101)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--zoo"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "theme",
+    "help": "Filter by theme (e.g. momentum)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--theme"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "equity_us",
+     "equity_cn",
+     "equity_hk",
+     "equity_in",
+     "equity_kr",
+     "crypto",
+     "futures",
+     "csi300",
+     "sp500",
+     "nifty100"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "universe",
+    "help": "Filter by factor universe (equity_us, equity_cn, equity_hk, equity_in, equity_kr, crypto, futures); the benchmark names (csi300, sp500, nifty100) are accepted as aliases",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--universe"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "50",
+    "dest": "limit",
+    "help": "Max alphas to print (default: 50; pass 0 for no cap)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit JSON array of {id, zoo, theme, universe, decay_horizon} instead of a table",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "include_load_errors",
+    "help": "Also print load errors from registry.health()",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--include-load-errors"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "show_failed",
+    "help": "(deprecated) alias for --include-load-errors",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--show-failed"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "zoo",
+     "theme",
+     "universe",
+     "limit",
+     "json",
+     "include_load_errors",
+     "show_failed"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List registered alphas"
+ },
+ "/alpha/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "alpha_id",
+    "help": "Alpha id, e.g. alpha101_001",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "brief",
+    "help": "Print only id/theme/universe/formula_latex/notes — omit source code",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--brief"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "alpha_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "brief"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show alpha metadata and source code"
+ },
+ "/channels": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "status",
+     "start",
+     "stop",
+     "login",
+     "pairing"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "channels_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "channels_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage IM channel adapters"
+ },
+ "/channels/login": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "channel_name",
+    "help": "Channel name, e.g. weixin, feishu, whatsapp",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "force",
+    "help": "Ignore existing credentials where supported",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--force"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "channel_name"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "force"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Run a channel adapter login hook"
+ },
+ "/channels/pairing": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'telegram'",
+    "dest": "channel",
+    "help": "Channel context for list/revoke commands",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--channel"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "approve",
+     "deny",
+     "revoke"
+    ],
+    "const": "None",
+    "default": "'list'",
+    "dest": "pairing_command",
+    "help": "Pairing command",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "pairing_args",
+    "help": "Pairing command arguments",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "*",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "pairing_command",
+     "pairing_args"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "channel"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage IM sender pairing"
+ },
+ "/channels/start": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "channels_json",
+    "help": "Print JSON",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "channels_json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Start configured IM channels through the API"
+ },
+ "/channels/status": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "channels_json",
+    "help": "Print JSON",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "local",
+    "help": "Inspect local config without contacting the API",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--local"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "channels_json",
+     "local"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show IM channel status"
+ },
+ "/channels/stop": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "channels_json",
+    "help": "Print JSON",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "channels_json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Stop configured IM channels through the API"
+ },
+ "/chat": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "50",
+    "dest": "chat_max_iter",
+    "help": "Maximum agent iterations",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--max-iter"
+    ],
+    "required": false,
+    "type": "int"
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "chat_max_iter"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Interactive chat mode"
+ },
+ "/connector": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "init",
+     "validate",
+     "install",
+     "use",
+     "configure",
+     "setup",
+     "select-account",
+     "check",
+     "status",
+     "authorize",
+     "account",
+     "positions",
+     "orders",
+     "quote",
+     "history",
+     "start",
+     "stop",
+     "halt",
+     "resume",
+     "revoke",
+     "runner-settings"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "connector_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "connector_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage trading connector profiles"
+ },
+ "/connector/account": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Optional account code",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connection_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--connection-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "connection_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read account summary"
+ },
+ "/connector/authorize": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Authorize a remote MCP connector profile"
+ },
+ "/connector/check": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Optional account code",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connection_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--connection-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "connection_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Check selected connector readiness"
+ },
+ "/connector/configure": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'127.0.0.1'",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "77",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "yes",
+    "help": "Overwrite without prompting",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-y",
+     "--yes"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "yes"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Configure a local connector profile"
+ },
+ "/connector/halt": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Trip the selected live connector kill switch"
+ },
+ "/connector/history": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "symbol",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Optional account code",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'SMART'",
+    "dest": "exchange",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--exchange"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'USD'",
+    "dest": "currency",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--currency"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'STK'",
+    "dest": "sec_type",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--sec-type"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'30 D'",
+    "dest": "duration",
+    "help": "IBKR (local_tws) duration string",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--duration"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'1 day'",
+    "dest": "bar_size",
+    "help": "IBKR (local_tws) bar size",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--bar-size"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'TRADES'",
+    "dest": "what_to_show",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--what-to-show"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "no_rth",
+    "help": "Include outside-regular-hours data when available",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--no-rth"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'1d'",
+    "dest": "period",
+    "help": "Bar interval for SDK connectors: 1m/5m/15m/30m/1h/4h/1d/1w/1M",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--period"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "90",
+    "dest": "bar_limit",
+    "help": "Number of bars for SDK connectors",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "int"
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "symbol",
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "exchange",
+     "currency",
+     "sec_type",
+     "duration",
+     "bar_size",
+     "what_to_show",
+     "no_rth",
+     "period",
+     "bar_limit"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read historical bars"
+ },
+ "/connector/init": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connector_id",
+    "help": "Lowercase connector id",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'.'",
+    "dest": "destination",
+    "help": "Parent directory for the template",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--destination"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "connector_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "destination"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Create a local read-only connector template"
+ },
+ "/connector/install": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "directory",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "directory"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Install a validated connector locally"
+ },
+ "/connector/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List selectable connector profiles"
+ },
+ "/connector/orders": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Optional account code",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "include_executions",
+    "help": null,
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--include-executions"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "include_executions"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read open orders"
+ },
+ "/connector/positions": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Optional account code",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connection_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--connection-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "connection_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read current positions"
+ },
+ "/connector/quote": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "symbol",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "client_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--client-id"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Optional account code",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'SMART'",
+    "dest": "exchange",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--exchange"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'USD'",
+    "dest": "currency",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--currency"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'STK'",
+    "dest": "sec_type",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--sec-type"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "symbol",
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "client_id",
+     "account",
+     "exchange",
+     "currency",
+     "sec_type"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read a quote snapshot"
+ },
+ "/connector/resume": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Clear the selected live connector kill switch"
+ },
+ "/connector/revoke": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Revoke the selected live connector OAuth token and mandate"
+ },
+ "/connector/runner-settings": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "file",
+    "help": "Validated settings JSON; stop the runner before changing it",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--file"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "file"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Preview model spending or save runner cadence/budgets from JSON"
+ },
+ "/connector/select-account": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connection_id",
+    "help": "Local connection id",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Account reference; prompts when omitted",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "clear",
+    "help": "Remove the selection",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--clear"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "connection_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "account",
+     "clear"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Choose the broker account an account-scoped connection reads"
+ },
+ "/connector/setup": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connection_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--connection-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "label",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--label"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "skip_check",
+    "help": null,
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--skip-check"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "host",
+    "help": "Connection-specific IBKR/Futu gateway host (requires --port)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "port",
+    "help": "Connection-specific gateway port (requires --host)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account",
+    "help": "Account to scope an account-scoped connection (Robinhood) to; prompts when omitted",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--account"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "connection_id",
+     "label",
+     "skip_check",
+     "host",
+     "port",
+     "account"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Create a local read-only connection and securely collect its credentials"
+ },
+ "/connector/start": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Start the selected live connector runner"
+ },
+ "/connector/status": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show selected connector status"
+ },
+ "/connector/stop": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Connector profile id (default: selected)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Stop the selected live connector runner"
+ },
+ "/connector/use": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "help": "Profile id, e.g. ibkr-paper-local",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "profile"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Select the default connector profile"
+ },
+ "/connector/validate": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "directory",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "directory"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Validate a local connector directory"
+ },
+ "/data": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "status",
+     "history",
+     "scan"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "data_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "data_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show research data partner settings"
+ },
+ "/data/history": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "plan",
+     "create",
+     "run",
+     "status",
+     "rows",
+     "cancel",
+     "delete",
+     "pin",
+     "unpin",
+     "storage",
+     "prune"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "action",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "job",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--job"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "codes",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "+",
+    "option_strings": [
+     "--codes"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "start",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--start"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "end",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--end"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'5m'",
+    "dest": "interval",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--interval"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'auto'",
+    "dest": "source",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--source"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "0",
+    "dest": "offset",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--offset"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "100",
+    "dest": "limit",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "quota_mb",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--quota-mb"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "retention_days",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--retention-days"
+    ],
+    "required": false,
+    "type": "int"
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "action"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "job",
+     "codes",
+     "start",
+     "end",
+     "interval",
+     "source",
+     "offset",
+     "limit",
+     "quota_mb",
+     "retention_days"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage quota-bounded historical datasets"
+ },
+ "/data/scan": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "codes",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "+",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "start",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--start"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "end",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--end"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'1D'",
+    "dest": "interval",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--interval"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "codes"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "start",
+     "end",
+     "interval"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Queue and await a background bar acquisition scan"
+ },
+ "/data/status": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show selected Gildata features"
+ },
+ "/dev": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "8899",
+    "dest": "port",
+    "help": "Backend port (default: 8899)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "5899",
+    "dest": "frontend_port",
+    "help": "Vite dev server port, must match vite.config.ts (default: 5899)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--frontend-port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'<repo>/frontend'",
+    "dest": "frontend_dir",
+    "help": "Path to the frontend directory (default: <repo>/frontend)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--frontend-dir"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "port",
+     "frontend_port",
+     "frontend_dir"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Start backend + frontend dev servers in one process"
+ },
+ "/hypothesis": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "verbose",
+    "help": "Show full traceback on errors",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--verbose"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "path",
+    "help": "Override registry JSON path (also respects VIBE_TRADING_HYPOTHESES_PATH env var)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--path"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "show",
+     "invalidate"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "hypothesis_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "hypothesis_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "verbose",
+     "path"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Hypothesis Registry: list / show / invalidate"
+ },
+ "/hypothesis/invalidate": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "hypothesis_id",
+    "help": "Hypothesis id to invalidate",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "note",
+    "help": "Invalidation note recorded on the hypothesis",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--note"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit JSON object of the updated hypothesis",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "hypothesis_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "note",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Mark a hypothesis as rejected with optional notes"
+ },
+ "/hypothesis/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "exploring",
+     "testing",
+     "validated",
+     "rejected",
+     "monitoring"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "status",
+    "help": "Filter by lifecycle status",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--status"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "50",
+    "dest": "limit",
+    "help": "Maximum rows to print (default: 50; pass 0 for no cap)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit JSON array instead of a table",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "status",
+     "limit",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List hypotheses"
+ },
+ "/hypothesis/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "hypothesis_id",
+    "help": "Hypothesis id, e.g. hyp_abcd1234ef56",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit JSON object instead of a panel",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "hypothesis_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show hypothesis detail"
+ },
+ "/init": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Interactive setup: create ~/.vibe-trading/.env"
+ },
+ "/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "20",
+    "dest": "list_limit",
+    "help": "Maximum number of runs",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "positive_int"
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "list_limit"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List runs"
+ },
+ "/memory": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "show",
+     "search",
+     "forget"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "memory_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "memory_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Inspect persistent memory"
+ },
+ "/memory/forget": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "name",
+    "help": "Memory title or filename stem",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "yes",
+    "help": "Skip confirmation prompt",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-y",
+     "--yes"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "name"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "yes"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Remove a memory entry"
+ },
+ "/memory/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "user",
+     "feedback",
+     "project",
+     "reference"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "memory_type",
+    "help": "Filter by memory type",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--type"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "memory_type"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List memory entries"
+ },
+ "/memory/search": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "query",
+    "help": "Search text",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "5",
+    "dest": "memory_limit",
+    "help": "Maximum matches (default: 5)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "positive_int"
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "query"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "memory_limit"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Recall memories for a query"
+ },
+ "/memory/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "name",
+    "help": "Memory title or filename stem",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "name"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show a memory entry"
+ },
+ "/office": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "office_args",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "office_args"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage the shared research task board"
+ },
+ "/paper": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "create",
+     "list",
+     "show",
+     "history",
+     "advance",
+     "step"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "paper_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "paper_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Forward paper accounts; never places real orders"
+ },
+ "/paper/advance": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "revision",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--revision"
+    ],
+    "required": true,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "to_date",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--to-date"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "orders",
+    "help": "JSON file containing an order array (or [])",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--orders"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "strategy_path",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--strategy-path"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [
+   [
+    "orders",
+    "strategy_path"
+   ]
+  ],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "account_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "revision",
+     "to_date",
+     "orders",
+     "strategy_path"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": null
+ },
+ "/paper/create": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "label",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--label"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": [
+     "cn_a",
+     "hk",
+     "us"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "market",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--market"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "state",
+    "help": "JSON file with cash and positions",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--state"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": [
+     "today",
+     "next_session"
+    ],
+    "const": "None",
+    "default": "'today'",
+    "dest": "start",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--start"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "label",
+     "market",
+     "state",
+     "start"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Start today or next trading session"
+ },
+ "/paper/history": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "account_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": null
+ },
+ "/paper/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": null
+ },
+ "/paper/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "account_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "account_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": null
+ },
+ "/paper/step": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "payload",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "payload"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Run a pure step from a caller-owned JSON payload"
+ },
+ "/playbook": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "show",
+     "create"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "playbook_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "playbook_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Scheduled research templates: list / show / create"
+ },
+ "/playbook/create": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "slug",
+    "help": "Template slug, e.g. premarket-brief",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "playbook_schedule",
+    "help": "Override the suggested cadence: interval milliseconds or a 5-field cron string",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--schedule"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "playbook_timezone",
+    "help": "Override the suggested IANA timezone the cron schedule is read in",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--timezone"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "playbook_utc",
+    "help": "Force UTC, dropping the template's suggested timezone",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--utc"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "[]",
+    "dest": "playbook_vars",
+    "help": "Set a declared template variable (repeatable)",
+    "kind": "_AppendAction",
+    "metavar": "KEY=VALUE",
+    "nargs": null,
+    "option_strings": [
+     "--var"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "playbook_id",
+    "help": "Explicit job id",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "delivery_target_ref",
+    "help": "Configured delivery destination reference",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--delivery-target-ref"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "html",
+     "pdf"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "delivery_format",
+    "help": "Email format; omit for plain text",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--delivery-format"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "protect_pdf",
+    "help": "Encrypt the PDF using the private Email channel password",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--protect-pdf"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "playbook_dry_run",
+    "help": "Print the job that would be stored without persisting it",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--dry-run"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "playbook_json",
+    "help": "Emit JSON instead of a summary",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "slug"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "playbook_schedule",
+     "playbook_timezone",
+     "playbook_utc",
+     "playbook_vars",
+     "playbook_id",
+     "delivery_target_ref",
+     "delivery_format",
+     "protect_pdf",
+     "playbook_dry_run",
+     "playbook_json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Create a scheduled job from a template"
+ },
+ "/playbook/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "playbook_json",
+    "help": "Emit JSON instead of a table",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "playbook_json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List the available research templates"
+ },
+ "/playbook/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "slug",
+    "help": "Template slug, e.g. premarket-brief",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "[]",
+    "dest": "playbook_vars",
+    "help": "Substitute a declared variable in the previewed body (repeatable)",
+    "kind": "_AppendAction",
+    "metavar": "KEY=VALUE",
+    "nargs": null,
+    "option_strings": [
+     "--var"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "playbook_json",
+    "help": "Emit JSON instead of a card",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "slug"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "playbook_vars",
+     "playbook_json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show one template, including its full body"
+ },
+ "/portfolio": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "show",
+     "refresh",
+     "import-extraetf",
+     "rebalance",
+     "sources"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "portfolio_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "portfolio_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read-only multi-broker portfolio (the Web UI /portfolio page, in the terminal)"
+ },
+ "/portfolio/import-extraetf": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "file",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "label",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--label"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "expected_positions",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--expected-positions"
+    ],
+    "required": true,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "max_age_days",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--max-age-days"
+    ],
+    "required": true,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "select",
+    "help": "Add this import to selected portfolio sources",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--select"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "file"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "label",
+     "expected_positions",
+     "max_age_days",
+     "select"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Import a local Investments CSV; never executes trades"
+ },
+ "/portfolio/rebalance": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "snapshot_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--snapshot-id"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "targets",
+    "help": "JSON file mapping canonical_id (or CASH) to target fraction",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--targets"
+    ],
+    "required": true,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "snapshot_id",
+     "targets"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Value-only proposal for a pinned snapshot"
+ },
+ "/portfolio/refresh": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Read every enabled source now, store a new snapshot, and print it"
+ },
+ "/portfolio/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "snapshot_id",
+    "help": "Read this exact immutable snapshot",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--snapshot-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "snapshot_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Print a stored snapshot"
+ },
+ "/portfolio/sources": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List local read-only connections and whether the portfolio uses them"
+ },
+ "/provider": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "login",
+     "doctor",
+     "list",
+     "custom"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "provider_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "provider_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage LLM providers"
+ },
+ "/provider/custom": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "list",
+     "add",
+     "activate"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "custom_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "custom_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage tested custom model endpoints"
+ },
+ "/provider/custom/activate": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Select a saved provider for new runs"
+ },
+ "/provider/custom/add": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--id"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "label",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--label"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "base_url",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--base-url"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "model",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--model"
+    ],
+    "required": true,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "id",
+     "label",
+     "base_url",
+     "model"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Test and save a provider; prompts privately for its key"
+ },
+ "/provider/custom/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List redacted custom provider metadata"
+ },
+ "/provider/doctor": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Print redacted provider diagnostics"
+ },
+ "/provider/list": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List the shared provider catalog as JSON"
+ },
+ "/provider/login": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "provider",
+    "help": "OAuth provider name, e.g. openai-codex",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "provider"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Authenticate with an OAuth provider"
+ },
+ "/research-artifact": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "path",
+    "help": "Override research-artifact SQLite path",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--path"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "save",
+     "search",
+     "show",
+     "revision",
+     "compare",
+     "export"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "research_artifact_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "research_artifact_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "path"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Save, search, revise, and compare evidence-backed research artifacts"
+ },
+ "/research-artifact/compare": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "artifact_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "from_revision_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "to_revision_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "artifact_id",
+     "from_revision_id",
+     "to_revision_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Compare two revisions in one series"
+ },
+ "/research-artifact/export": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "artifact_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": [
+     "json",
+     "markdown"
+    ],
+    "const": "None",
+    "default": "'json'",
+    "dest": "format",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--format"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "from_revision_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--from-revision-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "to_revision_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--to-revision-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "artifact_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "format",
+     "from_revision_id",
+     "to_revision_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Export a full series or selected comparison as JSON or Markdown"
+ },
+ "/research-artifact/revision": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "revision_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "revision_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show one immutable revision"
+ },
+ "/research-artifact/save": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "artifact_id",
+    "help": "Existing series ID to revise",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--artifact-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "subject",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--subject"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "universe",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--universe"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "content",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--content"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "data_as_of",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--data-as-of"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "evidence",
+    "help": "JSON array of evidence objects",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--evidence"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "verification_status",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--verification-status"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "completeness",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--completeness"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "hypothesis_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--hypothesis-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "goal_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--goal-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "session_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--session-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "run_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--run-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "artifact_id",
+     "subject",
+     "universe",
+     "content",
+     "data_as_of",
+     "evidence",
+     "verification_status",
+     "completeness",
+     "hypothesis_id",
+     "goal_id",
+     "session_id",
+     "run_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Save a new artifact or linked revision"
+ },
+ "/research-artifact/search": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "query",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--query"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "subject",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--subject"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "universe",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--universe"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "50",
+    "dest": "limit",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--limit"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "hypothesis_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--hypothesis-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "goal_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--goal-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "session_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--session-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "''",
+    "dest": "run_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--run-id"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "query",
+     "subject",
+     "universe",
+     "limit",
+     "hypothesis_id",
+     "goal_id",
+     "session_id",
+     "run_id"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Search latest research revisions"
+ },
+ "/research-artifact/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "artifact_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "artifact_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show a series and its revision history"
+ },
+ "/research-lab": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "costs",
+     "walk-forward",
+     "audit",
+     "replay",
+     "cases",
+     "show"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "lab_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "lab_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Study execution costs, frozen OOS parameters, factors and task replays"
+ },
+ "/research-lab/audit": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "alpha_id",
+    "help": null,
+    "kind": "_AppendAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--alpha-id"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit the complete machine-readable result",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "alpha_id",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Check formula and minimum-history contracts across the Alpha Zoo"
+ },
+ "/research-lab/cases": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit the complete machine-readable result",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "List bundled task prompts and their evaluation contracts"
+ },
+ "/research-lab/costs": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "run_dir",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "[1, 2, 3]",
+    "dest": "fee_multipliers",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "+",
+    "option_strings": [
+     "--fee-multipliers"
+    ],
+    "required": false,
+    "type": "float"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "[0, 5]",
+    "dest": "slippage_bps",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "+",
+    "option_strings": [
+     "--slippage-bps"
+    ],
+    "required": false,
+    "type": "float"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit the complete machine-readable result",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "run_dir"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "fee_multipliers",
+     "slippage_bps",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Re-run a saved price snapshot under different execution costs"
+ },
+ "/research-lab/replay": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "run_dir",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": "?",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "case_ids",
+    "help": null,
+    "kind": "_AppendAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--case"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "trace_dir",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--trace-dir"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "bindings",
+    "help": "JSON array of case_id/run_dir/optional trace_dir bindings",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--bindings"
+    ],
+    "required": false,
+    "type": "Path"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit the complete machine-readable result",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "run_dir"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "case_ids",
+     "trace_dir",
+     "bindings",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Verify saved run artifacts without an LLM or network"
+ },
+ "/research-lab/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "job_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit the complete machine-readable result",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "job_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Recover a persisted job and its report"
+ },
+ "/research-lab/walk-forward": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "run_dir",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "[]",
+    "dest": "parameter",
+    "help": null,
+    "kind": "_AppendAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--parameter"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "train_bars",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--train-bars"
+    ],
+    "required": true,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "test_bars",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--test-bars"
+    ],
+    "required": true,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "0",
+    "dest": "holdout_bars",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--holdout-bars"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "5",
+    "dest": "max_folds",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--max-folds"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": [
+     "sharpe",
+     "total_return"
+    ],
+    "const": "None",
+    "default": "'sharpe'",
+    "dest": "objective",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--objective"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "rolling",
+     "expanding"
+    ],
+    "const": "None",
+    "default": "'rolling'",
+    "dest": "training",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--training"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "json",
+    "help": "Emit the complete machine-readable result",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "run_dir"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "parameter",
+     "train_bars",
+     "test_bars",
+     "holdout_bars",
+     "max_folds",
+     "objective",
+     "training",
+     "json"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Train, select and freeze parameters before OOS execution"
+ },
+ "/run": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "run_prompt",
+    "help": "Prompt text",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "-p",
+     "--prompt"
+    ],
+    "required": false,
+    "type": "str"
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "run_prompt_file",
+    "help": "Read prompt text from a file",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "-f",
+     "--prompt-file"
+    ],
+    "required": false,
+    "type": "Path"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "run_json",
+    "help": "Print machine-readable JSON output",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "run_no_rich",
+    "help": "Disable Rich formatting",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--no-rich"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "50",
+    "dest": "run_max_iter",
+    "help": "Maximum agent iterations",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--max-iter"
+    ],
+    "required": false,
+    "type": "int"
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "run_prompt",
+     "run_prompt_file",
+     "run_json",
+     "run_no_rich",
+     "run_max_iter"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Run a prompt"
+ },
+ "/serve": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'0.0.0.0'",
+    "dest": "host",
+    "help": "Bind address",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--host"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "8000",
+    "dest": "port",
+    "help": "Listen port",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--port"
+    ],
+    "required": false,
+    "type": "int"
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "dev",
+    "help": "Start the Vite dev server",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--dev"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "host",
+     "port",
+     "dev"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Start the API server"
+ },
+ "/sessions": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "migrate"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "sessions_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "sessions_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Manage chat sessions"
+ },
+ "/sessions/migrate": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Migrate pre-thread sessions"
+ },
+ "/setup": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'<repo>/frontend'",
+    "dest": "frontend_dir",
+    "help": "Path to the frontend directory (default: <repo>/frontend)",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--frontend-dir"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "frontend_dir"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Install frontend dependencies and build the production bundle"
+ },
+ "/show": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "run_id",
+    "help": "Run identifier",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "run_id"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Show run details"
+ },
+ "/strategy-evidence": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "refresh",
+     "adapt"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "strategy_evidence_command",
+    "help": null,
+    "kind": "_SubParsersAction",
+    "metavar": null,
+    "nargs": "A...",
+    "option_strings": [],
+    "required": null,
+    "type": null
+   }
+  ],
+  "description": "Prepare strategy adaptations and refresh their evidence. Querying evidence stays with the agent tools (list_strategies / query_strategies / get_strategy_evidence).",
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [
+     "strategy_evidence_command"
+    ],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Strategy-evidence cache: refresh from backtest run artifacts"
+ },
+ "/strategy-evidence/adapt": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "strategy_id",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--strategy-id"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "name",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--name"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "universe",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--universe"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "config",
+    "help": "JSON backtest config with codes and dates",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--config"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "position_sizing",
+    "help": null,
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--position-sizing"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "strategy_id",
+     "name",
+     "universe",
+     "config",
+     "position_sizing"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Prepare a child strategy for generation and backtest"
+ },
+ "/strategy-evidence/refresh": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "strategy_evidence_manifest",
+    "help": "Path to the JSON manifest of run specs",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--manifest"
+    ],
+    "required": true,
+    "type": null
+   },
+   {
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strategy_evidence_json",
+    "help": "Emit the machine-readable envelope instead of a summary",
+    "kind": "_StoreTrueAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "--json"
+    ],
+    "required": false,
+    "type": null
+   },
+   {
+    "choices": [
+     "all",
+     "strategies"
+    ],
+    "const": "None",
+    "default": "'all'",
+    "dest": "scope",
+    "help": "Replace all evidence, or only successful named strategies",
+    "kind": "_StoreAction",
+    "metavar": null,
+    "nargs": null,
+    "option_strings": [
+     "--scope"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": "Rebuild the disposable strategy-evidence cache from real backtest run artifacts. The manifest is a JSON object with a 'runs' array or a bare JSON array of {strategy_id, run_dir, position_size?} entries. Runs failing the ingestion gates are skipped with reasons; the rest still process.",
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help",
+     "strategy_evidence_manifest",
+     "strategy_evidence_json",
+     "scope"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Rebuild the evidence cache from a JSON manifest of run specs"
+ },
+ "/update": {
+  "arguments": [
+   {
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "help": "show this help message and exit",
+    "kind": "_HelpAction",
+    "metavar": null,
+    "nargs": 0,
+    "option_strings": [
+     "-h",
+     "--help"
+    ],
+    "required": false,
+    "type": null
+   }
+  ],
+  "description": null,
+  "epilog": null,
+  "exclusive": [],
+  "groups": [
+   {
+    "description": null,
+    "dests": [],
+    "title": "positional arguments"
+   },
+   {
+    "description": null,
+    "dests": [
+     "help"
+    ],
+    "title": "options"
+   }
+  ],
+  "help": "Check for and install the latest vibe-trading-ai release from PyPI"
+ }
+}

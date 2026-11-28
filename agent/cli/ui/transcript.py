@@ -23,14 +23,29 @@ _MUTED = "#6b7280"
 
 
 def render_prompt_footer(width: int | None = None) -> Text:
-    """Bottom border printed after prompt_toolkit accepts the user input."""
+    """Render the border shown below submitted input.
+
+    Args:
+        width: Width override in columns. A falsey value uses the detected terminal width.
+
+    Returns:
+        Styled Rich Text border at least ten columns wide.
+    """
 
     cols = width or shutil.get_terminal_size((88, 24)).columns
     return Text("─" * max(10, cols), style=_PROMPT_BORDER)
 
 
 def render_recap(history: list[dict[str, str]]) -> Text | None:
-    """Return a deterministic dim recap of the previous turn."""
+    """Render a short recap from the latest request and reply.
+
+    Args:
+        history: Conversation message dictionaries in chronological order.
+
+    Returns:
+        Muted Rich Text showing the most recent nonblank user and assistant text available, or None
+        if neither is present.
+    """
 
     user = ""
     assistant = ""
@@ -59,7 +74,14 @@ def render_recap(history: list[dict[str, str]]) -> Text | None:
 
 
 def render_elapsed_status(elapsed: float) -> Text:
-    """Render the post-run timing line."""
+    """Render the post-run timing line.
+
+    Args:
+        elapsed: Elapsed run time in seconds.
+
+    Returns:
+        Rich Text timing line for the finished run.
+    """
 
     line = Text("✻ ", style=_MUTED)
     line.append("Analyzed", style=Theme.muted)
@@ -68,7 +90,15 @@ def render_elapsed_status(elapsed: float) -> Text:
 
 
 def render_answer(content: str) -> Group:
-    """Render assistant Markdown, upgrading pipe tables to Rich tables."""
+    """Render assistant Markdown with native terminal tables.
+
+    Args:
+        content: Assistant response text whose supported pipe tables are rendered as Rich tables.
+
+    Returns:
+        Rich Group containing the resulting Markdown and table blocks, or a text fallback if no
+        blocks were produced.
+    """
 
     blocks: list[Any] = []
     pending: list[str] = []

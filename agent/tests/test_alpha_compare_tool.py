@@ -7,6 +7,10 @@ tool is auto-discovered into the default registry.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from typing import Any
 
@@ -51,7 +55,7 @@ def test_tool_metadata() -> None:
 
 
 def test_tool_is_auto_discovered() -> None:
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     assert "alpha_compare" in registry.tool_names
 
 

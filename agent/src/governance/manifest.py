@@ -40,7 +40,7 @@ Mount points for a future integration (NOT implemented here)::
 
     2. Skills actually injected: the same context-building step (and/or
        ``src/tools/load_skill_tool.py`` for skills pulled in mid-run via the
-       ``load_skill`` tool) knows which :class:`src.agent.skills.Skill`
+       ``load_skill`` tool) knows which :class:`src.product.resources.skills.Skill`
        objects were injected this turn. Pass
        ``{skill.name: skill.body for skill in injected}`` as ``skills=``.
 
@@ -48,7 +48,7 @@ Mount points for a future integration (NOT implemented here)::
        one lives under the OPEN ``src/tools/`` tree, not protected) already
        exposes ``ToolRegistry.tool_names`` — see
        ``agent/src/agent/tools.py:87`` and the project CLAUDE.md line
-       "measured off ``build_registry().tool_names`` on a default checkout".
+       "measured off ``build_registry(policy=policy).tool_names`` on a default checkout".
        Pass that list as ``tool_names=``.
 
     4. Package versions: call :func:`collect_key_package_versions` once per
@@ -71,7 +71,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 __all__ = [
@@ -134,7 +134,7 @@ class SkillRecord:
     meant to be small and safe to persist/share.
 
     Attributes:
-        name: Skill name (``Skill.name`` in ``src.agent.skills``).
+        name: Skill name (``Skill.name`` in ``src.product.resources.skills``).
         content_hash: ``sha256:<hex>`` of the exact body text that was
             injected for this run.
     """

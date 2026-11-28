@@ -1,5 +1,0 @@
-{
-  "minimum_tools": 16,
-  "initial_tools": ["search_symbol", "load_skill", "read_file", "write_file", "edit_file", "bash", "compact"],
-  "catalog_description_chars": 80
-}

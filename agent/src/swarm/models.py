@@ -1,16 +1,15 @@
-"""Swarm multi-agent system — data models.
-
-All Pydantic models defined here, shared by store / task_store / worker / runtime.
-Enums use str+Enum to ensure JSON-serialization compatibility.
-"""
+"""Swarm multi-agent system — data models."""
 
 from __future__ import annotations
 
 import re
 from enum import Enum
+from pathlib import PurePosixPath
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from src.tools.path_utils import is_runtime_path
 from src.tools.redaction import redact_text
 from src.providers.registry import provider_names
 
@@ -26,10 +25,7 @@ _MODEL_ENDPOINT_PREFIX = re.compile(
 _PUBLIC_MODEL_IDENTIFIER = re.compile(
     r"^(?:[A-Za-z0-9][A-Za-z0-9._:+-]*|[A-Za-z0-9][A-Za-z0-9._:+-]*/(?=[A-Za-z0-9._:+-]*[-.0-9])[A-Za-z0-9][A-Za-z0-9._:+-]*)$"
 )
-#: Credential-shaped tokens that carry no issuer prefix in free-text
-#: redaction but must never reach public metadata: underscore-style key
-#: families (Stripe/OpenAI/Hugging Face), Google/AWS key prefixes, and bare
-#: high-entropy tokens.
+#: Redact unprefixed credential-like tokens before exposing public metadata.
 _CREDENTIAL_TOKEN = re.compile(
     r"^(?:sk|rk|pk|hf)[_-][A-Za-z0-9_-]{4,}$"
     r"|^AIza[A-Za-z0-9_-]{16,}$"
@@ -43,7 +39,16 @@ def public_metadata_value(
     *,
     allowed_values: frozenset[str] | None = None,
 ) -> str | None:
-    """Return a bounded, credential-free value for public run metadata."""
+    """Filter and normalize a value for public run metadata.
+
+    Args:
+        value: Candidate metadata value. Surrounding whitespace is stripped.
+        allowed_values: Optional exact-value allowlist.
+
+    Returns:
+        The accepted value, None for absent or blank input, or a redaction marker for disallowed
+        input.
+    """
     if value is None:
         return None
     metadata = value.strip()
@@ -63,7 +68,15 @@ def public_metadata_value(
 
 
 def public_provider_metadata(value: str | None) -> str | None:
-    """Return an approved public provider label for run metadata."""
+    """Return an approved public provider label for run metadata.
+
+    Args:
+        value: Candidate provider label, matched case-insensitively.
+
+    Returns:
+        Normalized approved provider label, redaction marker for rejected input, or None for absent
+        or blank input.
+    """
     return public_metadata_value(
         value.lower() if value is not None else None,
         allowed_values=_PUBLIC_PROVIDERS,
@@ -71,7 +84,15 @@ def public_provider_metadata(value: str | None) -> str | None:
 
 
 def public_model_metadata(value: str | None) -> str | None:
-    """Return a model identifier only when it cannot be mistaken for an endpoint."""
+    """Filter a public model identifier for endpoint and credential patterns.
+
+    Args:
+        value: Candidate model identifier.
+
+    Returns:
+        The trimmed identifier if accepted, a redaction marker if rejected, or None for absent or
+        blank input.
+    """
     metadata = public_metadata_value(value)
     if metadata is None or metadata == _REDACTED_METADATA:
         return metadata
@@ -83,6 +104,15 @@ def public_model_metadata(value: str | None) -> str | None:
 
 
 def public_reasoning_effort(value: str | None) -> str | None:
+    """Return an approved reasoning-effort label for run metadata.
+
+    Args:
+        value: Candidate reasoning-effort label, matched case-insensitively.
+
+    Returns:
+        Normalized approved label, redaction marker for rejected input, or None for absent or blank
+        input.
+    """
     return public_metadata_value(
         value.lower() if value is not None else None,
         allowed_values=_REASONING_EFFORTS,
@@ -90,11 +120,7 @@ def public_reasoning_effort(value: str | None) -> str | None:
 
 
 class TaskStatus(str, Enum):
-    """SwarmTask lifecycle status.
-
-    Transitions:
-        pending -> blocked -> in_progress -> completed | failed | cancelled
-    """
+    """SwarmTask lifecycle status."""
 
     pending = "pending"
     blocked = "blocked"
@@ -105,11 +131,7 @@ class TaskStatus(str, Enum):
 
 
 class RunStatus(str, Enum):
-    """SwarmRun lifecycle status.
-
-    Transitions:
-        pending -> running -> completed | failed | cancelled
-    """
+    """SwarmRun lifecycle status."""
 
     pending = "pending"
     running = "running"
@@ -119,18 +141,7 @@ class RunStatus(str, Enum):
 
 
 class WorkerStatus(str, Enum):
-    """Terminal status a worker returns.
-
-    ``incomplete`` is distinct from ``failed``: the worker ran without an
-    exception but produced no substantive deliverable (plan-only stub,
-    fabricated/mock numbers, unparsed tool markup, or a data agent that
-    made no tool call and wrote no report). It must never be folded into
-    ``completed`` (see P01/P03).
-
-    ``cancelled`` mirrors ``TaskStatus.cancelled``: the worker stopped
-    because ``cancel_run()`` was signalled, not because it failed. It must
-    never be retried (see ``SwarmRuntime._run_worker_with_retries``).
-    """
+    """Terminal status a worker returns."""
 
     completed = "completed"
     failed = "failed"
@@ -141,21 +152,7 @@ class WorkerStatus(str, Enum):
 
 
 class SwarmAgentSpec(BaseModel):
-    """Role definition for a single agent in a Swarm.
-
-    Parsed from YAML presets, describes the agent's identity, available tools, and constraints.
-
-    Attributes:
-        id: Unique identifier, e.g. "macro_analyst".
-        role: Role description.
-        system_prompt: System prompt injected into the LLM.
-        tools: Whitelist of allowed tool names.
-        skills: List of allowed skill names.
-        max_iterations: Maximum ReAct loop iterations.
-        timeout_seconds: Worker timeout in seconds.
-        model_name: Override default model; None uses global config.
-        max_retries: Maximum retry attempts on failure.
-    """
+    """Role definition for a single agent in a Swarm."""
 
     id: str
     role: str
@@ -168,26 +165,44 @@ class SwarmAgentSpec(BaseModel):
     max_retries: int = 2
 
 
+#: Kinds of upstream evidence a task may select: tool observations, recorded shell or
+#: quantlib calculations, and files the producer wrote.
+INPUT_KINDS = frozenset({"observation", "calculation", "analysis"})
+
+
+def _workspace_file(name: Any) -> bool:
+    """Return whether ``name`` is a normalized relative POSIX path inside a workspace."""
+    if not isinstance(name, str) or not name:
+        return False
+    path = PurePosixPath(name)
+    return not (path.is_absolute() or ".." in path.parts or "\\" in name or str(path) != name or name == ".")
+
+
+def _validate_file_selection(item: Any) -> None:
+    """Check one ``input_from`` file selection: a path, or a path with copy_to and/or execution."""
+    if isinstance(item, dict):
+        if "path" not in item or set(item) - {"path", "copy_to", "execution"} or len(item) < 2:
+            raise ValueError("A selected file object needs path plus copy_to and/or execution")
+        if "execution" in item and not isinstance(item["execution"], bool):
+            raise ValueError("input_from file execution must be a boolean")
+        if "copy_to" in item:
+            target = item["copy_to"]
+            # A copy may not replace the consumer's runtime state or its copied evidence.
+            if not _workspace_file(target) or is_runtime_path(target):
+                raise ValueError("copy_to must name a deliverable path inside the consumer workspace")
+        item = item["path"]
+    if not _workspace_file(item):
+        raise ValueError("input_from files must be relative paths inside the producer workspace")
+
+
 class SwarmTask(BaseModel):
     """A task node in the Swarm DAG.
 
-    Each task is bound to an agent. Dependencies are declared via depends_on,
-    and blocked_by tracks remaining incomplete upstream tasks at runtime.
-
-    Attributes:
-        id: Unique identifier, e.g. "analyze_macro".
-        agent_id: ID of the agent executing this task.
-        prompt_template: User prompt template supporting {var} placeholders.
-        depends_on: DAG-declared upstream task IDs (immutable).
-        blocked_by: Remaining incomplete upstream task IDs (shrinks at runtime).
-        input_from: Mapping to pull summaries from upstream tasks, e.g. {"macro": "analyze_macro"}.
-        status: Current task status.
-        summary: Summary text after completion.
-        artifacts: List of output file paths.
-        error: Error message on failure.
-        started_at: ISO-format start time.
-        completed_at: ISO-format completion time.
-        worker_iterations: Actual ReAct iterations executed by the worker.
+    ``input_from`` maps an alias to an upstream task id (its report and full evidence index), or
+    to a selection ``{task, kinds, files}`` that hands over only the chosen evidence: ``kinds``
+    from observation / calculation / analysis, and ``files`` as producer-workspace paths or
+    ``{path, copy_to, execution}`` objects. ``tools`` narrows the agent's whitelist for this
+    task: None inherits it, an empty list allows no tools.
     """
 
     id: str
@@ -195,7 +210,8 @@ class SwarmTask(BaseModel):
     prompt_template: str
     depends_on: list[str] = Field(default_factory=list)
     blocked_by: list[str] = Field(default_factory=list)
-    input_from: dict[str, str] = Field(default_factory=dict)
+    input_from: dict[str, str | dict[str, Any]] = Field(default_factory=dict)
+    tools: list[str] | None = None
     status: TaskStatus = TaskStatus.pending
     summary: str | None = None
     artifacts: list[str] = Field(default_factory=list)
@@ -204,20 +220,76 @@ class SwarmTask(BaseModel):
     completed_at: str | None = None
     worker_iterations: int = 0
 
+    @field_validator("input_from")
+    @classmethod
+    def _validate_inputs(cls, inputs: dict) -> dict:
+        """Refuse malformed evidence selections before any task is dispatched.
+
+        Args:
+            inputs: Alias to upstream task id or selection object.
+
+        Returns:
+            The unchanged bindings.
+
+        Raises:
+            ValueError: If a binding names no task, has an unknown key or kind, selects nothing,
+                or names a file outside the workspace or a copy over runtime state.
+        """
+        for binding in inputs.values():
+            if isinstance(binding, str):
+                if not binding:
+                    raise ValueError("input_from task must not be empty")
+                continue
+            if set(binding) - {"task", "kinds", "files"}:
+                raise ValueError("input_from selections support task, kinds and files only")
+            if not isinstance(binding.get("task"), str) or not binding["task"]:
+                raise ValueError("input_from selection requires a task")
+            kinds, files = binding.get("kinds", []), binding.get("files", [])
+            if not isinstance(kinds, list) or any(not isinstance(kind, str) for kind in kinds):
+                raise ValueError("input_from kinds must be a list of strings")
+            if set(kinds) - INPUT_KINDS:
+                raise ValueError("input_from kinds must be observation, calculation or analysis")
+            if not isinstance(files, list):
+                raise ValueError("input_from files must be a list")
+            if not kinds and not files:
+                raise ValueError("input_from selection requires kinds or files")
+            for item in files:
+                _validate_file_selection(item)
+        return inputs
+
+    def input_tasks(self) -> dict[str, str]:
+        """Map every input alias to its upstream task id, for plain and selected bindings.
+
+        Returns:
+            Alias to upstream task id.
+        """
+        return {alias: binding if isinstance(binding, str) else binding["task"]
+                for alias, binding in self.input_from.items()}
+
+    def effective_tools(self, agent: SwarmAgentSpec) -> list[str]:
+        """Narrow an agent's tool whitelist for this task; never widen it.
+
+        Args:
+            agent: Agent that executes this task.
+
+        Returns:
+            The agent's tools when the task inherits them, else the task's own list.
+
+        Raises:
+            ValueError: If the task names a tool the agent is not allowed.
+        """
+        if self.tools is None:
+            return agent.tools
+        extra = sorted(set(self.tools) - set(agent.tools))
+        if extra:
+            raise ValueError(
+                f"Task '{self.id}' tools must be a subset of agent '{agent.id}' tools; not allowed: {', '.join(extra)}"
+            )
+        return list(self.tools)
+
 
 class SwarmEvent(BaseModel):
-    """Swarm event log entry.
-
-    Appended to events.jsonl; supports SSE streaming and post-run audit.
-
-    Attributes:
-        type: Event type, e.g. "run_started", "task_completed", "task_failed",
-            "task_blocked" (upstream not completed → downstream skipped).
-        agent_id: Associated agent ID (optional).
-        task_id: Associated task ID (optional).
-        data: Arbitrary additional data.
-        timestamp: ISO-format timestamp.
-    """
+    """Swarm event log entry."""
 
     type: str
     agent_id: str | None = None
@@ -227,51 +299,7 @@ class SwarmEvent(BaseModel):
 
 
 class SwarmRun(BaseModel):
-    """Complete state of a single Swarm preset execution.
-
-    Persisted as .swarm/runs/{id}/run.json; the top-level aggregate root.
-
-    Attributes:
-        id: Unique run ID (UUID).
-        preset_name: Preset name used, e.g. "research_team".
-        status: Run status.
-        user_vars: User-provided variables for template rendering.
-        agents: List of participating agent definitions.
-        tasks: All task entries.
-        created_at: ISO-format creation time.
-        completed_at: ISO-format completion time.
-        final_report: Final aggregated report text.
-        total_input_tokens: Cumulative input tokens across all workers.
-        total_output_tokens: Cumulative output tokens across all workers.
-        cache_read_tokens: Cumulative prompt-cache read tokens across all
-            workers, normalized exactly like ``llm_usage.json``'s
-            ``cache_read_tokens`` (see
-            :func:`src.agent.llm_usage._normalize_llm_usage`). ``0`` for runs
-            persisted before cache tracking existed.
-        cache_creation_tokens: Cumulative prompt-cache creation tokens across
-            all workers (``cache_creation`` + ``ephemeral_5m_input_tokens`` +
-            ``ephemeral_1h_input_tokens``). ``0`` for old runs.
-        token_source: Provenance label for the cumulative token totals —
-            ``"provider"`` when every contributing worker reported real usage,
-            ``"estimated"`` when at least one fell back to the ``len // 4``
-            heuristic. ``None`` for runs persisted before this label existed
-            (honestly "unlabeled", never silently "provider").
-        provider: LLM provider name in effect when the run started
-            (e.g. ``"openai"``, ``"anthropic"``, ``"deepseek"``). Captured from
-            ``LANGCHAIN_PROVIDER`` at run-creation time. ``None`` if the
-            provider could not be resolved. Per-agent overrides — declared via
-            :attr:`SwarmAgentSpec.model_name` — are not reflected here; this
-            field is the run-level default.
-        model: LLM model name in effect when the run started, captured from
-            ``LANGCHAIN_MODEL_NAME``. Same scoping rules as :attr:`provider`.
-        grounding_data: Pre-fetched OHLCV bars for any suffixed stock or
-            crypto symbols mentioned in :attr:`user_vars`. Captured once at
-            run-creation time by :mod:`src.swarm.grounding` so workers see
-            real recent prices instead of training-data prices. Keyed by the
-            original symbol string; each value is the list of bars returned
-            by the loader. ``None`` when no symbols were detected or every
-            fetch failed.
-    """
+    """Complete state of a single Swarm preset execution."""
 
     id: str
     preset_name: str
@@ -292,36 +320,12 @@ class SwarmRun(BaseModel):
     model: str | None = None
     reasoning_effort: str | None = None
     use_responses_api: bool | None = None
+    prefetch_grounding: bool = True
     grounding_data: dict[str, list[dict]] | None = None
 
 
 class WorkerResult(BaseModel):
-    """Return value after worker execution completes.
-
-    Attributes:
-        status: WorkerStatus — completed|failed|timeout|token_limit|incomplete.
-        summary: Execution summary.
-        artifact_paths: List of generated artifact file paths.
-        iterations: Actual ReAct iterations executed.
-        error: Error message on failure.
-        input_tokens: Cumulative input tokens (exact or estimated).
-        output_tokens: Cumulative output tokens (exact or estimated).
-        cache_read_tokens: Cumulative prompt-cache read tokens, normalized
-            exactly like ``llm_usage.json``'s ``cache_read_tokens`` (see
-            :func:`src.agent.llm_usage._normalize_llm_usage`). Defaults to
-            ``0`` so results constructed without cache data (runtime
-            timeout/error paths, pre-cache ``run.json``) stay valid.
-        cache_creation_tokens: Cumulative prompt-cache creation tokens
-            (``cache_creation`` + ``ephemeral_5m_input_tokens`` +
-            ``ephemeral_1h_input_tokens``). Defaults to ``0``.
-        token_source: Provenance of the token counts above — ``"provider"``
-            when every measured LLM call reported real ``usage_metadata``,
-            ``"estimated"`` when at least one fell back to the ``len // 4``
-            heuristic (sticky: a partly-heuristic total is never labeled as
-            billed data). ``None`` when no LLM call was measured (early
-            exits, runtime timeout/error paths, old persisted data) —
-            honestly unlabeled.
-    """
+    """Return value after worker execution completes."""
 
     status: WorkerStatus
     summary: str

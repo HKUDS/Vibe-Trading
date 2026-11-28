@@ -24,6 +24,12 @@ Every value here is synthetic; no market data lives in the repository.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import hashlib
 import json
 from pathlib import Path
@@ -33,7 +39,7 @@ import pytest
 from evals.grounding import GroundingLedger
 from evals.grounding.evidence import ARCHIVE_MANIFEST
 from evals.grounding.figures import parse_figures_block, scan_figures
-from src.agent.tool_results import _archive_backtest_result
+from src.product.tool_results import _archive_backtest_result
 
 RP = {
     "final_value": 1129817.32,
@@ -178,6 +184,7 @@ def two_runs(tmp_path: Path) -> GroundingLedger:
         xray_drawdown=-0.227175,
     )
     ledger = GroundingLedger(
+        roots=replace(FileRoots.from_config(get_env_config().api), runs=str(tmp_path)),
         run_dir=tmp_path,
         user_message="用000001.SZ、600519.SH、000858.SZ构建风险平价组合，回测2024全年，与等权基准对比",
     )
@@ -277,7 +284,7 @@ def test_one_run_holding_two_drawdowns_is_still_one_source(tmp_path: Path) -> No
     """Engine and risk X-ray both report a max_drawdown; a ref cannot be ambiguous
     between two numbers the same run wrote."""
     _write_backtest(tmp_path / "rp", RP)
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测风险平价")
     _backtest(ledger, tmp_path / "rp", "bt-rp")
 
     for written in ("−21.10%", "−21.85%"):
@@ -306,7 +313,7 @@ def test_a_table_grounds_only_the_rows_the_model_was_shown(two_runs: GroundingLe
 
 
 def test_model_written_metrics_are_not_backtest_evidence(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测风险平价")
     run_dir = tmp_path / "rp"
     _write_backtest(run_dir, RP)
     _backtest(ledger, run_dir, "bt-rp")
@@ -329,7 +336,7 @@ def test_model_written_metrics_are_not_backtest_evidence(tmp_path: Path) -> None
 
 def test_a_file_the_model_wrote_is_never_engine_output(tmp_path: Path) -> None:
     """Neither a table written before the backtest nor one edited after it."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测风险平价")
     own = tmp_path / "rp" / "artifacts" / "my_weights.csv"
     own.parent.mkdir(parents=True)
     own.write_text("timestamp,000001.SZ\n2024-01-02,0.4567\n", encoding="utf-8")
@@ -358,7 +365,7 @@ def test_a_file_the_model_wrote_is_never_engine_output(tmp_path: Path) -> None:
 
 def test_a_summary_file_the_run_card_does_not_vouch_for_is_ignored(tmp_path: Path) -> None:
     _write_backtest(tmp_path / "rp", RP, manifest_skips=("artifacts/risk_xray.json",))
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测风险平价")
     _backtest(ledger, tmp_path / "rp", "bt-rp")
 
     unvouched = ledger.validate_final_answer(
@@ -374,7 +381,7 @@ def test_a_summary_file_the_run_card_does_not_vouch_for_is_ignored(tmp_path: Pat
 
 def test_stale_active_metrics_are_not_attributed_to_a_detached_backtest(tmp_path: Path) -> None:
     """The active run's metrics file is an earlier run's until the archive names this one."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测")
     _write_backtest(tmp_path, EW)
     _write_backtest(tmp_path / "rp", RP)
 
@@ -393,7 +400,7 @@ def test_artifact_path_cannot_bypass_current_backtest_source(tmp_path: Path, det
     _write_backtest(active, EW)
     declared = tmp_path / "detached" if detached else active / "current"
     _write_backtest(declared, RP)
-    ledger = GroundingLedger(run_dir=active, user_message="Compare backtests")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=active, user_message="Compare backtests")
     ledger.ingest_tool_result(
         tool_name="backtest",
         arguments={"run_dir": str(declared)},
@@ -421,7 +428,7 @@ def test_archive_identity_includes_full_directory_and_call(tmp_path: Path, misma
         "source_run_dir": str(old if mismatch == "directory" else declared),
         "source_call_id": "old-call" if mismatch == "call" else "new-call",
     }), encoding="utf-8")
-    ledger = GroundingLedger(run_dir=active, user_message="Compare backtests")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=active, user_message="Compare backtests")
     _backtest(ledger, declared, "new-call")
     assert not ledger._analysis_metrics
 
@@ -433,8 +440,8 @@ def test_real_engine_archive_is_accepted_only_for_its_own_call(
     source, active = tmp_path / "engine", tmp_path / "active"
     _write_backtest(source, RP)
     result = json.dumps({"status": "ok", "run_dir": str(source)})
-    assert _archive_backtest_result(result, str(active), source_call_id="bt-engine")
-    ledger = GroundingLedger(run_dir=active, user_message="Compare backtests")
+    assert _archive_backtest_result(result, str(active), source_call_id="bt-engine", roots=FileRoots.from_config(get_env_config().api))
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=active, user_message="Compare backtests")
     _backtest(ledger, source, "bt-stale")
     assert not ledger._analysis_metrics
     _backtest(ledger, source, "bt-engine")
@@ -449,7 +456,7 @@ def test_metrics_symlink_cannot_supply_another_runs_evidence(tmp_path: Path) -> 
     _write_backtest(sibling, RP)
     (active / "artifacts").mkdir(parents=True)
     (active / "artifacts" / "metrics.csv").symlink_to(sibling / "artifacts" / "metrics.csv")
-    ledger = GroundingLedger(run_dir=active, user_message="Compare backtests")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=active, user_message="Compare backtests")
     _backtest(ledger, active, "bt-active")
     assert not ledger._analysis_metrics
 
@@ -469,7 +476,7 @@ def test_a_detached_backtest_cannot_inherit_the_active_runs_copy(tmp_path: Path)
     )
     detached = tmp_path / "detached-bt"
     _write_backtest(detached, RP)
-    ledger = GroundingLedger(run_dir=active, user_message="回测")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=active, user_message="回测")
 
     _backtest(ledger, detached, "bt-detached")
 
@@ -496,7 +503,7 @@ def test_a_detached_backtests_archived_copy_counts_once_vouched_for(tmp_path: Pa
     (active / ARCHIVE_MANIFEST).write_text(
         json.dumps({"source_run": detached.name, "source_run_dir": str(detached.resolve()), "source_call_id": "bt-detached"}), encoding="utf-8"
     )
-    ledger = GroundingLedger(run_dir=active, user_message="回测")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=active, user_message="回测")
 
     _backtest(ledger, detached, "bt-detached")
 
@@ -515,7 +522,7 @@ def test_the_active_runs_copy_belongs_to_the_backtest_the_archive_names(
     """The loop copies each finished backtest into the active run; a ref to that
     copy names the backtest it came from, and only once it has come. ``run_dir/``
     names that copy too, never the file of the same name in another run."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测")
     _write_backtest(tmp_path / "rp", RP)
     _write_backtest(tmp_path / "ew", EW)
 
@@ -625,7 +632,7 @@ def test_a_named_derivation_survives_prices_of_several_symbols(two_runs: Groundi
 
 def test_a_code_and_name_cell_attributes_its_figure_to_the_code(tmp_path: Path) -> None:
     """"000001.SZ 平安银行" in the symbol column is 000001.SZ, not a mismatch."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="000001.SZ 和 600519.SH 最近收盘")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="000001.SZ 和 600519.SH 最近收盘")
     ledger.ingest_tool_result(
         tool_name="get_market_data",
         arguments={"codes": ["000001.SZ", "600519.SH"]},
@@ -763,10 +770,10 @@ def test_structured_artifact_reader_grounds_only_shown_rows(
 ) -> None:
     from src.tools.run_artifact_tool import read_run_artifact
 
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(two_runs.run_dir))
     result = read_run_artifact(
         str(two_runs.run_dir / "rp"), "target_positions", format=mode,
         max_rows=2, columns=["timestamp", "000001.SZ"],
+        roots=two_runs.file_roots,
     )
     payload = json.loads(result)
     assert payload["returned_rows"] == 2
@@ -789,7 +796,6 @@ def test_structured_reader_never_grounds_model_written_table(
 ) -> None:
     from src.tools.run_artifact_tool import read_run_artifact
 
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(two_runs.run_dir))
     table = two_runs.run_dir / "rp" / "artifacts" / "target_positions.csv"
     if changed == "different_bytes":
         table.write_text("timestamp,000001.SZ\n2024-01-02,0.4567\n", encoding="utf-8")
@@ -798,7 +804,7 @@ def test_structured_reader_never_grounds_model_written_table(
         result=json.dumps({"status": "ok", "path": str(table)}),
         call_id="model-write-table", success=True,
     )
-    result = read_run_artifact(str(table.parent.parent), "target_positions")
+    result = read_run_artifact(str(table.parent.parent), "target_positions", roots=two_runs.file_roots)
     two_runs.ingest_tool_result(
         tool_name="read_run_artifact", arguments={"run_dir": str(table.parent.parent)},
         result=result, call_id="read-model-table", success=True,
@@ -811,16 +817,15 @@ def test_structured_reader_checks_engine_hash_and_scope(
 ) -> None:
     from src.tools.run_artifact_tool import read_run_artifact
 
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(two_runs.run_dir))
     table = two_runs.run_dir / "rp" / "artifacts" / "target_positions.csv"
     table.write_text("timestamp,000001.SZ\n2024-01-02,0.4567\n", encoding="utf-8")
-    result = read_run_artifact(str(table.parent.parent), "target_positions")
+    result = read_run_artifact(str(table.parent.parent), "target_positions", roots=two_runs.file_roots)
     two_runs.ingest_tool_result(
         tool_name="read_run_artifact", arguments={"run_dir": str(table.parent.parent)},
         result=result, call_id="read-changed", success=True,
     )
     assert not any(r.call_id == "read-changed" for r in two_runs._evidence)
-    result = read_run_artifact(str(two_runs.run_dir / "ew"), "target_positions")
+    result = read_run_artifact(str(two_runs.run_dir / "ew"), "target_positions", roots=two_runs.file_roots)
     two_runs.ingest_tool_result(
         tool_name="read_run_artifact", arguments={"run_dir": str(two_runs.run_dir / "ew")},
         result=result, call_id="read-ew", success=True,
@@ -835,7 +840,7 @@ def test_external_symlink_is_not_registered_as_engine_table(tmp_path: Path) -> N
     target = tmp_path / "rp" / "artifacts" / "target_positions.csv"
     target.unlink()
     target.symlink_to(tmp_path / "ew" / "artifacts" / "target_positions.csv")
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="回测风险平价")
     _backtest(ledger, tmp_path / "rp", "bt-rp")
     _read(ledger, target, "read-sibling")
     assert not any(r.call_id == "read-sibling" for r in ledger._evidence)
@@ -854,7 +859,7 @@ def own_run(tmp_path: Path) -> GroundingLedger:
     """One backtest written into the active run directory itself, trades read back."""
     root = tmp_path / RUN_NAME
     _write_backtest(root, RP)
-    ledger = GroundingLedger(run_dir=root, user_message="回测风险平价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=root, user_message="回测风险平价")
     _backtest(ledger, root, "bt-own")
     _read(ledger, root / "artifacts" / "trades.csv", "read-trades")
     return ledger

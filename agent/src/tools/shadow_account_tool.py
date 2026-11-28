@@ -9,6 +9,8 @@ Four tools, all thin — business logic lives in `src.shadow_account`:
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import json
 import logging
 from dataclasses import asdict
@@ -16,7 +18,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from src.agent.tools import BaseTool
+from src.agent.tools import BaseTool, FileBoundTool
 from src.tools.path_utils import safe_user_path
 from src.shadow_account import (
     extract_shadow_profile,
@@ -63,7 +65,7 @@ def _int_arg(value: Any, field: str, default: int) -> int:
         raise ValueError(f"{field} must be an integer, got {value!r}") from None
 
 
-def _validate_optional_journal_path(raw: Any) -> str | None:
+def _validate_optional_journal_path(raw: Any, *, roots: FileRoots) -> str | None:
     """Validate a journal_path kwarg that may be missing/empty.
 
     Returns the resolved path string, or None when the caller didn't pass
@@ -72,12 +74,12 @@ def _validate_optional_journal_path(raw: Any) -> str | None:
     """
     if not raw:
         return None
-    return str(safe_user_path(raw))
+    return str(safe_user_path(raw, roots=roots))
 
 
 # ---------------- Tool 1: extract ----------------
 
-class ExtractShadowStrategyTool(BaseTool):
+class ExtractShadowStrategyTool(FileBoundTool, BaseTool):
     """Extract a Shadow Account profile from a user's trade journal."""
 
     name = "extract_shadow_strategy"
@@ -115,7 +117,7 @@ class ExtractShadowStrategyTool(BaseTool):
         if not journal_path:
             return _err("journal_path is required")
         try:
-            journal_path = str(safe_user_path(journal_path))
+            journal_path = str(safe_user_path(journal_path, roots=self.roots))
         except ValueError as exc:
             return _err(str(exc))
         try:
@@ -159,7 +161,7 @@ class ExtractShadowStrategyTool(BaseTool):
 
 # ---------------- Tool 2: backtest ----------------
 
-class RunShadowBacktestTool(BaseTool):
+class RunShadowBacktestTool(FileBoundTool, BaseTool):
     """Run multi-market backtest for an extracted Shadow Account."""
 
     name = "run_shadow_backtest"
@@ -212,7 +214,7 @@ class RunShadowBacktestTool(BaseTool):
         markets = tuple(kwargs.get("markets") or ("china_a", "hk", "us", "crypto"))
 
         try:
-            journal_path = _validate_optional_journal_path(kwargs.get("journal_path"))
+            journal_path = _validate_optional_journal_path(kwargs.get("journal_path"), roots=self.roots)
         except ValueError as exc:
             return _err(str(exc))
         try:
@@ -245,7 +247,7 @@ class RunShadowBacktestTool(BaseTool):
 
 # ---------------- Tool 3: render ----------------
 
-class RenderShadowReportTool(BaseTool):
+class RenderShadowReportTool(FileBoundTool, BaseTool):
     """Render a Shadow Account PDF report from a completed backtest."""
 
     name = "render_shadow_report"
@@ -277,7 +279,7 @@ class RenderShadowReportTool(BaseTool):
             return _err(str(exc))
 
         try:
-            journal_path = _validate_optional_journal_path(kwargs.get("journal_path"))
+            journal_path = _validate_optional_journal_path(kwargs.get("journal_path"), roots=self.roots)
         except ValueError as exc:
             return _err(str(exc))
 
@@ -331,7 +333,7 @@ class RenderShadowReportTool(BaseTool):
 
 # ---------------- Tool 4: scan ----------------
 
-class ScanShadowSignalsTool(BaseTool):
+class ScanShadowSignalsTool(FileBoundTool, BaseTool):
     """Scan the market for symbols matching a Shadow Account's rules (research only)."""
 
     name = "scan_shadow_signals"

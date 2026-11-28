@@ -459,7 +459,7 @@ def test_session_terminal_event_still_reaches_request_sweep(
     bus.emit("s1", "message.delta", {})
     assert swept == []
 
-    for event_type in ("attempt.completed", "attempt.failed", "attempt.cancelled"):
+    for event_type in ("run.completed", "run.failed", "run.cancelled"):
         bus.emit("s1", event_type, {})
     assert swept == ["sweep", "sweep", "sweep"]
 

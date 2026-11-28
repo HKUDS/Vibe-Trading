@@ -1,16 +1,24 @@
 """Worker evidence survives ordinary batches and remains readable under pressure."""
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 
 import pytest
 
 from src.agent.tools import BaseTool, ToolRegistry
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 from src.config.limits import truncate_tool_result
-from src.swarm.context import WorkerContext
+from src.session.thread import ThreadLog
+from src.swarm.context import NodeContext
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-import src.swarm.worker as worker
+import src.swarm.node as worker
 from src.tools.read_file_tool import ReadFileTool
 
 
@@ -25,7 +33,7 @@ class _EvidenceTool(BaseTool):
 def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
     names = ['get_financial_statements', 'get_fund_flow', 'get_margin_trading',
              'get_research_reports', 'get_stock_news', 'a', 'b', 'c', 'd', 'e']
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     for name in names:
         registry.register(_EvidenceTool(name))
     seen = []
@@ -42,7 +50,8 @@ def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='analyst', role='Analyst', system_prompt='Read all evidence.',
                                   tools=names, max_iterations=3),
         task=SwarmTask(id='t', agent_id='analyst', prompt_template='Review the company.'),
@@ -55,7 +64,7 @@ def test_entire_batch_reaches_the_next_model_request(tmp_path, monkeypatch):
 
 
 def _pressured(tmp_path, *, can_read=True):
-    context = WorkerContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=can_read)
+    context = NodeContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=can_read)
     context.max_tokens = 12_000
     messages = [{'role': 'system', 'content': 'Analyze the supplied observations.'}]
     for i in range(4):
@@ -80,11 +89,11 @@ def test_pressure_saves_old_results_and_keeps_the_fresh_batch(tmp_path, monkeypa
         assert receipt['tool_call_id'].startswith('old-')
         parts = []
         for path in receipt['paths']:
-            read = json.loads(truncate_tool_result(ReadFileTool().execute(path=path, run_dir=str(tmp_path))))
+            read = json.loads(truncate_tool_result(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=path, run_dir=str(tmp_path))))
             assert read['status'] == 'ok'
             parts.append(read['content'])
         assert ''.join(parts) == originals[receipt['tool_call_id']]
-    assert messages[-1]['content'] == originals['new-1']
+    assert messages[-1].get('content') == originals['new-1']
     assert messages[-2]['content'] == originals['new-0']
     assert context.compact(messages, []) == []
 
@@ -96,14 +105,14 @@ def test_unrecoverable_results_are_never_discarded(tmp_path, monkeypatch, cause)
     if cause == 'write-failure':
         def refuse(*args, **kwargs):
             raise OSError('unwritable')
-        monkeypatch.setattr('src.agent.result_artifacts._write_original', refuse)
+        monkeypatch.setattr('src.product.result_artifacts._write_original', refuse)
     assert context.compact(messages, []) == []
     assert messages == before
     assert context.tokens(messages, []) > context.budget(messages, []).total
 
 
 def test_real_usage_and_schema_growth_are_counted(tmp_path):
-    context = WorkerContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=False)
+    context = NodeContext(model='deepseek-v4-pro', artifact_dir=tmp_path, can_read_files=False)
     messages = [{'role': 'system', 'content': 's'}, {'role': 'user', 'content': 'q'}]
     schemas = [{'type': 'function', 'description': 'large schema ' * 500}]
     assert context.tokens(messages, schemas) > context.tokens(messages, []) + 1000
@@ -122,7 +131,7 @@ def test_result_parts_survive_json_escaping_and_redact_secrets(tmp_path, monkeyp
     original = redact_tool_result(messages[1]['content'])
     receipts = context.compact(messages, [])
     saved = next(r for r in receipts if r['tool_call_id'] == 'old-0')
-    parts = [json.loads(truncate_tool_result(ReadFileTool().execute(path=p, run_dir=str(tmp_path))))['content']
+    parts = [json.loads(truncate_tool_result(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=p, run_dir=str(tmp_path))))['content']
              for p in saved['paths']]
     assert ''.join(parts) == original
     assert 'private-value' not in ''.join(parts)
@@ -141,7 +150,7 @@ def test_context_file_symlink_cannot_redirect_writes(tmp_path):
 
 
 def test_worker_refuses_over_budget_request_without_discarding_fresh_results(tmp_path, monkeypatch):
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(_EvidenceTool('probe'))
     calls = []
 
@@ -156,15 +165,16 @@ def test_worker_refuses_over_budget_request_without_discarding_fresh_results(tmp
 
     monkeypatch.setattr(worker, 'ChatLLM', lambda **kwargs: Model())
     monkeypatch.setattr(worker, 'build_swarm_registry', lambda *args, **kwargs: registry)
-    result = worker.run_worker(
+    result = worker.run_node(
+        policy=ToolPolicy.from_config(get_env_config()),
         agent_spec=SwarmAgentSpec(id='a', role='Analyst', system_prompt='Analyze.', tools=['probe'], max_iterations=3),
         task=SwarmTask(id='t', agent_id='a', prompt_template='Read.'),
         upstream_summaries={}, user_vars={}, run_dir=tmp_path,
     )
     assert len(calls) == 1
     assert result.status == 'token_limit'
-    messages = json.loads(next(tmp_path.rglob('messages.json')).read_text())
-    assert json.loads(messages[-1]['content'])['observed'] == 'probe'
+    messages = [item for item in ThreadLog(next(tmp_path.rglob('thread.jsonl'))).read() if item.type == 'tool_result']
+    assert json.loads(messages[-1].get('content'))['observed'] == 'probe'
 
 
 @pytest.mark.parametrize('tools', [['get_market_data'], ['write_file']])
@@ -173,3 +183,10 @@ def test_prompt_names_actual_iteration_budget(tools):
     prompt = worker.build_worker_prompt(spec, {}, '')
     assert 'at most 7 model iterations' in prompt
     assert 'HARD LIMIT of 20 tool calls' not in prompt
+
+
+def test_prompt_asks_for_the_language_of_the_users_request_not_the_template():
+    spec = SwarmAgentSpec(id='a', role='Analyst', system_prompt='Analyze.', tools=['write_file'], max_iterations=3)
+    prompt = worker.build_worker_prompt(spec, {}, '')
+    assert "language of the user's own request" in prompt
+    assert "task's language" not in prompt

@@ -4,37 +4,77 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
-from src.tools.path_utils import allowed_file_roots, resolve_safe_path
+from src.tools.path_utils import FileRoots, allowed_file_roots, resolve_safe_path
 
 
-def resolve_data_refs(value: Any, run_dir: str | None, sources: list[dict]) -> Any:
+def resolve_json_pointer(data: Any, pointer: str) -> tuple[Any, bool]:
+    """Select an RFC 6901 JSON value and report whether its source was sampled.
+
+    Args:
+        data: Parsed JSON document.
+        pointer: Empty for the whole document, otherwise a slash-prefixed pointer.
+
+    Returns:
+        The selected value and whether it or an ancestor declares ``truncated: true``.
+
+    Raises:
+        ValueError: If the pointer is malformed or names no value in the document.
+    """
+    if not isinstance(pointer, str) or (pointer and not pointer.startswith("/")):
+        raise ValueError("pointer must be an RFC 6901 JSON pointer, e.g. /data/0")
+    sampled = False
+    for token in pointer.split("/")[1:]:
+        sampled |= isinstance(data, dict) and data.get("truncated") is True
+        if re.search(r"~(?![01])", token):
+            raise ValueError("Invalid JSON pointer escape; use ~0 for ~ and ~1 for /")
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(data, list):
+            if not (token == "0" or (token.isascii() and token.isdigit() and not token.startswith("0"))):
+                raise ValueError("JSON pointer array indices must be non-negative integers without leading zeros")
+            if int(token) >= len(data):
+                raise ValueError(f"JSON pointer not found: {pointer}")
+            data = data[int(token)]
+        elif isinstance(data, dict):
+            if token not in data:
+                raise ValueError(f"JSON pointer not found: {pointer}")
+            data = data[token]
+        else:
+            raise ValueError("JSON pointer cannot descend through a scalar")
+    sampled |= isinstance(data, dict) and data.get("truncated") is True
+    return data, sampled
+
+
+def resolve_data_refs(value: Any, run_dir: str | None, sources: list[dict], *, roots: FileRoots) -> Any:
     """Resolve nested JSON/CSV references and record their calculation basis.
 
     Args:
         value: Argument tree; references use a sole ``__data_ref__`` key.
         run_dir: Current task workspace, subject to the ordinary read boundary.
         sources: Receives file hashes, projections and observation coverage.
+        roots: File roots authorized by the host.
 
     Returns:
         Arguments containing ordinary values or indexed pandas Series.
 
     Raises:
-        ValueError: If a reference escapes readable roots or has invalid data.
+        ValueError: If a reference escapes readable roots, has invalid data, or names a pointer
+            that is malformed or absent from the document.
     """
     if isinstance(value, list):
-        return [resolve_data_refs(item, run_dir, sources) for item in value]
+        return [resolve_data_refs(item, run_dir, sources, roots=roots) for item in value]
     if not isinstance(value, dict):
         return value
     if set(value) != {"__data_ref__"}:
-        return {key: resolve_data_refs(item, run_dir, sources) for key, item in value.items()}
+        return {key: resolve_data_refs(item, run_dir, sources, roots=roots) for key, item in value.items()}
     import pandas as pd
 
     ref = value["__data_ref__"]
     if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
         raise ValueError("__data_ref__ needs a path; use the data tool's _result_file.path")
-    path = resolve_safe_path(ref["path"], run_dir, allowed_file_roots(), purpose="file")
+    path = resolve_safe_path(ref["path"], run_dir, allowed_file_roots(roots=roots), purpose="file", roots=roots)
     raw = path.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     if ref.get("sha256") and ref["sha256"] != digest:
@@ -47,15 +87,8 @@ def resolve_data_refs(value: Any, run_dir: str | None, sources: list[dict]) -> A
     else:
         raise ValueError("Data references support JSON and CSV only")
     provenance = data.get("_provenance") if isinstance(data, dict) else None
-    sampled = False
     pointer = ref.get("pointer", "")
-    if not isinstance(pointer, str) or (pointer and not pointer.startswith("/")):
-        raise ValueError("pointer must be an RFC 6901 JSON pointer, e.g. /NVDA.US")
-    for token in pointer.split("/")[1:]:
-        sampled |= isinstance(data, dict) and data.get("truncated") is True
-        token = token.replace("~1", "/").replace("~0", "~")
-        data = data[int(token)] if isinstance(data, list) else data[token]
-    sampled |= isinstance(data, dict) and data.get("truncated") is True
+    data, sampled = resolve_json_pointer(data, pointer)
     if isinstance(data, dict) and sampled and isinstance(data.get("data"), list):
         data = data["data"]
     basis = {"path": str(path), "sha256": digest, "pointer": pointer,

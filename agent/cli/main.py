@@ -1,61 +1,36 @@
-"""Interactive CLI front door for Vibe-Trading.
-
-Responsibilities:
-
-1. Detect whether any provider `.env` candidate exists; if all are missing, run
-   the onboarding wizard (:mod:`cli.onboard`) before doing anything else.
-2. Render the startup banner (:mod:`cli.intro`) on interactive entry.
-3. For interactive entry (no subcommand, or ``chat``) drive the REPL
-   built on :mod:`cli.input`, :mod:`cli.completer`,
-   :mod:`cli.commands.slash_router`, :mod:`cli.components.working_indicator`,
-   :mod:`cli.components.tool_event`, and :mod:`cli.components.hint_bar`.
-4. For every other subcommand delegate to ``cli._legacy.main`` so the
-   long tail of ``serve``, ``run``, ``mcp``, ``sessions``, ``swarm`` etc.
-   keeps working without regression.
-
-The console script entry in ``pyproject.toml`` (``vibe-trading = "cli:main"``)
-hits :func:`main`.
-"""
+"""Interactive CLI front door for Vibe-Trading."""
 
 from __future__ import annotations
+
+from src.config.accessor import get_env_config
+from src.product.tool_policy import ToolPolicy
+
+import cli.commands.dispatch as _cmd_dispatch
 
 import importlib
 import logging
 import sys
-import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING, TypeVar
 
 from cli.intro import print_banner
 from cli.onboard import run_onboarding
-from cli.theme import Theme, get_console
+from cli.theme import get_console
+
+if TYPE_CHECKING:
+    from cli.commands.slash_router import Command
+
+_MaxIterDefault = TypeVar("_MaxIterDefault", int, None)
 
 
 def _register_live_slash_commands() -> None:
-    """Surface connector live-trading slash commands in the shared registry.
-
-    Discoverability fix (SPEC.md Consent §4 + §9 audit): ``/connector``,
-    ``/halt`` and ``/resume`` are privileged kill-switch / runner surface actions intercepted
-    in the REPL input path (never dispatched to the model), so they were absent
-    from the slash registry — meaning ``/help``, the typeahead completer, and the
-    fuzzy matcher never listed them. We append them here, at this module's import
-    time, which runs on every interactive startup *before* the lazily-imported
-    ``cli.commands.help`` / ``cli.completer`` first read the registry. Both of
-    those read ``slash_router.SLASH_COMMANDS`` (help) / call ``match_commands``
-    (completer) which resolve the connector module attribute, so the single
-    reassignment here surfaces the commands in all three places.
-
-    The registry is a tuple of frozen dataclasses, so we build a NEW tuple rather
-    than mutate in place. Registration is idempotent — re-import (e.g. in tests)
-    never duplicates rows.
-    """
+    """Surface connector live-trading slash commands in the shared registry."""
     from cli.commands import slash_router
 
-    existing = {cmd.name for cmd in slash_router.SLASH_COMMANDS}
-    additions = (
+    added = _insert_slash_commands(
         slash_router.Command(
             "connector", "Trading connector profiles (status / start / halt)", "cli.main"
         ),
@@ -66,38 +41,33 @@ def _register_live_slash_commands() -> None:
             "resume", "Clear the kill switch (re-enable live trading)", "cli.main"
         ),
     )
-    new = tuple(cmd for cmd in additions if cmd.name not in existing)
-    if not new:
-        return
-    # Insert the connector group just before ``quit`` (the conventional last row) so
-    # the kill switch sits with the other safety-relevant commands.
-    commands = list(slash_router.SLASH_COMMANDS)
-    quit_idx = next(
-        (i for i, c in enumerate(commands) if c.name == "quit"), len(commands)
-    )
-    commands[quit_idx:quit_idx] = list(new)
-    slash_router.SLASH_COMMANDS = tuple(commands)
-    # ``/stop`` is the kill-switch alias of ``/halt`` (SPEC Consent §4) so the
-    # fuzzy matcher / find_exact resolve it.
-    if "stop" not in slash_router._ALIASES:
+    # Resolve /stop as the /halt kill-switch alias (SPEC Consent §4).
+    if added and "stop" not in slash_router._ALIASES:
         slash_router._ALIASES = {**slash_router._ALIASES, "stop": "halt"}
-
-
-_register_live_slash_commands()
 
 
 def _register_data_slash_commands() -> None:
     """Surface data partner settings in the shared slash registry."""
+    from cli.commands.slash_router import Command
+
+    _insert_slash_commands(Command("data", "Show data partner settings", "cli.main"))
+
+
+def _insert_slash_commands(*additions: Command) -> bool:
     from cli.commands import slash_router
 
-    if any(cmd.name == "data" for cmd in slash_router.SLASH_COMMANDS):
-        return
     commands = list(slash_router.SLASH_COMMANDS)
-    quit_idx = next((i for i, c in enumerate(commands) if c.name == "quit"), len(commands))
-    commands.insert(quit_idx, slash_router.Command("data", "Show data partner settings", "cli.main"))
+    names = {command.name for command in commands}
+    new = [command for command in additions if command.name not in names]
+    if not new:
+        return False
+    quit_index = next((i for i, command in enumerate(commands) if command.name == "quit"), len(commands))
+    commands[quit_index:quit_index] = new
     slash_router.SLASH_COMMANDS = tuple(commands)
+    return True
 
 
+_register_live_slash_commands()
 _register_data_slash_commands()
 
 
@@ -105,22 +75,16 @@ _AGENT_DIR = Path(__file__).resolve().parents[1]
 _ENV_PATH = Path.home() / ".vibe-trading" / ".env"
 _PROJECT_ENV_PATH = _AGENT_DIR / ".env"
 _CWD_ENV_PATH = Path.cwd() / ".env"
-# Best-effort fallbacks used only when the probe genuinely fails (missing
-# dependency, broken install). The numbers track the actual bundled counts
-# so a probe failure still shows a plausible banner rather than "0 loaded".
+# Keep the startup banner informative if registry discovery fails.
 _FALLBACK_SKILLS = 77
 _FALLBACK_TOOLS = 31
-_HISTORY_RETAINED_TURNS = 6  # how many prior turns to feed the agent loop
 
-# Cached banner-stats and session-store so ``/clear`` and repeat slash handlers
-# don't redo the heavy build_registry() / SessionStore construction.
+# Reuse discovery and session storage across slash commands.
 _BANNER_STATS_CACHE: Dict[str, Any] = {}
 _SESSION_STORE_CACHE: Any = None
 
 
-# ---------------------------------------------------------------------------
 # Stat probes (best-effort, never blocking)
-# ---------------------------------------------------------------------------
 
 
 def _probe_model_name() -> str:
@@ -150,20 +114,15 @@ def _probe_tool_count() -> int:
     try:
         from src.tools import build_registry
 
-        return len(build_registry())
+        return len(build_registry(policy=ToolPolicy.from_config(get_env_config())))
     except Exception:  # noqa: BLE001 — never block startup on stats
         return _FALLBACK_TOOLS
 
 
 def _probe_skill_count() -> int:
-    """Count bundled + user skills without blocking startup on import errors.
-
-    Reads ``SkillsLoader.skills`` directly — that is the authoritative list
-    populated by :meth:`SkillsLoader._load` from bundled ``agent/skills/``
-    plus ``~/.vibe-trading/skills/user/``.
-    """
+    """Count bundled + user skills without blocking startup on import errors."""
     try:
-        from src.agent.skills import SkillsLoader
+        from src.product.resources.skills import SkillsLoader
 
         loader = SkillsLoader()
         return len(loader.skills)
@@ -189,19 +148,7 @@ def _probe_session_count() -> int:
 
 
 def _collect_banner_stats(*, refresh: bool = False) -> Dict[str, Any]:
-    """Return the four banner stat values, computing them at most once.
-
-    The interactive launch path runs every probe synchronously (the
-    user is already waiting for the prompt). Subsequent callers
-    (``/clear`` re-render, ``/debug`` summary) reuse the cached values
-    so they don't re-import the tool registry on every keystroke.
-
-    Args:
-        refresh: When True, recompute and overwrite the cache.
-
-    Returns:
-        ``{"model": str, "skills": int, "tools": int, "sessions": int}``.
-    """
+    """Return the four banner stat values, computing them at most once."""
     if _BANNER_STATS_CACHE and not refresh:
         return dict(_BANNER_STATS_CACHE)
     stats: Dict[str, Any] = {
@@ -215,33 +162,11 @@ def _collect_banner_stats(*, refresh: bool = False) -> Dict[str, Any]:
     return dict(stats)
 
 
-# ---------------------------------------------------------------------------
 # Routing helpers
-# ---------------------------------------------------------------------------
 
 
 def _is_interactive_invocation(argv: Sequence[str]) -> bool:
-    """Decide whether this invocation should drive the interactive loop.
-
-    Interactive entry requires:
-
-    * Both stdin and stdout are TTYs (no piped / redirected I/O).
-    * Either no arguments at all, or exactly the ``chat`` subcommand.
-
-    Anything else — a flag (``-p``, ``--json``, ``--help``), a recognised
-    subcommand (``serve``, ``run``, ``alpha``, ``hypothesis`` ...), or an
-    unknown positional — is delegated to ``_legacy.main`` so argparse
-    can either dispatch it or produce its standard "unrecognized
-    arguments" error. Routing typos here would silently drop the user
-    into chat, which is worse than the argparse error.
-
-    Args:
-        argv: The argument list passed to :func:`main`, *excluding*
-            ``sys.argv[0]``.
-
-    Returns:
-        ``True`` if the caller should drive the interactive loop.
-    """
+    """Decide whether this invocation should drive the interactive loop."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return False
     if not argv:
@@ -257,28 +182,15 @@ def _is_supported_chat_invocation(argv: Sequence[str]) -> bool:
         return False
     if len(argv) == 1:
         return True
-    if len(argv) == 2 and argv[1].startswith("--max-iter="):
-        try:
-            int(argv[1].split("=", 1)[1])
-            return True
-        except ValueError:
-            return False
-    if len(argv) == 3 and argv[1] == "--max-iter":
-        try:
-            int(argv[2])
-            return True
-        except ValueError:
-            return False
-    return False
+    valid_shape = (
+        len(argv) == 2 and argv[1].startswith("--max-iter=")
+        or len(argv) == 3 and argv[1] == "--max-iter"
+    )
+    return valid_shape and _extract_max_iter(argv, default=None) is not None
 
 
 def _maybe_run_onboarding() -> bool:
-    """Run the first-launch wizard when every provider ``.env`` candidate is missing.
-
-    Returns:
-        ``True`` if startup should proceed, ``False`` if the user cancelled
-        the wizard cleanly.
-    """
+    """Run the first-launch wizard when every provider ``.env`` candidate is missing."""
     if _first_existing_env_path() is not None:
         return True
     console = get_console()
@@ -313,9 +225,7 @@ def _show_banner() -> None:
     stats = _collect_banner_stats()
     console = get_console()
     print_banner(console, **stats)
-    # Discoverability one-liner (SPEC.md §9 audit): point users at the
-    # connector channel + its CLI surface. Live profiles are opt-in and read-only by
-    # default, so this is a pointer, not an enablement.
+    # Advertise connector commands without enabling live profiles (SPEC.md §9 audit).
     console.print(
         "  [dim]Live trading (opt-in, read-only by default): "
         "[/dim][bold]/connector[/bold][dim] in chat · "
@@ -325,92 +235,57 @@ def _show_banner() -> None:
     console.print()
 
 
-# ---------------------------------------------------------------------------
 # Interactive context
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class InteractiveContext:
-    """State bag handed to slash-command handlers and the run loop.
-
-    Attributes:
-        session_id: Active session id (populated lazily on first turn).
-        history: Compact transcript (role/content pairs) fed back to the
-            agent for follow-up context.
-        max_iter: ReAct iteration ceiling.
-        debug: Whether the ``/debug`` panel is currently shown.
-        last_recap_history_len: Number of history messages covered by the
-            most recently printed deterministic recap.
-        pending_prompt: Optional prompt queued by a slash handler
-            (``/journal``, ``/shadow``) that the loop should execute as
-            the next user turn. Consumed by :func:`_interactive_loop`
-            and cleared.
-        pending_proposal: The most recent live-trading ``mandate.proposal``
-            payload emitted by the agent during this session, awaiting the
-            user's pick or adjust reply. A numeric pick is intercepted in the
-            REPL input path and committed directly via the commit endpoint —
-            the model never sees the pick (SPEC.md Consent §2). ``None`` when
-            no proposal is outstanding.
-    """
+    """Track recap-only text and pending proposals for direct user consent (SPEC.md Consent §2)."""
 
     session_id: Optional[str] = None
-    history: List[Dict[str, str]] = field(default_factory=list)
+    transcript: List[Dict[str, str]] = field(default_factory=list)
     max_iter: int = 50
     debug: bool = False
-    last_recap_history_len: int = 0
+    last_recap_len: int = 0
     pending_prompt: Optional[str] = None
     pending_proposal: Optional[Dict[str, Any]] = None
     pending_scheduled_proposal: Optional[Dict[str, Any]] = None
 
 
-# ---------------------------------------------------------------------------
 # Session-store integration
-# ---------------------------------------------------------------------------
 
 
 def _session_store() -> Any:
-    """Return a process-wide :class:`SessionStore` rooted at the user-level sessions dir.
-
-    Cached on the module so repeat ``_append_message`` / ``_new_session``
-    calls don't re-import ``src.session.store`` every turn.
-    """
+    """Return a process-wide :class:`SessionStore` rooted at the user-level sessions dir."""
     global _SESSION_STORE_CACHE
     if _SESSION_STORE_CACHE is None:
-        from cli._legacy import SESSIONS_DIR  # filesystem path constant
+        from cli.commands.common import SESSIONS_DIR
         from src.session.store import SessionStore
 
         _SESSION_STORE_CACHE = SessionStore(base_dir=SESSIONS_DIR)
     return _SESSION_STORE_CACHE
 
 
-def _build_session_history(store: Any, session_id: str) -> list[dict]:
-    """Load and filter recent message history for a session.
-
-    Returns up to ``_HISTORY_RETAINED_TURNS`` user/assistant messages
-    with non-empty content.
-    """
+def _session_transcript(store: Any, session_id: str) -> list[dict]:
+    """Load the user/assistant text of a session, for the resume banner and recap."""
     try:
-        messages = store.get_messages(session_id, limit=_HISTORY_RETAINED_TURNS * 2)
-    except Exception:  # noqa: BLE001 — persistence error → empty history
+        messages = store.get_messages(session_id, limit=None)
+    except Exception:  # noqa: BLE001 — persistence error → empty transcript
         return []
-    history = [
+    return [
         {"role": m.role, "content": m.content}
         for m in messages
         if m.role in {"user", "assistant"} and m.content.strip()
     ]
-    return history[-_HISTORY_RETAINED_TURNS:]
+
+
+def _prior_turns(transcript: list[dict]) -> int:
+    """Count the turns a transcript holds (one per user message)."""
+    return sum(1 for m in transcript if m["role"] == "user")
 
 
 def _new_session(prompt_preview: str) -> Optional[str]:
-    """Create a fresh session record. Returns the id, or None on failure.
-
-    Dual-writes to the filesystem :class:`SessionStore` (canonical JSONL
-    log in the user-level sessions dir) *and* to the SQLite FTS5 search
-    index (``sessions.db`` beside it) so cross-session search via
-    :class:`SessionSearchIndex` finds turns recorded from the interactive
-    loop. Matches the pattern in :class:`SessionService`.
-    """
+    """Create a fresh session record."""
     title = prompt_preview[:60] or "untitled"
     try:
         from src.session.models import Session, SessionStatus
@@ -424,8 +299,7 @@ def _new_session(prompt_preview: str) -> Optional[str]:
     except Exception:  # noqa: BLE001 — never block the turn on persistence
         return None
 
-    # Index in SQLite for FTS5 cross-session search. Best-effort — never
-    # block the turn if the search index is unavailable.
+    # Keep search indexing failures from blocking the turn.
     try:
         from src.session.search import get_shared_index
 
@@ -435,54 +309,8 @@ def _new_session(prompt_preview: str) -> Optional[str]:
     return session.session_id
 
 
-def _append_message(session_id: str, role: str, content: str) -> None:
-    """Append a single message to the session JSONL log + FTS5 index.
-
-    Dual-writes:
-
-    * Canonical: append the :class:`Message` to ``messages.jsonl`` via
-      the filesystem :class:`SessionStore`. ``_maybe_resume_last_session``
-      and the legacy ``sessions`` CLI both read from here.
-    * Search index: insert the same row into the SQLite FTS5 index so
-      ``SessionSearchTool`` finds it. Required for the CLAUDE.md promise
-      that cross-session full-text search works.
-
-    Args:
-        session_id: Active session id. Skipped if empty.
-        role: ``"user"`` / ``"assistant"`` / ``"tool"``.
-        content: Message text. Empty/whitespace strings are skipped.
-    """
-    if not session_id or not content:
-        return
-    try:
-        from src.session.models import Message
-
-        store = _session_store()
-        store.append_message(
-            Message(session_id=session_id, role=role, content=content)
-        )
-    except Exception:  # noqa: BLE001 — persistence is best-effort
-        pass
-
-    # FTS5 cross-session search. Independent try/except so a JSONL write
-    # that succeeded is not retried just because the search index failed.
-    try:
-        from src.session.search import get_shared_index
-
-        get_shared_index().index_message(session_id, role, content)
-    except Exception:  # noqa: BLE001
-        pass
-
-
 def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
-    """Prompt to resume the most recent session, if any exist.
-
-    Returns:
-        A dict ``{"session_id": str, "history": list[dict], "title": str}``
-        when the user opts to resume, ``{"pending_input": str}`` when the
-        user typed a first chat turn into the prompt, otherwise ``None`` (new
-        session).
-    """
+    """Prompt to resume the most recent session, if any exist."""
     try:
         store = _session_store()
         sessions = store.list_sessions(limit=1)
@@ -509,41 +337,15 @@ def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
 
     return {
         "session_id": last.session_id,
-        "history": _build_session_history(store, last.session_id),
+        "transcript": _session_transcript(store, last.session_id),
         "title": title,
     }
 
 
-# ---------------------------------------------------------------------------
 # Async preflight
-# ---------------------------------------------------------------------------
 
 
-def _start_preflight_async() -> threading.Thread:
-    """Run ``src.preflight.run_preflight`` in a daemon thread.
-
-    The welcome banner has already painted by the time this runs, so the
-    user sees something useful immediately while credential / network
-    probes happen in the background. We swallow exceptions because the
-    legacy path runs preflight again before any agent invocation — this
-    pre-warm is opportunistic. Audit item 11.
-    """
-    def _worker() -> None:
-        try:
-            from src.preflight import run_preflight
-
-            run_preflight(get_console())
-        except Exception:  # noqa: BLE001
-            pass
-
-    thread = threading.Thread(target=_worker, daemon=True, name="vibe-preflight")
-    thread.start()
-    return thread
-
-
-# ---------------------------------------------------------------------------
 # Slash dispatch
-# ---------------------------------------------------------------------------
 
 
 # Module paths that fan out to multiple commands via ``run(ctx, name, *args)``.
@@ -555,21 +357,7 @@ _MULTI_COMMAND_MODULES = frozenset({
 
 
 def _suggest_commands(unknown: str) -> List[str]:
-    """Return up to three "did you mean" suggestions for ``unknown``.
-
-    Uses :func:`difflib.get_close_matches` (edit-distance based) as the
-    primary signal so single-character typos like ``/historu`` → ``/history``
-    or ``/jurnal`` → ``/journal`` are caught — the subsequence scorer in
-    ``slash_router.match_commands`` ranks transpositions poorly and is
-    used here only as a fallback to fill any remaining slot.
-
-    Args:
-        unknown: The bare command token (no leading ``/``).
-
-    Returns:
-        Deduplicated command names, edit-distance suggestions first,
-        capped at three entries.
-    """
+    """Return up to three "did you mean" suggestions for ``unknown``."""
     import difflib
 
     from cli.commands.slash_router import SLASH_COMMANDS, match_commands
@@ -577,9 +365,7 @@ def _suggest_commands(unknown: str) -> List[str]:
     all_names = [cmd.name for cmd in SLASH_COMMANDS]
     primary = difflib.get_close_matches(unknown, all_names, n=3, cutoff=0.6)
 
-    # Fill remaining slots from the subsequence scorer so very short
-    # typos (``/hi`` → ``/history``) still surface if difflib found
-    # nothing close enough.
+    # Use subsequence matches to fill short suggestions missed by edit distance.
     suggestions: list[str] = list(primary)
     if len(suggestions) < 3:
         for cmd in match_commands("/" + unknown):
@@ -591,13 +377,7 @@ def _suggest_commands(unknown: str) -> List[str]:
 
 
 def _dispatch_slash(line: str, ctx: InteractiveContext) -> int:
-    """Route a slash command line to its handler.
-
-    Returns:
-        Exit code from the handler. ``2`` is the conventional "user
-        requested quit" sentinel (see ``cmd_quit``). Any other value is
-        treated as continue-the-loop.
-    """
+    """Route a slash command line to its handler."""
     from cli.commands.slash_router import find_exact
 
     console = get_console()
@@ -609,9 +389,7 @@ def _dispatch_slash(line: str, ctx: InteractiveContext) -> int:
     name, *args = parts
     cmd = find_exact(name)
     if cmd is None:
-        # Use edit-distance suggestions (difflib) so single-char typos
-        # surface the right command — the subsequence scorer in
-        # ``slash_router.match_commands`` does not handle transpositions.
+        # Use edit distance to catch transposed characters.
         suggestions = _suggest_commands(name)
         console.print(f"[bold red]Unknown command:[/] /{name}")
         if suggestions:
@@ -633,9 +411,7 @@ def _dispatch_slash(line: str, ctx: InteractiveContext) -> int:
             return int(module.run(ctx, cmd.name, *args))
         return int(module.run(ctx, *args))
     except SystemExit as exc:
-        # Treat the canonical "user quit" codes (0 / 2 / None) as
-        # a loop break; anything else is a genuine handler failure
-        # and should keep the REPL alive so the user can recover.
+        # Keep the REPL open when a handler fails.
         code = exc.code
         if code in (None, 0, 2):
             return 2
@@ -646,89 +422,46 @@ def _dispatch_slash(line: str, ctx: InteractiveContext) -> int:
         return 0
 
 
-# ---------------------------------------------------------------------------
 # Interactive loop
-# ---------------------------------------------------------------------------
-
-
-def _summarise_tool_result(tool: str, status: str, preview: str) -> str:
-    """Short suffix to render after a finished tool event."""
-    if status != "ok":
-        return preview[:48].replace("\n", " ")
-    # Delegate to the legacy preview helper which already knows about
-    # backtest sharpe / shadow id / etc.
-    try:
-        from cli._legacy import _format_tool_result_preview, _strip_rich_tags
-
-        return _strip_rich_tags(_format_tool_result_preview(tool, status, preview))[:48]
-    except Exception:  # noqa: BLE001
-        return ""
 
 
 def _print_debug_summary(
     console: Any,
     result: Dict[str, Any],
     elapsed: float,
-    ctx: InteractiveContext,
 ) -> None:
-    """Render the one-line ``[debug]`` summary after a turn.
-
-    Reads the iteration count from ``result`` (populated by
-    :class:`src.agent.loop.AgentLoop`), counts tool events from
-    ``react_trace`` when present, and approximates the post-turn
-    context size from ``ctx.history``. Best-effort — any missing field
-    falls back to ``?`` so the summary still prints.
-    """
+    """Render the one-line debug summary after a turn."""
     iterations = result.get("iterations", "?")
-    trace = result.get("react_trace") or []
-    if isinstance(trace, list):
-        tools = sum(
-            1
-            for entry in trace
-            if isinstance(entry, dict) and entry.get("type") == "tool_result"
-        )
-    else:
-        tools = "?"
-    history_chars = sum(len(m.get("content", "")) for m in ctx.history)
-    # Rough char-to-token ratio (matches the loop's estimator).
-    approx_tokens = history_chars // 4
+    usage = result.get("usage") or {}
     console.print(
-        f"[dim][debug] iter={iterations} tools={tools} "
-        f"elapsed={elapsed:.1f}s ctx≈{approx_tokens}tok ({history_chars}ch)[/dim]"
+        f"[dim][debug] iter={iterations} tools={result.get('tool_count', '?')} "
+        f"elapsed={elapsed:.1f}s tokens in={usage.get('input_tokens', '?')} "
+        f"out={usage.get('output_tokens', '?')}[/dim]"
     )
 
 
 def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
-    """Execute a single agent turn with the Rich dashboard.
-
-    Routes through :func:`cli._legacy._run_agent` so all tool callbacks,
-    persistent memory, and the ReAct engine remain untouched — we only
-    swap in the Rich dashboard and persist the turn to ``SessionStore``.
-    """
-    from cli._legacy import _RunDashboard, _run_agent
+    """Execute a single agent turn with the Rich dashboard."""
+    from cli.ui.rail import RailRunDashboard as _RunDashboard
+    from cli.commands.execution import _run_agent
     from rich.live import Live
 
     console = get_console()
 
     if ctx.session_id is None:
-        # Fall back to an unpersisted id: a session-store failure must not strip
-        # the turn of its session, which would fail every research-goal call
-        # with ``session_id is required`` (#885).
+        # Keep a fallback session ID so research-goal calls can still run (#885).
         ctx.session_id = _new_session(user_input) or uuid.uuid4().hex[:12]
-    _append_message(ctx.session_id or "", "user", user_input)
 
     start = time.perf_counter()
     dashboard = _RunDashboard(user_input, ctx.max_iter)
-    # Capture the latest live-trading mandate proposal emitted this turn so the
-    # REPL can intercept the user's pick before the model (SPEC.md Consent §2).
+    # Capture the proposal so the next pick bypasses the model (SPEC.md Consent §2).
     captured_proposal: Dict[str, Any] = {}
 
     def _capture_proposal(payload: Dict[str, Any]) -> None:
         captured_proposal.clear()
         captured_proposal.update(payload)
 
-    # ``transient=False`` — keep the final timeline visible after the run
-    # completes. Audit item 4.
+    # Keep the final timeline visible after the run (audit item 4).
     try:
         with Live(
             dashboard.render(),
@@ -739,7 +472,6 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
             dashboard.live = live
             result = _run_agent(
                 user_input,
-                history=ctx.history[-_HISTORY_RETAINED_TURNS:],
                 max_iter=ctx.max_iter,
                 dashboard=dashboard,
                 session_id=ctx.session_id or "",
@@ -748,9 +480,7 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
             dashboard.finish(result, time.perf_counter() - start)
     except (KeyboardInterrupt, BrokenPipeError):
         dashboard.close()
-        # BrokenPipe: caller did ``vibe-trading chat | head`` and the
-        # downstream pipe closed mid-render. Print may itself fail on
-        # the closed fd, so swallow that defensively too.
+        # Printing may also fail when a downstream pipe closes.
         try:
             console.print("\n[yellow]Interrupted[/yellow]")
         except (BrokenPipeError, OSError):
@@ -760,9 +490,7 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
     elapsed = time.perf_counter() - start
     _print_interactive_result(console, result, elapsed)
 
-    # Render any mandate proposal AFTER the Live dashboard has closed so the
-    # numbered choice block isn't clobbered by the live region, and arm the
-    # REPL to intercept the next reply (SPEC.md Consent §2).
+    # Wait for the live region to close so it cannot erase the consent choices (SPEC.md Consent §2).
     if captured_proposal:
         if captured_proposal.get("type") == "scheduled_research.proposal":
             ctx.pending_scheduled_proposal = dict(captured_proposal)
@@ -771,21 +499,20 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
             ctx.pending_proposal = dict(captured_proposal)
             _render_mandate_proposal(console, ctx.pending_proposal)
 
-    ctx.history.append({"role": "user", "content": user_input})
+    ctx.transcript.append({"role": "user", "content": user_input})
     answer = (result.get("content") or "").strip()
     if answer:
-        ctx.history.append({"role": "assistant", "content": answer})
-        _append_message(ctx.session_id or "", "assistant", answer)
+        ctx.transcript.append({"role": "assistant", "content": answer})
 
     if ctx.debug:
-        _print_debug_summary(console, result, elapsed, ctx)
+        _print_debug_summary(console, result, elapsed)
 
 
 def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: float) -> None:
     """Print the assistant answer after the rail without boxed run panels."""
 
     from cli.ui.transcript import render_answer, render_elapsed_status
-    from cli._legacy import _read_metric_values
+    from cli.commands.inspection import _read_metric_values
 
     content = (result.get("content") or "").strip()
     if content:
@@ -816,8 +543,7 @@ def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: flo
             console.print(f"  {label:<14} [bold]{rendered}[/bold]")
         console.print()
         console.print(f"[bold]Run ID:[/bold] [cyan]{run_id}[/cyan]")
-        # Name the dashboard without starting a server: this is a print path, and
-        # a process spawned here would outlive the command that created it.
+        # A process spawned here would outlive the print command.
         console.print(
             f"[dim]Dashboard: run `vibe-trading serve`, then open "
             f"/runs/{run_id}?view=dashboard[/dim]"
@@ -830,37 +556,18 @@ def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: flo
 def _print_recap_if_needed(console: Any, ctx: InteractiveContext) -> None:
     """Print a dim recap once per completed turn."""
 
-    if len(ctx.history) <= ctx.last_recap_history_len:
+    if len(ctx.transcript) <= ctx.last_recap_len:
         return
     from cli.ui.transcript import render_recap
 
-    recap = render_recap(ctx.history)
+    recap = render_recap(ctx.transcript)
     if recap is not None:
         console.print()
         console.print(recap)
-    ctx.last_recap_history_len = len(ctx.history)
+    ctx.last_recap_len = len(ctx.transcript)
 
 
-def _print_input_hint(console: Any, hint: str) -> None:
-    """Render the bottom hint bar in muted style."""
-    from cli.components.hint_bar import render_hint_bar
-
-    console.print(render_hint_bar(left=hint, right="Ctrl+D · /quit to exit"))
-
-
-# ---------------------------------------------------------------------------
-# Live trading channel — REPL intercepts (SPEC.md Consent §2, §4)
-#
-# Two privileged surface actions are intercepted in the REPL input path BEFORE
-# the agent loop is ever entered, so neither depends on the model cooperating:
-#
-#   1. Kill switch — a bare "停"/"stop"/"kill" turn, or the /halt /stop slash
-#      commands, trip the HALT sentinel directly. The model never sees them.
-#   2. Mandate pick — when a `mandate.proposal` is outstanding, a bare numeric
-#      reply ("1"/"2"/"3") is a COMMIT: it calls the commit endpoint directly
-#      and the model never sees the pick. An "按 2，但…"-style adjust reply is
-#      re-routed to the agent (PROPOSE re-render), not committed.
-# ---------------------------------------------------------------------------
+# Handle the kill switch and mandate picks before the model (SPEC.md Consent §2, §4).
 
 #: Bare turns that trip the kill switch when typed alone (case-insensitive).
 _HALT_WORDS = frozenset({"停", "停止", "stop", "kill", "halt", "停手"})
@@ -869,34 +576,13 @@ _DEFAULT_LIVE_BROKER = "robinhood"
 
 
 def _is_halt_turn(text: str) -> bool:
-    """Return True if ``text`` is a bare kill-switch turn.
-
-    Matches a turn whose entire content (trimmed, trailing punctuation removed,
-    lower-cased) is one of :data:`_HALT_WORDS`. A longer sentence that merely
-    *mentions* "stop" is NOT a halt turn — it routes to the agent normally.
-
-    Args:
-        text: The raw user input line (already stripped of surrounding space).
-
-    Returns:
-        ``True`` if the turn should trip the kill switch.
-    """
+    """Return True if ``text`` is a bare kill-switch turn."""
     token = text.strip().strip(".!。！ ").lower()
     return token in _HALT_WORDS
 
 
 def _trip_halt_from_repl(console: Any, *, reason: str) -> None:
-    """Trip the global kill switch from the REPL and print a notice.
-
-    This is the surface action behind a bare "停"/"stop" turn and the
-    ``/halt`` / ``/stop`` slash commands. It writes the HALT sentinel via
-    :func:`src.live.halt.trip_halt` — independent of the agent loop, so it works
-    even mid-stream.
-
-    Args:
-        console: Rich console for the confirmation notice.
-        reason: Human-readable reason recorded in the sentinel.
-    """
+    """Trip the global kill switch from the REPL and print a notice."""
     try:
         from src.live.halt import trip_halt
 
@@ -912,16 +598,7 @@ def _trip_halt_from_repl(console: Any, *, reason: str) -> None:
 
 
 def _clear_halt_from_repl(console: Any) -> None:
-    """Clear the global kill switch from the REPL (``/resume``).
-
-    Clearing the halt is a privileged surface action — an explicit re-enable,
-    never an agent tool (SPEC.md Consent §4). It is intercepted in the input
-    path so the model never performs it. Mirrors ``vibe-trading connector resume``
-    with no broker (the global scope).
-
-    Args:
-        console: Rich console for the confirmation notice.
-    """
+    """Clear the global kill switch from the REPL (``/resume``)."""
     try:
         from src.live.halt import clear_halt
 
@@ -938,65 +615,31 @@ def _clear_halt_from_repl(console: Any) -> None:
 
 
 def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
-    """Run a ``/connector ...`` subcommand from the REPL via the dispatcher.
+    """Route the REPL connector command through the privileged CLI dispatcher."""
+    from cli.commands.connectors import _dispatch_connector
 
-    ``/connector`` is a thin in-REPL bridge to the ``vibe-trading connector``
-    subcommand group (SPEC.md §9 Decision 1): ``/connector status``,
-    ``/connector start``, ``/connector stop``, ``/connector halt``, etc. It parses the
-    arguments through the same argparse surface as the non-interactive CLI and
-    dispatches to the same privileged handlers — none of which is an agent tool.
-    A bare ``/connector`` defaults to ``status`` so the most common read is one
-    keystroke away.
+    _run_repl_subcommand(
+        console, "connector", args, _dispatch_connector,
+        "[list|status|start|stop|halt|resume|revoke]",
+    )
 
-    Args:
-        console: Rich console for error messages.
-        args: Tokens following ``/connector`` (e.g. ``["status", "robinhood-live-mcp"]``).
-    """
-    from cli._legacy import _build_parser, _dispatch_connector
 
-    argv = ["connector", *(args or ["status"])]
-    parser = _build_parser()
+def _run_repl_subcommand(console: Any, command: str, args: list[str], dispatch: Any, usage: str) -> None:
+    from cli.commands.parser import build_parser
+
     try:
-        parsed = parser.parse_args(argv)
+        parsed = build_parser().parse_args([command, *(args or ["status"])])
     except SystemExit:
-        # argparse already printed usage to stderr; keep the REPL alive.
-        console.print("[dim]Usage: /connector [list|status|start|stop|halt|resume|revoke][/dim]")
+        console.print(f"[dim]Usage: /{command} {usage}[/dim]")
         return
     try:
-        _dispatch_connector(parsed)
-    except Exception as exc:  # noqa: BLE001 — never let a connector command kill the loop
-        console.print(f"[bold red]/connector failed:[/bold red] {exc}")
-
-
-def _run_data_command_from_repl(console: Any, args: list[str]) -> None:
-    """Run a ``/data ...`` subcommand from the REPL via the CLI dispatcher."""
-    from cli._legacy import _build_parser, _dispatch_data
-
-    argv = ["data", *(args or ["status"])]
-    try:
-        parsed = _build_parser().parse_args(argv)
-    except SystemExit:
-        console.print("[dim]Usage: /data [status][/dim]")
-        return
-    try:
-        _dispatch_data(parsed)
+        dispatch(parsed)
     except Exception as exc:  # noqa: BLE001
-        console.print(f"[bold red]/data failed:[/bold red] {exc}")
+        console.print(f"[bold red]/{command} failed:[/bold red] {exc}")
 
 
 def _is_numeric_pick(text: str) -> Optional[int]:
-    """Return the chosen ordinal if ``text`` is a bare numeric pick, else None.
-
-    Only a turn that is *exactly* a positive integer (e.g. ``"2"``) counts as a
-    pick. Anything with extra words ("按 2 但每日笔数提到 10") is an adjust reply,
-    not a pick, and must route back through PROPOSE.
-
-    Args:
-        text: The raw user input line.
-
-    Returns:
-        The 1-based ordinal, or ``None`` when ``text`` is not a bare pick.
-    """
+    """Return the chosen ordinal if ``text`` is a bare numeric pick, else None."""
     token = text.strip().strip(".。 ")
     if token.isdigit():
         value = int(token)
@@ -1006,16 +649,7 @@ def _is_numeric_pick(text: str) -> Optional[int]:
 
 
 def _render_mandate_proposal(console: Any, proposal: Dict[str, Any]) -> None:
-    """Print the numbered mandate-proposal choice block (SPEC.md Consent §2).
-
-    Renders the agent's candidate mandate profiles as a numbered list with their
-    concrete limits, plus the funding note and the kill-switch note. The user
-    replies with a bare number to commit, or an adjust sentence to re-propose.
-
-    Args:
-        console: Rich console.
-        proposal: The ``mandate.proposal`` event payload.
-    """
+    """Print the numbered mandate-proposal choice block (SPEC.md Consent §2)."""
     intent = proposal.get("intent_normalized") or "live trading"
     account = proposal.get("account") or {}
     acct_type = account.get("type")
@@ -1141,18 +775,7 @@ def _handle_scheduled_proposal_reply(text: str, ctx: InteractiveContext) -> bool
 
 
 def _choose_mandate_account(accounts: List[Dict[str, Any]]) -> str:
-    """Ask the user which broker account a mandate may trade.
-
-    Only accounts the broker lists as active and open to agentic trading are
-    offered, and nothing is preselected: an empty reply commits nothing.
-
-    Args:
-        accounts: Picker rows from ``GET /live/accounts``.
-
-    Returns:
-        The chosen ``account_ref``, or ``""`` when the user chose none or no
-        account is usable.
-    """
+    """Ask the user which broker account a mandate may trade."""
     console = get_console()
     usable = [row for row in accounts if not row.get("deactivated") and row.get("agentic_allowed")]
     if not usable:
@@ -1177,30 +800,7 @@ def _commit_mandate(
     *,
     choose_account: Any = None,
 ) -> Dict[str, Any]:
-    """Commit a mandate selection via the surface commit endpoint.
-
-    This is the single privileged write that activates a mandate. The pick is a
-    SURFACE action — it goes straight to ``POST /mandate/commit`` (owned by the
-    commit-endpoint parcel) and is NEVER fed to the model. ``consent_ack`` is set
-    here because the user's keypress *is* the affirmative consent.
-
-    The endpoint base URL is read from ``VIBE_TRADING_API_URL`` (falling back to
-    ``http://127.0.0.1:8000``); a per-request override is not accepted from the
-    proposal payload so the model cannot redirect the commit.
-
-    Args:
-        proposal: The outstanding ``mandate.proposal`` payload (binds the commit
-            to the exact rendered options via ``proposal_id``).
-        selected_ordinal: The 1-based profile the user picked.
-        choose_account: Account chooser taking the ``/live/accounts`` rows;
-            defaults to :func:`_choose_mandate_account`. Used only for a broker
-            whose mandate must be bound to one account, and never fed an
-            account the proposal carries: the agent does not choose it.
-
-    Returns:
-        The decoded commit response (``mandate_id`` / ``consent_record_id`` on
-        success), or an ``{"status": "error", ...}`` envelope on failure.
-    """
+    """Commit a mandate selection via the surface commit endpoint."""
     import httpx
 
     from src.api.live_routes import CommitMandateRequest
@@ -1252,27 +852,11 @@ def _commit_mandate(
 
 
 def _handle_proposal_reply(text: str, ctx: InteractiveContext) -> bool:
-    """Intercept a reply while a mandate proposal is outstanding.
-
-    Must be called only when ``ctx.pending_proposal`` is set. A bare numeric pick
-    is a COMMIT (calls the endpoint directly, the model never sees it); any other
-    reply is an ADJUST and is routed back to the agent for a fresh proposal.
-
-    Args:
-        text: The raw user input line.
-        ctx: The interactive context (proposal is cleared on a successful pick).
-
-    Returns:
-        ``True`` if the reply was a numeric pick and was handled here (the caller
-        must NOT route it to the agent). ``False`` for an adjust reply, which the
-        caller routes to the agent normally (keeping the proposal pending until a
-        fresh one replaces it).
-    """
+    """Intercept a reply while a mandate proposal is outstanding."""
     console = get_console()
     ordinal = _is_numeric_pick(text)
     if ordinal is None:
-        # Adjust path — re-render via PROPOSE. Leave the proposal pending; the
-        # agent will emit a fresh one that overwrites it.
+        # Keep the proposal pending until the agent replaces it.
         return False
 
     proposal = ctx.pending_proposal or {}
@@ -1293,37 +877,31 @@ def _handle_proposal_reply(text: str, ctx: InteractiveContext) -> bool:
         console.print("[dim]The proposal is still open — pick again once the issue is resolved.[/dim]")
         return True
 
-    # Success — clear the proposal so subsequent turns route normally.
     ctx.pending_proposal = None
     mandate_id = result.get("mandate_id") or "?"
     console.print(f"[green]Mandate {mandate_id} active.[/green]")
     return True
 
 
-def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) -> int:
-    """Drive the new interactive REPL.
-
-    Args:
-        max_iter: Maximum ReAct iterations per turn.
-        resume_session_id: If set, load this specific session instead of
-            prompting to resume the most recent one.
-
-    Returns:
-        Process exit code (always ``0`` on a clean exit).
-    """
+def _interactive_loop(
+    max_iter: int,
+    resume_session_id: Optional[str] = None,
+    *,
+    input_reader: Any = None,
+    session_factory: Any = None,
+    session_store: Any = None,
+) -> int:
+    """Drive the new interactive REPL."""
     console = get_console()
 
-    # Keep the first prompt frame uncontested. The preflight renderer writes to
-    # stdout, so running it here races prompt_toolkit on cold start and can make
-    # the prompt appear only after the user presses Enter.
+    # Avoid racing prompt_toolkit with preflight writes to stdout on startup.
 
     ctx = InteractiveContext(max_iter=max_iter)
     pending_input: Optional[str] = None
+    store = session_store or _session_store()
 
     if resume_session_id:
-        # Resume a specific session by ID (``vibe-trading resume <session-id>``).
         try:
-            store = _session_store()
             session = store.get_session(resume_session_id)
         except Exception:  # noqa: BLE001
             session = None
@@ -1331,39 +909,34 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
             console.print(f"[red]Session {resume_session_id} not found[/red]")
             return 1
         ctx.session_id = resume_session_id
-        ctx.history = _build_session_history(store, resume_session_id)
+        ctx.transcript = _session_transcript(store, resume_session_id)
         console.print(
             f"[dim]Resumed session: {session.title or session.session_id} "
-            f"({len(ctx.history)} prior turns)[/dim]"
+            f"({_prior_turns(ctx.transcript)} prior turns)[/dim]"
         )
     else:
-        # Offer to resume the most recent session. Audit item 8.
-        resume = _maybe_resume_last_session(console)
+        # Offer the most recent session for resume (audit item 8).
+        resume = _maybe_resume_last_session(console) if session_store is None else None
         if resume is not None:
             if "pending_input" in resume:
                 pending_input = str(resume["pending_input"])
             else:
                 ctx.session_id = resume["session_id"]
-                ctx.history = list(resume["history"])
+                ctx.transcript = list(resume["transcript"])
                 console.print(
-                    f"[dim]Resumed session: {resume['title']} ({len(ctx.history)} prior turns)[/dim]"
+                    f"[dim]Resumed session: {resume['title']} "
+                    f"({_prior_turns(ctx.transcript)} prior turns)[/dim]"
                 )
 
     # Build the prompt session once so history + completer persist.
     try:
         from cli.input import ctrl_c_within_window, get_user_input, make_session
-    except Exception as exc:  # noqa: BLE001 — fall back gracefully if prompt_toolkit broken
+    except Exception as exc:  # noqa: BLE001 — input dependency is required for the REPL
         console.print(f"[red]Failed to initialise input layer: {exc}[/red]")
-        console.print("[dim]Falling back to legacy interactive loop.[/dim]")
-        from cli._legacy import cmd_interactive
+        return 1
 
-        try:
-            cmd_interactive(max_iter)
-        except Exception:  # noqa: BLE001
-            return 1
-        return 0
-
-    session = make_session()
+    session = session_factory() if session_factory is not None else make_session()
+    read_input = input_reader or (lambda prompt_session: get_user_input(session=prompt_session))
 
     while True:
         if pending_input is not None:
@@ -1372,19 +945,12 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         else:
             _print_recap_if_needed(console, ctx)
             try:
-                user_input = get_user_input(session=session)
+                user_input = read_input(session)
             except KeyboardInterrupt:
                 # Should not reach here — the keybinding raises EOFError instead.
                 continue
             except EOFError:
-                # Two interpretations: Ctrl+D (always exit), or Ctrl+C on an
-                # empty line (show hint, exit on second press).
-                #
-                # ``ctrl_c_within_window`` reads a press-time decision cached
-                # by the keybinding: True iff the gap between the *previous*
-                # Ctrl+C press and *this* one is < 2 s. First press → False
-                # (no prior press) → we print the hint and continue. Second
-                # press inside the window → True → we break.
+                # The keybinding caches the interval between Ctrl+C presses for double-press exit.
                 if ctrl_c_within_window(session, window_sec=2.0):
                     break
                 console.print(
@@ -1395,34 +961,27 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         text = user_input.strip()
         if not text:
             continue
+        if text.lower() in {"q", "quit", "exit"}:
+            break
 
-        # Kill switch — intercept a bare "停"/"stop"/"kill" turn BEFORE the
-        # agent loop so it trips even if a turn is mid-stream and never depends
-        # on the model cooperating (SPEC.md Consent §4).
+        # Intercept the kill switch before the model so cancellation works mid-stream (SPEC.md Consent §4).
         if _is_halt_turn(text):
             _trip_halt_from_repl(console, reason=f"repl turn: {text}")
             ctx.pending_proposal = None
             continue
 
-        # Scheduled research confirmation is a surface commit. Exact y/N
-        # replies are intercepted before the model; any other text remains a
-        # normal conversational adjustment request.
+        # Commit exact schedule confirmations at the REPL boundary, before model dispatch.
         if ctx.pending_scheduled_proposal is not None and not text.startswith("/"):
             if _handle_scheduled_proposal_reply(text, ctx):
                 continue
 
-        # Mandate pick — when a proposal is outstanding, a bare numeric reply
-        # is a COMMIT handled here (the model never sees it). An adjust reply
-        # falls through to the agent for a fresh proposal (SPEC.md Consent §2).
+        # Commit numeric picks directly and send adjustments for a fresh proposal (SPEC.md Consent §2).
         if ctx.pending_proposal is not None and not text.startswith("/"):
             if _handle_proposal_reply(text, ctx):
                 continue
 
-        # Slash command path.
         if text.startswith("/"):
-            # /halt /stop /resume /connector are privileged live-trading surface
-            # actions handled in the input path, never dispatched to the model
-            # (SPEC.md Consent §4 / §9 Decision 1).
+            # Keep privileged live commands off the model path (SPEC.md Consent §4 / §9 Decision 1).
             slash_tokens = text.lstrip("/").split()
             slash_name = slash_tokens[0].lower() if slash_tokens else ""
             if slash_name in {"halt", "stop"}:
@@ -1436,21 +995,20 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
                 _run_connector_command_from_repl(console, slash_tokens[1:])
                 continue
             if slash_name == "data":
-                _run_data_command_from_repl(console, slash_tokens[1:])
+                from cli.commands.data import _dispatch_data
+
+                _run_repl_subcommand(console, "data", slash_tokens[1:], _dispatch_data, "[status]")
                 continue
             rc = _dispatch_slash(text, ctx)
             if rc == 2:
                 break
-            # A handler may queue an agent prompt (``/journal <path>``,
-            # ``/shadow ...``). Drain it here so the slash command turns
-            # into a real turn without round-tripping through stdin.
+            # Run prompts queued by slash handlers without another stdin read.
             queued = ctx.pending_prompt
             if queued:
                 ctx.pending_prompt = None
                 _run_one_turn(queued, ctx)
             continue
 
-        # Natural-language path — drive the agent.
         _run_one_turn(text, ctx)
 
     console.print("[dim]Goodbye[/dim]")
@@ -1461,34 +1019,21 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
     return 0
 
 
-# ---------------------------------------------------------------------------
 # Public entry point
-# ---------------------------------------------------------------------------
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """CLI entrypoint returning a process exit code.
-
-    Behaviour:
-
-    * Interactive entry (no subcommand, or ``chat`` + TTY): show banner,
-      run onboarding wizard if needed, then drop into the interactive
-      loop driven by ``cli/input.py``, ``cli/completer.py``,
-      and ``cli/commands/*``.
-    * Non-interactive entry (``serve``, ``run -p ...``, ``mcp``,
-      ``swarm``, piped stdin, etc.): pass through to ``cli._legacy.main``
-      so every existing subcommand keeps working unchanged.
+    """Start the interactive CLI, resume a session, or dispatch a command.
 
     Args:
-        argv: Optional argument list (defaults to ``sys.argv[1:]``).
+        argv: Argument list excluding the executable. Defaults to sys.argv[1:].
 
     Returns:
-        Process exit code.
+        Exit code from the interactive loop or command handler, or zero if onboarding was cancelled.
     """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
 
-    # One-time move of pre-#904 code-relative state into the runtime root.
-    # A failed migration must never block the CLI.
+    # Migrate pre-#904 state without blocking CLI startup on failure.
     try:
         from src.config import migrate as _migrate
 
@@ -1504,50 +1049,29 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not _maybe_run_onboarding():
             return 0
         _show_banner()
-        # Strip the optional ``chat`` token + any ``--max-iter`` flag so
-        # the new loop can read them directly without re-parsing argv.
         max_iter = _extract_max_iter(raw_argv, default=50)
         return _interactive_loop(max_iter)
 
-    # Handle ``vibe-trading resume <session-id>`` — enter the interactive
-    # loop with a specific session loaded, bypassing the legacy dispatcher.
     if len(raw_argv) == 2 and raw_argv[0] == "resume":
         max_iter = _extract_max_iter(raw_argv, default=50)
         return _interactive_loop(max_iter=max_iter, resume_session_id=raw_argv[1])
 
-    # Delegate every other path to the legacy dispatcher.
-    try:
-        from cli import _legacy
-    except ImportError as exc:  # pragma: no cover — packaging error
-        get_console().print(
-            f"  Internal error: cannot import cli._legacy ({exc}).",
-            style=Theme.danger,
-        )
-        return 2
-
-    return int(_legacy.main(raw_argv))
+    return int(_cmd_dispatch.main(raw_argv))
 
 
-def _extract_max_iter(argv: Sequence[str], *, default: int) -> int:
-    """Pull ``--max-iter <N>`` (or ``--max-iter=N``) out of ``argv``.
-
-    The legacy argparse setup accepts ``--max-iter`` both at the top
-    level and as ``chat --max-iter``. We just need the integer; the
-    presence/absence of ``chat`` was already determined upstream.
-    """
-    it = iter(range(len(argv)))
-    for i in it:
-        token = argv[i]
-        if token == "--max-iter" and i + 1 < len(argv):
-            try:
-                return int(argv[i + 1])
-            except ValueError:
-                return default
-        if token.startswith("--max-iter="):
-            try:
-                return int(token.split("=", 1)[1])
-            except ValueError:
-                return default
+def _extract_max_iter(argv: Sequence[str], *, default: _MaxIterDefault) -> int | _MaxIterDefault:
+    """Pull ``--max-iter <N>`` (or ``--max-iter=N``) out of ``argv``."""
+    for index, token in enumerate(argv):
+        if token == "--max-iter" and index + 1 < len(argv):
+            value = argv[index + 1]
+        elif token.startswith("--max-iter="):
+            value = token.split("=", 1)[1]
+        else:
+            continue
+        try:
+            return int(value)
+        except ValueError:
+            break
     return default
 
 
@@ -1556,9 +1080,7 @@ def _entrypoint() -> None:
     sys.exit(main())
 
 
-# ---------------------------------------------------------------------------
 # Optional typer integration (only used by ``python -m cli.main --help``)
-# ---------------------------------------------------------------------------
 
 
 def _build_typer_app():  # type: ignore[no-untyped-def]
@@ -1646,7 +1168,6 @@ def _build_typer_app():  # type: ignore[no-untyped-def]
     return app
 
 
-# ``python -m cli.main`` support — uses typer help if available, else main().
 if __name__ == "__main__":
     typer_app = _build_typer_app()
     if typer_app is not None:

@@ -10,8 +10,12 @@ re-read by ``SwarmStore.list_runs`` after this change.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.providers.registry import provider_names
-from src.providers import llm as _provider_adapters
+from src.providers.adapters import deepseek as deepseek_adapter
 from src.providers import settings as _provider_configuration
 
 import pytest
@@ -82,7 +86,7 @@ def test_runtime_loads_dotenv_before_capturing_provider_model(
     monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
-    runtime = SwarmRuntime(store=SwarmStore(tmp_path / "runs"))
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=SwarmStore(tmp_path / "runs"))
 
     run = runtime.start_run("risk_committee", {"goal": "smoke test"})
 
@@ -104,7 +108,7 @@ def test_runtime_resolves_unset_responses_api_to_false(
     monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
-    runtime = SwarmRuntime(store=SwarmStore(tmp_path / "runs"))
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=SwarmStore(tmp_path / "runs"))
 
     run = runtime.start_run("risk_committee", {"goal": "smoke test"})
 
@@ -138,7 +142,7 @@ def test_runtime_redacts_non_public_llm_model_metadata_before_persistence(
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     store = SwarmStore(tmp_path / "runs")
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
 
     run = runtime.start_run("risk_committee", {"goal": "smoke test"})
 
@@ -161,7 +165,7 @@ def test_runtime_bounds_llm_metadata_before_persistence(
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     store = SwarmStore(tmp_path / "runs")
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
 
     run = runtime.start_run("risk_committee", {"goal": "smoke test"})
 
@@ -184,7 +188,7 @@ def test_runtime_redacts_unsupported_reasoning_effort_before_persistence(
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     store = SwarmStore(tmp_path / "runs")
-    runtime = SwarmRuntime(store=store)
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store)
 
     run = runtime.start_run("risk_committee", {"goal": "smoke test"})
 
@@ -294,13 +298,13 @@ def test_runtime_records_effective_responses_transport(
         monkeypatch.setenv("VIBE_TRADING_DEEPSEEK_ADAPTER", adapter)
     monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", True)
     monkeypatch.setattr(
-        _provider_adapters,
+        deepseek_adapter,
         "_native_deepseek_adapter_available",
         lambda: native_available,
     )
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
-    runtime = SwarmRuntime(store=SwarmStore(tmp_path / "runs"))
+    runtime = SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=SwarmStore(tmp_path / "runs"))
 
     run = runtime.start_run("risk_committee", {"goal": "smoke test"})
 

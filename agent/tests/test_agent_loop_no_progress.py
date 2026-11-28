@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from src.agent.loop import AgentLoop
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tools
 
 
 class DiscoveryTool(BaseTool):
@@ -65,14 +69,14 @@ class DiscoveryLLM:
 
 
 def build_loop(tmp_path: Path, tool: DiscoveryTool, llm: DiscoveryLLM):
-    registry = ToolRegistry()
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
     registry.register(tool)
     events = []
-    loop = AgentLoop(
+    loop = AgentRuntime(
         registry=registry,
         llm=llm,
         max_iterations=24,
-        event_callback=lambda name, data: events.append((name, data)),
+        event_callback=lambda name, data: events.append((data.get("kind", name), data)),
     )
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -97,11 +101,11 @@ def test_failed_discovery_stops_with_visible_recovery(tmp_path, vary_arguments):
     assert "path" in result["content"]
     assert "rerun" in result["content"]
     assert any(
-        name == "text_delta" and data["delta"] == result["content"]
+        name == "text.delta" and data["delta"] == result["content"]
         for name, data in events
     )
     assert json.loads((run_dir / "state.json").read_text())["status"] == "failed"
-    records = list(TraceWriter.read(run_dir))
+    records = list(records_at(run_dir))
     assert any(r["type"] == "no_progress" for r in records)
     assert records[-1]["type"] == "end" and records[-1]["status"] == "failed"
 
@@ -151,7 +155,7 @@ def test_old_metrics_do_not_turn_no_progress_into_success(tmp_path):
 
 
 def test_successful_repair_allows_a_previously_failed_read(tmp_path):
-    from src.agent.context import ContextBuilder
+    from src.product.context import ContextBuilder
 
     tool = DiscoveryTool(['{"status":"error"}', '{"status":"ok","data":"repaired"}'])
     loop, _, run_dir = build_loop(tmp_path, tool, DiscoveryLLM())
@@ -159,43 +163,35 @@ def test_successful_repair_allows_a_previously_failed_read(tmp_path):
     repair.name = "repair_file"
     repair.is_readonly = False
     loop.registry.register(repair)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages = []
     for i, name in enumerate([tool.name, repair.name, tool.name]):
-        loop._process_tool_calls(
-            [SimpleNamespace(id=str(i), name=name, arguments={"path": "missing.csv"})],
-            ContextBuilder,
-            messages,
-            trace,
-            [],
-            i,
-        )
+        run_recorded_tools(loop, [SimpleNamespace(id=str(i), name=name, arguments={"path": "missing.csv"})], ContextBuilder, messages, trace, i)
     trace.close()
     assert tool.calls == 2
     assert json.loads(messages[-1]["content"])["data"] == "repaired"
 
 
 def test_authorization_denial_does_not_poison_an_unexecuted_call(tmp_path):
-    from src.agent.context import ContextBuilder
+    from src.product.context import ContextBuilder
 
     tool = DiscoveryTool(['{"status":"ok"}'])
     loop, _, run_dir = build_loop(tmp_path, tool, DiscoveryLLM())
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages = []
     call = SimpleNamespace(
         id="denied", name=tool.name, arguments={"path": "artifact.csv"}
     )
-    loop._record_blocked_tool_call(
+    loop.delivery.deliver_blocked_call(
         call,
         '{"status":"error","reason":"identity not yet resolved"}',
         ContextBuilder,
         messages,
         trace,
-        [],
         1,
     )
     call = SimpleNamespace(id="authorized", name=tool.name, arguments=call.arguments)
-    loop._process_tool_calls([call], ContextBuilder, messages, trace, [], 2)
+    run_recorded_tools(loop, [call], ContextBuilder, messages, trace, 2)
     trace.close()
     assert tool.calls == 1
 
@@ -223,7 +219,7 @@ def test_a_transient_failure_survives_one_identical_retry(tmp_path):
 
 def test_failure_block_threshold_is_two_sided():
     """Both sides of the gate, so a future change cannot quietly move it."""
-    from src.agent.tool_progress import ToolProgress
+    from src.product.tool_progress import ToolProgress
 
     progress = ToolProgress()
     key = ("read_document", '{"path":"missing.csv"}')

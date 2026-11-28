@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import time
 from pathlib import Path
@@ -10,7 +14,14 @@ import pytest
 
 from src.session.events import EventBus
 from src.session.models import Attempt, AttemptStatus
-from src.session.service import SessionBusyError, SessionService
+from src.session.migration import migrate_session
+from src.session.replay import replay
+from src.session.thread import ThreadLog
+import tempfile
+import json
+from src.session.attempts import STOPPED_MARKER, format_result_message
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 
 
@@ -25,6 +36,7 @@ class _DummyIndex:
 def _service(tmp_path: Path, monkeypatch) -> SessionService:
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -32,7 +44,7 @@ def _service(tmp_path: Path, monkeypatch) -> SessionService:
 
 
 def _stub_agent(service: SessionService, monkeypatch, result: dict, *, gate=None):
-    """Replace _run_with_agent with a stub returning ``result``.
+    """Replace the session agent factory run method with a stub returning ``result``.
 
     Args:
         service: Service under test.
@@ -48,7 +60,7 @@ def _stub_agent(service: SessionService, monkeypatch, result: dict, *, gate=None
             await gate.wait()
         return dict(result)
 
-    monkeypatch.setattr(service, "_run_with_agent", _fake)
+    monkeypatch.setattr(service._factory, "run", _fake)
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +130,7 @@ def test_claim_is_released_when_the_agent_raises(tmp_path, monkeypatch):
             del attempt, messages, kwargs
             raise RuntimeError("agent exploded")
 
-        monkeypatch.setattr(service, "_run_with_agent", _explode)
+        monkeypatch.setattr(service._factory, "run", _explode)
 
         await service.send_message(session.session_id, "one")
         for _ in range(100):
@@ -153,18 +165,23 @@ def test_non_user_roles_never_claim_the_session(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_cancelled_run_is_cancelled_not_failed(tmp_path, monkeypatch):
-    """A cooperative cancel gets its own status, event and reply text."""
+@pytest.mark.parametrize("streamed", ["", "Two of the three markets are loaded:"])
+def test_cancelled_run_is_cancelled_not_failed(tmp_path, monkeypatch, streamed):
+    """A cooperative cancel gets its own status, event and reply text.
+
+    The reply keeps what the turn streamed before the stop, followed by a
+    short stopped marker, instead of replacing it with a bare notice.
+    """
 
     async def scenario() -> None:
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="cancel")
-        seen: list[str] = []
-        service.event_bus.emit = lambda sid, event, data: seen.append(event)  # type: ignore[assignment]
+        seen: list[tuple[str, dict]] = []
+        service.event_bus.add_listener(lambda event: seen.append((event.event_type, event.data)))
         _stub_agent(
             service,
             monkeypatch,
-            {"status": "cancelled", "reason": "cancelled by user"},
+            {"status": "cancelled", "reason": "cancelled by user", "streamed_text": streamed},
         )
 
         await service.send_message(session.session_id, "go")
@@ -176,10 +193,12 @@ def test_cancelled_run_is_cancelled_not_failed(tmp_path, monkeypatch):
         stored = service.store.get_session(session.session_id)
         attempt = service.store.get_attempt(session.session_id, stored.last_attempt_id)
         assert attempt.status == AttemptStatus.CANCELLED
-        assert "attempt.cancelled" in seen
-        assert "attempt.failed" not in seen
+        assert any(event == "run.cancelled" for event, _ in seen)
+        assert not any(event == "run.failed" for event, _ in seen)
         reply = service.store.get_messages(session.session_id)[-1]
-        assert reply.content == "Run cancelled."
+        expected = f"{streamed}\n\n{STOPPED_MARKER}" if streamed else STOPPED_MARKER
+        assert reply.content == expected
+        assert reply.metadata["status"] == "cancelled"
 
     asyncio.run(scenario())
 
@@ -217,11 +236,23 @@ def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeyp
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="report")
         report = {"report_id": "a" * 32, "filename": "研究报告.pdf", "download_url": "/api/reports/" + "a" * 32}
-        trail = []
-        service._record_tool_trail_event(trail, "tool_result", {"tool": "write_file", "status": "ok", "artifact": report})
-        _stub_agent(service, monkeypatch, {"status": "success", "content": "Report saved.", "tool_trail": trail})
+
+        async def _fake(attempt, messages=None, **kwargs):
+            # The trail is projected from the turn's thread items, which the
+            # loop writes as it runs.
+            thread = service.store.thread_log(attempt.session_id)
+            thread.append("turn_start", attempt.attempt_id, prompt=attempt.prompt)
+            thread.append("user", attempt.attempt_id, content=attempt.prompt, llm_content=attempt.prompt)
+            thread.append("assistant", attempt.attempt_id, content=None, phase="commentary", tool_calls=[
+                {"id": "call-w", "type": "function", "function": {"name": "write_file", "arguments": "{}"}},
+            ])
+            thread.append("tool_result", attempt.attempt_id, tool_call_id="call-w", name="write_file",
+                          content='{"status":"ok"}', status="ok", artifact=report)
+            return {"status": "success", "content": "Report saved."}
+
+        monkeypatch.setattr(service._factory, "run", _fake)
         events = []
-        service.event_bus.emit = lambda sid, kind, data: events.append((kind, data))
+        service.event_bus.add_listener(lambda event: events.append((event.event_type, event.data)))
         await service.send_message(session.session_id, "create report")
         for _ in range(100):
             await asyncio.sleep(0.01)
@@ -230,7 +261,7 @@ def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeyp
         reply = service.store.get_messages(session.session_id)[-1]
         assert reply.metadata["generated_reports"] == [report]
         assert "[研究报告.pdf](/api/reports/" in reply.content
-        completed = next(data for kind, data in events if kind == "attempt.completed")
+        completed = next(data for kind, data in events if kind == "run.completed")
         assert completed["summary"] == reply.content
     asyncio.run(scenario())
 
@@ -239,37 +270,50 @@ def test_empty_successful_answer_says_so():
     """An empty answer must not be dressed up as a finished strategy run."""
     attempt = Attempt(session_id="s" * 12, prompt="p")
     attempt.mark_completed(summary="")
-    message = SessionService._format_result_message(attempt)
+    message = format_result_message(attempt)
     assert "without producing any text output" in message
     assert "Strategy execution completed" not in message
 
 
 # ---------------------------------------------------------------------------
-# History window
+# Legacy history (sessions recorded before thread.jsonl)
 # ---------------------------------------------------------------------------
 
 
-def test_one_oversized_message_does_not_empty_the_history_window():
-    """The newest turn survives truncated instead of the window collapsing."""
+def migrated_history(messages):
+    """Replay archived rows through the real one-time migration."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory)
+        rows = [{"role": m.role, "content": m.content, "metadata": getattr(m, "metadata", {})}
+                for m in messages[:-1]]
+        (path / "messages.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+        migrate_session(path)
+        return replay(ThreadLog(path / "thread.jsonl").read())
+
+
+def test_one_oversized_message_is_kept_whole_for_the_context_budget():
+    """No character cap: replayed history is sized by the loop's context budget.
+
+    The 12,000-character window this replaced truncated the newest reply; the
+    loop's compaction layers now decide what has to shrink.
+    """
     messages = [
         type("M", (), {"role": "user", "content": "older turn"})(),
         type("M", (), {"role": "assistant", "content": "x" * 20000})(),
         type("M", (), {"role": "user", "content": "current turn is dropped"})(),
     ]
-    history = SessionService._convert_messages_to_history(messages)
-    assert history, "an oversized newest message wiped the entire window"
-    assert history[-1]["content"].endswith("[... truncated]")
-    assert len(history[-1]["content"]) <= 12000 + len("\n[... truncated]")
+    history = migrated_history(messages)
+    assert [m["content"] for m in history] == ["older turn", "x" * 20000]
 
 
 def test_normal_history_is_untouched():
-    """Messages inside the budget are passed through unchanged."""
+    """Messages are passed through unchanged; the current turn is left out."""
     messages = [
         type("M", (), {"role": "user", "content": "first"})(),
         type("M", (), {"role": "assistant", "content": "second"})(),
         type("M", (), {"role": "user", "content": "current turn is dropped"})(),
     ]
-    history = SessionService._convert_messages_to_history(messages)
+    history = migrated_history(messages)
     assert [m["content"] for m in history] == ["first", "second"]
 
 
@@ -278,23 +322,28 @@ def _turn(role, content, run_id=None):
 
 
 def test_assistant_reply_carries_its_run_id_into_the_next_turn():
-    """The run id lives only in message metadata; the marker survives truncation and is not duplicated."""
+    """The run id lives only in message metadata; the marker survives a long reply and is not duplicated.
+
+    This is the legacy path. A thread-backed session replays the user message
+    as sent, whose ``<agent-state>`` names the run directory
+    (``test_session_conversation_kernel.py`` checks that).
+    """
     run_id = "20261026_230021_46_a7d6f2"
-    history = SessionService._convert_messages_to_history(
+    history = migrated_history(
         [_turn("user", "backtest"), _turn("assistant", "done", run_id), _turn("user", "deeper")]
     )
     assert [m["content"] for m in history] == ["backtest", f"[prev_run: {run_id}]\ndone"]
 
-    long_reply = SessionService._convert_messages_to_history([_turn("assistant", "x" * 20000, run_id), _turn("user", "now")])
+    long_reply = migrated_history([_turn("assistant", "x" * 20000, run_id), _turn("user", "now")])
     assert long_reply[-1]["content"].startswith(f"[prev_run: {run_id}]")
     marked = _turn("assistant", f"see [prev_run: {run_id}]", run_id)
-    assert SessionService._convert_messages_to_history([marked, _turn("user", "now")])[0]["content"].count("[prev_run:") == 1
+    assert migrated_history([marked, _turn("user", "now")])[0]["content"].count("[prev_run:") == 1
 
 
 @pytest.mark.parametrize("run_id", ["../../etc/passwd", "a b", "x\ny", "", 42])
 def test_hostile_run_ids_in_metadata_never_reach_the_prompt(run_id):
     message = type("M", (), {"role": "assistant", "content": "reply", "metadata": {"run_id": run_id}})()
-    assert SessionService._convert_messages_to_history([message, _turn("user", "now")])[0]["content"] == "reply"
+    assert migrated_history([message, _turn("user", "now")])[0]["content"] == "reply"
 
 
 def test_claim_is_released_when_pre_run_bookkeeping_fails(tmp_path, monkeypatch):
@@ -378,7 +427,7 @@ def test_attempt_started_event_carries_wall_clock_start(tmp_path, monkeypatch):
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="started-at")
         seen: list[tuple[str, dict]] = []
-        service.event_bus.emit = lambda sid, event, data: seen.append((event, data))  # type: ignore[assignment]
+        service.event_bus.add_listener(lambda event: seen.append((event.event_type, event.data)))
         _stub_agent(service, monkeypatch, {"status": "success", "content": "ok"})
 
         before = time.time()
@@ -389,10 +438,10 @@ def test_attempt_started_event_carries_wall_clock_start(tmp_path, monkeypatch):
                 break
         after = time.time()
 
-        started = [data for event, data in seen if event == "attempt.started"]
+        started = [data for event, data in seen if event == "run.started"]
         assert len(started) == 1
         stored = service.store.get_session(session.session_id)
-        assert started[0]["attempt_id"] == stored.last_attempt_id
+        assert started[0]["turn_id"] == stored.last_attempt_id
         assert isinstance(started[0]["started_at"], float)
         assert before <= started[0]["started_at"] <= after
 
@@ -409,7 +458,7 @@ def test_completed_reply_and_terminal_event_carry_attempt_timing(tmp_path, monke
         service = _service(tmp_path, monkeypatch)
         session = service.create_session(title="timing")
         seen: list[tuple[str, dict]] = []
-        service.event_bus.emit = lambda sid, event, data: seen.append((event, data))  # type: ignore[assignment]
+        service.event_bus.add_listener(lambda event: seen.append((event.event_type, event.data)))
         _stub_agent(service, monkeypatch, {"status": "success", "content": "ok"})
 
         before = time.time()
@@ -420,15 +469,15 @@ def test_completed_reply_and_terminal_event_carry_attempt_timing(tmp_path, monke
                 break
         after = time.time()
 
-        started = next(data for event, data in seen if event == "attempt.started")
-        completed = next(data for event, data in seen if event == "attempt.completed")
+        started = next(data for event, data in seen if event == "run.started")
+        completed = next(data for event, data in seen if event == "run.completed")
         reply = service.store.get_messages(session.session_id)[-1]
 
         assert reply.role == "assistant"
-        assert reply.metadata["started_at"] == started["started_at"]
+        assert abs(reply.metadata["started_at"] - started["started_at"]) < 0.01
         assert before <= reply.metadata["started_at"] <= after
         assert reply.metadata["elapsed_ms"] >= 0
-        assert completed["started_at"] == started["started_at"]
+        assert abs(completed["started_at"] - started["started_at"]) < 0.01
         assert completed["started_at"] <= completed["ended_at"] <= after
         assert completed["elapsed_ms"] == reply.metadata["elapsed_ms"]
 
@@ -453,3 +502,134 @@ def test_attempt_records_and_round_trips_its_wall_clock_start():
     legacy = attempt.to_dict()
     del legacy["started_at"]
     assert Attempt.from_dict(legacy).started_at is None
+
+
+def _finish(service: SessionService, session_id: str) -> tuple:
+    """Run one stubbed turn and return its stored reply and terminal event data."""
+
+    async def scenario():
+        events: list = []
+        service.event_bus.add_listener(events.append)
+        await service.send_message(session_id, "Analyze")
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if session_id not in service._inflight:
+                break
+        terminal = [e for e in events if e.event_type in {"run.completed", "run.failed", "run.cancelled"}][-1]
+        return service.store.get_messages(session_id)[-1], terminal.data
+
+    return asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("result,kept", [
+    # A truncated answer is retained by the loop with a failed status.
+    ({"status": "failed", "content": "Observed findings",
+      "reason": "provider output truncated (length); partial answer retained api_key=sk-private"},
+     "Observed findings"),
+    # An answer released past a goal budget or a pending write is degraded.
+    ({"status": "success", "content": "Observed findings", "degraded": True,
+      "reason": "run ended without writing the task target file(s): report.md"},
+     "Observed findings"),
+])
+def test_partial_delivery_and_reason_survive_store_and_sse(tmp_path, monkeypatch, result, kept):
+    """The retained answer and the run's degraded/reason reach the stored reply and the stream."""
+    service = _service(tmp_path, monkeypatch)
+    session = service.create_session(title="partial")
+    _stub_agent(service, monkeypatch, result)
+
+    reply, terminal = _finish(service, session.session_id)
+
+    assert kept in reply.content
+    assert terminal["summary"] == reply.content
+    reason = reply.metadata["reason"]
+    assert "sk-private" not in reason and reason.startswith(result["reason"].split(" api_key")[0])
+    assert terminal["display"]["reason"] == reason
+    if result["status"] == "failed":
+        assert reply.content.endswith(f"Execution failed: {reason}")
+        assert "degraded" not in reply.metadata
+    else:
+        assert reply.content == kept
+        assert reply.metadata["degraded"] is True
+        assert terminal["display"]["degraded"] is True
+
+
+def test_failure_reason_that_quotes_the_answer_is_not_repeated(tmp_path, monkeypatch):
+    """A no-progress stop carries its recovery answer inside the reason already."""
+    service = _service(tmp_path, monkeypatch)
+    session = service.create_session(title="no-progress")
+    answer = "I stopped because 8 tool rounds in a row produced no new information."
+    result = {"status": "failed", "content": answer, "reason": "no_progress: " + answer}
+    _stub_agent(service, monkeypatch, result)
+
+    reply, terminal = _finish(service, session.session_id)
+
+    assert reply.content == f"Execution failed: no_progress: {answer}"
+    assert terminal["summary"] == reply.content
+
+
+def test_session_task_cancellation_keeps_provider_until_executor_finishes(tmp_path, monkeypatch):
+    """Cancelling the session task must not close the client the agent thread still uses."""
+    import threading
+    from src.agent.tools import ToolRegistry
+
+    entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+    used_after_close: list[bool] = []
+
+    class _Client:
+        runtime_snapshot = None
+
+        async def aclose(self) -> None:
+            closed.set()
+
+    class _Agent:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+            self.cancelled = threading.Event()
+
+        def cancel(self) -> None:
+            self.cancelled.set()
+
+        def run(self, **kwargs) -> dict:
+            del kwargs
+            entered.set()
+            release.wait(5)
+            used_after_close.append(closed.is_set())
+            return {"status": "cancelled", "content": "", "reason": "cancelled by user"}
+
+    class _NoMemory:
+        pass
+
+    monkeypatch.setattr("src.session.model_selection.chat_llm_for_session", lambda config, **kwargs: _Client())
+    monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: ToolRegistry(policy=ToolPolicy.from_config(get_env_config())))
+    monkeypatch.setattr("src.agent.runtime.AgentRuntime", _Agent)
+    monkeypatch.setattr("src.memory.persistent.PersistentMemory", _NoMemory)
+    monkeypatch.setattr("src.config.loader.load_runtime_agent_config", lambda overrides=None: object())
+    monkeypatch.setattr("src.config.loader.sanitize_session_overrides", lambda overrides: dict(overrides))
+    service = _service(tmp_path, monkeypatch)
+
+    async def scenario() -> None:
+        session = service.create_session(title="cancel")
+        await service.send_message(session.session_id, "Analyze")
+        task = service._active_tasks[session.session_id]
+        try:
+            for _ in range(300):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert entered.is_set()
+            agent = service._active_loops[session.session_id]
+            task.cancel()
+            await asyncio.sleep(0.05)
+            assert agent.cancelled.is_set()
+            assert not task.done()
+            assert not closed.is_set()
+            assert session.session_id in service._active_loops
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert closed.is_set()
+        assert used_after_close == [False]
+        assert session.session_id not in service._active_tasks
+
+    asyncio.run(scenario())

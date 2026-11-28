@@ -1,0 +1,236 @@
+"""Product and provider operations bound to the turn scheduler."""
+
+from __future__ import annotations
+
+from functools import partial
+
+from src.agent.loop_state import TurnState
+from src.agent.loop_streaming import TurnStream
+from src.agent.tuning import (
+    _heartbeat_interval_s,
+    _reasoning_delta_min_interval_s,
+)
+from src.kernel.contracts import Continue, Iteration, LLMResponse, LoopContext, LoopPorts, Stop
+from src.kernel.events import EventSink
+from src.product.tool_loading import request_definitions
+from src.providers.response import reported_model_source
+from src.providers.content_filter import CONTENT_FILTER_SKIP_MESSAGE, MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS
+from src.providers.messages import attach_tool_call_thought_signatures
+
+
+class IterationSteps:
+    """Prepare a turn, request a response, and apply tool results in the host.
+
+    Args:
+        state: Mutable state for the turn being driven.
+        requests: Provider request runner for the prepared context.
+        activity: Run cancellation and activity tracker.
+        goals: Active goal budget checked before and after requests.
+        tools: Executor for the provider's tool batches.
+        compactor: Manager for shrinking context and updating its tool schemas.
+        conversation: Recorder for messages and durable turn state.
+        writes: Tracker for requested file writes.
+        usage: Ledger for provider usage.
+        background: Manager supplying completed background results.
+        pacing: Policy for context, tool progress, and answer delivery.
+    """
+
+    def __init__(
+        self, *, state: TurnState, requests, activity, goals, tools, compactor,
+        conversation, writes, usage, background, pacing,
+    ) -> None:
+        self.requests = requests
+        self.state = state
+        self.activity = activity
+        self.goals = goals
+        self.tools = tools
+        self.compactor = compactor
+        self.conversation = conversation
+        self.writes = writes
+        self.usage = usage
+        self.background = background
+        self.pacing = pacing
+
+    def ports(self) -> LoopPorts:
+        """Bind this turn's callbacks to the kernel contract.
+
+        Returns:
+            Kernel ports for driving the turn and reading its message delta and usage totals.
+        """
+        return LoopPorts(
+            before_iteration=self.before_iteration, prepare_request=self.prepare_request,
+            request=self.request, record_partial=self.record_partial,
+            after_text=partial(self.pacing.handle, self.state), run_tools=self.run_tools,
+            poll_inputs=self.poll_inputs, on_cancel=self.on_cancel,
+            read_delta=self.conversation.delta.copy,
+            read_usage=lambda: dict(self.usage.summary["totals"]),
+        )
+
+    def on_cancel(self) -> None:
+        """Write a cancellation trace for the next iteration number."""
+        self.state.trace.write({"type": "cancelled", "iter": self.activity.iteration + 1})
+
+    def before_iteration(self, view: LoopContext) -> Stop | None:
+        """Refresh the available tool schemas and check the goal budget.
+
+        Args:
+            view: Loop context whose tool definitions are refreshed.
+
+        Returns:
+            A stop carrying the goal's reason when present, or None to proceed.
+        """
+        view.tools = request_definitions(self.tools.env.registry)
+        self.compactor.update_tool_schemas(view.tools)
+        if self.goals.stop_reason is not None:
+            return Stop(self.goals.stop_reason)
+        return None
+
+    def prepare_request(self, view: LoopContext, iteration: Iteration) -> Stop | None:
+        """Compact, deliver background results and select the tools for this request.
+
+        Args:
+            view: Mutable request context whose tool definitions may be replaced or cleared.
+            iteration: Kernel iteration number and request-mode flags.
+
+        Returns:
+            A stop if cancellation, goal limits, or context preparation ends the turn,
+            or None when the request is ready.
+        """
+        state = self.state
+        state.iteration = iteration.number
+        state.final_answer_retry = iteration.final_answer_retry
+        self.activity.iteration += 1
+        state.current_iter = self.activity.iteration
+        notifs = self.background.drain_notifications()
+        if notifs:
+            text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
+            self.conversation.inject(state.view.messages, f"<background-results>\n{text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>")
+        if not self.pacing.manages_context:
+            self.compactor.compact_if_needed(
+                state.view.messages, state.run_dir, state.trace, state.iteration, state.current_iter,
+                session_id=state.session_id,
+            )
+        if self.activity.cancel.is_set() or self.goals.stop_reason is not None:
+            return Stop(self.goals.stop_reason or "cancelled")
+        self.pacing.write_directives(state, self.writes)
+        if iteration.text_only:
+            state.trace.write({"type": "forced_text_only", "iter": state.current_iter})
+            view.tools = None
+        else:
+            view.tools = request_definitions(self.tools.env.registry)
+        if self.pacing.manages_context:
+            return self.pacing.prepare_context(state)
+        return None
+
+    def request(self, view: LoopContext, emit: EventSink) -> LLMResponse | Continue | Stop:
+        """Request one response, preserving stream accounting and filtering.
+
+        Args:
+            view: Prepared messages and tool definitions for the provider request.
+            emit: Sink for response stream events.
+
+        Returns:
+            A model response, a continuation to skip the iteration, or a stop carrying
+            the terminal reason.
+        """
+        state = self.state
+        state.stream = TurnStream(
+            emit=emit, iteration=state.current_iter, heartbeat_interval=_heartbeat_interval_s,
+            reasoning_interval=_reasoning_delta_min_interval_s,
+        )
+        try:
+            result = self.requests.send(
+                view.messages, view.tools, state.stream, run_dir=state.run_dir, trace=state.trace,
+                iteration=state.iteration, current_iter=state.current_iter,
+            )
+        except Exception:
+            self.pacing.capture_interrupted_response(state)
+            raise
+        if result is None:
+            self.pacing.capture_interrupted_response(state)
+            return Stop(self.goals.stop_reason or "cancelled")
+        response, request_messages = result
+        self.tools.replay._consume_readonly_replay_visibility(state.view.messages, state.trace, state.current_iter)
+        self.activity.touch()
+        usage = getattr(response, "usage_metadata", None)
+        state.current_response_model = getattr(response, "response_model", None)
+        if self.pacing.manages_context:
+            self.pacing.observe_context(state, request_messages, usage)
+        else:
+            self.compactor.observe_request(usage, request_messages, view.tools)
+        if state.current_response_model:
+            state.last_response_model = state.current_response_model
+        self.usage.record(state.run_dir, usage, state.current_iter)
+        if self.activity.cancel.is_set() or (self.goals.stop_reason is not None and response.has_tool_calls):
+            self.pacing.capture_interrupted_response(state)
+            return Stop(self.goals.stop_reason or "cancelled")
+        state.thinking_text = "".join(state.stream.thinking_chunks)
+        if state.thinking_text:
+            state.trace.write({"type": "thinking", "iter": state.current_iter, "content": state.thinking_text})
+        if getattr(response, "content_filter_triggered", False):
+            return self._skip_content_filter(state)
+        state.consecutive_content_filter_count = 0
+        return Continue.NEXT if response is None else response
+
+    def _skip_content_filter(self, state: TurnState) -> Continue | Stop:
+        """Skip filtered responses and trip the existing circuit breaker."""
+        state.content_filter_count += 1
+        state.consecutive_content_filter_count += 1
+        if state.consecutive_content_filter_count >= MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS:
+            state.trace.write({"type": "content_filter_circuit_breaker", "iter": state.current_iter, "count": state.content_filter_count})
+            state.content_filter_circuit_breaker = True
+            return Stop("content_filter")
+        state.trace.write({"type": "content_filter_skipped", "iter": state.current_iter})
+        self.conversation.inject(state.view.messages, f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>")
+        return Continue.NEXT
+
+    def record_partial(self, response: LLMResponse, finish_reason: str) -> None:
+        """Retain a truncated answer and its original terminal reason.
+
+        Args:
+            response: Provider response whose text is retained and delivered.
+            finish_reason: Provider reason recorded in the truncation status.
+        """
+        state = self.state
+        state.final_content = response.content or ""
+        state.stream.finish(state.final_content)
+        state.truncation_reason = f"provider output truncated ({finish_reason}); partial answer retained"
+        self.conversation.record_final_answer(state.final_content)
+
+    def run_tools(self, response: LLMResponse) -> Continue | Stop:
+        """Record the assistant item and process its bound tool batch.
+
+        Args:
+            response: Model response containing the tool calls and their replay metadata.
+
+        Returns:
+            A stop for user input or lack of progress, or Continue.NEXT after batch handling.
+        """
+        state = self.state
+        assistant = state.context.format_assistant_tool_calls(response.tool_calls, content=response.content, reasoning_content=response.reasoning_content or state.thinking_text or None, provider_items=getattr(response, "provider_items", None))
+        attach_tool_call_thought_signatures(assistant, response.tool_calls)
+        self.conversation.append_assistant(state.view.messages, assistant, phase="commentary")
+        self.writes.active_model_id = state.current_response_model or state.view.model.configured_model
+        self.writes.active_model_source = reported_model_source(state.view.model, state.current_response_model)
+        compact_requested, focus_topic = self.tools.process(response.tool_calls, state.context, state.view.messages, state.trace, state.current_iter)
+        if self.tools.delivery.waiting_user is not None:
+            state.final_content = self.tools.delivery.waiting_user.get("prompt", "")
+            options = self.tools.delivery.waiting_user.get("options") or []
+            if options:
+                state.final_content += "\n" + "\n".join(f"{i + 1}. {option}" for i, option in enumerate(options))
+            self.conversation.record_final_answer(state.final_content)
+            return Stop("waiting_user")
+        self.conversation.sync_state(self.tools.env)
+        if self.pacing.after_tools(state, response, self.tools.delivery.progress, self.activity.cancel):
+            return Stop("no_progress")
+
+        if compact_requested:
+            self.compactor.auto_compact(state.view.messages, state.run_dir, state.trace, focus_topic=focus_topic, iteration=state.current_iter)
+        return Continue.NEXT
+
+    def poll_inputs(self) -> None:
+        """Deliver queued inputs if cancellation and goal limits still permit delivery."""
+        self.conversation.take_queued_inputs(
+            self.state.view.messages, cancelled=self.activity.cancel.is_set(),
+            budget_spent=self.goals.stop_reason is not None,
+        )

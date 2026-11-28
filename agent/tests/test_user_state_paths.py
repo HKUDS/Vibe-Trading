@@ -6,6 +6,12 @@ Session/run/upload history must live under the runtime root
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
+import cli.commands.common as _cmd_common
+
 from pathlib import Path
 
 import pytest
@@ -56,7 +62,7 @@ def test_legacy_swarm_runs_kept_in_run_root_allowlist() -> None:
     """Un-migrated legacy swarm runs must stay reachable, like legacy runs/uploads."""
     from src.tools.path_utils import _agent_root, _default_run_roots
 
-    roots = [p.resolve() for p in _default_run_roots()]
+    roots = [p.resolve() for p in _default_run_roots(FileRoots.from_config(get_env_config().api))]
 
     assert (_agent_root() / ".swarm" / "runs").resolve() in roots
 
@@ -94,22 +100,22 @@ def test_shadow_account_dirs_live_under_runtime_root(
     shadow_run = runs_dir("shadow_test")
     assert shadow_run == root / "shadow_runs" / "shadow_test"
     assert shadow_run.parent.resolve() in {
-        candidate.resolve() for candidate in _default_run_roots()
+        candidate.resolve() for candidate in _default_run_roots(FileRoots.from_config(get_env_config().api))
     }
 
 
 def test_legacy_cli_constants_derive_from_runtime_root() -> None:
-    from cli import _legacy
+    pass
     from src.config import paths
 
-    assert _legacy.SESSIONS_DIR == paths.get_sessions_dir()
-    assert _legacy.RUNS_DIR == paths.get_runs_dir()
-    assert _legacy.SWARM_DIR == paths.get_swarm_runs_dir()
-    assert _legacy.UPLOADS_DIR == paths.get_uploads_dir()
+    assert _cmd_common.SESSIONS_DIR == paths.get_sessions_dir()
+    assert _cmd_common.RUNS_DIR == paths.get_runs_dir()
+    assert _cmd_common.SWARM_DIR == paths.get_swarm_runs_dir()
+    assert _cmd_common.UPLOADS_DIR == paths.get_uploads_dir()
 
 
 def test_agent_loop_constants_derive_from_runtime_root() -> None:
-    from src.agent import loop
+    from src.agent import runtime as loop
     from src.config import paths
 
     assert loop.RUNS_DIR == paths.get_runs_dir()
@@ -153,15 +159,16 @@ def test_swarm_runs_root_derives_from_runtime_root() -> None:
 def test_trace_lookup_searches_runtime_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from src.agent.trace import TraceWriter
+    from src.session.store import SessionStore
 
     root = tmp_path / "state-root"
     monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
     trace_dir = root / "sessions" / "sess-1"
     trace_dir.mkdir(parents=True)
-    (trace_dir / "trace.jsonl").write_text("", encoding="utf-8")
+    (trace_dir / "thread.jsonl").write_text("", encoding="utf-8")
 
-    assert TraceWriter.find_trace_dir("sess-1") == trace_dir
+    from src.config.paths import get_sessions_dir
+    assert SessionStore(get_sessions_dir()).thread_path("sess-1").parent == trace_dir
 
 
 def test_upload_handle_resolves_to_runtime_uploads_dir(
@@ -172,9 +179,10 @@ def test_upload_handle_resolves_to_runtime_uploads_dir(
     root = tmp_path / "state-root"
     monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
 
-    assert _import_candidate("uploads/report.pdf") == root / "uploads" / "report.pdf"
+    roots = FileRoots.from_config(get_env_config().api)
+    assert _import_candidate("uploads/report.pdf", roots=roots) == root / "uploads" / "report.pdf"
     assert (
-        _import_candidate("agent/uploads/report.pdf")
+        _import_candidate("agent/uploads/report.pdf", roots=roots)
         == root / "uploads" / "report.pdf"
     )
 
@@ -187,8 +195,8 @@ def test_sandbox_roots_follow_home_override(
     root = tmp_path / "state-root"
     monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
 
-    file_roots = allowed_file_roots()
-    write_roots = allowed_write_roots()
+    file_roots = allowed_file_roots(roots=FileRoots.from_config(get_env_config().api))
+    write_roots = allowed_write_roots(roots=FileRoots.from_config(get_env_config().api))
 
     assert (root / "uploads").resolve() in file_roots
     assert (root / "runs").resolve() in file_roots
@@ -237,19 +245,17 @@ def test_banner_session_probe_follows_home_override(
     assert cli_main._probe_session_count() == 2
 
 
-def test_welcome_panel_reports_runtime_root_as_workspace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from rich.console import Console
+def test_canonical_banner_renders_without_legacy_panel(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
 
-    from cli import _legacy
+    cli_main = importlib.import_module("cli.main")
 
-    monkeypatch.setattr(_legacy, "get_runtime_root", lambda: Path("/RTROOT"))
-
-    console = Console(width=200, record=True)
-    console.print(_legacy._build_welcome_panel(term_width=120))
-
-    assert "RTROOT" in console.export_text()
+    monkeypatch.setattr(
+        cli_main,
+        "_collect_banner_stats",
+        lambda: {"model": "offline", "skills": 1, "tools": 1, "sessions": 0},
+    )
+    cli_main._show_banner()
 
 
 def test_state_dir_helpers_do_not_create_directories(

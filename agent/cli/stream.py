@@ -1,18 +1,4 @@
-"""Streaming renderer + thinking spinner for the interactive CLI.
-
-Single-agent mode (the only mode demoed in Parcel α): a short-lived
-``Rich.Live`` with ``transient=True`` drives the spinner while the model
-thinks; tool events and the final answer are emitted as *static* prints so
-they persist on screen after the live area is erased. This avoids the
-"ghost re-paint" bug that plagued Vibe-Trading's earlier Live-based
-dashboards (prior terminal-rendering lesson, design proposal §3.5).
-
-Swarm mode is a stub: callers should fall through to the legacy Rich Live
-dashboard in ``cli/_legacy.py``. The full multi-agent grid lands in Parcel β.
-
-Tool events use the dexter-style ``⏺ Tool Name (args)  duration · summary``
-format. Tool names are auto-Title-Cased with a small acronym whitelist.
-"""
+"""Streaming renderer + thinking spinner for the interactive CLI."""
 
 from __future__ import annotations
 
@@ -43,7 +29,15 @@ _ACRONYMS: frozenset[str] = frozenset({
 
 
 def beautify_tool_name(raw: str) -> str:
-    """``get_market_data`` → ``Market Data``. Acronyms in whitelist UPPER."""
+    """Format a raw tool name for display.
+
+    Args:
+        raw: Tool identifier with optional verb prefix and underscore separators.
+
+    Returns:
+        Display name with recognized acronyms capitalized, or the original input if no display words
+        remain.
+    """
     if not raw:
         return raw
     parts = _PREFIX_RE.sub("", raw).split("_")
@@ -56,7 +50,16 @@ def beautify_tool_name(raw: str) -> str:
 
 
 def summarize_args(args: dict | str | None, *, max_len: int = 60) -> str:
-    """Compact single-line preview. Prefers query/symbol/url; truncates long."""
+    """Summarize tool arguments for a compact display row.
+
+    Args:
+        args: Argument mapping or text to preview. Falsey inputs produce an empty preview.
+        max_len: Character budget used when truncating the preview.
+
+    Returns:
+        Quoted preview of a preferred argument when present, compact key-value text for other
+        mappings, or truncated input text.
+    """
     if not args:
         return ""
     if isinstance(args, str):
@@ -84,9 +87,7 @@ def _truncate(value: str, max_len: int) -> str:
     return value[: max_len - 1] + "…"
 
 
-# ---------------------------------------------------------------------------
 # ThinkingSpinner
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -99,11 +100,10 @@ class _SpinnerState:
 
 
 class ThinkingSpinner:
-    """Transient spinner that can be paused/resumed safely.
+    """Show a transient spinner that can be paused around other output.
 
-    ``pause()`` is a context manager: stops the underlying ``Live`` (clearing
-    its line), yields so the caller can print a static line, then restarts.
-    This follows the reference renderer pattern and avoids ANSI escape interleaving.
+    Args:
+        console: Console override. Defaults to the shared CLI console.
     """
 
     def __init__(self, console: Console | None = None) -> None:
@@ -116,7 +116,11 @@ class ThinkingSpinner:
         self._tick_thread: Optional[threading.Thread] = None
 
     def start(self, verb: str | None = None) -> None:
-        """Begin rendering. ``verb`` rerolls per turn if not supplied."""
+        """Start rendering the spinner if it is idle.
+
+        Args:
+            verb: Optional status verb. Omit it to pick a verb for the new turn.
+        """
         with self._lock:
             if self._live is not None:
                 return
@@ -141,13 +145,14 @@ class ThinkingSpinner:
                     pass
                 self._live = None
 
-    def set_extra(self, extra: str) -> None:
-        """Update the right-hand suffix (e.g. token / cost preview)."""
-        self._state.extra = extra
-
     @contextmanager
     def pause(self) -> Iterator[None]:
-        """Suspend the spinner so the caller can safely ``console.print``."""
+        """Suspend rendering while the caller prints to the console.
+
+        Yields:
+            Control to the caller while the spinner is hidden. A previously running spinner resumes
+            on exit unless stopped.
+        """
         was_running = False
         with self._lock:
             if self._live is not None and not self._state.stopped:
@@ -194,9 +199,7 @@ class ThinkingSpinner:
                         pass
 
 
-# ---------------------------------------------------------------------------
 # StreamRenderer
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -211,16 +214,26 @@ class ToolCall:
 
     @property
     def duration_ms(self) -> int | None:
+        """Compute the elapsed time for a finished tool call.
+
+        Returns:
+            Integer milliseconds from start to finish, or None while unfinished.
+        """
         if self.finished_at is None:
             return None
         return int((self.finished_at - self.started_at) * 1000)
 
 
 class StreamRenderer:
-    """Drives the streaming display for a single agent turn.
+    """Drive the streaming display for one agent turn.
 
-    Mode ``"single"`` is the focus of Parcel α. Mode ``"swarm"`` is a stub
-    — callers should detect it and route to ``_legacy`` swarm rendering.
+    Args:
+        mode: Display mode. Single mode manages a spinner, while swarm mode leaves turn display to
+            its caller.
+        console: Console override. Defaults to the shared CLI console.
+
+    Raises:
+        ValueError: If mode is neither single nor swarm.
     """
 
     def __init__(self, *, mode: str = "single",
@@ -234,11 +247,23 @@ class StreamRenderer:
 
     @property
     def mode(self) -> str:
+        """Expose the configured display mode.
+
+        Returns:
+            The configured single or swarm mode.
+        """
         return self._mode
 
     @contextmanager
     def turn(self, *, verb: str | None = None) -> Iterator["StreamRenderer"]:
-        """Context manager wrapping one agent turn. Manages spinner lifecycle."""
+        """Wrap an agent turn and manage its single-mode spinner.
+
+        Args:
+            verb: Optional initial spinner verb for single mode.
+
+        Yields:
+            This renderer for use within the active turn.
+        """
         if self._mode == "swarm":
             yield self
             return
@@ -251,21 +276,6 @@ class StreamRenderer:
                 self._spinner.stop()
                 self._spinner = None
             self._active_calls.clear()
-
-    def on_tool_start(self, name: str, args: dict | str | None) -> None:
-        """Record a tool call start. Line emitted only when call finishes."""
-        self._active_calls[name] = ToolCall(name=name, args=args)
-
-    def on_tool_end(self, name: str, *, summary: str = "") -> None:
-        """Mark a tool call finished and emit its static line."""
-        call = self._active_calls.pop(name, None)
-        if call is None:
-            call = ToolCall(name=name, args=None,
-                             finished_at=time.monotonic(), summary=summary)
-        else:
-            call.finished_at = time.monotonic()
-            call.summary = summary
-        self._print_tool_line(call)
 
     def _print_tool_line(self, call: ToolCall) -> None:
         line = Text()
@@ -296,45 +306,6 @@ class StreamRenderer:
                 self._console.print(renderable)
         else:
             self._console.print(renderable)
-
-    def print_answer(self, body: str) -> None:
-        """Print the assistant's final answer, prefixed with the brand marker."""
-        if self._spinner is not None:
-            self._spinner.stop()
-            self._spinner = None
-        lines = body.splitlines() or [""]
-        head = Text()
-        head.append("● ", style=Theme.primary)
-        head.append(lines[0])
-        self._console.print(head)
-        for line in lines[1:]:
-            self._console.print(Text("  " + line))
-        self._console.print()
-
-    def print_footer(self, *, run_id: str, tool_count: int,
-                      duration_ms: int | float | None,
-                      token_count: int | None, cost: float | None) -> None:
-        """``/show <id> · N tool calls · 4.1s · 1.2k tokens · $0.003``."""
-        from cli.utils.format import abbreviate_num, format_tokens
-
-        line = Text("  ")
-        line.append(f"/show {run_id}", style=Theme.info)
-        line.append("  ·  ", style=Theme.muted)
-        line.append(
-            f"{tool_count} tool call{'s' if tool_count != 1 else ''}",
-            style=Theme.muted,
-        )
-        line.append("  ·  ", style=Theme.muted)
-        line.append(format_duration(duration_ms), style=Theme.muted)
-        if token_count is not None:
-            line.append("  ·  ", style=Theme.muted)
-            line.append(format_tokens(token_count), style=Theme.muted)
-        if cost is not None:
-            line.append("  ·  ", style=Theme.muted)
-            line.append(abbreviate_num(cost, currency="$"), style=Theme.muted)
-        self._console.print(line)
-        self._console.print()
-
 
 __all__ = [
     "StreamRenderer",

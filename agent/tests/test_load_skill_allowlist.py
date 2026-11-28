@@ -11,14 +11,18 @@ registry-builder and swarm-worker wiring that delivers the allowlist.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from unittest.mock import patch
 
-from src.agent.skills import SkillsLoader
-from src.swarm import worker as worker_mod
+from src.product.resources.skills import SkillsLoader
+from src.swarm import node as worker_mod
 from src.swarm.models import SwarmAgentSpec, SwarmTask
-from src.swarm.worker import run_worker
+from src.swarm.node import run_node
 from src.tools import build_filtered_registry, build_swarm_registry
 from src.tools.load_skill_tool import LoadSkillTool
 
@@ -71,7 +75,7 @@ def test_allowlist_empty_refuses_everything(tmp_path: Path) -> None:
 
 def test_filtered_registry_rebuilds_load_skill_with_allowlist() -> None:
     registry = build_filtered_registry(
-        ["load_skill"], skill_allowlist=["strategy-generate"]
+        ["load_skill"], skill_allowlist=["strategy-generate"], policy=ToolPolicy.from_config(get_env_config())
     )
     tool = registry.get("load_skill")
     assert tool is not None
@@ -83,7 +87,7 @@ def test_filtered_registry_rebuilds_load_skill_with_allowlist() -> None:
 
 
 def test_filtered_registry_none_allowlist_keeps_unrestricted_instance() -> None:
-    registry = build_filtered_registry(["load_skill"])
+    registry = build_filtered_registry(["load_skill"], policy=ToolPolicy.from_config(get_env_config()))
     tool = registry.get("load_skill")
     assert tool is not None
     assert json.loads(tool.execute(name="alpha-zoo"))["status"] == "ok"
@@ -91,14 +95,14 @@ def test_filtered_registry_none_allowlist_keeps_unrestricted_instance() -> None:
 
 def test_allowlist_without_load_skill_in_whitelist_adds_nothing() -> None:
     registry = build_filtered_registry(
-        ["read_file"], skill_allowlist=["strategy-generate"]
+        ["read_file"], skill_allowlist=["strategy-generate"], policy=ToolPolicy.from_config(get_env_config())
     )
     assert registry.get("load_skill") is None
 
 
 def test_swarm_registry_honours_skill_allowlist() -> None:
     registry = build_swarm_registry(
-        ["load_skill"], skill_allowlist=["strategy-generate"]
+        ["load_skill"], skill_allowlist=["strategy-generate"], policy=ToolPolicy.from_config(get_env_config())
     )
     tool = registry.get("load_skill")
     assert tool is not None
@@ -108,7 +112,7 @@ def test_swarm_registry_honours_skill_allowlist() -> None:
 
 
 def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
-    """run_worker must deliver ``agent_spec.skills`` to the registry builder —
+    """run_node must deliver ``agent_spec.skills`` to the registry builder —
     the one line that makes the documented per-worker boundary real."""
     captured: dict = {}
 
@@ -129,8 +133,8 @@ def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
         def close(self) -> None:
             pass
 
-        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
-            from src.providers.chat import LLMResponse
+        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
+            from src.kernel.contracts import LLMResponse
 
             return LLMResponse(content="done")
 
@@ -152,7 +156,8 @@ def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
         patch.object(worker_mod, "build_swarm_registry", _capture),
         patch.object(worker_mod, "ChatLLM", _FinalAnswerLLM()),
     ):
-        run_worker(
+        run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},
@@ -184,8 +189,8 @@ def test_swarm_worker_empty_skills_stays_unrestricted(tmp_path: Path) -> None:
         def close(self) -> None:
             pass
 
-        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
-            from src.providers.chat import LLMResponse
+        def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
+            from src.kernel.contracts import LLMResponse
 
             return LLMResponse(content="done")
 
@@ -207,7 +212,8 @@ def test_swarm_worker_empty_skills_stays_unrestricted(tmp_path: Path) -> None:
         patch.object(worker_mod, "build_swarm_registry", _capture),
         patch.object(worker_mod, "ChatLLM", _FinalAnswerLLM()),
     ):
-        run_worker(
+        run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},

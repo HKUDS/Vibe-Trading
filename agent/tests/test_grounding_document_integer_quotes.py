@@ -1,5 +1,9 @@
 """Raw integers can be quoted without becoming fungible numeric evidence."""
 
+from src.tools.path_utils import FileRoots
+from src.config.env_schema import EnvConfig
+
+
 import json
 
 import pytest
@@ -117,7 +121,7 @@ def test_real_document_reader_to_literal_quote(tmp_path, monkeypatch):
     document = document.with_suffix(".txt")
     document.write_text("股东总数 76175", encoding="utf-8")
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(document.parent))
-    envelope = read_document(str(document))
+    envelope = read_document(str(document), roots=FileRoots.from_config(EnvConfig().api))
     assert json.loads(envelope)["status"] == "ok"
     ledger.ingest_tool_result(
         tool_name="read_document",

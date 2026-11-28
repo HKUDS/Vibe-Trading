@@ -1,30 +1,4 @@
-"""Self-update support: ``vibe-trading update``.
-
-Checks PyPI for a newer ``vibe-trading-ai`` release than the currently
-installed one and, when one exists, upgrades in place through ``pip`` using the
-same interpreter that is running the CLI (``sys.executable -m pip``, never a
-bare ``pip`` — the upgrade must target the interpreter that owns this CLI).
-
-Scope decision (see ``.trellis/tasks/08-07-add-update/prd.md``): v1 handles the
-PyPI-wheel install path only. Editable / git-checkout / Docker installs are
-detected and answered with the right manual instruction instead of a pip
-upgrade that would silently change the install type — ``pip install -U`` over
-an ``pip install -e .`` install replaces the editable dev install with a
-released wheel, which is a surprise nobody wants.
-
-Design rules:
-- Invoking ``vibe-trading update`` means "upgrade me": there is deliberately no
-  confirmation prompt (user decision, 2026-08-07).
-- Never downgrade: only upgrade when the latest PyPI version is strictly
-  greater than the installed one (PEP 440).
-- The upgrade runs in a subprocess; the current process has already imported
-  the old code, so success is verified by re-reading installed metadata from a
-  *fresh* subprocess.
-- On any check failure the local install is left untouched.
-- Docker is deliberately out of scope (user decision, 2026-08-07): inside a
-  container the answer would be `git pull && docker compose up --build`, but
-  detection is deferred.
-"""
+"""Self-update support: ``vibe-trading update``."""
 
 from __future__ import annotations
 
@@ -50,7 +24,12 @@ EXIT_FAILED = 1
 
 
 def cmd_update() -> int:
-    """Check PyPI and upgrade when a newer release exists. Returns exit code."""
+    """Check PyPI for a newer release and upgrade eligible installations.
+
+    Returns:
+        Success if current, if a source installation receives update instructions, or after a
+        successful upgrade. Failure if the check, comparison, or upgrade fails.
+    """
     try:
         latest = fetch_latest_version()
     except (requests.RequestException, KeyError, ValueError) as exc:

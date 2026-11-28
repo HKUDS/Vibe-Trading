@@ -1,6 +1,9 @@
-"""AgentLoop trace integration tests for PR #206 rebase."""
+"""AgentRuntime trace integration tests for PR #206 rebase."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
 
 import json
 from pathlib import Path
@@ -9,11 +12,10 @@ from typing import Any, Callable
 
 import pytest
 
-import src.agent.loop as loop_mod
-import src.agent.trace as trace_mod
-from src.agent.context import ContextBuilder
-from src.agent.loop import AgentLoop
-from src.agent.trace import TraceWriter
+import src.agent.runtime as loop_mod
+from src.product.context import ContextBuilder
+from src.agent.runtime import AgentRuntime
+from tests.recording_helpers import recorder_at, records_at, run_recorded_tool
 
 
 class _Tool:
@@ -23,6 +25,9 @@ class _Tool:
 
 class _SecretRegistry:
     """Minimal registry returning a JSON result with sensitive fields."""
+
+    def __init__(self) -> None:
+        self.policy = ToolPolicy.from_config(get_env_config())
 
     _tools: dict[str, Any] = {}
 
@@ -40,10 +45,13 @@ class _SecretRegistry:
             }
         )
 
+    def check_policy(self, name, arguments):
+        return self.policy(name, arguments)
+
 
 def test_tool_call_trace_redacts_args_and_structured_results(tmp_path: Path) -> None:
     """Persistent trace entries should not store raw credentials/account fields."""
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=_SecretRegistry(),  # type: ignore[arg-type]
         llm=SimpleNamespace(),
         max_iterations=1,
@@ -51,9 +59,8 @@ def test_tool_call_trace_redacts_args_and_structured_results(tmp_path: Path) -> 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
-    trace = TraceWriter(run_dir)
+    trace = recorder_at(run_dir)
     messages: list[dict[str, Any]] = []
-    react_trace: list[dict[str, Any]] = []
     tc = SimpleNamespace(
         id="tc_secret",
         name="secret_tool",
@@ -64,10 +71,10 @@ def test_tool_call_trace_redacts_args_and_structured_results(tmp_path: Path) -> 
         },
     )
 
-    agent._execute_single(tc, ContextBuilder, messages, trace, react_trace, 1)
+    run_recorded_tool(agent, tc, ContextBuilder, messages, trace, 1)
     trace.close()
 
-    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    entries = records_at(run_dir)
     tool_call = next(entry for entry in entries if entry["type"] == "tool_call")
     assert tool_call["args"]["symbol"] == "AAPL"
     assert tool_call["args"]["api_key"] == "[redacted]"
@@ -118,9 +125,8 @@ def test_session_trace_uses_session_dir_and_round_trips_long_answer(
     tmp_path: Path,
 ) -> None:
     """Session runs aggregate trace.jsonl under sessions/<id> without truncation."""
-    monkeypatch.setattr(trace_mod, "TRACE_TEXT_OFFLOAD_THRESHOLD", 16)
     monkeypatch.setattr(loop_mod, "SESSIONS_DIR", tmp_path / "sessions")
-    agent = AgentLoop(
+    agent = AgentRuntime(
         registry=_SecretRegistry(),  # type: ignore[arg-type]
         llm=_LongAnswerLLM(),
         max_iterations=1,
@@ -133,20 +139,11 @@ def test_session_trace_uses_session_dir_and_round_trips_long_answer(
 
     assert result["status"] == "success"
     trace_dir = tmp_path / "sessions" / "sid123"
-    assert (trace_dir / "trace.jsonl").exists()
-    assert not (run_dir / "trace.jsonl").exists()
-
-    unresolved = TraceWriter.read(trace_dir)
-    answer = next(entry for entry in unresolved if entry["type"] == "answer")
-    assert "content" not in answer
-    assert answer["content_size"] == len(result["content"])
-
-    resolved = TraceWriter.read(
-        trace_dir,
-        resolve_offloads=True,
-        resolve_fields={"content", "prompt"},
-    )
-    answer = next(entry for entry in resolved if entry["type"] == "answer")
-    start = next(entry for entry in resolved if entry["type"] == "start")
+    assert (trace_dir / "thread.jsonl").exists()
+    assert not list(tmp_path.rglob("trace.jsonl"))
+    assert not list(tmp_path.rglob("trace-blobs"))
+    records = records_at(trace_dir)
+    answer = next(entry for entry in records if entry["type"] == "answer")
+    start = next(entry for entry in records if entry["type"] == "start")
     assert answer["content"] == result["content"]
     assert start["prompt"] == "hello from session"

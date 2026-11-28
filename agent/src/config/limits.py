@@ -1,7 +1,7 @@
 """Shared runtime limits for tool results.
 
-The cap on a tool result used to live in :mod:`src.agent.loop` and was copied as
-a bare literal into :mod:`src.swarm.worker`, so the two could drift. It lives
+The cap on a tool result used to live in :mod:`src.agent.runtime` and was copied as
+a bare literal into :mod:`src.swarm.node`, so the two could drift. It lives
 here instead: a leaf module with no imports of its own, which the agent loop,
 the swarm worker and individual tools can all read without any of them taking a
 dependency on the others.

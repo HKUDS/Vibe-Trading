@@ -320,6 +320,8 @@ def is_sensitive_arg(
     """
     normalized = name.strip().lower()
     folded = _fold_key(name)
+    if sink == RESULT_SINK and folded == "tokensused":
+        return not (type(value) is int and value >= 0)
     if folded in _BENIGN_TOKEN_FIELD_KEYS_FOLDED:
         if folded == "clobtokenid":
             return not (
@@ -649,7 +651,7 @@ def redact_text(text: object) -> str:
     return _TEXT_TOKEN_PATTERN.sub(_REDACTED, s)
 
 
-def redact_tool_result(result: object) -> str:
+def redact_tool_result(result: object, *, preserve_format: bool = False) -> str:
     """Redact one tool result for trace persistence and event previews.
 
     The single choke point for a tool-result string: callers redact once and
@@ -668,6 +670,9 @@ def redact_tool_result(result: object) -> str:
         result: Raw tool result (string, or any object coerced via
             :func:`str`). ``None`` becomes the empty string.
 
+        preserve_format: Retain the exact spelling of an already-safe delivered
+            result for thread replay. Duplicate JSON keys require re-encoding.
+
     Returns:
         The redacted result as a string. JSON input comes back re-serialized
         with ``ensure_ascii=False`` and default separators, so preview
@@ -679,8 +684,19 @@ def redact_tool_result(result: object) -> str:
     text = result if isinstance(result, str) else str(result)
     if not text:
         return text
+    duplicate_keys = False
+
+    def object_from_pairs(pairs):
+        nonlocal duplicate_keys
+        obj = dict(pairs)
+        duplicate_keys |= len(obj) != len(pairs)
+        return obj
+
     try:
-        payload = json.loads(text)
+        payload = json.loads(text, object_pairs_hook=object_from_pairs if preserve_format else None)
     except (TypeError, ValueError):
         return redact_text(text)
-    return json.dumps(redact_payload(payload, sink=RESULT_SINK), ensure_ascii=False)
+    safe = redact_payload(payload, sink=RESULT_SINK)
+    if preserve_format and not duplicate_keys and safe == payload:
+        return text
+    return json.dumps(safe, ensure_ascii=False)

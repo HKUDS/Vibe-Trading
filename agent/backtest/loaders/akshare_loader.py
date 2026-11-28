@@ -17,7 +17,13 @@ from backtest.engines._market_hooks import _detect_market, _is_china_futures
 from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.akshare_compat import history_endpoint
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import (
+    RAW_CACHE_FIELDS,
+    cached_loader_fetch,
+    stamp_raw,
+    validate_date_range,
+    wants_raw,
+)
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
@@ -111,6 +117,8 @@ class DataLoader:
     # own documentation states shares for this interface — the docs disagree
     # with the actual behavior. Other markets stay undeclared.
     volume_units = {"a_share": "lots"}
+    # ``fetch(..., adjustment="raw")`` requests adjust="" for A-share stocks.
+    raw_markets = frozenset({"a_share"})
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -132,6 +140,7 @@ class DataLoader:
         *,
         interval: str = "1D",
         fields: Optional[List[str]] = None,
+        adjustment: Optional[str] = None,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch OHLCV data via AKShare.
 
@@ -141,11 +150,19 @@ class DataLoader:
             end_date: YYYY-MM-DD.
             interval: Bar size (only 1D supported currently).
             fields: Ignored.
+            adjustment: ``"raw"`` requests adjust="" for A-share stocks
+                (stamped ``raw``) and refuses every other symbol, ETFs
+                included, whose Sina caliber is unmeasured; ``None`` keeps
+                the default series and its #1541 conversion.
 
         Returns:
             Mapping symbol -> OHLCV DataFrame.
+
+        Raises:
+            ValueError: Malformed dates or an unsupported ``adjustment``.
         """
         validate_date_range(start_date, end_date)
+        raw = wants_raw(adjustment)
 
         self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
@@ -157,7 +174,24 @@ class DataLoader:
             if until is not None and time.monotonic() >= until:
                 self.fetch_errors[code] = "request_deadline"
                 continue
+            if raw and (not _is_a_share(code) or _is_etf_listed(code)):
+                self.fetch_errors[code] = "adjustment_unsupported"
+                continue
             try:
+                if raw:
+                    # The same entry the #1541 companion below reads and writes.
+                    unadjusted = stamp_raw(cached_loader_fetch(
+                        source=self.name,
+                        symbol=code,
+                        timeframe=interval,
+                        start_date=start_date,
+                        end_date=end_date,
+                        fields=list(RAW_CACHE_FIELDS),
+                        fetch=lambda code=code: self._fetch_a_share_raw(code, start_date, end_date, interval),
+                    ))
+                    if unadjusted is not None:
+                        result[code] = unadjusted
+                    continue
                 df = cached_loader_fetch(
                     source=self.name,
                     symbol=code,

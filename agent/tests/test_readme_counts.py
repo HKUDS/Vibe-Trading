@@ -116,7 +116,7 @@ def _bundled_skill_count() -> int:
     """
     if str(AGENT_DIR) not in sys.path:
         sys.path.insert(0, str(AGENT_DIR))
-    from src.agent.skills import SkillsLoader
+    from src.product.resources.skills import SkillsLoader
 
     loader = SkillsLoader(user_skills_dir=AGENT_DIR / "__no_user_skills__")
     return len(loader.skills)
@@ -324,7 +324,10 @@ def _keyless_agent_tool_count() -> int:
         [
             sys.executable,
             "-c",
-            "from src.tools import build_registry; print(len(build_registry().tool_names))",
+            "from src.config.accessor import get_env_config; "
+            "from src.product.tool_policy import ToolPolicy; "
+            "from src.tools import build_registry; "
+            "print(len(build_registry(policy=ToolPolicy.from_config(get_env_config())).tool_names))",
         ],
         cwd=AGENT_DIR,
         env=env,

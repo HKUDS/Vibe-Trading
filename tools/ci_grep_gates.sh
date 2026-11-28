@@ -109,12 +109,12 @@ fi
 echo "[gate d] no deprecated datetime.utcnow() / bare datetime.now() calls ..."
 TARGET_FILES=(
   agent/api_server.py
-  agent/src/agent/context.py
+  agent/src/product/context.py
   agent/src/api/system_routes.py
   agent/src/channels/mochat.py
   agent/src/goal/store.py
   agent/src/session/models.py
-  agent/src/swarm/worker.py
+  agent/src/swarm/node.py
   agent/src/tools/lockup_expiry_tool.py
   agent/src/trading/connectors/dhan/sdk.py
   agent/src/trading/connectors/shoonya/sdk.py

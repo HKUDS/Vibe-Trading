@@ -466,7 +466,7 @@ class TelegramChannel(BaseChannel):
         BotCommand("help", "Show available commands"),
     ]
 
-    # Regex for slash commands routed to AgentLoop via ``_forward_command``.
+    # Regex for slash commands routed to AgentRuntime via ``_forward_command``.
     # Hyphenated ``dream-*`` commands stay on a separate handler (below).
     TELEGRAM_BUS_SLASH_COMMAND_RE = re.compile(
         r"^/(?:new|stop|restart|status|dream|history|goal|pairing|model|skill)(?:@\w+)?(?:\s+.*)?$"
@@ -1415,7 +1415,7 @@ class TelegramChannel(BaseChannel):
                 self._inbound_workers.pop(key, None)
 
     async def _forward_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Forward slash commands to the bus for unified handling in AgentLoop."""
+        """Forward slash commands to the bus for unified handling in AgentRuntime."""
         if not update.message or not update.effective_user:
             return
         if not self._running:

@@ -283,6 +283,7 @@ def test_live_mirrored_tools_declare_the_array_params_this_covers(mcp_server) ->
 def test_mcp_collar_and_full_calculation_results(mcp_server, tmp_path, monkeypatch):
     import json
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    monkeypatch.setattr(mcp_server, "_registry", None)
     result = asyncio.run(mcp_server.mcp.call_tool("analyze_options_payoff", {
         "legs": [{"option_type": "put", "strike": 150, "qty": 1, "premium": 7.2},
                  {"option_type": "call", "strike": 200, "qty": -1, "premium": 4.35}],

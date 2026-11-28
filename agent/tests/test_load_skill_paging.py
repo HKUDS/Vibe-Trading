@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from src.config.limits import TOOL_RESULT_LIMIT
-from src.agent.skills import SkillsLoader
+from src.product.resources.skills import SkillsLoader
 from src.tools.load_skill_tool import LoadSkillTool
 
 _SKILL_ROOT = Path(__file__).resolve().parents[1] / "src" / "skills"

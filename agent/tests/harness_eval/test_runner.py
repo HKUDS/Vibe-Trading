@@ -6,6 +6,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from .thread_fixture import read_records, write_records
+
 from evals.harness.report import aggregate_reports
 from evals.harness.runner import evaluate_case, main
 from evals.harness.schema import EvaluationReport, HarnessCase, VerdictStatus
@@ -48,18 +50,8 @@ def test_failures_and_invalid_artifacts_are_not_collapsed(
     usage = json.loads((artifact_dir / "llm_usage.json").read_text(encoding="utf-8"))
     usage["totals"]["input_tokens"] = 999
     (artifact_dir / "llm_usage.json").write_text(json.dumps(usage), encoding="utf-8")
-    with (artifact_dir / "trace.jsonl").open("a", encoding="utf-8") as trace:
-        trace.write(
-            json.dumps(
-                {
-                    "type": "tool_result",
-                    "tool": "ghost",
-                    "call_id": "orphan",
-                    "status": "ok",
-                }
-            )
-            + "\n"
-        )
+    path = artifact_dir / "thread.jsonl"
+    write_records(path, read_records(path) + [{"type": "tool_result", "tool": "ghost", "call_id": "orphan", "status": "ok"}])
 
     report = evaluate_case(harness_case, artifact_dir)
     verdicts = _by_code(report)
@@ -79,17 +71,10 @@ def test_trace_error_status_reconciles_to_failed_state(
     (artifact_dir / "state.json").write_text(
         json.dumps({"status": "failed"}), encoding="utf-8"
     )
-    lines = [
-        json.loads(line)
-        for line in (artifact_dir / "trace.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    ]
+    path = artifact_dir / "thread.jsonl"
+    lines = read_records(path)
     lines[-1]["status"] = "error"
-    (artifact_dir / "trace.jsonl").write_text(
-        "".join(json.dumps(line) + "\n" for line in lines),
-        encoding="utf-8",
-    )
+    write_records(path, lines)
     case = replace(
         harness_case,
         expect={**harness_case.expect, "execution": {"allowed": ["failed"]}},
@@ -197,9 +182,8 @@ def test_forbidden_successful_tool_and_blocked_bypass_fail(
             "status": "ok",
         },
     ]
-    with (artifact_dir / "trace.jsonl").open("a", encoding="utf-8") as trace:
-        for record in records:
-            trace.write(json.dumps(record) + "\n")
+    path = artifact_dir / "thread.jsonl"
+    write_records(path, read_records(path) + records)
 
     report = evaluate_case(harness_case, artifact_dir)
     verdicts = _by_code(report)
@@ -212,17 +196,10 @@ def test_unknown_tool_result_status_is_invalid_artifact(
     harness_case: HarnessCase,
     artifact_dir: Path,
 ) -> None:
-    lines = [
-        json.loads(line)
-        for line in (artifact_dir / "trace.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    ]
+    path = artifact_dir / "thread.jsonl"
+    lines = [json.loads(line) for line in path.read_text().splitlines()]
     next(line for line in lines if line["type"] == "tool_result")["status"] = "maybe"
-    (artifact_dir / "trace.jsonl").write_text(
-        "".join(json.dumps(line) + "\n" for line in lines),
-        encoding="utf-8",
-    )
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines))
 
     report = evaluate_case(harness_case, artifact_dir)
 

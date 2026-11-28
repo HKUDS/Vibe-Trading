@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 
 
@@ -23,5 +27,5 @@ def test_media_dir_is_within_allowed_file_roots(tmp_path, monkeypatch):
 
     media = get_media_dir("weixin").resolve()
     assert any(
-        root == media or root in media.parents for root in allowed_file_roots()
+        root == media or root in media.parents for root in allowed_file_roots(roots=FileRoots.from_config(get_env_config().api))
     ), f"{media} is not readable under any allowed file root"

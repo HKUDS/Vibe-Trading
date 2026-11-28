@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 import math
@@ -140,7 +144,7 @@ def test_empty_inputs_and_invalid_spot_are_rejected():
 
 
 def test_quantlib_tool_lists_and_calls_surface_builder():
-    tool = QuantlibCallTool()
+    tool = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api))
     listed = json.loads(tool.execute(action="list", module="volatility"))
 
     assert "implied_volatility_surface" in {item["name"] for item in listed["functions"]}
@@ -233,7 +237,7 @@ def test_expiry_interpolation_avoids_overflow_before_square_root():
 
 
 def test_quantlib_surface_returns_finite_results_or_an_explicit_error():
-    tool = QuantlibCallTool()
+    tool = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api))
     kwargs = dict(observations=_rectangle(), spot=1e-308, strikes=[100.0], expiries=[0.15])
     good = json.loads(
         tool.execute(

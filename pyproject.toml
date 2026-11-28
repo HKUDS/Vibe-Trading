@@ -115,16 +115,17 @@ py-modules = ["api_server", "mcp_server"]
 
 [tool.setuptools.packages.find]
 where = ["agent"]
-include = ["src*", "backtest*", "cli*", "evals*"]
+include = ["src*", "backtest*", "cli*", "evals*", "vibe_trading*"]
 
 [tool.setuptools.package-data]
+"vibe_trading" = ["py.typed"]
 "src" = [
     "skills/**/*.md",
     "skills/**/*.yaml",
     "skills/**/*.json",
     "skills/**/*.py",
     "providers/*.json",
-    "agent/*.json",
+    "product/*.json",
     "tools/paper_trade/*.json",
     "data_gateway/*.json",
     "tools/paper_trade/*.md",
@@ -301,6 +302,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-socket>=0.7.0",
+    "setuptools>=61",
     "ruff>=0.9,<1",
 ]
 

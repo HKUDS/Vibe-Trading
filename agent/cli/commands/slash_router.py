@@ -1,18 +1,4 @@
-"""Slash command registry + fuzzy matcher.
-
-Source of truth for the user-facing slash commands. The literal
-:data:`SLASH_COMMANDS` tuple below holds the base set; further groups append
-themselves through idempotent, name-checked registration functions — the
-institutional workflow cards and the scheduled-research ``/playbook``
-catalogue further down this module, and the live connector / data-routing
-groups from :mod:`cli.main` at ITS import time. Read the registry at runtime
-rather than assuming a fixed length.
-
-Each :class:`Command` is a frozen dataclass — registry entries are
-immutable so callers can cache filtered slices without worrying about
-mutation. ``match_commands`` powers the typeahead in
-:mod:`agent.cli.completer`.
-"""
+"""Slash command registry + fuzzy matcher."""
 
 from __future__ import annotations
 
@@ -21,13 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Command:
-    """A single slash command entry.
-
-    Attributes:
-        name: The command keyword, without leading ``/``.
-        description: One-line muted description shown in the completion menu.
-        handler_module: Dotted path to the module exposing ``run(ctx, *args)``.
-    """
+    """Register a slash command backed by a module exposing run(ctx, *args)."""
 
     name: str
     description: str
@@ -39,6 +19,7 @@ class Command:
 SLASH_COMMANDS: tuple[Command, ...] = (
     Command("help",    "Show keyboard shortcuts and command list",   "cli.commands.help"),
     Command("model",   "Switch LLM provider and model",              "cli.commands.chat"),
+    Command("compact", "Summarize the current session context",       "cli.commands.chat"),
     Command("memory",  "Show / manage persistent memory",            "cli.commands.memory"),
     Command("history", "Browse and resume prior sessions",           "cli.commands.session"),
     Command("goal",    "Start / inspect a finance research goal",    "cli.commands.goal"),
@@ -51,6 +32,7 @@ SLASH_COMMANDS: tuple[Command, ...] = (
     Command("journal", "Analyze trade journal CSV",                  "cli.commands.chat"),
     Command("shadow",  "Train / view shadow account",                "cli.commands.chat"),
     Command("export",  "Export current session (md / json)",         "cli.commands.session"),
+    Command("fork",    "Fork the current session from a turn",        "cli.commands.session"),
     Command("debug",   "Toggle debug panel (token usage / latency)", "cli.commands.chat"),
     Command("quit",    "Exit (also: q, exit, :q)",                   "cli.commands.chat"),
 )
@@ -67,24 +49,7 @@ _ALIASES: dict[str, str] = {
 
 
 def _register_institutional_slash_commands() -> None:
-    """Append the institutional research workflow commands to the registry.
-
-    ``/comps``, ``/dcf``, ``/attrib``, ``/memo``, ``/earnings`` and ``/screen``
-    each own a handler module under :mod:`cli.commands.institutional`, and each
-    carries its own execution skeleton and worked numeric example. They are
-    registered here rather than inlined into :data:`SLASH_COMMANDS` so the same
-    guarantees the connector group gets in :func:`cli.main._register_live_slash_commands`
-    apply: a name already in the registry is never overwritten, and a repeated
-    call never duplicates a row.
-
-    Running at this module's import time — the earliest possible moment — means
-    ``cli.commands.help`` (which binds :data:`SLASH_COMMANDS` at ITS import) and
-    ``cli.completer`` (which snapshots the tuple as a default argument) both see
-    the commands regardless of import order.
-
-    The specs come from :mod:`cli.commands.institutional.playbooks`, a data-only
-    module that imports nothing from :mod:`cli`, so there is no import cycle.
-    """
+    """Append the institutional research workflow commands to the registry."""
     from .institutional.playbooks import PLAYBOOKS
 
     global SLASH_COMMANDS, _ALIASES
@@ -104,9 +69,7 @@ def _register_institutional_slash_commands() -> None:
         commands[quit_idx:quit_idx] = list(additions)
         SLASH_COMMANDS = tuple(commands)
 
-    # Aliases only ever ADD keys. A key that is already a command name, or is
-    # already claimed by another alias, is left untouched — an alias must never
-    # shadow an existing command.
+    # Preserve existing command and alias names when registering a new alias.
     registered = {cmd.name for cmd in SLASH_COMMANDS}
     new_aliases = {
         alias: pb.slug
@@ -122,18 +85,7 @@ _register_institutional_slash_commands()
 
 
 def _register_research_playbook_slash_command() -> None:
-    """Append ``/playbook`` — the scheduled-research template catalogue.
-
-    Registered here for the same reason the institutional group is: this module
-    is imported before ``cli.commands.help`` and ``cli.completer`` read the
-    registry, so one reassignment surfaces the command in the help screen, the
-    typeahead and the fuzzy matcher at once. Idempotent and never overwrites a
-    name that already exists.
-
-    The :class:`Command` is built literally rather than imported from the
-    handler module, so no import cycle (and no scheduler-store import cost) is
-    paid just to draw the completion menu.
-    """
+    """Append ``/playbook`` — the scheduled-research template catalogue."""
     global SLASH_COMMANDS
 
     if any(cmd.name == "playbook" for cmd in SLASH_COMMANDS):
@@ -157,15 +109,7 @@ _register_research_playbook_slash_command()
 
 
 def _parse_token(input_text: str) -> str:
-    """Strip the leading ``/`` and isolate the command token.
-
-    >>> _parse_token("/me arg")
-    'me'
-    >>> _parse_token("/")
-    ''
-    >>> _parse_token("not a slash")
-    ''
-    """
+    """Strip the leading ``/`` and isolate the command token."""
     text = input_text.lstrip()
     if not text.startswith("/"):
         return ""
@@ -175,16 +119,7 @@ def _parse_token(input_text: str) -> str:
 
 
 def _fuzzy_score(needle: str, name: str) -> int:
-    """Return a heuristic score for ``needle`` matching ``name``.
-
-    Higher = better. ``0`` means no match.
-
-    Scoring order (boundary-friendly, like dexter's slash matcher):
-        prefix match → 100 + length bonus
-        substring match → 50 + length bonus
-        subsequence match (chars in order) → 10 + chars matched
-        otherwise → 0
-    """
+    """Return a heuristic score for ``needle`` matching ``name``."""
     if not needle:
         return 1  # bare ``/`` shows everything in registry order
     needle_l = needle.lower()
@@ -204,19 +139,15 @@ def _fuzzy_score(needle: str, name: str) -> int:
 
 
 def match_commands(input_text: str) -> list[Command]:
-    """Return commands that fuzzy-match ``input_text``.
-
-    Only matches when the trimmed input starts with ``/``. The leading slash
-    and any trailing arguments are stripped before scoring; only the command
-    token participates in the match.
-
-    Result is ordered best-match first, ties broken by registry order.
+    """Find slash commands that fuzzy-match the input's command token.
 
     Args:
-        input_text: Raw input line, possibly empty.
+        input_text: Raw input line, possibly empty. Leading whitespace and trailing arguments are
+            ignored.
 
     Returns:
-        A new list — callers may freely mutate without side effects.
+        New list ordered by best match first with ties broken by registry order. Input without a
+        leading slash after trimming has no matches.
     """
     token = _parse_token(input_text)
     if not input_text.lstrip().startswith("/"):
@@ -240,8 +171,11 @@ def match_commands(input_text: str) -> list[Command]:
 def find_exact(name: str) -> Command | None:
     """Resolve an exact command name or alias.
 
-    Returns ``None`` if no match — callers handle the "unknown command"
-    response themselves so error UX stays consistent.
+    Args:
+        name: Command name or alias, optionally with a leading slash.
+
+    Returns:
+        Matching registered command, or None if there is no exact match.
     """
     key = name.lstrip("/").strip()
     key = _ALIASES.get(key, key)

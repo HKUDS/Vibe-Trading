@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
 import hashlib
 import json
 import re
@@ -9,15 +11,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from src.agent.resolution_context import ResolutionContext
+from src.product.identity.authorization import extract_symbol_arguments
+from src.product.identity.constraints import ResolutionContext
 
-from src.agent.instrument_identity import (
-    IdentityRecord,
-    IdentityLedger,
-    _RESOLVER_TOOL,
-    _scan_symbols,
-    _utc_now,
-)
+from src.product.identity.normalize import _scan_symbols
+from src.product.identity.ledger import IdentityRecord, IdentityLedger, _RESOLVER_TOOL, _utc_now
 from evals.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
 from evals.grounding.document_quotes import DocumentIntegerQuote
 from evals.grounding.figures import Figure, FiguresBlock, parse_figures_block, scan_figures
@@ -59,6 +57,7 @@ class GroundingLedger(
     def __init__(
         self,
         *,
+        roots: FileRoots,
         run_dir: Path,
         user_message: str,
         history: Sequence[Mapping[str, Any]] | None = None,
@@ -76,6 +75,7 @@ class GroundingLedger(
             contextual_identity_constraints: Whether explicit market words in
                 the original conversation may narrow resolver candidates.
         """
+        self.file_roots = roots
         self.run_dir = Path(run_dir)
         self.user_message = user_message
         self.resolution_context = ResolutionContext.from_messages(
@@ -313,7 +313,7 @@ class GroundingLedger(
         self._session_symbols.update(sorted(found)[:room])
         self._session_symbol_roots.update(
             symbol
-            for symbol in self._extract_symbol_arguments(arguments)
+            for symbol in extract_symbol_arguments(arguments)
             if "." not in symbol
         )
 

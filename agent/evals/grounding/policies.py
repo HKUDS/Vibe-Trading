@@ -15,11 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from src.agent.instrument_identity import (
-    _CANONICAL_SYMBOL_RE,
-    _normalize_symbol,
-    _scan_symbols,
-)
+from src.product.identity.normalize import _CANONICAL_SYMBOL_RE, _normalize_symbol, _scan_symbols
 from evals.grounding import identity_checks  # noqa: F401  (registers declared checks)
 from evals.grounding import figures_checks  # noqa: F401  (registers declared checks)
 from evals.grounding.figures import _MAGNITUDES

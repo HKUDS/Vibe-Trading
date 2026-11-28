@@ -8,26 +8,28 @@ and ``subprocess.run``), so they run in any environment.
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+import cli.commands.setup_memory as _cmd_setup_memory
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import cli
 import pytest
 
 
 class TestIsWindows:
     def test_true_on_win32(self) -> None:
-        with patch.object(cli._legacy.sys, "platform", "win32"):
-            assert cli._legacy._is_windows() is True
+        with patch.object(_cmd_common.sys, "platform", "win32"):
+            assert _cmd_setup_memory._is_windows() is True
 
     def test_false_on_linux(self) -> None:
-        with patch.object(cli._legacy.sys, "platform", "linux"):
-            assert cli._legacy._is_windows() is False
+        with patch.object(_cmd_common.sys, "platform", "linux"):
+            assert _cmd_setup_memory._is_windows() is False
 
     def test_false_on_darwin(self) -> None:
-        with patch.object(cli._legacy.sys, "platform", "darwin"):
-            assert cli._legacy._is_windows() is False
+        with patch.object(_cmd_common.sys, "platform", "darwin"):
+            assert _cmd_setup_memory._is_windows() is False
 
 
 class TestBuildFrontendCmd:
@@ -35,8 +37,8 @@ class TestBuildFrontendCmd:
     npx pulling the abandoned ``tsc@2.0.4`` package from the registry."""
 
     def test_windows_pins_typescript_and_vite_packages(self) -> None:
-        with patch.object(cli._legacy.sys, "platform", "win32"):
-            steps = cli._legacy._build_frontend_cmd(Path("frontend"))
+        with patch.object(_cmd_common.sys, "platform", "win32"):
+            steps = _cmd_setup_memory._build_frontend_cmd(Path("frontend"))
         # First step is always `npm install`.
         assert steps[0][:1] == ["npm"]
         assert steps[0][1] == "install"
@@ -51,15 +53,15 @@ class TestBuildFrontendCmd:
         ), f"expected an explicit vite build pin, got: {steps[1:]}"
 
     def test_posix_uses_npm_run_build(self) -> None:
-        with patch.object(cli._legacy.sys, "platform", "linux"):
-            steps = cli._legacy._build_frontend_cmd(Path("frontend"))
+        with patch.object(_cmd_common.sys, "platform", "linux"):
+            steps = _cmd_setup_memory._build_frontend_cmd(Path("frontend"))
         assert steps[-1] == ["npm", "run", "build"]
 
     def test_posix_does_not_pin_packages(self) -> None:
         """On POSIX, npm's local PATH magic makes ``npm run build`` work
         without explicit package pinning. Keep it that way."""
-        with patch.object(cli._legacy.sys, "platform", "linux"):
-            steps = cli._legacy._build_frontend_cmd(Path("frontend"))
+        with patch.object(_cmd_common.sys, "platform", "linux"):
+            steps = _cmd_setup_memory._build_frontend_cmd(Path("frontend"))
         for step in steps:
             assert "--package=" not in step, f"unexpected pin on POSIX: {step}"
 
@@ -74,9 +76,9 @@ class TestCmdSetupNodeMissing:
         frontend_dir = tmp_path / "frontend"
         frontend_dir.mkdir()
 
-        with patch.object(cli._legacy, "_resolve_node_and_npm", return_value=(None, "/usr/bin/npm")):
-            rc = cli._legacy.cmd_setup(frontend_dir=frontend_dir)
-        assert rc == cli._legacy.EXIT_USAGE_ERROR
+        with patch.object(_cmd_setup_memory, "_resolve_node_and_npm", return_value=(None, "/usr/bin/npm")):
+            rc = _cmd_setup_memory.cmd_setup(frontend_dir=frontend_dir)
+        assert rc == _cmd_common.EXIT_USAGE_ERROR
         out = capsys.readouterr().out
         assert "node" in out
 
@@ -84,17 +86,17 @@ class TestCmdSetupNodeMissing:
         frontend_dir = tmp_path / "frontend"
         frontend_dir.mkdir()
 
-        with patch.object(cli._legacy, "_resolve_node_and_npm", return_value=("/usr/bin/node", None)):
-            rc = cli._legacy.cmd_setup(frontend_dir=frontend_dir)
-        assert rc == cli._legacy.EXIT_USAGE_ERROR
+        with patch.object(_cmd_setup_memory, "_resolve_node_and_npm", return_value=("/usr/bin/node", None)):
+            rc = _cmd_setup_memory.cmd_setup(frontend_dir=frontend_dir)
+        assert rc == _cmd_common.EXIT_USAGE_ERROR
         out = capsys.readouterr().out
         assert "npm" in out
 
     def test_fails_when_frontend_dir_missing(self, tmp_path: Path, capsys) -> None:
         missing = tmp_path / "no-such-frontend"
-        with patch.object(cli._legacy, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
-            rc = cli._legacy.cmd_setup(frontend_dir=missing)
-        assert rc == cli._legacy.EXIT_USAGE_ERROR
+        with patch.object(_cmd_setup_memory, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
+            rc = _cmd_setup_memory.cmd_setup(frontend_dir=missing)
+        assert rc == _cmd_common.EXIT_USAGE_ERROR
         out = capsys.readouterr().out
         assert "not found" in out.lower() or "not on PATH" in out
 
@@ -108,13 +110,13 @@ class TestCmdSetupRunsSteps:
         frontend_dir.mkdir()
         (frontend_dir / "dist").mkdir()  # simulate a build output
 
-        with patch.object(cli._legacy, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
-            with patch.object(cli._legacy, "_is_windows", return_value=False):
-                with patch("cli._legacy.subprocess.run") as mock_run:
+        with patch.object(_cmd_setup_memory, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
+            with patch.object(_cmd_setup_memory, "_is_windows", return_value=False):
+                with patch('cli.commands.common.subprocess.run') as mock_run:
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                    rc = cli._legacy.cmd_setup(frontend_dir=frontend_dir)
+                    rc = _cmd_setup_memory.cmd_setup(frontend_dir=frontend_dir)
 
-        assert rc == cli._legacy.EXIT_SUCCESS
+        assert rc == _cmd_common.EXIT_SUCCESS
         # On POSIX: exactly 2 steps (install + run build).
         assert mock_run.call_count == 2
         # The last invocation should be `npm run build`.
@@ -125,15 +127,15 @@ class TestCmdSetupRunsSteps:
         frontend_dir = tmp_path / "frontend"
         frontend_dir.mkdir()
 
-        with patch.object(cli._legacy, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
-            with patch.object(cli._legacy, "_is_windows", return_value=False):
-                with patch("cli._legacy.subprocess.run") as mock_run:
+        with patch.object(_cmd_setup_memory, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
+            with patch.object(_cmd_setup_memory, "_is_windows", return_value=False):
+                with patch('cli.commands.common.subprocess.run') as mock_run:
                     mock_run.return_value = MagicMock(
                         returncode=1, stdout="", stderr="boom: failed"
                     )
-                    rc = cli._legacy.cmd_setup(frontend_dir=frontend_dir)
+                    rc = _cmd_setup_memory.cmd_setup(frontend_dir=frontend_dir)
 
-        assert rc == cli._legacy.EXIT_RUN_FAILED
+        assert rc == _cmd_common.EXIT_RUN_FAILED
         # Should bail out on the first failing step, not run them all.
         assert mock_run.call_count == 1
 
@@ -152,14 +154,14 @@ class TestCmdDev:
         # We must fabricate node_modules/.bin/vite so the pre-check in
         # cmd_dev does not bail out with USAGE_ERROR before Popen runs.
         frontend_dir = _make_frontend_with_vite(tmp_path)
-        with patch("cli._legacy._resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
-            with patch("cli._legacy.subprocess.Popen") as mock_popen:
+        with patch('cli.commands.setup_memory._resolve_node_and_npm', return_value=("/usr/bin/node", "/usr/bin/npm")):
+            with patch('cli.commands.common.subprocess.Popen') as mock_popen:
                 # Both children "exit" immediately so the wait loop ends.
                 proc = MagicMock()
                 proc.poll.return_value = 0
                 mock_popen.return_value = proc
-                with patch.object(cli._legacy.time, "sleep", side_effect=KeyboardInterrupt):
-                    rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+                with patch.object(_cmd_common.time, "sleep", side_effect=KeyboardInterrupt):
+                    rc = _cmd_setup_memory.cmd_dev(frontend_dir=frontend_dir)
 
         # First Popen call: backend. Second: frontend.
         backend_call = mock_popen.call_args_list[0]
@@ -167,9 +169,9 @@ class TestCmdDev:
         backend_cmd = backend_call.args[0]
         frontend_cmd = frontend_call.args[0]
         # Backend must run from AGENT_DIR, not the repo root.
-        assert backend_call.kwargs.get("cwd") == str(cli._legacy.AGENT_DIR)
-        # Backend invocation must be `python -m cli._legacy serve`.
-        assert backend_cmd[:4] == [sys.executable, "-m", "cli._legacy", "serve"]
+        assert backend_call.kwargs.get("cwd") == str(_cmd_common.AGENT_DIR)
+        # Backend invocation must be `python -m cli serve`.
+        assert backend_cmd[:4] == [sys.executable, "-m", "cli", "serve"]
         # Frontend invocation must pass the configured vite port (5899 by
         # default; --port 5173 would be a bug).
         assert "--port" in frontend_cmd
@@ -178,17 +180,17 @@ class TestCmdDev:
             f"dev printed wrong frontend port; got {frontend_cmd[port_idx]!r}, expected '5899'"
         )
         # Process should have returned cleanly.
-        assert rc == cli._legacy.EXIT_SUCCESS
+        assert rc == _cmd_common.EXIT_SUCCESS
 
     def test_custom_frontend_port_propagates(self, tmp_path: Path) -> None:
         frontend_dir = _make_frontend_with_vite(tmp_path)
-        with patch("cli._legacy._resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
-            with patch("cli._legacy.subprocess.Popen") as mock_popen:
+        with patch('cli.commands.setup_memory._resolve_node_and_npm', return_value=("/usr/bin/node", "/usr/bin/npm")):
+            with patch('cli.commands.common.subprocess.Popen') as mock_popen:
                 proc = MagicMock()
                 proc.poll.return_value = 0
                 mock_popen.return_value = proc
-                with patch.object(cli._legacy.time, "sleep", side_effect=KeyboardInterrupt):
-                    cli._legacy.cmd_dev(frontend_port=6000, frontend_dir=frontend_dir)
+                with patch.object(_cmd_common.time, "sleep", side_effect=KeyboardInterrupt):
+                    _cmd_setup_memory.cmd_dev(frontend_port=6000, frontend_dir=frontend_dir)
 
         frontend_call = mock_popen.call_args_list[1]
         frontend_cmd = frontend_call.args[0]
@@ -213,12 +215,12 @@ class TestCmdDev:
         frontend.poll.return_value = frontend_code
 
         with patch(
-            "cli._legacy._resolve_node_and_npm",
+            'cli.commands.setup_memory._resolve_node_and_npm',
             return_value=("/usr/bin/node", "/usr/bin/npm"),
         ):
-            with patch("cli._legacy.subprocess.Popen", side_effect=[backend, frontend]):
-                with patch.object(cli._legacy.time, "sleep", return_value=None):
-                    rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+            with patch('cli.commands.common.subprocess.Popen', side_effect=[backend, frontend]):
+                with patch.object(_cmd_common.time, "sleep", return_value=None):
+                    rc = _cmd_setup_memory.cmd_dev(frontend_dir=frontend_dir)
 
         assert rc == expected
         running_sibling = frontend if backend_code is not None else backend
@@ -230,16 +232,16 @@ class TestCmdDev:
         backend.poll.return_value = None
 
         with patch(
-            "cli._legacy._resolve_node_and_npm",
+            'cli.commands.setup_memory._resolve_node_and_npm',
             return_value=("/usr/bin/node", "/usr/bin/npm"),
         ):
             with patch(
-                "cli._legacy.subprocess.Popen",
+                'cli.commands.common.subprocess.Popen',
                 side_effect=[backend, OSError("frontend failed to start")],
             ):
-                rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+                rc = _cmd_setup_memory.cmd_dev(frontend_dir=frontend_dir)
 
-        assert rc == cli._legacy.EXIT_RUN_FAILED
+        assert rc == _cmd_common.EXIT_RUN_FAILED
         backend.terminate.assert_called_once()
         backend.wait.assert_called_once()
 
@@ -251,16 +253,16 @@ class TestCmdDev:
         frontend.poll.return_value = None
 
         with patch(
-            "cli._legacy._resolve_node_and_npm",
+            'cli.commands.setup_memory._resolve_node_and_npm',
             return_value=("/usr/bin/node", "/usr/bin/npm"),
         ):
-            with patch("cli._legacy.subprocess.Popen", side_effect=[backend, frontend]):
+            with patch('cli.commands.common.subprocess.Popen', side_effect=[backend, frontend]):
                 with patch.object(
-                    cli._legacy.time, "sleep", side_effect=KeyboardInterrupt
+                    _cmd_common.time, "sleep", side_effect=KeyboardInterrupt
                 ):
-                    rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+                    rc = _cmd_setup_memory.cmd_dev(frontend_dir=frontend_dir)
 
-        assert rc == cli._legacy.EXIT_SUCCESS
+        assert rc == _cmd_common.EXIT_SUCCESS
         backend.terminate.assert_called_once()
         frontend.terminate.assert_called_once()
         backend.wait.assert_called_once()

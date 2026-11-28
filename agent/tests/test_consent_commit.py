@@ -11,6 +11,10 @@ Covers (live-trading SPEC, Consent §1/§3, Mandate §2):
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import ast
 import json
 from datetime import datetime
@@ -670,8 +674,11 @@ def test_no_registered_tool_references_commit_mandate() -> None:
     """
     suspect_files = list((AGENT_DIR / "src" / "tools").glob("*.py"))
     suspect_files += [
-        AGENT_DIR / "src" / "agent" / "loop.py",
-        AGENT_DIR / "src" / "swarm" / "worker.py",
+        AGENT_DIR / "src" / "agent" / "runtime.py",
+        *(AGENT_DIR / "src" / "kernel").glob("*.py"),
+        *(AGENT_DIR / "src" / "product").rglob("*.py"),
+        *(AGENT_DIR / "src" / "session").glob("*.py"),
+        *(AGENT_DIR / "src" / "swarm").glob("*.py"),
     ]
     offenders: list[str] = []
     for path in suspect_files:
@@ -690,11 +697,11 @@ def test_no_registered_tool_references_commit_mandate() -> None:
     assert not offenders, f"commit_mandate is reachable from the agent surface: {offenders}"
 
 
-def test_registry_has_propose_tool_but_no_mandate_writer() -> None:
+def test_registry_has_propose_tool_but_no_mandate_writer(registry_goal_db) -> None:
     """The assembled registry exposes propose_mandate_profiles, no commit tool."""
     from src.tools import build_registry
 
-    registry = build_registry()
+    registry = build_registry(policy=ToolPolicy.from_config(get_env_config()))
     names = set(registry.tool_names)
     assert "propose_mandate_profiles" in names
     for forbidden in ("commit_mandate", "set_mandate", "write_mandate", "authorize_live"):

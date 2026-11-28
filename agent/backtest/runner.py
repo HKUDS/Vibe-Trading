@@ -8,6 +8,8 @@ Supports ``engine`` for backtest engine (daily/options, default daily).
 Usage: ``python -m backtest.runner <run_dir>``
 """
 
+from src.tools.path_utils import FileRoots
+
 import ast
 import copy
 import importlib.util
@@ -129,6 +131,17 @@ class BacktestConfigSchema(BaseModel):
     @field_validator("codes")
     @classmethod
     def codes_not_empty(cls, v: List[str]) -> List[str]:
+        """Validate that every requested instrument has supported execution rules.
+
+        Args:
+            v: Instrument codes, optionally prefixed with ``local:``.
+
+        Returns:
+            The original code list when every entry is supported.
+
+        Raises:
+            ValueError: If the list is empty, contains blanks or lacks execution rules.
+        """
         if not v:
             raise ValueError("codes must be a non-empty list")
         if any(not c.strip() for c in v):
@@ -1490,6 +1503,10 @@ def main(run_dir: Path) -> None:
             (``VIBE_TRADING_ALLOWED_RUN_ROOTS`` plus the defaults) before any
             file is read so an arbitrary filesystem location cannot be used
             to source ``code/signal_engine.py``.
+
+    Raises:
+        ValueError: If strategy parameters do not match the signal engine constructor.
+        SystemExit: If configuration, paths, strategy loading or data fetching fail validation.
     """
     # Loading `.env` belongs to the process that RUNS a backtest, not to
     # importing this module. At import time it ran during pytest collection --
@@ -1510,9 +1527,12 @@ def main(run_dir: Path) -> None:
     # import ``signal_engine.py`` from anywhere on disk; the AST scrubber
     # below blocks executable top-level statements but a method body still
     # runs on instantiation. See ``safe_run_dir`` for the policy.
+    from src.config.accessor import get_env_config
     from src.tools.path_utils import safe_run_dir
+
+    roots = FileRoots.from_config(get_env_config().api)
     try:
-        run_dir = safe_run_dir(str(run_dir))
+        run_dir = safe_run_dir(str(run_dir), roots=roots)
     except ValueError as exc:
         print(json.dumps({"error": str(exc)}))
         sys.exit(1)
@@ -1568,7 +1588,7 @@ def main(run_dir: Path) -> None:
         print(json.dumps({"error": f"SignalEngine interface error: {exc}"}))
         sys.exit(1)
 
-    fetch_result = fetch_data_map(config)
+    fetch_result = fetch_data_map(config, roots=roots)
     data_map = fetch_result.data_map
     codes = fetch_result.codes
     source = fetch_result.source
@@ -2091,7 +2111,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
     return merged
 
 
-def fetch_data_map(config: dict) -> DataFetchResult:
+def fetch_data_map(config: dict, *, roots: FileRoots) -> DataFetchResult:
     """Fetch and sanitize bars through the canonical loader registry.
 
     This is the shared entry point for backtest execution and reconstruction
@@ -2099,6 +2119,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
 
     Args:
         config: Backtest configuration containing codes, dates, source, and interval.
+        roots: Trusted file roots used to validate a frozen input manifest.
 
     Returns:
         Data and effective routing metadata. The input config is not mutated.
@@ -2116,7 +2137,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         from backtest.frozen import load_frozen_benchmark, load_frozen_frames
 
         manifest_path = config["frozen_data_manifest"]
-        frames, manifest = load_frozen_frames(manifest_path, config)
+        frames, manifest = load_frozen_frames(manifest_path, config, roots=roots)
         reference = load_frozen_benchmark(manifest_path, manifest, config)
         return DataFetchResult(
             frames, list(frames), config.get("source", "auto"),

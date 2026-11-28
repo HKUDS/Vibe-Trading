@@ -31,6 +31,10 @@ which carry no config authority.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import asyncio
 import logging
 from pathlib import Path
@@ -39,9 +43,9 @@ from unittest.mock import patch
 
 import mcp_server
 from src.config.schema import AgentConfig
-from src.providers.chat import LLMResponse
+from src.kernel.contracts import LLMResponse
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask
-from src.swarm.worker import run_worker
+from src.swarm.node import run_node
 
 
 # --------------------------------------------------------------------------- #
@@ -173,6 +177,7 @@ def test_run_swarm_variables_are_template_data_only_never_config(
             self,
             *,
             store: Any,
+            policy: ToolPolicy,
             agent_config: AgentConfig | None = None,
             max_workers: int = 4,
         ) -> None:
@@ -288,7 +293,7 @@ class _StubChatLLM:
     def __call__(self, *args, **kwargs):  # ChatLLM(model_name=...) constructor shim
         return self
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks):
         self.tool_defs_seen.append(tools)
         if not self._responses:
             return LLMResponse(content="(stub exhausted)", finish_reason="stop")
@@ -304,7 +309,7 @@ class _StubChatLLM:
 def _stub_llm_factory(responses: list[LLMResponse]):
     stub = _StubChatLLM(responses)
 
-    def _factory(model_name=None):
+    def _factory(model_name=None, *, policy):
         return stub
 
     _factory.stub = stub  # type: ignore[attr-defined]
@@ -381,10 +386,11 @@ def test_unknown_mcp_server_tool_drops_cleanly_with_attack_shaped_variables(
 
     with (
         patch("src.tools.mcp.build_mcp_tool_wrappers", side_effect=_spy_build_mcp_tool_wrappers),
-        patch("src.swarm.worker.ChatLLM", llm_factory),
+        patch("src.swarm.node.ChatLLM", llm_factory),
         caplog.at_level(logging.WARNING),
     ):
-        result = run_worker(
+        result = run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=SwarmAgentSpec(
                 id="kb_analyst",
                 role="Analyst",

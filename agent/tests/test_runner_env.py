@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -132,8 +133,9 @@ def test_execute_keeps_runtime_run_valid_after_home_is_sandboxed(
     entry = _probe_entry(
         tmp_path,
         "import sys\n"
-        "from src.tools.path_utils import safe_run_dir\n"
-        "print(safe_run_dir(sys.argv[1]))\n",
+        "from src.config.accessor import get_env_config\n"
+        "from src.tools.path_utils import FileRoots, safe_run_dir\n"
+        "print(safe_run_dir(sys.argv[1], roots=FileRoots.from_config(get_env_config().api)))\n",
     )
     agent_root = Path(runner_mod.__file__).resolve().parents[2]
 
@@ -507,3 +509,91 @@ def test_mt5_sandbox_allowlist_rejects_malformed_symbol_suffix(tmp_path, value):
     (source / "mt5.json").write_text(json.dumps({"symbol_suffix": value, "login": "private"}))
     _reexpose_mt5_config(source, target)
     assert not (target / "mt5.json").exists()
+
+
+def _landlock_spec(monkeypatch, tmp_path: Path) -> dict:
+    """Confine a command as runner does on a Landlock host; return the spec it was given."""
+    import src.tools.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox, "_probe_landlock", lambda network: None)
+    root = tmp_path / "home"
+    for name in ("data-bridge", "uploads", "sessions", "memory", "live", "agent"):
+        (root / name).mkdir(parents=True)
+    (root / ".env").write_text("OPENAI_API_KEY=secret\n")
+    (root / "sessions.db").write_text("")
+    (root / "uploads" / "prices.csv").write_text("date,close\n")
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
+    run_dir = root / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    argv = runner_mod._landlock_confined(["python", "entry.py"], run_dir=run_dir, sandbox_home=None, real_home=None)
+    assert argv[1:3] == ["-I", str(sandbox.LANDLOCK_EXEC)] and argv[-2:] == ["python", "entry.py"]
+    spec = json.loads(Path(argv[3]).read_text())
+    Path(argv[3]).unlink()
+    return spec
+
+
+def test_landlock_hides_secrets_and_conversations_from_generated_code(monkeypatch, tmp_path: Path) -> None:
+    spec = _landlock_spec(monkeypatch, tmp_path)
+
+    root = (tmp_path / "home").resolve()
+    for secret in (".env", "sessions", "sessions.db", "memory", "live"):
+        assert str(root / secret) not in spec["read"], secret
+    assert {str(root / "runs" / "r1"), str(root / "cache")} <= set(spec["write"])
+    assert spec["net"] is True
+
+
+def test_landlock_keeps_the_users_own_data_readable(monkeypatch, tmp_path: Path) -> None:
+    # Backtests read uploaded CSVs and data-bridge sources that live under the runtime root.
+    spec = _landlock_spec(monkeypatch, tmp_path)
+
+    root = (tmp_path / "home").resolve()
+    assert {str(root / "uploads"), str(root / "data-bridge"), str(root / "agent")} <= set(spec["read"])
+
+
+def test_landlock_lets_the_loaders_write_the_cache_the_ephemeral_home_links_to(monkeypatch, tmp_path: Path) -> None:
+    # With VIBE_TRADING_HOME elsewhere, the gateway cache the child reaches through its ephemeral
+    # HOME is the server HOME's cache, not the runtime root's (CI: mkdir cache/gateway was denied).
+    import src.tools.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox, "_probe_landlock", lambda network: None)
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path / "root"))
+    monkeypatch.setenv("VIBE_GATEWAY_CACHE_DIR", str(tmp_path / "gateway-cache"))
+    (tmp_path / "gateway-cache").mkdir()
+    real_home = tmp_path / "home"
+    (real_home / ".vibe-trading" / "cache").mkdir(parents=True)
+    run_dir = tmp_path / "root" / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+
+    argv = runner_mod._landlock_confined(["python", "e.py"], run_dir=run_dir, sandbox_home=None, real_home=real_home)
+
+    spec = json.loads(Path(argv[3]).read_text())
+    Path(argv[3]).unlink()
+    assert str((real_home / ".vibe-trading" / "cache").resolve()) in spec["write"]
+    assert str((tmp_path / "gateway-cache").resolve()) in spec["write"]
+
+
+def test_without_landlock_the_command_is_unchanged(monkeypatch, tmp_path: Path) -> None:
+    import src.tools.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox, "_probe_landlock", lambda network: "Landlock is Linux-only")
+
+    assert runner_mod._landlock_confined(["python", "e.py"], run_dir=tmp_path,
+                                         sandbox_home=None, real_home=None) == ["python", "e.py"]
+
+
+def test_execute_starts_the_generated_code_through_landlock(monkeypatch, tmp_path: Path) -> None:
+    seen: list = []
+
+    def _confine(cmd, **kwargs):
+        seen.append(kwargs)
+        return [sys.executable, "-c", "print('ran-the-confined-command')"]
+
+    monkeypatch.setattr(runner_mod, "_landlock_confined", _confine)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    result = Runner(timeout=60).execute(_probe_entry(tmp_path, "print('ran')\n"), run_dir, cwd=tmp_path)
+
+    assert result.success, result.stderr
+    assert "ran-the-confined-command" in result.stdout, "execute() must spawn the command Landlock wrapped"
+    assert seen and seen[0]["run_dir"] == run_dir

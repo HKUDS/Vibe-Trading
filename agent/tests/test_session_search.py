@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -28,7 +27,7 @@ class TestIndexing:
     def test_index_session(self, index: SessionSearchIndex) -> None:
         index.index_session("s1", "My first session")
         # No crash, session stored
-        results = index.search("first session")
+        index.search("first session")
         # May or may not match depending on FTS5 availability
         # At minimum: no crash
 
@@ -196,70 +195,10 @@ class TestSanitizeFtsQuery:
         assert "币" in result
 
 
-# ---------------------------------------------------------------------------
-# reindex_from_store
-# ---------------------------------------------------------------------------
+def test_index_keeps_unicode_line_separator_inside_message(index: SessionSearchIndex) -> None:
+    index.index_session("session-unicode", "Unicode message")
+    index.index_message("session-unicode", "user", "before\u2028searchable\u2029after")
 
-
-class TestReindex:
-    def test_reindex_empty_dir(self, index: SessionSearchIndex, tmp_path: Path) -> None:
-        store_dir = tmp_path / "empty_store"
-        store_dir.mkdir()
-        count = index.reindex_from_store(store_dir)
-        assert count == 0
-
-    def test_reindex_nonexistent_dir(self, index: SessionSearchIndex, tmp_path: Path) -> None:
-        count = index.reindex_from_store(tmp_path / "nope")
-        assert count == 0
-
-    def test_reindex_from_file_store(self, index: SessionSearchIndex, tmp_path: Path) -> None:
-        import json
-        store_dir = tmp_path / "sessions"
-        store_dir.mkdir()
-
-        # Create a fake session directory
-        s_dir = store_dir / "session-001"
-        s_dir.mkdir()
-        (s_dir / "session.json").write_text(json.dumps({
-            "session_id": "session-001",
-            "title": "Reindex test",
-            "created_at": "2026-01-01T00:00:00",
-        }), encoding="utf-8")
-        (s_dir / "messages.jsonl").write_text(
-            json.dumps({"role": "user", "content": "reindex probe message"}) + "\n"
-            + json.dumps({"role": "assistant", "content": "reindex probe reply"}) + "\n",
-            encoding="utf-8",
-        )
-
-        count = index.reindex_from_store(store_dir)
-        assert count == 2
-
-        results = index.search("reindex probe")
-        assert len(results) >= 1
-        assert results[0].session_id == "session-001"
-
-    def test_reindex_keeps_unicode_line_separator_inside_message(self, index: SessionSearchIndex, tmp_path: Path) -> None:
-        import json
-
-        store_dir = tmp_path / "sessions"
-        store_dir.mkdir()
-        s_dir = store_dir / "session-unicode"
-        s_dir.mkdir()
-        (s_dir / "session.json").write_text(
-            json.dumps({
-                "session_id": "session-unicode",
-                "title": "Unicode message",
-                "created_at": "2026-01-01T00:00:00",
-            }),
-            encoding="utf-8",
-        )
-        (s_dir / "messages.jsonl").write_text(
-            json.dumps({"role": "user", "content": "before\u2028searchable\u2029after"}, ensure_ascii=False)
-            + "\n",
-            encoding="utf-8",
-        )
-
-        assert index.reindex_from_store(store_dir) == 1
-        results = index.search("searchable")
-        assert len(results) == 1
-        assert results[0].snippet.replace(">>>", "").replace("<<<", "") == "before\u2028searchable\u2029after"
+    results = index.search("searchable")
+    assert len(results) == 1
+    assert results[0].snippet.replace(">>>", "").replace("<<<", "") == "before\u2028searchable\u2029after"

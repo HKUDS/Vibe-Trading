@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 
@@ -13,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 
 def _ledger(tmp_path: Path, tool: str, payload: dict) -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze AAPL.US")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze AAPL.US")
     ledger.ingest_tool_result(
         tool_name=tool,
         arguments={"run_dir": str(tmp_path)},

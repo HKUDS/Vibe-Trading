@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import ast
 import json
 from pathlib import Path
@@ -92,7 +96,7 @@ def test_descriptive_colon_keeps_derived_grounding_checks(
     with_evidence: bool,
     reason: str | None,
 ) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze AAPL.US")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="Analyze AAPL.US")
     if with_evidence:
         ledger.ingest_tool_result(
             tool_name="get_market_data",

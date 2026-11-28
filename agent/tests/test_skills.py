@@ -6,84 +6,85 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.skills import Skill, SkillsLoader, _parse_frontmatter
+from src.product.resources.frontmatter import parse_frontmatter
+from src.product.resources.skills import Skill, SkillsLoader
 
 
 # ---------------------------------------------------------------------------
-# _parse_frontmatter
+# parse_frontmatter
 # ---------------------------------------------------------------------------
 
 
 class TestParseFrontmatter:
     def test_basic(self) -> None:
         text = "---\nname: test-skill\ndescription: A test\n---\nBody here."
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta["name"] == "test-skill"
         assert meta["description"] == "A test"
         assert body == "Body here."
 
     def test_category_field(self) -> None:
         text = "---\nname: foo\ncategory: strategy\n---\nContent"
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta["category"] == "strategy"
 
     def test_boolean_values(self) -> None:
         text = "---\nname: foo\nactive: true\narchived: false\n---\nBody"
-        meta, _ = _parse_frontmatter(text)
+        meta, _ = parse_frontmatter(text)
         assert meta["active"] is True
         assert meta["archived"] is False
 
     def test_list_values(self) -> None:
         text = "---\nname: foo\ntags: [a, b, c]\n---\nBody"
-        meta, _ = _parse_frontmatter(text)
+        meta, _ = parse_frontmatter(text)
         assert meta["tags"] == ["a", "b", "c"]
 
     def test_empty_list(self) -> None:
         text = "---\nname: foo\ntags: []\n---\nBody"
-        meta, _ = _parse_frontmatter(text)
+        meta, _ = parse_frontmatter(text)
         assert meta["tags"] == []
 
     def test_quoted_scalars_lose_their_quotes_and_stay_strings(self) -> None:
         text = "---\nname: 'foo'\ndescription: \"Use when: a, b\"\nflag: \"true\"\nraw: \"[a]\"\n---\nBody"
-        meta, _ = _parse_frontmatter(text)
+        meta, _ = parse_frontmatter(text)
         assert meta == {"name": "foo", "description": "Use when: a, b", "flag": "true", "raw": "[a]"}
 
     def test_utf8_bom_before_frontmatter(self) -> None:
         text = "\ufeff---\nname: momentum-x\ndescription: My rules\n---\nBody"
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta == {"name": "momentum-x", "description": "My rules"}
         assert body == "Body"
 
     def test_no_frontmatter(self) -> None:
         text = "Just plain text, no frontmatter."
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta == {}
         assert body == text.strip()
 
     def test_multiline_body(self) -> None:
         text = "---\nname: x\n---\nLine 1\nLine 2\nLine 3"
-        _, body = _parse_frontmatter(text)
+        _, body = parse_frontmatter(text)
         assert "Line 1" in body
         assert "Line 3" in body
 
     def test_closing_fence_at_eof_without_trailing_newline(self) -> None:
         # Skill/memory writers often omit the final newline after ---.
         text = "---\nname: eof-skill\ndescription: no trailing newline\n---"
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta["name"] == "eof-skill"
         assert meta["description"] == "no trailing newline"
         assert body == ""
 
     def test_empty_frontmatter_block(self) -> None:
         text = "---\n---\nBody only."
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta == {}
         assert body == "Body only."
     def test_rejects_inline_fence_tail_false_positive(self) -> None:
         # Fence must stand alone on its line; a trailing --- on a value line
         # is not a fence.
         text = "---\nname: foo---"
-        meta, body = _parse_frontmatter(text)
+        meta, body = parse_frontmatter(text)
         assert meta == {}
         assert body == text
 
@@ -100,19 +101,6 @@ class TestSkill:
         assert s.description == ""
         assert s.body == ""
         assert s.metadata == {}
-
-    def test_load_support_file_no_dir(self) -> None:
-        s = Skill(name="test")
-        assert s.load_support_file("missing.md") is None
-
-    def test_load_support_file(self, tmp_path: Path) -> None:
-        (tmp_path / "extra.md").write_text("extra content", encoding="utf-8")
-        s = Skill(name="test", dir_path=tmp_path)
-        assert s.load_support_file("extra.md") == "extra content"
-
-    def test_load_support_file_missing(self, tmp_path: Path) -> None:
-        s = Skill(name="test", dir_path=tmp_path)
-        assert s.load_support_file("nope.md") is None
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,8 @@ LLM provider failure is critical (blocks startup).
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+
 from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import List, Optional
@@ -15,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.config.accessor import get_env_config, reset_env_config
+from src.providers.registry import get_provider_capabilities
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,7 @@ class CheckResult:
 def _check_llm_provider() -> CheckResult:
     """Verify LLM provider connectivity."""
     from src.providers.settings import _ensure_dotenv, _sync_provider_env
-    from src.providers.llm import provider_diagnostics
+    from src.providers.diagnostics import provider_diagnostics
 
     _ensure_dotenv()
     # The EnvConfig singleton may have been cached before _ensure_dotenv()
@@ -61,7 +64,7 @@ def _check_llm_provider() -> CheckResult:
         )
 
     _sync_provider_env()
-    diagnostics = provider_diagnostics()
+    diagnostics = provider_diagnostics(policy=ToolPolicy.from_config(get_env_config()))
     from src.providers.settings import resolve_config
     base_url = resolve_config().base_url
     proxy_label = ",".join(sorted(diagnostics.get("proxy", {}).keys())) or "none"
@@ -72,7 +75,8 @@ def _check_llm_provider() -> CheckResult:
         f"proxy={proxy_label}"
     )
 
-    if provider.lower() in {"openai-codex", "openai_codex"}:
+    backend = get_provider_capabilities(provider).backend
+    if backend == "openai_codex":
         try:
             from src.providers.openai_codex import get_openai_codex_login_status
 
@@ -101,7 +105,7 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
-    if provider.lower() in {"copilot", "github-copilot"}:
+    if backend == "copilot":
         from src.providers.copilot_auth import get_copilot_auth_status
 
         authenticated, status_message = get_copilot_auth_status()
@@ -120,7 +124,7 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
-    if provider.lower() == "claude-cli":
+    if backend == "claude_cli":
         from src.providers.claude_cli import get_claude_cli_auth_status
 
         logged_in, auth_method = get_claude_cli_auth_status()

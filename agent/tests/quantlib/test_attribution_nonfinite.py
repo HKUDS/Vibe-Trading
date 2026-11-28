@@ -1,5 +1,9 @@
 """Invalid sector data must not masquerade as residual-free attribution."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 import math
 
@@ -75,7 +79,7 @@ def test_quantlib_tool_reports_invalid_attribution_as_error(
     from src.tools.quantlib_tool import QuantlibCallTool
 
     result = json.loads(
-        QuantlibCallTool().execute(
+        QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(
             action="call", module="attribution", function=function, kwargs=kwargs
         )
     )

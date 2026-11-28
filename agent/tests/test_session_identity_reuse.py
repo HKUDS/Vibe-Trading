@@ -1,13 +1,17 @@
 """Only already settled exact identities can avoid a network resolver call."""
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from dataclasses import replace
 import json
 from types import SimpleNamespace
 
 import pytest
 
-from src.agent.instrument_identity import IdentityLedger
-from src.agent.loop import AgentLoop
+from src.product.identity.ledger import IdentityLedger
+from src.agent.runtime import AgentRuntime
 from src.agent.tools import ToolRegistry
 from src.tools.symbol_search_tool import SymbolSearchTool
 from tests.test_agent_loop_deterministic_cache import _drive
@@ -58,20 +62,20 @@ def test_actual_loop_reuses_without_bypassing_policy_or_identity(tmp_path, monke
         return json.dumps({"ok": True, "data": {"query": "00700.HK", "candidates": [{"symbol": "00700.HK"}], "sources": {"fixture": "ok"}}})
 
     monkeypatch.setattr(tool, "execute", execute)
-    registry = ToolRegistry()
-    registry.register(tool)
-    agent = AgentLoop(registry=registry, llm=SimpleNamespace(), max_iterations=3)
-    agent.memory.run_dir = str(tmp_path)
-    agent._identity = IdentityLedger(run_dir=tmp_path, user_message="Read 00700.HK")
-    before = agent._identity.identity_summary()
     if mode == "denied":
-        monkeypatch.setattr("src.providers.tool_policy._deny_prefixes", lambda **kwargs: ("search_symbol",))
+        monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "search_symbol")
+    registry = ToolRegistry(policy=ToolPolicy.from_config(get_env_config()))
+    registry.register(tool)
+    agent = AgentRuntime(registry=registry, llm=SimpleNamespace(), max_iterations=3)
+    agent.memory.run_dir = str(tmp_path)
+    agent.tool_env.identity = IdentityLedger(run_dir=tmp_path, user_message="Read 00700.HK")
+    before = agent.tool_env.identity.identity_summary()
     args = {"query": "00700.HK", **({"refresh": True} if mode == "refresh" else {})}
     messages, trace = _drive(agent, "search_symbol", tmp_path, [args])
     result = json.loads(messages[-1]["content"])
     if mode == "reuse":
         assert not calls and result["reused"]
-        assert agent._identity.identity_summary() == before
+        assert agent.tool_env.identity.identity_summary() == before
         assert any(row["type"] == "identity_reused" for row in trace)
     elif mode == "refresh":
         assert len(calls) == 1 and not result.get("reused")

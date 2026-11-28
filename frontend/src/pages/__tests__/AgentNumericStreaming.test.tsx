@@ -7,7 +7,7 @@ const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
   getRunPreview: vi.fn(),
-  getSessionMessages: vi.fn(),
+  getSessionThread: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
 }));
 
@@ -19,7 +19,11 @@ const sseMock = vi.hoisted(() => ({
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return { ...actual, api: apiMock };
+  const { threadFixture } = await import("./threadFixture");
+  return { ...actual, api: { ...apiMock,
+    getSessionThread: async (sid: string) => threadFixture(await apiMock.getSessionThread(sid)),
+    listPendingInputs: async () => ({ items: [] }),
+  } };
 });
 
 vi.mock("@/hooks/useSSE", () => ({
@@ -44,7 +48,7 @@ async function renderStreamingAttempt(attemptId: string): Promise<void> {
   render(<RouterProvider router={router} />);
   await waitFor(() => expect(sseMock.connect).toHaveBeenCalled());
   act(() => {
-    latestHandlers()["attempt.started"]({ attempt_id: attemptId });
+    latestHandlers()["run.started"]({ turn_id: attemptId });
   });
   expect(useAgentStore.getState().status).toBe("streaming");
 }
@@ -55,7 +59,7 @@ describe("Agent numeric streaming", () => {
     sseMock.connect.mockClear();
     apiMock.getGoal.mockResolvedValue(null);
     apiMock.getRunPreview.mockResolvedValue({ metrics: null, equity_curve: [], report_worthy: false });
-    apiMock.getSessionMessages.mockResolvedValue([]);
+    apiMock.getSessionThread.mockResolvedValue([]);
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
       model_name: "deepseek-v4-pro",
@@ -80,7 +84,7 @@ describe("Agent numeric streaming", () => {
     await renderStreamingAttempt("attempt-1");
     expect(latestHandlers().grounding_status).toBeUndefined();
     act(() => {
-      latestHandlers().text_delta({ attempt_id: "attempt-1", delta: "On Oct 13, revenue was USD 96.22B; growth 13%." });
+      latestHandlers()["item.delta"]({ turn_id: "attempt-1", kind: "text.delta", delta: "On Oct 13, revenue was USD 96.22B; growth 13%." });
     });
     await waitFor(() => expect(screen.getByText(/On Oct 13, revenue was USD 96.22B; growth 13%/)).toBeInTheDocument());
     expect(screen.queryByText(STATUS_TEXT)).not.toBeInTheDocument();

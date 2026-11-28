@@ -1,10 +1,4 @@
-"""``/memory`` — list / show persistent memory snippets.
-
-Delegates to the legacy ``cmd_memory_list`` / ``cmd_memory_show`` /
-``cmd_memory_search`` callables. ``/memory`` with no args lists; with
-a single arg shows one; with ``search <q>`` runs FTS; with
-``forget <name>`` deletes one.
-"""
+"""``/memory`` — list / show persistent memory snippets."""
 
 from __future__ import annotations
 
@@ -22,18 +16,21 @@ def _resolve_console() -> Console:
 
 
 def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
-    """Dispatch sub-actions:
+    """List, show, search, or forget persistent memories.
 
-    * ``/memory``              → list
-    * ``/memory <name>``       → show
-    * ``/memory search <q>``   → full-text search
-    * ``/memory forget <name>``→ delete a snippet
+    Args:
+        ctx: Unused interactive context.
+        *args: Memory name, search query tokens, or forget command with a name. Empty arguments list
+            entries.
+
+    Returns:
+        Exit status of the selected memory command, or one if dispatch raises an exception.
     """
     console = _resolve_console()
 
     if not args:
         try:
-            from cli._legacy import cmd_memory_list
+            from cli.commands.setup_memory import cmd_memory_list
 
             return cmd_memory_list()
         except Exception as exc:  # noqa: BLE001
@@ -44,14 +41,14 @@ def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
     rest = args[1:]
     try:
         if sub == "search" and rest:
-            from cli._legacy import cmd_memory_search
+            from cli.commands.setup_memory import cmd_memory_search
 
             return cmd_memory_search(" ".join(rest))
         if sub == "forget" and rest:
-            from cli._legacy import cmd_memory_forget
+            from cli.commands.setup_memory import cmd_memory_forget
 
             return cmd_memory_forget(rest[0], yes=False)
-        from cli._legacy import cmd_memory_show
+        from cli.commands.setup_memory import cmd_memory_show
 
         return cmd_memory_show(sub)
     except Exception as exc:  # noqa: BLE001
@@ -60,7 +57,15 @@ def cmd_memory(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
 
 
 def run(ctx: Any = None, *args: str) -> int:
-    """Single-entrypoint wrapper for the slash router."""
+    """Dispatch the memory slash command.
+
+    Args:
+        ctx: Interactive context passed through to the memory handler.
+        *args: Memory subcommand arguments or entry name.
+
+    Returns:
+        Exit status of the memory handler.
+    """
     return cmd_memory(ctx, *args)
 
 

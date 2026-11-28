@@ -1,13 +1,4 @@
-"""Swarm multi-agent system — run state persistence.
-
-File-system-based persistence for SwarmRun. Directory structure:
-    .swarm/runs/{run_id}/
-    ├── run.json         # SwarmRun state (atomic write)
-    ├── events.jsonl     # append-only event log
-    ├── tasks/           # task state files
-    ├── inboxes/         # agent message inboxes
-    └── artifacts/       # agent outputs
-"""
+"""Swarm multi-agent system — run state persistence."""
 
 from __future__ import annotations
 
@@ -41,12 +32,7 @@ def _parse_iso(value: str | None) -> datetime | None:
 
 
 def _last_event_timestamp(events_file: Path) -> datetime | None:
-    """Return the timestamp of the last line in ``events.jsonl``.
-
-    Used by the stale-run reaper. Returns ``None`` when the file is missing,
-    empty, or the tail line cannot be parsed — callers treat that as
-    "no liveness signal" and skip the run.
-    """
+    """Return the timestamp of the last line in ``events.jsonl``."""
     if not events_file.exists():
         return None
     try:
@@ -67,14 +53,10 @@ def _last_event_timestamp(events_file: Path) -> datetime | None:
 
 
 def swarm_runs_root() -> Path:
-    """Single source of truth for where swarm runs are persisted.
+    """Resolve the configured swarm storage root.
 
-    The swarm store (mcp_server) and the run-dir sandbox allow-list
-    (src.tools.path_utils) must agree on this path. They previously each
-    derived ``<agent_root>/.swarm/runs`` independently; a packaging layout
-    where the two anchors resolved differently silently put every worker
-    run_dir outside the allow-list (P03-A). Deriving it here once keeps
-    the store location and the allow-list from drifting again.
+    Returns:
+        Directory under which swarm runs are persisted.
     """
     from src.config.paths import get_swarm_runs_dir
 
@@ -93,28 +75,16 @@ _REPLACE_BACKOFF = (0.025, 0.05, 0.1, 0.2, 0.4)  # seconds; len == attempts - 1
 # _LayerStop), setting its in-memory cancel event when it appears, so a
 # cross-process request follows the same cooperative cancellation contract
 # as an in-process one.
-CANCEL_REQUESTED_FILENAME = "cancel.requested"
+CANCEL_REQUESTED_FILENAME = "cancel.request"
 
 
 def _is_transient_windows_error(exc: OSError) -> bool:
-    """True for the Windows access/sharing race on os.replace.
-
-    ``winerror`` is only set on Windows; ``getattr`` keeps this a hard
-    False on POSIX, so the retry path is Windows-only and POSIX behavior
-    is unchanged.
-    """
+    """True for the Windows access/sharing race on os.replace."""
     return getattr(exc, "winerror", None) in _TRANSIENT_WINERRORS
 
 
 def _replace_with_retry(tmp: Path, target: Path) -> None:
-    """``os.replace`` retried on the Windows concurrent-access race.
-
-    A reader holding ``target`` open (e.g. ``load_run`` on the poll path)
-    makes Windows fail the rename with WinError 5/32. POSIX ``os.replace``
-    is atomic and never raises these, so off-Windows this loop runs
-    exactly once — no behavior change. Non-transient errors re-raise
-    immediately; the last transient error re-raises after the budget.
-    """
+    """``os.replace`` retried on the Windows concurrent-access race."""
     for attempt in range(_REPLACE_ATTEMPTS):
         try:
             os.replace(tmp, target)
@@ -128,22 +98,14 @@ def _replace_with_retry(tmp: Path, target: Path) -> None:
 
 
 class SwarmStore:
-    """File-based persistence store for SwarmRun.
+    """Store run snapshots and append-only event journals on disk.
 
-    Each run is stored under base_dir/{run_id}/. run.json uses atomic writes
-    (write to .tmp then rename) to prevent corruption. events.jsonl is append-only
-    and supports offset-based reads for SSE streaming.
-
-    Attributes:
-        base_dir: Storage root directory, typically agent/.swarm/runs.
+    Args:
+        base_dir: Storage root under which each run gets its own directory.
     """
 
     def __init__(self, base_dir: Path) -> None:
-        """Initialize SwarmStore.
-
-        Args:
-            base_dir: Storage root directory path.
-        """
+        """Initialize SwarmStore."""
         self.base_dir = base_dir
         self._write_lock = threading.Lock()
 
@@ -151,13 +113,13 @@ class SwarmStore:
         """Return the directory path for a given run.
 
         Args:
-            run_id: Run identifier.
+            run_id: Run ID expressed as a single directory name.
 
         Returns:
-            Path to the run directory.
+            Path to the run directory under the storage root.
 
         Raises:
-            ValueError: If run_id is empty, absolute, or path-shaped.
+            ValueError: If the ID is blank, absolute, or path-shaped.
         """
         candidate = Path(run_id)
         if (
@@ -175,7 +137,7 @@ class SwarmStore:
         """Create the directory structure for a new run and write initial state.
 
         Args:
-            run: SwarmRun instance.
+            run: Initial run state to persist.
 
         Returns:
             Path to the created run directory.
@@ -195,17 +157,19 @@ class SwarmStore:
         """Load the state for a given run.
 
         Args:
-            run_id: Run identifier.
+            run_id: Run ID expressed as a single directory name.
 
         Returns:
-            SwarmRun instance, or None if not found.
+            Persisted swarm run or None if run.json is absent.
+
+        Raises:
+            ValueError: If the run ID is invalid or its record does not validate after retries.
+            OSError: If reading the record still fails after retries.
         """
         run_file = self.run_dir(run_id) / "run.json"
         if not run_file.exists():
             return None
-        # The file may be read mid-replace by a concurrent writer; retry a
-        # transient read/parse failure before giving up (same race as
-        # _replace_with_retry, reader side).
+        # Retry transient reads during a concurrent replace.
         last: Exception | None = None
         for attempt in range(_REPLACE_ATTEMPTS):
             try:
@@ -215,13 +179,42 @@ class SwarmStore:
                 if attempt < len(_REPLACE_BACKOFF):
                     time.sleep(_REPLACE_BACKOFF[attempt])
         assert last is not None  # loop body sets `last` or returns
+        if isinstance(last, ValueError):
+            raise ValueError("Invalid swarm run record") from None
         raise type(last)(redact_internal_paths(str(last))) from None
+
+    def request_cancel(self, run_id: str) -> bool:
+        """Queue cancellation beside the run record for its owning process.
+
+        Args:
+            run_id: ID of the pending or running swarm to signal.
+
+        Returns:
+            True if a regular cancellation request file was created or already exists. False if the
+            run is absent, terminal, symlinked, or the request cannot be recorded because its
+            directory disappeared.
+        """
+        run_dir = self.run_dir(run_id)
+        if run_dir.is_symlink():
+            return False
+        run = self.load_run(run_id)
+        if run is None or run.status not in {RunStatus.pending, RunStatus.running}:
+            return False
+        request = run_dir / CANCEL_REQUESTED_FILENAME
+        try:
+            with request.open("x"):
+                pass
+        except FileExistsError:
+            return not request.is_symlink() and request.is_file()
+        except FileNotFoundError:
+            return False
+        return True
 
     def update_run(self, run: SwarmRun) -> None:
         """Atomically update run state.
 
         Args:
-            run: Updated SwarmRun instance.
+            run: Updated run state to write.
 
         Raises:
             FileNotFoundError: If the run directory does not exist.
@@ -231,55 +224,31 @@ class SwarmStore:
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
         self._atomic_write(rd / "run.json", run.model_dump_json(indent=2))
 
-    def request_cancel(self, run_id: str) -> bool:
-        """Ask the process owning ``run_id`` to stop it; return True if asked.
+    def cancel_requested(self, run_id: str) -> bool:
+        """Check for a regular cancellation marker without following symlinks.
 
-        Writes the cancel-requested marker into the run directory when the
-        run exists and is still ``running``. The marker is deliberately not
-        a field in ``run.json``: a read-modify-write of that file from a
-        foreign process could clobber the owner's concurrent snapshot, while
-        creating one small file is atomic and idempotent. Returns False for
-        an unknown, malformed, or already-terminal run id — callers report
-        those as "not found or already finished".
+        Args:
+            run_id: ID of the run whose owner is polling for cancellation.
+
+        Returns:
+            True if a regular marker exists in a non-symlinked run directory. Missing,
+            invalid or unreadable paths return False.
         """
         try:
             run_dir = self.run_dir(run_id)
-            run = self.load_run(run_id)
-        except (OSError, ValueError):
-            return False
-        if run is None or run.status != RunStatus.running:
-            return False
-        marker = run_dir / CANCEL_REQUESTED_FILENAME
-        try:
-            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            return True  # already requested; asking again changes nothing
-        except OSError:
-            return False
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(datetime.now(timezone.utc).isoformat() + "\n")
-        return True
-
-    def cancel_requested(self, run_id: str) -> bool:
-        """True when another process left a cancel request for ``run_id``.
-
-        A single stat call, so the owning runtime can poll it between layers
-        without measurable cost. Never raises: a missing run directory or an
-        unreadable marker means "no request".
-        """
-        try:
-            return (self.run_dir(run_id) / CANCEL_REQUESTED_FILENAME).exists()
+            marker = run_dir / CANCEL_REQUESTED_FILENAME
+            return not run_dir.is_symlink() and not marker.is_symlink() and marker.is_file()
         except (OSError, ValueError):
             return False
 
     def list_runs(self, limit: int = 50) -> list[SwarmRun]:
-        """List all runs sorted by created_at descending.
+        """List runs by descending creation time.
 
         Args:
-            limit: Maximum number of runs to return.
+            limit: Maximum number of runs to return. Pass a nonnegative count.
 
         Returns:
-            List of SwarmRun instances.
+            Run snapshots newest first, omitting records that fail JSON parsing or validation.
         """
         if not self.base_dir.exists():
             return []
@@ -303,7 +272,7 @@ class SwarmStore:
         """Append an event to events.jsonl.
 
         Args:
-            run_id: Run identifier.
+            run_id: ID of the run whose journal is updated.
             event: Event to append.
 
         Raises:
@@ -317,7 +286,19 @@ class SwarmStore:
         event: SwarmEvent,
         accept: Callable[[], bool] | None = None,
     ) -> bool:
-        """Check admission under the journal lock so an expired writer cannot trail the terminal event."""
+        """Append an event if admitted under the journal lock.
+
+        Args:
+            run_id: ID of the run whose journal is updated.
+            event: Event to append.
+            accept: Optional zero-argument predicate evaluated under the lock.
+
+        Returns:
+            True if the event was written, or False if the predicate declined it.
+
+        Raises:
+            FileNotFoundError: If the run directory does not exist.
+        """
         rd = self.run_dir(run_id)
         if not rd.exists():
             raise FileNotFoundError(f"Run directory not found: {rd.name}")
@@ -330,14 +311,18 @@ class SwarmStore:
         return True
 
     def read_events(self, run_id: str, after_index: int = 0) -> list[SwarmEvent]:
-        """Read the event log with optional offset for SSE incremental streaming.
+        """Read the event log with an optional offset for incremental streaming.
 
         Args:
-            run_id: Run identifier.
-            after_index: Skip the first N events and return from event N+1 onward.
+            run_id: ID of the run whose journal is read.
+            after_index: Zero-based line index at which reading starts.
 
         Returns:
-            List of SwarmEvent instances.
+            Parsed events in journal order. Returns an empty list if the journal is absent and skips
+            a malformed JSON tail if it is unterminated.
+
+        Raises:
+            ValidationError: If an event record is invalid outside the tolerated partial-tail case.
         """
         events_file = self.run_dir(run_id) / "events.jsonl"
         if not events_file.exists():
@@ -346,11 +331,7 @@ class SwarmStore:
         events: list[SwarmEvent] = []
         text = events_file.read_bytes()
         lines = text.splitlines()
-        # ``append_event`` is not atomic across processes/instances: a reader
-        # (the SSE poll loop, ``_persist_recovery``) can observe a final line
-        # that is still being written, or one cut short by a crashed host. That
-        # unterminated tail is not an event yet, so skip it instead of raising
-        # and killing the stream; the next poll sees it whole.
+        # Ignore an unterminated JSONL tail so partial writes cannot break SSE polling.
         tail_unterminated = bool(text) and not text.endswith(b"\n")
         for position, line in enumerate(lines[after_index:], start=after_index):
             stripped = line.strip()
@@ -369,16 +350,14 @@ class SwarmStore:
         return events
 
     def hydrate_run(self, run: SwarmRun) -> SwarmRun:
-        """Return a copy of ``run`` with live ``tasks/*.json`` merged in.
+        """Merge current task files into a run snapshot.
 
-        ``run.json`` only gets the full snapshot at start and finalize; the
-        per-task files are the live source of truth while execution is in
-        flight. Readers (MCP / API / agent tool) call this before serializing
-        so callers see the actual task progress instead of the stale snapshot.
+        Args:
+            run: Run snapshot loaded from storage.
 
-        Pure function: no disk writes, returns a new ``SwarmRun`` via
-        :meth:`pydantic.BaseModel.model_copy`. Falls back to ``run`` unchanged
-        when no task files exist.
+        Returns:
+            Copy with live task state and refreshed report information when task files exist, or the
+            input run if none are available.
         """
         from src.swarm.task_store import TaskStore
 
@@ -390,9 +369,7 @@ class SwarmStore:
             return run
         by_id = {task.id: task for task in live}
         merged = [by_id.get(task.id, task) for task in run.tasks]
-        # Surface any task that only exists in the live store (defensive — DAG
-        # validation runs at start_run so it shouldn't happen, but a future
-        # caller that mutates the task set will not silently drop tasks).
+        # Include tasks present only in the live store so changed task sets remain visible.
         seen = {task.id for task in merged}
         merged.extend(task for tid, task in by_id.items() if tid not in seen)
         from src.swarm.delivery import refresh_report
@@ -408,23 +385,14 @@ class SwarmStore:
         return hydrated
 
     def compute_stale_threshold(self, run: SwarmRun) -> float:
-        """Per-run silence budget before a ``running`` run looks abandoned.
+        """Compute how long a running swarm can go without an event.
 
-        With ``HeartbeatTimer`` wrapping ``registry.execute`` in the swarm
-        worker, the events.jsonl tail gets a fresh entry every
-        ``SWARM_HEARTBEAT_INTERVAL_S`` (default 3s) while a tool call is
-        running. Missing ~10 heartbeats in a row means the host has stopped
-        making progress — so the natural threshold is ``heartbeat × 10``
-        (≈30s by default).
-
-        We clamp the upper bound to ``max(agent.timeout × (retries+1)) + 60s``
-        so a misconfigured / disabled heartbeat (e.g. interval set to 10min)
-        cannot push detection latency past the run's own retry budget. And
-        we hold a 60s lower bound so a very tight heartbeat doesn't false-
-        positive on routine sub-second event gaps.
+        Args:
+            run: Run whose agent timeouts and retries bound the silence budget.
 
         Returns:
-            Seconds of event silence after which the run should be reaped.
+            Threshold in seconds, based on the heartbeat interval and retry budget with a 60-second
+            floor.
         """
         interval = get_env_config().swarm.swarm_heartbeat_interval_s
         heartbeat_floor = max(60.0, interval * 10.0)
@@ -438,12 +406,15 @@ class SwarmStore:
         return float(max(60.0, min(heartbeat_floor, retry_ceiling)))
 
     def is_run_stale(self, run: SwarmRun, *, now: datetime | None = None) -> bool:
-        """Read-only check: is this ``running`` run silent past its threshold?
+        """Check whether a running swarm has exceeded its silence threshold.
 
-        Used by both the read paths (return ``is_stale`` to callers without
-        writing) and the reaper (only mark failed when this returns True).
-        Returns False for any non-running run so callers don't accidentally
-        flag completed/cancelled runs.
+        Args:
+            run: Run to inspect.
+            now: Reference time. Defaults to the current UTC time.
+
+        Returns:
+            True if the run is running and its last event time, or creation time if no event
+            timestamp is available, is older than the threshold.
         """
         from src.swarm.models import RunStatus
 
@@ -457,34 +428,15 @@ class SwarmStore:
         return (now - last_activity).total_seconds() > self.compute_stale_threshold(run)
 
     def reconcile_run(self, run: SwarmRun, *, write: bool = True) -> SwarmRun:
-        """Single source of truth for "what does this run actually look like".
-
-        Three layered transforms, applied in order to ``run``:
-
-        1. **Hydrate**: merge live ``tasks/*.json`` into ``run.tasks`` so
-           callers never see the stale start-of-run snapshot.
-        2. **Terminal recovery**: if every task is terminal but ``run.status``
-           is still ``running``, derive the real run status from the task
-           statuses (all completed → ``completed``; any failed → ``failed``;
-           else ``cancelled``) and fill ``final_report`` from the last
-           completed task's summary. Handles the "host crashed between the
-           last layer sync and finalize" case.
-        3. **Stale reap**: if the run is still ``running`` past its
-           heartbeat-based threshold, mark non-terminal tasks ``failed`` with
-           a diagnostic error and the run ``failed``.
-
-        ``write=True`` persists any state change to ``run.json`` /
-        ``tasks/*.json`` and appends a recovery event. ``write=False`` returns
-        the reconciled view in memory only — used by ``list_runs`` so a
-        20-row listing doesn't fire 20 disk writes (the next read of any
-        affected row will persist if needed).
+        """Hydrate a run and recover its terminal status when possible.
 
         Args:
-            run: The ``SwarmRun`` loaded from ``run.json``.
-            write: Persist recovered state if it differs from on-disk.
+            run: The SwarmRun loaded from run.json.
+            write: Whether to persist recovered terminal state and append a recovery event.
 
         Returns:
-            Reconciled ``SwarmRun`` (a new instance — original is not mutated).
+            Run view with live task state, a recovered status if every task is terminal, or failure
+            state if the run is stale and still running.
         """
         from src.swarm.models import RunStatus, TaskStatus
 
@@ -570,8 +522,7 @@ class SwarmStore:
                     )
                 )
 
-        # Same derivation as terminal recovery — if every task happened to be
-        # completed before the host died, the run is completed, not failed.
+        # Preserve completion when all tasks finished before the host died.
         post = run.model_copy(update={"tasks": updated_tasks})
         return self._recover_terminal(post, now=now)
 
@@ -583,12 +534,7 @@ class SwarmStore:
         reason: str,
         extra: dict | None = None,
     ) -> None:
-        """Write a reconciled SwarmRun back to disk and append a recovery event.
-
-        Idempotent: when a recovery event of the same kind already exists,
-        the disk update still runs (so duplicate readers converge) but no
-        second event is appended.
-        """
+        """Write a reconciled SwarmRun back to disk and append a recovery event."""
         from src.swarm.task_store import TaskStore
 
         try:
@@ -620,11 +566,10 @@ class SwarmStore:
             pass
 
     def reap_stale_running_runs(self) -> list[str]:
-        """Sweep all run directories and reconcile each one.
+        """Sweep stored running swarms and reconcile their status.
 
-        Returns IDs of runs whose status flipped from ``running`` to a
-        terminal status — useful for log/telemetry and for the explicit
-        ``reap_stale_runs`` MCP tool.
+        Returns:
+            IDs of runs recovered or reaped from running into a terminal state.
         """
         from src.swarm.models import RunStatus
 
@@ -644,20 +589,8 @@ class SwarmStore:
         return reaped
 
     def _atomic_write(self, path: Path, content: str) -> None:
-        """Atomically write a file: write to .tmp then rename.
-
-        Args:
-            path: Target file path.
-            content: File content.
-        """
-        # self._write_lock only serializes callers on this SwarmStore
-        # instance; mcp_server._get_swarm_store() builds a fresh instance
-        # per tool call, so two concurrent pollers of the same run each get
-        # their own lock. A shared ".tmp" name let one writer's rename
-        # consume the other's still-unwritten temp file, silently losing an
-        # update or raising FileNotFoundError. A per-write unique name keeps
-        # each writer's temp file private regardless of how many SwarmStore
-        # instances are racing.
+        """Atomically write a file: write to .tmp then rename."""
+        # Use unique temp files because concurrent store instances have separate locks.
         tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         with self._write_lock:
             tmp_path.write_text(content, encoding="utf-8")

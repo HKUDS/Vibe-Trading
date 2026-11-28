@@ -8,8 +8,8 @@ from datetime import date
 
 from typing import Any
 
-from src.agent.tools import BaseTool
-from src.market_data import DEFAULT_MAX_ROWS, fetch_market_data_json
+from src.agent.tools import BaseTool, FileBoundTool
+from src.market_data import DEFAULT_MAX_ROWS, RAW_ADJUSTMENT, fetch_market_data_json
 from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.registry import VALID_SOURCES
 from backtest.runner import _VALID_INTERVALS
@@ -76,7 +76,7 @@ def _valid_iso_date(value: str) -> bool:
     return True
 
 
-class MarketDataTool(BaseTool):
+class MarketDataTool(FileBoundTool, BaseTool):
     """Fetch normalized OHLCV data through repository loaders."""
 
     name = "get_market_data"
@@ -158,6 +158,11 @@ class MarketDataTool(BaseTool):
                 ),
                 "default": "1D",
             },
+            "adjustment": {
+                "type": "string",
+                "enum": [RAW_ADJUSTMENT],
+                "description": "Omit for each source's default price caliber; 'raw' returns only unadjusted (不复权) bars from sources that can serve them, else an error.",
+            },
             "max_rows": {
                 "type": "integer",
                 "description": "Per-symbol output sampling cap, including saved JSON. For a bounded day of minute bars needed for calculations use 0 on the FIRST call; a small cap saves only sampled rows. Large downloads use history_data.",
@@ -173,7 +178,8 @@ class MarketDataTool(BaseTool):
 
         Args:
             **kwargs: ``codes``, ``start_date``, ``end_date``, optional
-                ``source``, ``interval``, ``max_rows``, and (internal,
+                ``source``, ``interval``, ``max_rows``, ``adjustment``
+                (``"raw"`` for unadjusted bars only), and (internal,
                 MCP-only) ``loader_resolver`` — the resolver the MCP server
                 injects so its own loader-hook contract is preserved.
 
@@ -251,6 +257,10 @@ class MarketDataTool(BaseTool):
             # behavior here so both surfaces agree.
             max_rows = DEFAULT_MAX_ROWS
 
+        adjustment = kwargs.get("adjustment")
+        if adjustment is not None and adjustment != RAW_ADJUSTMENT:
+            return _error(f"adjustment must be omitted or {RAW_ADJUSTMENT!r}; got {adjustment!r}")
+
         export_csv = kwargs.get("export_csv", True)
         if not isinstance(export_csv, bool):
             return _error("export_csv must be a boolean")
@@ -262,7 +272,7 @@ class MarketDataTool(BaseTool):
             if not kwargs.get("run_dir"):
                 return _error("export_csv requires an authorized run_dir workspace")
             try:
-                safe_run_dir(str(kwargs["run_dir"]))
+                safe_run_dir(str(kwargs["run_dir"]), roots=self.roots)
             except ValueError as exc:
                 return _error(str(exc))
 
@@ -275,10 +285,12 @@ class MarketDataTool(BaseTool):
             "max_rows": max_rows,
             "include_provenance": True,
         }
+        if adjustment is not None:
+            fetch_kwargs["adjustment"] = adjustment
         loader_resolver = kwargs.get("loader_resolver")
         if loader_resolver is not None:
             fetch_kwargs["loader_resolver"] = loader_resolver
-        from src.agent.result_artifacts import persist_calculation_result
+        from src.product.result_artifacts import persist_calculation_result
         from src.data_gateway.bar_summary import summarize_bars
 
         payload = json.loads(fetch_market_data_json(**fetch_kwargs))
@@ -300,4 +312,5 @@ class MarketDataTool(BaseTool):
             }
         return persist_calculation_result(
             json.dumps(payload, ensure_ascii=False), kwargs.get("run_dir"), export_csv=export_csv,
+            roots=self.roots,
         )

@@ -177,7 +177,7 @@ jobs:
           python -m compileall -q cli
           python -m py_compile api_server.py
           python -m py_compile mcp_server.py
-          python -m py_compile src/agent/loop.py
+          python -m py_compile src/agent/runtime.py src/kernel/loop.py
           python -m py_compile src/tools/__init__.py
           python -m py_compile backtest/runner.py
 

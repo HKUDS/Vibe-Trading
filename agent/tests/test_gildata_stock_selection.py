@@ -1,4 +1,8 @@
 """Screening preserves vendor ranking, periods and existing grounding contracts."""
+
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
 import copy
 import json
 from unittest.mock import Mock, patch
@@ -75,7 +79,7 @@ def test_periods_order_nulls_and_identifiers_preserved(vendor):
 
 
 def test_real_ledger_checks_each_period_and_stock_path(vendor, tmp_path):
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="筛选股票及历史营业收入")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message="筛选股票及历史营业收入")
     ledger.ingest_tool_result(tool_name="gildata_stock_selection", arguments={"query": "完整筛选问题"},
                               result=json.dumps(execute()), call_id="screen1", success=True)
     def check(field):

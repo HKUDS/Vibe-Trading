@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 import copy
 import json
 
@@ -323,7 +327,7 @@ def test_error_result_is_not_misreported_as_a_success_document() -> None:
 def test_tool_is_auto_discovered_as_readonly() -> None:
     from src.tools import build_registry
 
-    tool = build_registry().get("paper_trade_reconcile")
+    tool = build_registry(policy=ToolPolicy.from_config(get_env_config())).get("paper_trade_reconcile")
 
     assert tool is not None
     assert tool.is_readonly is True

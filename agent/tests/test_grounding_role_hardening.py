@@ -10,6 +10,10 @@ value matches evidence only when it is meant to.
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from pathlib import Path
 from typing import Any
@@ -96,7 +100,7 @@ ROW_B = "1410.00 | observed | close 2026-09-09 | c2"
 
 
 def _ledger(tmp_path: Path, *calls: tuple[str, dict[str, Any], Any, str], message: str = "") -> GroundingLedger:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message=message or f"分析 {A} 并给出买入价")
+    ledger = GroundingLedger(roots=FileRoots.from_config(get_env_config().api), run_dir=tmp_path, user_message=message or f"分析 {A} 并给出买入价")
     for tool, arguments, payload, call_id in calls:
         ledger.ingest_tool_result(
             tool_name=tool,
@@ -619,7 +623,7 @@ def _historical_var(confidence: float, call_id: str) -> tuple[tuple[str, dict[st
 
     returns = [round(0.0005 + 0.012 * ((i * 37) % 101 - 50) / 50, 5) for i in range(250)]
     arguments = {"action": "call", "module": "risk", "function": "historical_var", "kwargs": {"returns": returns, "confidence": confidence}}
-    payload = QuantlibCallTool().execute(**arguments)
+    payload = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(**arguments)
     return ("quantlib_call", arguments, payload, call_id), float(json.loads(payload)["result"])
 
 
@@ -965,7 +969,7 @@ def test_a_real_quantlib_tail_risk_result_grounds_its_own_figure(tmp_path: Path,
         "function": function,
         "kwargs": {"returns": returns, "confidence": 0.95},
     }
-    raw = QuantlibCallTool().execute(**arguments)
+    raw = QuantlibCallTool(roots=FileRoots.from_config(get_env_config().api)).execute(**arguments)
     quoted = f"{json.loads(raw)['result'] * 100:.2f}%"
     ledger = _ledger(tmp_path, MARKET_A, ("quantlib_call", arguments, raw, "q1"))
     confidence = _block(ROW, "95% | count | confidence level")

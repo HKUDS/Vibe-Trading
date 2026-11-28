@@ -1,18 +1,4 @@
-"""Shared rendering and dispatch for the institutional workflow commands.
-
-Every ``/comps``-style command funnels through :func:`run_playbook`:
-
-* no arguments (or ``help`` / ``-h`` / ``--help`` / ``?``) renders the full
-  playbook card — objective, numbered execution skeleton, the worked numeric
-  example, the data-gap policy and the not-advice notice — followed by a
-  friendly follow-up question. This is a normal, successful outcome, so it
-  returns ``0``; missing arguments are not an error here.
-* with arguments the same skeleton is rendered into a prompt and queued on
-  ``ctx.pending_prompt``, which ``cli.main._interactive_loop`` drains into a
-  real agent turn (the mechanism ``/journal`` and ``/shadow`` already use).
-  When the context cannot hold a queued prompt — a bare test stub, or a
-  non-interactive caller — the prompt is printed instead so it can be pasted.
-"""
+"""Shared rendering and dispatch for the institutional workflow commands."""
 
 from __future__ import annotations
 
@@ -27,14 +13,7 @@ from src.config.accessor import get_env_config
 
 from .playbooks import GAP_POLICY, NOT_ADVICE, PLAYBOOKS_BY_SLUG, Playbook
 
-# Defensive ceiling on the free-text argument so a paste bomb cannot blow up
-# the queued prompt (and, downstream, the model context).
-#
-# A malformed override must not be fatal: this module is imported by
-# ``cli.main._dispatch_slash``, whose import guard only catches ``ImportError``,
-# so an exception raised here would escape the dispatcher and take down the
-# whole REPL. The config layer drops an unparseable value and hands back the
-# declared default, so this cannot raise.
+# Bound free text before queuing it, with a config default that keeps malformed overrides from breaking REPL imports.
 def _arg_max_chars() -> int:
     """Resolve the argument length cap, ignoring a malformed override."""
     return max(32, get_env_config().agent_tuning.vibe_trading_slash_arg_max)
@@ -53,12 +32,7 @@ def _console() -> Console:
 
 
 def _render_card(playbook: Playbook) -> None:
-    """Print the full playbook card for ``playbook``.
-
-    Steps go into a two-column ``Table.grid`` rather than a flat ``Text`` so
-    the ``in`` / ``compute`` / ``out`` labels keep a hanging indent when the
-    body wraps on a narrow terminal.
-    """
+    """Print the full playbook card for ``playbook``."""
     header = Text()
     header.append(playbook.objective + "\n\n")
     header.append("Usage  ", style="dim")
@@ -102,18 +76,16 @@ def _render_card(playbook: Playbook) -> None:
 
 
 def build_prompt(playbook: Playbook, subject: str) -> str:
-    """Render ``playbook`` plus the user's arguments into an agent prompt.
-
-    The full skeleton, the worked example, the gap policy and the not-advice
-    notice all travel with the prompt so the behaviour does not depend on any
-    particular system prompt being loaded.
+    """Render a playbook and the user's request into an agent prompt.
 
     Args:
         playbook: The workflow to run.
-        subject: The user's raw arguments, already trimmed and length-capped.
+        subject: The user's request text. The slash-command runner trims and caps it before calling
+            this function.
 
     Returns:
-        The prompt text to hand to the agent loop.
+        Agent prompt with the workflow steps, worked example, preferred tools, and missing-data
+        policy.
     """
     lines = [
         f"Run the {playbook.slug.upper()} research playbook.",
@@ -140,10 +112,7 @@ def build_prompt(playbook: Playbook, subject: str) -> str:
     lines.append("")
 
     lines.append(f"Preferred tools: {', '.join(playbook.tools)}.")
-    # Some of these are key-gated (``get_macro_series`` needs FRED_API_KEY,
-    # ``iwencai_search`` needs VIBE_TRADING_IWENCAI_KEY) and are absent from the
-    # registry unless configured. Say so explicitly: an unavailable tool must
-    # become a declared gap, never a remembered number.
+    # Report key-gated tools as gaps when unavailable so the model does not substitute remembered figures.
     lines.append(
         "Any preferred tool that is not registered in this session is simply "
         "unavailable — skip it, record what it would have supplied as a gap under "
@@ -161,17 +130,13 @@ def run_playbook(slug: str, ctx: Any = None, *args: str) -> int:
     """Render or dispatch the playbook registered under ``slug``.
 
     Args:
-        slug: Playbook key, matching the slash command keyword.
-        ctx: The interactive context. Needs a writable ``pending_prompt``
-            attribute for the queued-turn path; anything else falls back to
-            printing the prompt.
-        *args: Raw slash-command arguments.
+        slug: Playbook key matching the slash-command keyword.
+        ctx: Optional interactive context with a writable pending_prompt for queuing a turn.
+        *args: Raw slash-command arguments. Help or empty arguments display the playbook card.
 
     Returns:
-        ``0`` in every user-facing path — a missing argument is answered with
-        the playbook card and a follow-up question, not an error. ``1`` only
-        when ``slug`` is not a registered playbook, which is a programming
-        error rather than a user mistake.
+        Zero after showing the card, queuing a turn, or printing the prompt. One for an unknown
+        playbook key.
     """
     playbook = PLAYBOOKS_BY_SLUG.get(slug)
     if playbook is None:

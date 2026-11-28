@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+from src.config.accessor import get_env_config
+
 import json
 import os
 import re
@@ -31,8 +35,13 @@ def job_root(job_id: str) -> Path:
 
 
 def catalog() -> dict:
-    """List reusable run inputs, constructor parameters and replay tasks."""
+    """List reusable run inputs, constructor parameters and replay tasks.
+
+    Returns:
+        Valid run summaries and supported replay cases, omitting malformed run metadata.
+    """
     from evals.harness.suite import list_cases
+    from evals.harness.artifacts import thread_directory
 
     rows = []
     runs = get_runs_dir()
@@ -41,10 +50,10 @@ def catalog() -> dict:
             if not root.is_dir() or root.name.startswith("study-"):
                 continue
             try:
-                source_run(str(root))
+                source_run(str(root), roots=FileRoots.from_config(get_env_config().api))
                 if any(
                     not (root / relative).resolve().is_relative_to(root.resolve())
-                    for relative in ("config.json", "code/signal_engine.py", "req.json", "trace.jsonl")
+                    for relative in ("config.json", "code/signal_engine.py", "req.json", "thread.jsonl")
                 ):
                     continue
                 config = json.loads((root / "config.json").read_text()) if (root / "config.json").is_file() else {}
@@ -67,7 +76,7 @@ def catalog() -> dict:
                     "has_prices": bool(codes)
                     and (root / "run_card.json").is_file()
                     and all((root / f"artifacts/ohlcv_{code.removeprefix('local:')}.csv").is_file() for code in codes),
-                    "has_trace": (root / "trace.jsonl").is_file(),
+                    "has_trace": (thread_directory(root) / "thread.jsonl").is_file(),
                     "parameters": {
                         **(constructor_defaults(signal.read_text()) if signal.is_file() else {}),
                         **parameters,
@@ -88,7 +97,7 @@ def create_job(action: str, payload: dict[str, Any]) -> dict:
         raise ValueError("unknown research action")
     request = REQUEST_MODELS[action].model_validate(payload)
     if hasattr(request, "run_dir"):
-        root = source_run(request.run_dir)
+        root = source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api))
         if not root.is_dir():
             raise ValueError("source run does not exist")
     identifier = uuid.uuid4().hex
@@ -108,7 +117,18 @@ def create_job(action: str, payload: dict[str, Any]) -> dict:
 
 
 def get_job(identifier: str) -> dict:
-    """Read progress and the completed report without starting any work."""
+    """Read progress and the completed report without starting any work.
+
+    Args:
+        identifier: Generated research job ID.
+
+    Returns:
+        Latest job state, recovering a saved report or marking a dead owner interrupted.
+
+    Raises:
+        ValueError: If the identifier is invalid or its study record is missing or malformed.
+        OSError: If a job record cannot be read or its recovered state cannot be saved.
+    """
     path = job_root(identifier) / "study.json"
     if not path.is_file():
         raise ValueError("research job not found")
@@ -174,9 +194,9 @@ def execute_job(identifier: str) -> dict:
             from evals.harness.suite import replay_run
 
             result = replay_run(
-                source_run(request.run_dir),
+                source_run(request.run_dir, roots=FileRoots.from_config(get_env_config().api)),
                 request.case_ids,
-                source_run(request.trace_dir) if request.trace_dir else None,
+                source_run(request.trace_dir, roots=FileRoots.from_config(get_env_config().api)) if request.trace_dir else None,
             )
         _write(root / "report.json", result)
         state.update(status="completed", result=result)

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 pytest.importorskip("openbb_ai")
 
 from src.openbb_bridge.adapter import OpenBBQueryAdapter
+from src.session.events import EventBus
 
 
 class _FakeEvent:
@@ -18,31 +20,25 @@ class _FakeEvent:
         self.data = data
 
 
-class _FakeEventBus:
+class _FakeThreadEvents:
     def __init__(self, events):
         self._events = events
-        self.cleared = []
 
-    async def subscribe(self, session_id, last_event_id=None, *, replay_all=False):
+    async def stream(self, session_id, *, cursor):
+        assert cursor == 0
         for event in self._events:
             yield event
-
-    def clear(self, session_id):
-        self.cleared.append(session_id)
-
-
-class _FakeStore:
-    def __init__(self):
-        self.messages = []
-
-    def append_message(self, message):
-        self.messages.append(message)
 
 
 class _FakeSessionService:
     def __init__(self, events):
-        self.event_bus = _FakeEventBus(events)
-        self.store = _FakeStore()
+        self.event_bus = Mock(spec=EventBus)
+        self.thread_events = _FakeThreadEvents(events)
+        import tempfile
+        from pathlib import Path
+        from src.session.store import SessionStore
+        self._temp = tempfile.TemporaryDirectory()
+        self.store = SessionStore(Path(self._temp.name))
         self._sessions = {}
         self.sent = []
         self._counter = 0
@@ -82,10 +78,10 @@ async def _collect(agen):
 
 def test_happy_path_streams_text_and_completes():
     events = [
-        _FakeEvent("attempt.started", {"attempt_id": "att1"}),
-        _FakeEvent("text_delta", {"delta": "Hello ", "attempt_id": "att1"}),
-        _FakeEvent("text_delta", {"delta": "world", "attempt_id": "att1"}),
-        _FakeEvent("attempt.completed", {"attempt_id": "att1", "summary": "done"}),
+        _FakeEvent("run.started", {"turn_id": "att1"}),
+        _FakeEvent("item.delta", {"kind": "text.delta", "delta": "Hello ", "attempt_id": "att1"}),
+        _FakeEvent("item.delta", {"kind": "text.delta", "delta": "world", "attempt_id": "att1"}),
+        _FakeEvent("run.completed", {"turn_id": "att1", "summary": "done"}),
     ]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
@@ -95,8 +91,8 @@ def test_happy_path_streams_text_and_completes():
     # The user message was dispatched to a new session.
     assert len(service.sent) == 1
     assert service.sent[0][2] == "user"
-    # At least the two text chunks were emitted.
-    assert len(out) >= 2
+    chunks = [item.data.delta for item in out if item.event == "copilotMessageChunk"]
+    assert chunks == ["Hello ", "world"]
 
 
 def test_no_execution_when_last_message_not_human():
@@ -119,7 +115,7 @@ def test_identical_openings_never_share_a_session():
     other's history. QueryRequest carries no conversation id, so each request
     now gets its own ephemeral session instead.
     """
-    events = [_FakeEvent("attempt.completed", {"attempt_id": "att1", "summary": ""})]
+    events = [_FakeEvent("run.completed", {"turn_id": "att1", "summary": ""})]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
 
@@ -135,7 +131,7 @@ def test_identical_openings_never_share_a_session():
 
 def test_full_supplied_history_is_replayed_on_every_request():
     """OpenBB is stateless: later turns must still replay the whole history."""
-    events = [_FakeEvent("attempt.completed", {"attempt_id": "att1", "summary": ""})]
+    events = [_FakeEvent("run.completed", {"turn_id": "att1", "summary": ""})]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
 
@@ -148,7 +144,7 @@ def test_full_supplied_history_is_replayed_on_every_request():
     ]
     asyncio.run(_collect(adapter.handle_query(_request(history))))
 
-    replayed = [(m.role, m.content) for m in service.store.messages]
+    replayed = [(m.role, m.content) for m in service.store.get_messages("sess-1", limit=None)]
     assert replayed == [
         ("user", "first question"),
         ("assistant", "first answer"),
@@ -162,7 +158,7 @@ def test_full_supplied_history_is_replayed_on_every_request():
 
 
 def test_tool_messages_are_not_replayed_as_turns():
-    events = [_FakeEvent("attempt.completed", {"attempt_id": "att1", "summary": ""})]
+    events = [_FakeEvent("run.completed", {"turn_id": "att1", "summary": ""})]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
 
@@ -173,23 +169,23 @@ def test_tool_messages_are_not_replayed_as_turns():
     ]
     asyncio.run(_collect(adapter.handle_query(_request(messages))))
 
-    assert [m.role for m in service.store.messages] == ["user"]
+    assert [m.role for m in service.store.get_messages("sess-1", limit=None)] == ["user"]
 
 
 def test_event_buffer_is_released_after_the_stream_ends():
-    events = [_FakeEvent("attempt.completed", {"attempt_id": "att1", "summary": ""})]
+    events = [_FakeEvent("run.completed", {"turn_id": "att1", "summary": ""})]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
 
     asyncio.run(_collect(adapter.handle_query(_request([_human("hi")]))))
 
-    assert service.event_bus.cleared == [service.sent[0][0]]
+    service.event_bus.clear.assert_called_once_with(service.sent[0][0])
 
 
 def test_failed_attempt_emits_error_and_message():
     events = [
-        _FakeEvent("attempt.started", {"attempt_id": "att1"}),
-        _FakeEvent("attempt.failed", {"attempt_id": "att1", "error": "kaboom"}),
+        _FakeEvent("run.started", {"turn_id": "att1"}),
+        _FakeEvent("run.failed", {"turn_id": "att1", "error": "kaboom"}),
     ]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
@@ -201,9 +197,9 @@ def test_failed_attempt_emits_error_and_message():
 
 def test_events_from_other_attempts_are_ignored():
     events = [
-        _FakeEvent("text_delta", {"delta": "stale", "attempt_id": "OTHER"}),
-        _FakeEvent("text_delta", {"delta": "fresh", "attempt_id": "att1"}),
-        _FakeEvent("attempt.completed", {"attempt_id": "att1", "summary": ""}),
+        _FakeEvent("item.delta", {"kind": "text.delta", "delta": "stale", "attempt_id": "OTHER"}),
+        _FakeEvent("item.delta", {"kind": "text.delta", "delta": "fresh", "attempt_id": "att1"}),
+        _FakeEvent("run.completed", {"turn_id": "att1", "summary": ""}),
     ]
     service = _FakeSessionService(events)
     adapter = OpenBBQueryAdapter(session_service=service)
@@ -211,3 +207,4 @@ def test_events_from_other_attempts_are_ignored():
     out = asyncio.run(_collect(adapter.handle_query(_request([_human("hi")]))))
     # Only the fresh chunk should have been emitted (stale one filtered out).
     assert len(out) == 1
+    assert out[0].data.delta == "fresh"

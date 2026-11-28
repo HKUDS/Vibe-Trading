@@ -13,6 +13,11 @@ All tests run against stubbed runner/liveness state — no real agent or broker.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
+from src.api import session_reads
 import asyncio
 import json
 import time
@@ -726,7 +731,7 @@ def test_api_stop_terminates_the_real_scheduler_task(tmp_path, monkeypatch) -> N
 
 
 # --------------------------------------------------------------------------- #
-# C1 — propose_mandate_profiles tool_result -> mandate.proposal SSE frame
+# C1 — propose_mandate_profiles item.completed -> mandate.proposal SSE frame
 # --------------------------------------------------------------------------- #
 
 
@@ -751,16 +756,19 @@ def test_c1_relay_builds_mandate_proposal_frame(tmp_path: Path, monkeypatch) -> 
     _seed_proposal(tmp_path, proposal_id)
 
     event = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
         data={
-            "tool": "propose_mandate_profiles",
-            "status": "ok",
-            "preview": json.dumps({"proposal_id": proposal_id})[:200],
+            "kind": "tool.completed",
+            "item": {
+                "name": "propose_mandate_profiles",
+                "status": "ok",
+                "content": json.dumps({"proposal_id": proposal_id})[:200],
+            },
         },
     )
 
-    frame = api_server._mandate_proposal_frame_from_tool_result(event)
+    frame = session_reads._mandate_proposal_frame_from_tool_result(event)
 
     assert frame is not None
     assert "mandate.proposal" in frame
@@ -772,30 +780,33 @@ def test_c1_relay_ignores_non_propose_events(tmp_path: Path, monkeypatch) -> Non
 
     # A different tool's result: no relay.
     other = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
-        data={"tool": "run_backtest", "status": "ok", "preview": "{}"},
+        data={"kind": "tool.completed", "item": {"name": "run_backtest", "status": "ok", "content": "{}"}},
     )
-    assert api_server._mandate_proposal_frame_from_tool_result(other) is None
+    assert session_reads._mandate_proposal_frame_from_tool_result(other) is None
 
     # A non-tool_result event: no relay.
     thinking = SimpleNamespace(event_type="thinking", session_id="s1", data={})
-    assert api_server._mandate_proposal_frame_from_tool_result(thinking) is None
+    assert session_reads._mandate_proposal_frame_from_tool_result(thinking) is None
 
 
 def test_c1_relay_returns_none_when_proposal_missing(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     # Preview references an id with no persisted proposal on disk.
     event = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
         data={
-            "tool": "propose_mandate_profiles",
-            "status": "ok",
-            "preview": json.dumps({"proposal_id": "mp_" + "2" * 32})[:200],
+            "kind": "tool.completed",
+            "item": {
+                "name": "propose_mandate_profiles",
+                "status": "ok",
+                "content": json.dumps({"proposal_id": "mp_" + "2" * 32})[:200],
+            },
         },
     )
-    assert api_server._mandate_proposal_frame_from_tool_result(event) is None
+    assert session_reads._mandate_proposal_frame_from_tool_result(event) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -871,7 +882,7 @@ def test_real_runner_factory_uses_fresh_sessions_and_persistent_budget(tmp_path,
     async def scenario():
         bus = EventBus()
         bus.set_loop(asyncio.get_running_loop())
-        svc = SessionService(SessionStore(base_dir=tmp_path / "sessions"), bus, runs_dir=tmp_path / "runs")
+        svc = SessionService(SessionStore(base_dir=tmp_path / "sessions"), bus, runs_dir=tmp_path / "runs", policy=ToolPolicy.from_config(get_env_config()))
         sessions = []
         async def attempt(attempt, **kwargs):
             sessions.append(attempt.session_id)
@@ -881,11 +892,11 @@ def test_real_runner_factory_uses_fresh_sessions_and_persistent_budget(tmp_path,
                 cancelled = True
             svc._active_loops[attempt.session_id] = SimpleNamespace(cancel=cancel)
             try:
-                bus.emit(attempt.session_id, "llm_usage", {"iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110})
+                bus.emit(attempt.session_id, "item.delta", {"kind": "run.usage", "iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110})
                 return {"status": "cancelled" if cancelled else "success", "content": "hold"}
             finally:
                 svc._active_loops.pop(attempt.session_id, None)
-        monkeypatch.setattr(svc, "_run_with_agent", attempt)
+        monkeypatch.setattr(svc._factory, "run", attempt)
         monkeypatch.setattr(api_server, "_get_session_service", lambda: svc)
         runner = api_server._build_live_runner("robinhood")
         if exhaust:
@@ -927,7 +938,7 @@ def test_live_runner_owns_its_actual_background_session_attempt(tmp_path, monkey
         bus = EventBus()
         bus.set_loop(asyncio.get_running_loop())
         service = SessionService(SessionStore(base_dir=tmp_path / "sessions"), bus,
-                                 runs_dir=tmp_path / "runs")
+                                 runs_dir=tmp_path / "runs", policy=ToolPolicy.from_config(get_env_config()))
         started, release = asyncio.Event(), asyncio.Event()
         cancelled = False
         attempt_sessions = []
@@ -947,14 +958,14 @@ def test_live_runner_owns_its_actual_background_session_attempt(tmp_path, monkey
                 if fails:
                     return {"status": "failed", "reason": "execution failed"}
                 if not cancelled:
-                    bus.emit(attempt.session_id, "llm_usage", {
+                    bus.emit(attempt.session_id, "item.delta", {"kind": "run.usage",
                         "iter": 1, "input_tokens": 100, "output_tokens": 10, "total_tokens": 110,
                     })
                 return {"status": "cancelled" if cancelled else "success", "content": "completed analysis"}
             finally:
                 service._active_loops.pop(attempt.session_id, None)
 
-        monkeypatch.setattr(service, "_run_with_agent", controlled_attempt)
+        monkeypatch.setattr(service._factory, "run", controlled_attempt)
         monkeypatch.setattr(api_server, "_get_session_service", lambda: service)
         runner = api_server._build_live_runner("robinhood")
         driver = asyncio.create_task(runner._agent_caller(runner._session_id, "test tick"))
@@ -1026,16 +1037,19 @@ def test_live_action_relay_builds_frame_from_guard_result(tmp_path: Path, monkey
                             "broker_request": {"symbol": "NVDA"}})
 
     event = SimpleNamespace(
-        event_type="tool_result",
+        event_type="item.completed",
         session_id="s1",
         data={
-            "tool": "mcp_robinhood_place_equity_order",
-            "status": "ok",
-            "preview": json.dumps({"status": "ok", "live_action": {"audit_id": audit_id}})[:200],
+            "kind": "tool.completed",
+            "item": {
+                "name": "mcp_robinhood_place_equity_order",
+                "status": "ok",
+                "content": json.dumps({"status": "ok", "live_action": {"audit_id": audit_id}})[:200],
+            },
         },
     )
 
-    frame = api_server._live_action_frame_from_tool_result(event)
+    frame = session_reads._live_action_frame_from_tool_result(event)
     assert frame is not None
     assert "live.action" in frame
     assert audit_id in frame and "order_placed" in frame
@@ -1043,12 +1057,12 @@ def test_live_action_relay_builds_frame_from_guard_result(tmp_path: Path, monkey
 
 def test_live_action_relay_ignores_non_live_results(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
-    # A normal tool_result with no live_action marker → no relay.
+    # A normal tool completion with no live_action marker → no relay.
     event = SimpleNamespace(
-        event_type="tool_result", session_id="s1",
-        data={"tool": "run_backtest", "status": "ok", "preview": "{}"},
+        event_type="item.completed", session_id="s1",
+        data={"kind": "tool.completed", "item": {"name": "run_backtest", "status": "ok", "content": "{}"}},
     )
-    assert api_server._live_action_frame_from_tool_result(event) is None
+    assert session_reads._live_action_frame_from_tool_result(event) is None
 
 
 # --------------------------------------------------------------------------- #

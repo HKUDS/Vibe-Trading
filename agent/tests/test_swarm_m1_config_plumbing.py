@@ -8,10 +8,14 @@ in M2 / M3 and bring their own tests. The contract this file defends:
   * ``SwarmRuntime`` accepts an optional ``agent_config``.
   * ``agent_config=None`` keeps the existing local-tool-only behavior
     byte-for-byte (no construction surprises, no run-time surprises).
-  * When set, the same value reaches ``run_worker`` on every worker call.
+  * When set, the same value reaches ``run_node`` on every worker call.
 """
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 
 from pathlib import Path
 from unittest.mock import patch
@@ -25,7 +29,7 @@ from src.swarm.store import SwarmStore
 def _make_runtime(tmp_path: Path, **kwargs) -> SwarmRuntime:
     """Build a SwarmRuntime backed by a tmp-path SwarmStore."""
     store = SwarmStore(base_dir=tmp_path / "swarm_runs")
-    return SwarmRuntime(store=store, **kwargs)
+    return SwarmRuntime(policy=ToolPolicy.from_config(get_env_config()), store=store, **kwargs)
 
 
 def _make_agent_spec() -> SwarmAgentSpec:
@@ -74,15 +78,15 @@ def test_runtime_explicit_none_construction_is_identical(tmp_path: Path) -> None
 
 
 # --------------------------------------------------------------------------- #
-# T-02 — forwarding into run_worker (R-05)
+# T-02 — forwarding into run_node (R-05)
 # --------------------------------------------------------------------------- #
 
 
-def test_run_worker_receives_agent_config_from_runtime(tmp_path: Path) -> None:
-    """``_run_worker_with_retries`` forwards ``self._agent_config`` to ``run_worker``.
+def test_run_node_receives_agent_config_from_runtime(tmp_path: Path) -> None:
+    """``_run_node_with_retries`` forwards ``self._agent_config`` to ``run_node``.
 
     This is the load-bearing M1 contract: any future M2 registry assembly that
-    reads ``agent_config`` from inside ``run_worker`` can rely on the value
+    reads ``agent_config`` from inside ``run_node`` can rely on the value
     actually reaching it.
     """
     sentinel_config = AgentConfig(
@@ -103,8 +107,8 @@ def test_run_worker_receives_agent_config_from_runtime(tmp_path: Path) -> None:
 
     fake_result = WorkerResult(status=WorkerStatus.completed, summary="ok")
 
-    with patch("src.swarm.runtime.run_worker", return_value=fake_result) as spy:
-        result = runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", return_value=fake_result) as spy:
+        result = runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},
@@ -121,10 +125,10 @@ def test_run_worker_receives_agent_config_from_runtime(tmp_path: Path) -> None:
     assert spy.call_args.kwargs["agent_config"] is sentinel_config
 
 
-def test_run_worker_receives_none_when_runtime_has_no_agent_config(
+def test_run_node_receives_none_when_runtime_has_no_agent_config(
     tmp_path: Path,
 ) -> None:
-    """Default construction forwards ``agent_config=None`` to ``run_worker``.
+    """Default construction forwards ``agent_config=None`` to ``run_node``.
 
     Guarantees that today's behavior (local tools only, no MCP plumbing) is
     preserved when the operator hasn't opted in. Pairs with M5 trust-model
@@ -138,8 +142,8 @@ def test_run_worker_receives_none_when_runtime_has_no_agent_config(
 
     fake_result = WorkerResult(status=WorkerStatus.completed, summary="ok")
 
-    with patch("src.swarm.runtime.run_worker", return_value=fake_result) as spy:
-        runtime._run_worker_with_retries(
+    with patch("src.swarm.runtime.run_node", return_value=fake_result) as spy:
+        runtime._run_node_with_retries(
             agent_spec=agent_spec,
             task=task,
             upstream_summaries={},

@@ -13,12 +13,16 @@ backtest on 159516.SZ).  Verifies the entire pipeline:
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from typing import Any, Callable
 
 import pytest
 
-from src.providers.chat import LLMResponse, ToolCallRequest
+from src.kernel.contracts import LLMResponse, ToolCallRequest
 
 
 # ---------------------------------------------------------------------------
@@ -129,14 +133,14 @@ def _run(
     llm: Any,
     max_iterations: int = 5,
 ) -> dict[str, Any]:
-    """Build an AgentLoop, wire up a scratch run_dir, and execute."""
-    from src.agent.loop import AgentLoop
+    """Build an AgentRuntime, wire up a scratch run_dir, and execute."""
+    from src.agent.runtime import AgentRuntime
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
     pm = PersistentMemory()
-    agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
+    agent = AgentRuntime(
+        registry=build_registry(policy=ToolPolicy.from_config(get_env_config()), persistent_memory=pm, include_shell_tools=False),
         llm=llm,
         max_iterations=max_iterations,
         persistent_memory=pm,
@@ -149,9 +153,9 @@ def _run(
 
 def _read_trace(run_dir: str) -> list[dict[str, Any]]:
     """Read trace.jsonl entries from a run directory."""
-    from src.agent.trace import TraceWriter
+    from tests.recording_helpers import records_at
 
-    return TraceWriter.read(Path(run_dir))
+    return records_at(Path(run_dir))
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import cli.commands.common as _cmd_common
+
 import json
 from pathlib import Path
 
@@ -10,7 +12,8 @@ import pytest
 
 from src.providers.settings import get_llm_credentials
 from src.providers.registry import get_provider_capabilities
-from src.providers.llm import ChatOpenAIWithReasoning, _targets_opencode
+from src.providers.adapters.openai import ChatOpenAIWithReasoning
+from src.providers.request_guards import _targets_opencode
 from src.providers.session_context import (
     bind_llm_session_id,
     current_llm_session_id,
@@ -99,12 +102,11 @@ def test_swarm_public_provider_allowlist_includes_opencode() -> None:
 
 
 def test_cli_onboarding_surfaces_agree() -> None:
-    import cli
     from cli.onboard import PROVIDERS
 
     onboard = next(p for p in PROVIDERS if p.key == "opencode")
     legacy = next(
-        item for item in cli._PROVIDER_CHOICES if item["provider"] == "opencode"
+        item for item in _cmd_common._PROVIDER_CHOICES if item["provider"] == "opencode"
     )
     assert onboard.key_env == legacy["key_env"] == "OPENCODE_API_KEY"
     assert onboard.base_env == legacy["base_env"] == "OPENCODE_BASE_URL"

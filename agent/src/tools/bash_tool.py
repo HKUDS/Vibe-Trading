@@ -2,22 +2,98 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import signal
 import subprocess
+from pathlib import Path
+from stat import S_ISREG
 from typing import Any
 
 from src.agent.tools import BaseTool
 from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
+from src.tools.path_utils import is_runtime_path
+from src.tools.sandbox import SandboxSettings, SandboxUnavailableError, sandbox_command
 
 _OUTPUT_LIMIT = 50_000
 _DEFAULT_TIMEOUT = 120
+#: Recorded on every result of a swarm node command that ran without the sandbox it asked for.
+_UNCONFINED_NOTICE = {"sandbox": "unavailable"}
+
+
+def _sandbox_workspace(cwd: Any, sandbox: SandboxSettings) -> Path:
+    """Choose a runtime-owned writable workspace for sandboxed commands."""
+    root = sandbox.runtime_root.expanduser().resolve()
+    default = root / "workspace"
+    if not cwd:
+        return default
+    candidate = Path(str(cwd)).expanduser().resolve()
+    allowed = (root / "workspace", root / "runs")
+    if any(candidate == path or candidate.is_relative_to(path) for path in allowed):
+        return candidate
+    return default
 # How long to wait for output to drain after killing a timed-out process
 # tree before giving up (the pipes are held by grandchildren).
 _DRAIN_TIMEOUT = 5
+
+
+def _workspace_files(cwd: Any, *, require_request: bool = True) -> dict[str, tuple[int, int]] | None:
+    """Stat a run workspace's task files so a command's outputs can be told apart.
+
+    Args:
+        cwd: Command working directory.
+        require_request: Require req.json unless the host has already identified the workspace.
+
+    Returns:
+        Modification time and size per POSIX relative path, without runtime records, hidden paths
+        or symlinks; None when cwd is not a run workspace.
+    """
+    if not cwd or (require_request and not Path(str(cwd), "req.json").is_file()):
+        return None
+    found: dict[str, tuple[int, int]] = {}
+    pending = [("", os.fspath(cwd))]
+    while pending:
+        prefix, folder = pending.pop()
+        try:
+            entries = list(os.scandir(folder))
+        except OSError:
+            continue
+        for entry in entries:
+            relative = prefix + entry.name
+            try:
+                if entry.is_symlink() or is_runtime_path(relative):
+                    continue
+                if entry.is_dir():
+                    pending.append((relative + "/", entry.path))
+                else:
+                    stat = entry.stat()
+                    if S_ISREG(stat.st_mode):
+                        found[relative] = (stat.st_mtime_ns, stat.st_size)
+            except OSError:
+                continue
+    return found
+
+
+def _changed_files(
+    cwd: Any, before: dict[str, tuple[int, int]], *, after: dict[str, tuple[int, int]] | None = None,
+) -> list[dict[str, Any]]:
+    """List and hash the task files a command created or rewrote; a read changes nothing."""
+    changed = []
+    if after is None:
+        after = _workspace_files(cwd) or {}
+    for relative, stat in sorted(after.items()):
+        if before.get(relative) == stat:
+            continue
+        try:
+            # The hash is what lets a consumer bind a file to the command that wrote it.
+            digest = hashlib.sha256(Path(str(cwd), relative).read_bytes()).hexdigest()
+        except OSError:
+            continue
+        changed.append({"path": relative, "bytes": stat[1], "sha256": digest})
+    return changed
 
 
 def _kill_process_tree(proc: subprocess.Popen) -> None:
@@ -58,18 +134,34 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
                 pass
 
 
+def _shell_description(os_name: str) -> str:
+    """Describe the bash tool for the shell this host actually runs.
+
+    Args:
+        os_name: ``os.name`` of the host; ``"nt"`` runs cmd.exe, anything else ``/bin/sh``.
+
+    Returns:
+        The tool description without the shared data guidance.
+    """
+    if os_name == "nt":
+        shell = (
+            "This host uses cmd.exe, not PowerShell. Heredocs (<<) are not supported; "
+            "write your script to a file with write_file first, then run it (e.g. python script.py). "
+        )
+    else:
+        shell = "This host uses /bin/sh (POSIX). Use POSIX shell syntax; heredocs are supported. "
+    return (
+        f"Execute a shell command in the working directory. {shell}"
+        "Use for installing packages, running scripts, or inspecting files. "
+        "Never kill Python processes by name; stop a background_run task with cancel_background."
+    )
+
+
 class BashTool(BaseTool):
     """Execute shell commands in the working directory."""
 
     name = "bash"
-    description = (
-        "Execute a shell command in the working directory. On Windows the "
-        "shell is cmd.exe, not PowerShell. Use for installing packages, "
-        "running scripts, or inspecting files. Never kill Python processes "
-        "by name; stop a background_run task with cancel_background. "
-        "Heredocs (<<) are NOT supported on cmd.exe - write your script to "
-        "a file with write_file first, then run it (e.g. python script.py)."
-    ) + SHELL_DATA_GUIDANCE
+    description = _shell_description(os.name) + SHELL_DATA_GUIDANCE
     parameters = {
         "type": "object",
         "properties": {
@@ -80,6 +172,10 @@ class BashTool(BaseTool):
     repeatable = True
     is_readonly = False
 
+    def __init__(self, sandbox: SandboxSettings) -> None:
+        """Create a shell tool with per-registry sandbox settings."""
+        self.sandbox = sandbox
+
     def execute(self, **kwargs: Any) -> str:
         """Execute a shell command.
 
@@ -87,10 +183,15 @@ class BashTool(BaseTool):
             **kwargs: Must include command. Optional run_dir used as cwd.
 
         Returns:
-            JSON string with stdout, stderr, and exit_code.
+            JSON string with stdout, stderr, and exit_code. In a run workspace it also lists the
+            task files the command created or changed, with size and sha256, under ``artifacts``.
+            A swarm node command
+            that ran without its sandbox carries ``"sandbox": "unavailable"``.
         """
-        command = kwargs["command"]
-        cwd = kwargs.get("run_dir")
+        return self._execute(kwargs["command"], kwargs.get("run_dir"), record_artifacts=True)
+
+    def _execute(self, command: str, cwd: Any, *, record_artifacts: bool) -> str:
+        """Run the command, optionally leaving snapshots to the node's workspace wrapper."""
         safety_error = broad_python_kill_error(command)
         if safety_error:
             return json.dumps(
@@ -118,6 +219,27 @@ class BashTool(BaseTool):
                 ensure_ascii=False,
             )
 
+        sandbox = self.sandbox
+        profile: Path | None = None
+        argv: str | list[str] = command
+        shell = True
+        if sandbox.workspace is not None:
+            cwd = str(sandbox.workspace)
+        if sandbox.enabled:
+            workspace = sandbox.workspace or _sandbox_workspace(cwd, sandbox)
+            workspace.mkdir(parents=True, exist_ok=True)
+            try:
+                argv, profile = sandbox_command(command, workspace, sandbox)
+            except SandboxUnavailableError as exc:
+                return json.dumps(
+                    {"status": "error", "error_code": "sandbox_unavailable", "error": str(exc)},
+                    ensure_ascii=False,
+                )
+            cwd = str(workspace)
+            shell = False
+
+        before_files = _workspace_files(cwd) if record_artifacts else None
+
         # Spawn with a dedicated process group so a timeout can kill the
         # WHOLE tree, not just cmd.exe. Without this, grandchildren that
         # inherited the pipe handles keep communicate() blocked forever.
@@ -129,8 +251,8 @@ class BashTool(BaseTool):
             start_new_session = True
         try:
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                argv,
+                shell=shell,
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -141,6 +263,11 @@ class BashTool(BaseTool):
                 start_new_session=start_new_session,
             )
         except Exception as exc:
+            if profile is not None:
+                try:
+                    profile.unlink()
+                except OSError:
+                    pass
             return json.dumps({
                 "status": "error",
                 "error": f"Could not start command: {exc}",
@@ -158,19 +285,38 @@ class BashTool(BaseTool):
                 stdout, stderr = "", ""
             stdout = (stdout or "")[:_OUTPUT_LIMIT]
             stderr = (stderr or "")[:_OUTPUT_LIMIT]
-            return json.dumps({
+            result = json.dumps({
                 "status": "error",
                 "error_code": "tool_timeout",
                 "error": f"Command timed out after {_DEFAULT_TIMEOUT}s",
                 "stdout": stdout,
                 "stderr": stderr,
+                **(_UNCONFINED_NOTICE if sandbox.unconfined_fallback else {}),
             }, ensure_ascii=False)
+            if profile is not None:
+                try:
+                    profile.unlink()
+                except OSError:
+                    pass
+            return result
 
         stdout = stdout[:_OUTPUT_LIMIT] if len(stdout) > _OUTPUT_LIMIT else stdout
         stderr = stderr[:_OUTPUT_LIMIT] if len(stderr) > _OUTPUT_LIMIT else stderr
-        return json.dumps({
+        outcome: dict[str, Any] = {
             "status": "ok" if proc.returncode == 0 else "error",
             "exit_code": proc.returncode,
             "stdout": stdout,
             "stderr": stderr,
-        }, ensure_ascii=False)
+        }
+        if before_files is not None:
+            # A downstream handoff reads this receipt to find the command's outputs.
+            outcome["artifacts"] = _changed_files(cwd, before_files)
+        if sandbox.unconfined_fallback:
+            outcome.update(_UNCONFINED_NOTICE)
+        result = json.dumps(outcome, ensure_ascii=False)
+        if profile is not None:
+            try:
+                profile.unlink()
+            except OSError:
+                pass
+        return result

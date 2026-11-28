@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from src.providers import settings as _provider_configuration
 
 import json
@@ -12,7 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.providers import llm as llm_mod
-from src.providers.chat import ProviderStreamError
+from src.providers.response import ProviderStreamError
 from src.providers.openai_codex import (
     DEFAULT_CODEX_URL,
     CodexAuthenticationError,
@@ -34,14 +41,62 @@ from src.providers.openai_codex import (
 DEFAULT_CODEX_MODEL = "openai-codex/gpt-6-sol"
 
 
+@pytest.mark.parametrize("reference", ["outside", "symlink", "other_session", "remote", "inline"])
+def test_tool_image_refuses_untrusted_paths(tmp_path, monkeypatch, reference):
+    """Tool-provided image references cannot expand provider file access."""
+    from src.providers.openai_codex import _convert_tool_output
+    from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    outside = tmp_path / "auth" / "secret.png"
+    outside.parent.mkdir()
+    outside.write_bytes(b"private credential bytes")
+    workspace = tmp_path / "sessions" / "active" / "workspace"
+    workspace.mkdir(parents=True)
+    link = workspace / "escape.png"
+    link.symlink_to(outside)
+    other = tmp_path / "sessions" / "other" / "workspace" / "image.png"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(b"other session bytes")
+    refs = {"outside": str(outside), "symlink": str(link), "other_session": str(other),
+            "remote": "https://untrusted.invalid/image.png", "inline": "data:image/png;base64,YQ=="}
+    token = bind_llm_session_id("active")
+    try:
+        output = _convert_tool_output([{"type": "image_url", "image_url": {"url": refs[reference]}}], roots=FileRoots.from_config(get_env_config().api))
+    finally:
+        reset_llm_session_id(token)
+    assert output and all(part["type"] == "input_text" for part in output)
+    assert "unavailable" in output[0]["text"]
+
+
+@pytest.mark.parametrize("location", ["uploads", "sessions/active/workspace"])
+def test_tool_image_reads_existing_allowed_roots(tmp_path, monkeypatch, location):
+    """Valid uploaded and owning-session artifacts still reach the provider."""
+    import base64
+    from src.providers.openai_codex import _convert_tool_output
+    from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    image = tmp_path / location / "plot.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"synthetic image fixture")
+    token = bind_llm_session_id("active")
+    try:
+        output = _convert_tool_output([{"type": "image_url", "image_url": {"url": str(image)}}], roots=FileRoots.from_config(get_env_config().api))
+    finally:
+        reset_llm_session_id(token)
+    assert output == [{"type": "input_image", "image_url": "data:image/png;base64," +
+                       base64.b64encode(image.read_bytes()).decode("ascii"), "detail": "auto"}]
+
+
 @pytest.mark.parametrize("effort", ["none", "minimal", "ultra", "persistent"])
 def test_explicit_catalog_effort_reaches_the_wire(effort):
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL, reasoning_effort=effort)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL, reasoning_effort=effort)
     assert adapter._body([], stream=True)["reasoning"] == {"effort": effort}
 
 
 def test_unset_catalog_effort_preserves_provider_default():
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL)
     assert "reasoning" not in adapter._body([], stream=True)
 
 
@@ -77,14 +132,14 @@ def test_build_llm_returns_codex_adapter(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", DEFAULT_CODEX_MODEL)
     monkeypatch.setenv("OPENAI_CODEX_BASE_URL", DEFAULT_CODEX_URL)
 
-    adapter = llm_mod.build_llm()
+    adapter = llm_mod.build_llm(policy=ToolPolicy.from_config(get_env_config()))
 
     assert isinstance(adapter, OpenAICodexLLM)
     assert adapter.model == DEFAULT_CODEX_MODEL
 
 
 def test_codex_body_strips_provider_prefix_and_converts_tools() -> None:
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL)
 
     body = adapter.bind_tools(
         [
@@ -179,7 +234,7 @@ def test_missing_codex_token_raises_login_hint(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL)
 
     with pytest.raises(CodexAuthenticationError, match="vibe-trading provider login openai-codex"):
         adapter._headers()
@@ -392,7 +447,7 @@ def test_stream_non_401_response_is_not_retried(monkeypatch: pytest.MonkeyPatch)
     import src.providers.openai_codex as codex_mod
 
     monkeypatch.setattr(codex_mod.httpx, "Client", _FakeClient)
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL)
     adapter._headers = lambda **kwargs: {}
 
     with pytest.raises(RuntimeError, match="OpenAI Codex HTTP 403"):
@@ -442,7 +497,7 @@ def test_stream_non_200_response_raises_typed_codex_stream_error(
     import src.providers.openai_codex as codex_mod
 
     monkeypatch.setattr(codex_mod.httpx, "Client", _FakeClient)
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL)
     adapter._headers = lambda **kwargs: {"Authorization": "Bearer still-invalid"}
 
     with pytest.raises(CodexStreamError) as excinfo:
@@ -512,7 +567,7 @@ def test_stream_refreshes_once_after_clock_fresh_token_gets_401(
         return {"Authorization": f"Bearer {access}"}
 
     monkeypatch.setattr(codex_mod.httpx, "Client", _FakeClient)
-    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter = OpenAICodexLLM(roots=FileRoots.from_config(get_env_config().api), model=DEFAULT_CODEX_MODEL)
     adapter._headers = _headers
 
     chunks = list(adapter.stream([{"role": "user", "content": "hello"}]))

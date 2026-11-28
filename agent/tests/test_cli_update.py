@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import cli.commands.parser as _cmd_parser
+
 import json
 
 import pytest
 import requests
 from src import update as update_core
 
-from cli import _legacy
 from cli.commands import update as update_mod
 
 
@@ -67,14 +68,14 @@ def _monkeypatch_upgrade_env(monkeypatch, *, latest: str = "99.0.0", kind: str =
 
 
 def test_parser_accepts_update_subcommand() -> None:
-    parser = _legacy._build_parser()
+    parser = _cmd_parser.build_parser()
 
     args = parser.parse_args(["update"])
     assert args.command == "update"
 
 
 def test_help_lists_update(capsys: pytest.CaptureFixture[str]) -> None:
-    parser = _legacy._build_parser()
+    parser = _cmd_parser.build_parser()
 
     with pytest.raises(SystemExit) as excinfo:
         parser.parse_args(["--help"])

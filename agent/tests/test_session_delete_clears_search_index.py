@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+from tests.recording_helpers import seed_message
+
 import json
 import sqlite3
 
@@ -9,7 +14,8 @@ import pytest
 from src.session.events import EventBus
 from src.session.models import Message
 from src.session.search import SessionSearchIndex
-from src.session.service import SessionBusyError, SessionService
+from src.session.models import SessionBusyError
+from src.session.service import SessionService
 from src.session.store import SessionStore
 from src.tools.session_search_tool import SessionSearchTool
 
@@ -24,6 +30,7 @@ def owned_delete_index(tmp_path, monkeypatch):
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: index)
     monkeypatch.setattr("src.session.search.get_shared_index", lambda: index)
     service = SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(),
         runs_dir=tmp_path / "runs",
@@ -36,9 +43,7 @@ def owned_delete_index(tmp_path, monkeypatch):
         (doomed, f"my secret thesis: short {DELETED_TERM} into earnings"),
         (sibling, f"unrelated {SIBLING_TERM} notes"),
     ):
-        service.store.append_message(
-            Message(session_id=session.session_id, role="user", content=text)
-        )
+        seed_message(service.store, Message(session_id=session.session_id, role="user", content=text))
         index.index_message(session.session_id, "user", text)
     try:
         yield service, index, doomed, sibling

@@ -45,7 +45,6 @@ from src.api.security import (  # noqa: F401, E402
     _configured_api_key,
     _consume_sse_ticket,
     _default_gateway_ips,
-    _env_shell_tools_enabled,
     _host_without_port,
     _is_allowed_loopback_host,
     _is_local_client,
@@ -211,12 +210,6 @@ register_research_artifact_routes(app)
 from src.api.research_lab_routes import register_research_lab_routes  # noqa: E402
 register_research_lab_routes(app, require_auth, require_settings_write_auth)
 
-from src.api.sessions_routes import (  # noqa: F401, E402
-    _goal_store,
-    _live_action_frame_from_tool_result,
-    _mandate_proposal_frame_from_tool_result,
-)
-
 # --- System ---
 from src.api.system_routes import register_system_routes  # noqa: E402
 register_system_routes(app)
@@ -230,7 +223,6 @@ register_settings_routes(app)
 from src.api.settings_routes import (  # noqa: F401, E402
     _baostock_supported,
     _baostock_installed,
-    _load_llm_providers,
 )
 
 from src.api.custom_provider_routes import register_custom_provider_routes  # noqa: E402

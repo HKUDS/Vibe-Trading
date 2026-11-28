@@ -5,6 +5,10 @@ The LLM call is mocked; the only real I/O is a tiny PNG written to tmp_path.
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.env_schema import EnvConfig
+
+
 import base64
 import json
 from pathlib import Path
@@ -23,13 +27,13 @@ _PNG_BYTES = bytes.fromhex(
 
 
 @pytest.fixture()
-def tool() -> AnalyzeImageTool:
-    return AnalyzeImageTool()
+def tool(tmp_path, monkeypatch) -> AnalyzeImageTool:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
+    return AnalyzeImageTool(policy=ToolPolicy.from_config(EnvConfig()))
 
 
 @pytest.fixture()
-def png_in_allowed_root(tmp_path, monkeypatch) -> Path:
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path))
+def png_in_allowed_root(tmp_path) -> Path:
     p = tmp_path / "chart.png"
     p.write_bytes(_PNG_BYTES)
     return p
@@ -111,6 +115,7 @@ def test_browser_upload_handle_uses_runtime_root(tool, tmp_path, monkeypatch, ha
         stale = service_dir / handle
         stale.parent.mkdir(parents=True, exist_ok=True)
         stale.write_bytes(b"stale image")
+    tool = AnalyzeImageTool(policy=ToolPolicy.from_config(EnvConfig()))
     response = MagicMock(content="Uploaded image.")
     with patch("src.providers.chat.ChatLLM") as chat_cls:
         chat_cls.return_value.chat.return_value = response
@@ -136,6 +141,8 @@ def test_upload_handle_cannot_escape_allowed_roots(tool, tmp_path, monkeypatch, 
         handle = "uploads/link.png"
     else:
         handle = "uploads/../../private.png"
+    monkeypatch.delenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", raising=False)
+    tool = AnalyzeImageTool(policy=ToolPolicy.from_config(EnvConfig()))
     with patch("src.providers.chat.ChatLLM") as chat_cls:
         result = json.loads(tool.execute(path=handle))
     assert result["ok"] is False

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,12 +32,12 @@ def test_unlistable_directory_returns_tool_error(
         return real_iterdir(path)
 
     monkeypatch.setattr(Path, "iterdir", denied_iterdir)
-    result = json.loads(ReadFileTool().execute(path="artifacts", run_dir=str(run)))
+    result = json.loads(ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="artifacts", run_dir=str(run)))
     assert result["status"] == "error"
     assert "fixture directory cannot be listed" in result["error"]
     # A listing error does not broaden the allowed roots or prevent file reads.
     control = json.loads(
-        ReadFileTool().execute(path="artifacts/report.txt", run_dir=str(run))
+        ReadFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path="artifacts/report.txt", run_dir=str(run))
     )
     assert control["status"] == "ok"
     assert control["content"] == "report"

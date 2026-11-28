@@ -1200,6 +1200,20 @@
     "reasoningStrength": "Reasoning-Aufwand",
     "unknownProvider": "Unbekannter Anbieter",
     "unknownModel": "Unbekanntes Modell",
+    "sessionModel": "Session model",
+    "inheritedModel": "Inherited",
+    "changeModel": "Change model",
+    "provider": "Provider",
+    "model": "Model",
+    "useInheritedModel": "Use inherited model",
+    "modelUpdated": "Session model updated",
+    "modelUpdateFailed": "Failed to update session model",
+    "compactContext": "Compact context",
+    "contextCompacted": "Context compacted",
+    "compactFailed": "Failed to compact context",
+    "forkFromHere": "Fork from here",
+    "sessionForked": "Session forked",
+    "forkFailed": "Failed to fork session",
     "connectionLostReconnect": "Verbindung verloren, wird neu verbunden…",
     "connectionRestored": "Verbindung wiederhergestellt",
     "agentWorking": "An die Arbeit gemacht…",
@@ -1219,6 +1233,8 @@
     "describeGoal": "Beschreiben Sie das Forschungsziel, das dieser Sitzung zugeordnet werden soll",
     "placeholder": "z. B. Testen Sie eine einfache Moving-Average-Strategie auf 000001.SZ über 2024",
     "send": "Nachricht senden",
+    "answerPlaceholder": "Antwort eingeben",
+    "toolResultImageAlt": "Werkzeugergebnis",
     "messageInputLabel": "Nachricht an den Agenten",
     "inputHint": "Eingabe zum Senden · Umschalt+Eingabe für eine neue Zeile",
     "editGoalObjectiveLabel": "Forschungsziel-Zielsetzung bearbeiten",
@@ -1285,7 +1301,10 @@
       "failed": "Fehlgeschlagen",
       "steps": "{{count}} Schritte",
       "continue": "Fortsetzen",
-      "reattach": "Erneut verbinden"
+      "reattach": "Erneut verbinden",
+      "interrupted": "Unterbrochen – der Server wurde neu gestartet, bevor dieser Durchgang fertig war",
+      "interruptedStep": "Vor dem Abschluss unterbrochen",
+      "partial": "Beim Stoppen des Durchgangs abgeschnitten"
     },
     "resumeConnector": "Connector fortsetzen",
     "resumeConnectorTitle": "Kill-Switch löschen und Connector-Aktivität wieder aktivieren",
@@ -1293,6 +1312,20 @@
     "failedToResumeConnector": "Connector konnte nicht fortgesetzt werden.",
     "tokenUsage": {
       "live": "Tokens"
+    },
+    "turnFailed": "Ausführung fehlgeschlagen",
+    "notice": {
+      "compaction": "Früherer Verlauf wurde zusammengefasst"
+    },
+    "queue": {
+      "placeholder": "Nachricht hinzufügen – sie folgt nach dem aktuellen Schritt",
+      "label": "Wartende Nachrichten",
+      "queued": "Wartet",
+      "delivering": "Wird in die Unterhaltung aufgenommen…",
+      "discard": "Wartende Nachricht entfernen",
+      "discardFailed": "Diese Nachricht wird bereits in die Unterhaltung aufgenommen",
+      "failed": "Nachricht konnte nicht eingereiht werden",
+      "send": "Einreihen"
     }
   },
   "runDetail": {
@@ -2140,6 +2173,7 @@
     "presets": {
       "investment_committee": "Investment-Ausschuss-Review",
       "quant_strategy_desk": "Quant-Strategie-Desk",
+      "research": "Recherche",
       "value_investing_committee": "Value-Investing-Ausschuss"
     }
   },

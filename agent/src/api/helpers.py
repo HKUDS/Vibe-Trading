@@ -18,6 +18,8 @@ from src.config.dotenv import (
     _write_env_values as _write_env_values,
 )
 from src.config.paths import get_runs_dir, get_sessions_dir, get_uploads_dir
+from src.providers.selection import is_configured_secret as _is_configured_secret  # noqa: F401 - re-exported to api_server
+from src.session.input_rules import SAFE_ID_RE as _SAFE_PATH_PARAM_RE
 
 
 # ============================================================================
@@ -85,14 +87,6 @@ def _project_relative_path(path: Path) -> str:
         return path.name
 
 
-def _is_configured_secret(value: str, placeholders: set[str]) -> bool:
-    """Return True when a secret is set and not a documented placeholder."""
-    normalized = value.strip().strip('"').strip("'")
-    if not normalized:
-        return False
-    return normalized.lower() not in {p.lower() for p in placeholders}
-
-
 def _coerce_float(value: str, default: float) -> float:
     try:
         return float(value)
@@ -110,9 +104,6 @@ def _coerce_int(value: str, default: int) -> int:
 # ============================================================================
 # Path-parameter validation
 # ============================================================================
-
-_SAFE_PATH_PARAM_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-
 
 def _validate_path_param(value: str, kind: str) -> None:
     """Reject path parameters that could escape the parent directory."""

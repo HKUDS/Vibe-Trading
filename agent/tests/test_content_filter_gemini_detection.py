@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage
 
-from src.providers.chat import ChatLLM
+from src.providers.response import parse_response
 from src.providers.content_filter import (
     GEMINI_SAFETY_FINISH_REASONS,
     is_content_filter_triggered,
@@ -53,13 +53,13 @@ def test_helper_handles_non_string(value: object) -> None:
 
 def test_parse_response_detects_gemini_safety() -> None:
     ai_msg = AIMessage(content="", response_metadata={"finish_reason": "SAFETY"})
-    resp = ChatLLM._parse_response(ai_msg)
+    resp = parse_response(ai_msg)
     assert resp.content_filter_triggered is True
 
 
 def test_parse_response_detects_gemini_recitation() -> None:
     ai_msg = AIMessage(content="", response_metadata={"finish_reason": "RECITATION"})
-    resp = ChatLLM._parse_response(ai_msg)
+    resp = parse_response(ai_msg)
     assert resp.content_filter_triggered is True
 
 
@@ -67,17 +67,17 @@ def test_parse_response_openai_content_filter_regression() -> None:
     ai_msg = AIMessage(
         content="", response_metadata={"finish_reason": "content_filter"}
     )
-    resp = ChatLLM._parse_response(ai_msg)
+    resp = parse_response(ai_msg)
     assert resp.content_filter_triggered is True
 
 
 def test_parse_response_normal_stop_not_triggered() -> None:
     ai_msg = AIMessage(content="hello", response_metadata={"finish_reason": "stop"})
-    resp = ChatLLM._parse_response(ai_msg)
+    resp = parse_response(ai_msg)
     assert resp.content_filter_triggered is False
 
 
 def test_parse_response_missing_finish_reason_not_triggered() -> None:
     ai_msg = AIMessage(content="hello", response_metadata={})
-    resp = ChatLLM._parse_response(ai_msg)
+    resp = parse_response(ai_msg)
     assert resp.content_filter_triggered is False

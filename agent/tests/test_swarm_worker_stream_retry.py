@@ -1,22 +1,28 @@
-"""Tests for the single stream retry on ProviderStreamError in run_worker.
+"""Tests for the single stream retry on ProviderStreamError in run_node.
 
 ``ChatLLM.stream_chat`` used to silently fall back to non-streaming ``chat()``
 on any exception; it now raises ``ProviderStreamError``. A swarm worker that
 previously survived a transient mid-stream hiccup (connection reset) via the
-silent fallback would now fail outright, so ``run_worker`` retries the stream
+silent fallback would now fail outright, so ``run_node`` retries the stream
 exactly once for ``ProviderStreamError`` — and only for it — before the
 existing failure path.
 """
 
 from __future__ import annotations
 
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
+
 from pathlib import Path
 from unittest.mock import patch
 
-from src.providers.chat import LLMResponse, ProviderStreamError
+from src.kernel.contracts import LLMResponse
+from src.providers.response import ProviderStreamError
 from src.swarm.models import SwarmAgentSpec, SwarmTask, WorkerResult
-import src.swarm.worker as worker_mod
-from src.swarm.worker import run_worker
+import src.swarm.node as worker_mod
+from src.agent.tools import ToolRegistry
+from src.swarm.node import run_node
 
 # Substantive prose so _classify_deliverable accepts the tool-less worker.
 FINAL_TEXT = (
@@ -26,18 +32,6 @@ FINAL_TEXT = (
     "Position 3% NAV, stop 76,900, target 86,000. Funding 0.035%/8h elevated\n"
     "but not extreme; exchange reserves declining (bullish)."
 )
-
-
-class _EmptyRegistry:
-    """Minimal stand-in for the swarm ToolRegistry (worker needs no tools)."""
-
-    def get_definitions(self) -> list[dict]:
-        """Return an empty tool-definition list.
-
-        Returns:
-            Empty list — the scripted LLM never requests a tool call.
-        """
-        return []
 
 
 class _FlakyChatLLM:
@@ -67,7 +61,7 @@ class _FlakyChatLLM:
         """No-op: the stub owns no HTTP client."""
         return self
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None) -> LLMResponse:
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None, **_callbacks) -> LLMResponse:
         """Raise the next queued error or return the final response.
 
         Args:
@@ -110,9 +104,9 @@ def _run(monkeypatch, tmp_path: Path, llm: _FlakyChatLLM) -> WorkerResult:
         llm: The scripted ChatLLM stub.
 
     Returns:
-        The WorkerResult from ``run_worker``.
+        The WorkerResult from ``run_node``.
     """
-    monkeypatch.setattr(worker_mod, "_STREAM_RETRY_DELAY_S", 0.0)
+    monkeypatch.setenv("SWARM_STREAM_RETRY_DELAY_S", "0")
     agent = SwarmAgentSpec(
         id="analyst",
         role="Synthesis analyst",
@@ -124,10 +118,11 @@ def _run(monkeypatch, tmp_path: Path, llm: _FlakyChatLLM) -> WorkerResult:
     )
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="Summarize.")
     with (
-        patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: _EmptyRegistry()),
+        patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: ToolRegistry(policy=k["policy"])),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
-        return run_worker(
+        return run_node(
+            policy=ToolPolicy.from_config(get_env_config()),
             agent_spec=agent,
             task=task,
             upstream_summaries={},

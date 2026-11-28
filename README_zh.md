@@ -155,7 +155,7 @@
 ## ✨ 主要功能
 
 <div align="center">
-<a href="assets/features/zh/feature-market-research-card.svg"><img src="assets/features/zh/feature-market-research-card.svg" width="50%" alt="🔍 市场研究 · 查行情、读公告，穿透查看 ETF 持仓 · 用 DCF 和同行估值倍数评估公司 · 跟踪财报并定时生成盘前简报"/></a><a href="assets/features/zh/feature-research-teams-card.svg"><img src="assets/features/zh/feature-research-teams-card.svg" width="50%" alt="🐝 研究团队 · 30 支预设团队，覆盖股票、量化、加密资产和风控 · 对照多空观点，查看风险评审 · 在 Pixel Office 分派研究任务"/></a><br/>
+<a href="assets/features/zh/feature-market-research-card.svg"><img src="assets/features/zh/feature-market-research-card.svg" width="50%" alt="🔍 市场研究 · 查行情、读公告，穿透查看 ETF 持仓 · 用 DCF 和同行估值倍数评估公司 · 跟踪财报并定时生成盘前简报"/></a><a href="assets/features/zh/feature-research-teams-card.svg"><img src="assets/features/zh/feature-research-teams-card.svg" width="50%" alt="🐝 研究团队 · 31 支预设团队，覆盖股票、量化、加密资产和风控 · 对照多空观点，查看风险评审 · 在 Pixel Office 分派研究任务"/></a><br/>
 <a href="assets/features/zh/feature-quant-lab-card.svg"><img src="assets/features/zh/feature-quant-lab-card.svg" width="50%" alt="📊 量化实验室 · 评测五个因子库中的 478 个 Alpha · 跨市场回测，检验样本外表现 · 分析期权损益、希腊字母和组合风险"/></a><a href="assets/features/zh/feature-trading-portfolio-card.svg"><img src="assets/features/zh/feature-trading-portfolio-card.svg" width="50%" alt="👥 交易与组合 · 19 个券商连接器，可按券商查看权限 · 跟踪模拟成交，为支持的实盘交易设限 · 用影子账户回放自己的交易规则"/></a>
 </div>
 

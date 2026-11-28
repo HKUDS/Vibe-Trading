@@ -1,12 +1,10 @@
-"""A client joining a running attempt must learn when it started.
-
-The event ring buffer is bounded, so on a long attempt the original
-``attempt.started`` has often rotated out by the time a client (re)connects with
-``replay=active``. The route re-announces it from the persisted attempt so the
-client's elapsed clock resumes from the real start instead of from "now".
-"""
+"""A client joining a running attempt uses the durable thread cursor."""
 
 from __future__ import annotations
+
+from src.product.tool_policy import ToolPolicy
+from src.config.accessor import get_env_config
+
 
 import json
 import threading
@@ -36,6 +34,7 @@ def _service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionService:
     # clear() is only noticed when the subscriber's idle wait times out; keep
     # that short so each case finishes in well under a second.
     return SessionService(
+        policy=ToolPolicy.from_config(get_env_config()),
         store=SessionStore(tmp_path / "sessions"),
         event_bus=EventBus(heartbeat_interval_s=0.2),
         runs_dir=tmp_path / "runs",
@@ -64,16 +63,14 @@ def _frames(
     return frames
 
 
-def test_active_replay_reannounces_attempt_start_from_the_persisted_attempt(
+def test_active_replay_does_not_reannounce_legacy_attempt_events(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = _service(tmp_path, monkeypatch)
     monkeypatch.setattr(api_server, "_get_session_service", lambda: service)
     session = service.create_session(title="long run")
 
-    # An attempt that has been running long enough for its original
-    # attempt.started to have rotated out of the ring buffer: it is persisted as
-    # running, but the bus holds no events for the session.
+    # A running attempt without thread items has no durable event to replay.
     attempt = Attempt(session_id=session.session_id, prompt="go")
     attempt.mark_running()
     service.store.create_attempt(attempt)
@@ -91,11 +88,7 @@ def test_active_replay_reannounces_attempt_start_from_the_persisted_attempt(
     )
 
     assert frames, "stream produced no frames"
-    event_type, data = frames[0]
-    assert event_type == "attempt.started"
-    assert data["attempt_id"] == attempt.attempt_id
-    assert data["started_at"] == attempt.started_at
-    assert data["replayed"] is True
+    assert all(event_type != "attempt.started" for event_type, _ in frames)
 
 
 def test_active_replay_without_a_running_attempt_adds_nothing(

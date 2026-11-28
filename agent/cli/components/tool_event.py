@@ -1,20 +1,4 @@
-"""Single tool invocation render.
-
-Layout (matches design_proposal §3.5):
-
-    ● Get Financials ("AAPL", quarterly, last 8 quarters)         1.4s · 8 quarters
-
-* ``●`` (U+25CF black circle) marker, color-coded by status:
-    running → ``--warning`` amber (pulse via Rich style ``blink`` when
-              the terminal advertises it, otherwise solid amber)
-    ok      → ``--success`` green, solid
-    error   → ``--danger`` red, solid
-* Tool name pretty-printed (``get_financials`` → ``Get Financials``)
-* Args summary prefers ``query`` then ``prompt``, else the first 2
-  ``key=value`` pairs each truncated to 40 chars
-* Duration formatted via :func:`agent.cli.utils.format.format_duration`
-  when Parcel α has shipped it; otherwise a local fallback is used
-"""
+"""Single tool invocation render."""
 
 from __future__ import annotations
 
@@ -26,9 +10,6 @@ from rich.text import Text
 Status = Literal["running", "ok", "error"]
 
 
-# Status → (Rich style, marker glyph). The glyph stays the same; the style
-# encodes color + decoration (bold/blink). dexter only changes brightness
-# of the marker rather than swapping glyphs.
 _STATUS_STYLE: dict[Status, str] = {
     # ``blink`` is gracefully ignored by Rich when the terminal does not
     # advertise the capability, so we always include it.
@@ -40,16 +21,11 @@ _STATUS_STYLE: dict[Status, str] = {
 _ARG_VALUE_MAX = 40
 
 
-# ---------------------------------------------------------------- helpers ----
+# helpers
 
 
 def _pretty_tool_name(name: str) -> str:
-    """Convert ``get_financials`` to ``Get Financials``.
-
-    Strips a leading ``get_`` prefix when present (dexter convention).
-    Underscores and hyphens become spaces; each whitespace-separated
-    token is title-cased. Acronyms preserved when fully upper.
-    """
+    """Convert ``get_financials`` to ``Get Financials``."""
     cleaned = name.strip()
     if cleaned.lower().startswith("get_"):
         cleaned = cleaned[4:]
@@ -70,16 +46,7 @@ def _truncate(value: str, limit: int = _ARG_VALUE_MAX) -> str:
 
 
 def _summarize_args(args: Mapping[str, Any] | None) -> str:
-    """Produce a one-line args summary.
-
-    Rules:
-        * ``args is None`` or empty → empty string
-        * ``query`` field present → ``"<value>"`` (quoted)
-        * ``prompt`` field present → ``"<value>"`` (quoted)
-        * otherwise → first 2 ``key=value`` pairs, value truncated to 40 chars
-
-    Returns the bare summary string; callers wrap it in parens.
-    """
+    """Produce a one-line args summary."""
     if not args:
         return ""
 
@@ -114,16 +81,7 @@ def _render_value(value: Any) -> str:
 
 
 def _format_duration_local(ms: float) -> str:
-    """Local fallback when ``agent.cli.utils.format.format_duration`` is absent.
-
-    Parcel α owns the canonical implementation; until it lands we keep a
-    minimal version here so the demo build is not blocked on cross-parcel
-    ordering. Numbers match the contract in design_proposal §3.5:
-
-        < 1000ms   → "740ms"
-        < 60s      → "1.4s"
-        ≥ 60s      → "1m12s"
-    """
+    """Local fallback when ``agent.cli.utils.format.format_duration`` is absent."""
     if ms < 1000:
         return f"{int(round(ms))}ms"
     seconds = ms / 1000
@@ -144,7 +102,7 @@ def _format_duration(ms: float) -> str:
         return _format_duration_local(ms)
 
 
-# ---------------------------------------------------------------- public ----
+# public
 
 
 def render_tool_event(
@@ -155,19 +113,17 @@ def render_tool_event(
     *,
     result_summary: str | None = None,
 ) -> Text:
-    """Return a Rich :class:`Text` row describing a single tool call.
+    """Render a terminal row describing a single tool call.
 
     Args:
-        name: Raw tool name (``get_financials``); pretty-printed in output.
-        args: Argument mapping; summarised inline.
-        status: ``"running"`` | ``"ok"`` | ``"error"``.
-        duration_ms: When the call finished, total wall time in milliseconds.
-        result_summary: Optional one-line summary appended after the
-            duration (e.g. ``"8 quarters"``).
+        name: Raw tool name, formatted for display.
+        args: Optional argument mapping to summarize inline.
+        status: Call status, such as running, ok, or error. Unknown statuses use running styling.
+        duration_ms: Optional wall time in milliseconds.
+        result_summary: Optional one-line summary appended to the suffix.
 
     Returns:
-        A Rich ``Text`` object — caller decides whether to ``console.print``
-        it, stuff it into a ``Group``, or stream it as a transient row.
+        Rich Text row containing the status marker, tool name, and available details.
     """
     if status not in _STATUS_STYLE:
         # Be lenient — unknown statuses degrade to "running" instead of
@@ -195,11 +151,14 @@ def render_tool_event(
 
 
 def render_tool_events(events: Iterable[Mapping[str, Any]]) -> list[Text]:
-    """Convenience: render a list of event dicts.
+    """Render tool call rows in input order.
 
-    Each event dict needs ``name`` plus any of ``args`` / ``status`` /
-    ``duration_ms`` / ``result_summary``. Useful for replaying a stored
-    run via :mod:`agent.cli.commands.show`.
+    Args:
+        events: Iterable of event mappings with optional name, args, status, duration_ms, and
+            result_summary fields.
+
+    Returns:
+        List of Rich Text rows, one per event.
     """
     rendered: list[Text] = []
     for ev in events:

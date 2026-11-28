@@ -1,23 +1,9 @@
-"""Swarm YAML preset loader.
-
-Reads YAML preset files from the bundled ``presets/`` directory next to this
-module and parses them into SwarmRun / SwarmAgentSpec / SwarmTask data models.
-Keeping the YAMLs inside the ``src.swarm`` package guarantees identical
-behavior under editable installs and built wheels.
-
-User-supplied presets are also discovered from ``~/.vibe-trading/swarm/
-presets/`` — the same pattern as user skills (``src/agent/skills.py``):
-the user directory is searched first, so a user preset can both add to and
-override the bundled roster by name, and nothing needs to be copied into
-site-packages (where it would be wiped by the next ``pip install -U``).
-Preset names are validated to a single path segment before any filesystem
-lookup, so a name can never escape either presets directory.
-"""
+"""Swarm YAML preset loader."""
 
 from __future__ import annotations
 
 import uuid
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Formatter
@@ -28,16 +14,13 @@ from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, Tas
 from src.swarm.task_store import topological_layers, validate_dag
 
 PRESETS_DIR = Path(__file__).resolve().parent / "presets"
-#: User-created presets; searched before the bundled directory so user files
-#: can add to and override the roster by name (mirrors USER_SKILLS_DIR in
-#: ``src/agent/skills.py``). Survives package upgrades.
+#: Search upgrade-safe user presets first so they can override bundled names.
 USER_PRESETS_DIR = Path.home() / ".vibe-trading" / "swarm" / "presets"
 _INTERNAL_TEMPLATE_VARS = {"upstream_context"}
 
 
 def _redact_home(path: Path) -> str:
-    """Render ``path`` with the home prefix collapsed to ``~`` so user-facing
-    errors never leak the absolute home directory (CWE-209)."""
+    """Hide the absolute home directory from user-facing errors (CWE-209)."""
     try:
         return "~/" + str(path.relative_to(Path.home()))
     except ValueError:
@@ -45,18 +28,7 @@ def _redact_home(path: Path) -> str:
 
 
 def _validate_preset_name(name: str) -> str:
-    """Reject names that are empty or could escape a presets directory.
-
-    Preset names map directly to ``<dir>/<name>.yaml``; a name carrying a
-    path separator or ``..`` would resolve outside the directory. The bundled
-    path had the same latent exposure — validating here covers both.
-
-    Returns:
-        The stripped name.
-
-    Raises:
-        ValueError: Empty name, path separators, or parent references.
-    """
+    """Reject names that are empty or could escape a presets directory."""
     cleaned = (name or "").strip()
     if not cleaned or cleaned in {".", ".."} or "/" in cleaned or "\\" in cleaned:
         raise ValueError(f"invalid preset name: {name!r}")
@@ -69,7 +41,17 @@ def _preset_search_dirs() -> tuple[Path, ...]:
 
 
 def resolve_preset_path(name: str) -> Path | None:
-    """Return the YAML path for *name* (user dir first), or ``None``."""
+    """Locate a preset YAML file, giving the user directory precedence.
+
+    Args:
+        name: Preset name without the .yaml extension.
+
+    Returns:
+        Path to the first matching file, or None if neither directory has one.
+
+    Raises:
+        ValueError: If the name is blank, dot-only as . or .., or contains a path separator.
+    """
     cleaned = _validate_preset_name(name)
     for directory in _preset_search_dirs():
         path = directory / f"{cleaned}.yaml"
@@ -82,16 +64,15 @@ def load_preset(name: str) -> dict:
     """Load a YAML preset by name (user directory first, then bundled).
 
     Args:
-        name: Preset name (without .yaml extension).
+        name: Preset name without the .yaml extension.
 
     Returns:
-        Parsed YAML dict.
+        Parsed YAML content.
 
     Raises:
-        ValueError: If the name is empty or contains path separators.
-        FileNotFoundError: If the preset file does not exist in either the
-            user directory (``~/.vibe-trading/swarm/presets/``) or the
-            bundled package directory.
+        ValueError: If the name is blank, is . or .., or contains a path separator.
+        FileNotFoundError: If the preset file exists in neither the user nor bundled directory.
+        yaml.YAMLError: If the file cannot be parsed as YAML.
     """
     path = resolve_preset_path(name)
     if path is None:
@@ -111,13 +92,9 @@ def load_preset(name: str) -> dict:
 def list_presets() -> list[dict]:
     """Return summary info for all available presets, sorted by name.
 
-    User presets (``~/.vibe-trading/swarm/presets/``) are listed alongside the
-    bundled roster; when both directories carry the same file stem, the user
-    preset wins — the same override rule as user skills.
-
     Returns:
-        List of dicts with keys: name, title, description, agent_count,
-        variables, source (``"user"`` or ``"bundled"``).
+        Summary dictionaries with name, title, description, agent_count, variables, and source. A
+        user preset overrides a bundled preset with the same file stem.
     """
     by_stem: dict[str, dict] = {}
     for directory, source in ((PRESETS_DIR, "bundled"), (USER_PRESETS_DIR, "user")):
@@ -171,8 +148,12 @@ def _template_variables(template: str) -> set[str]:
 def inspect_preset(name: str) -> dict:
     """Validate a swarm preset and return a dry-run execution plan.
 
-    This does not start workers or call an LLM. It catches common YAML/DAG
-    mistakes early and exposes the topological task layers used by the runtime.
+    Args:
+        name: Preset name without the .yaml extension.
+
+    Returns:
+        Plan with agent and task details, topological layers, variable use, and validation errors or
+        warnings.
     """
     data = load_preset(name)
     run = build_run_from_preset(name, {})
@@ -193,7 +174,7 @@ def inspect_preset(name: str) -> dict:
     for task in run.tasks:
         if task.agent_id not in agent_id_set:
             errors.append(f"Task '{task.id}' references unknown agent '{task.agent_id}'")
-        for _, upstream_task_id in task.input_from.items():
+        for upstream_task_id in task.input_tasks().values():
             if upstream_task_id not in task_id_set:
                 errors.append(
                     f"Task '{task.id}' input_from references unknown task '{upstream_task_id}'"
@@ -206,40 +187,13 @@ def inspect_preset(name: str) -> dict:
     except ValueError as exc:
         errors.append(str(exc))
 
-    dependents: dict[str, list[str]] = defaultdict(list)
-    for task in run.tasks:
-        for dep in task.depends_on:
-            dependents[dep].append(task.id)
-
-    def is_upstream(candidate: str, task_id: str) -> bool:
-        """Return whether candidate can reach task_id through dependency edges."""
-        seen: set[str] = set()
-        stack = [candidate]
-        while stack:
-            current = stack.pop()
-            if current == task_id:
-                return True
-            if current in seen:
-                continue
-            seen.add(current)
-            stack.extend(dependents.get(current, []))
-        return False
-
-    for task in run.tasks:
-        for key, upstream_task_id in task.input_from.items():
-            if upstream_task_id in task_id_set and not is_upstream(upstream_task_id, task.id):
-                warnings.append(
-                    f"Task '{task.id}' input_from '{key}' references '{upstream_task_id}', "
-                    "which is not upstream in the DAG"
-                )
-
     declared_variables = _declared_variable_names(data.get("variables", []))
     used_variables: set[str] = set()
-    for task in data.get("tasks", []):
+    for task in run.tasks:
         try:
-            used_variables.update(_template_variables(task.get("prompt_template", "")))
+            used_variables.update(_template_variables(task.prompt_template) - task.input_from.keys())
         except ValueError as exc:
-            errors.append(f"Task '{task.get('id', '?')}' has invalid prompt template: {exc}")
+            errors.append(f"Task '{task.id}' has invalid prompt template: {exc}")
 
     missing_declarations = sorted(used_variables - declared_variables)
     unused_declarations = sorted(declared_variables - used_variables)
@@ -258,6 +212,7 @@ def inspect_preset(name: str) -> dict:
         "name": data.get("name", name),
         "title": data.get("title", ""),
         "description": data.get("description", ""),
+        "prefetch_grounding": run.prefetch_grounding,
         "valid": not errors,
         "errors": errors,
         "warnings": warnings,
@@ -273,6 +228,7 @@ def inspect_preset(name: str) -> dict:
                 "agent_id": task.agent_id,
                 "depends_on": task.depends_on,
                 "input_from": task.input_from,
+                "tools": task.tools,
             }
             for task in run.tasks
         ],
@@ -283,30 +239,50 @@ def inspect_preset(name: str) -> dict:
     }
 
 
-def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmRun:
-    """Create a SwarmRun from a preset with user variables applied.
+def missing_required_variables(data: dict, user_vars: dict[str, str]) -> list[str]:
+    """Name the preset's required variables that the caller left absent or blank.
 
-    Steps:
-        1. Load preset YAML
-        2. Create SwarmAgentSpec list from agents section
-        3. Create SwarmTask list from tasks section
-        4. Generate run_id: f"swarm-{datetime}-{uuid[:8]}"
-        5. Return SwarmRun with all fields populated
+    Args:
+        data: Parsed preset YAML.
+        user_vars: Variables supplied for the run.
+
+    Returns:
+        Required variable names, in declaration order, without a non-blank string value.
+    """
+    return [item["name"] for item in data.get("variables", [])
+            if isinstance(item, dict) and item.get("required") and item.get("name")
+            and not (isinstance(user_vars.get(item["name"]), str) and user_vars[item["name"]].strip())]
+
+
+def build_run_from_preset(
+    preset_name: str, user_vars: dict[str, str], *, validate_variables: bool = False,
+) -> SwarmRun:
+    """Create a pending swarm run from a preset and user variables.
 
     Args:
         preset_name: Name of the preset to load.
-        user_vars: User-provided variables for prompt template rendering.
+        user_vars: User-provided variables saved for prompt template rendering.
+        validate_variables: Refuse a run whose required variables are missing. Inspection builds
+            an unfilled plan without it; execution always sets it.
 
     Returns:
-        Fully constructed SwarmRun instance (status=pending).
+        New run with a generated ID, agent specifications, and tasks initialized as pending or
+        blocked by dependencies.
 
     Raises:
-        FileNotFoundError: If preset does not exist.
-        ValueError: If preset YAML is malformed.
+        ValueError: If a required variable is missing (with validate_variables), a task's tools
+            exceed its agent's whitelist, or an input selection is malformed.
     """
     data = load_preset(preset_name)
+    if validate_variables:
+        missing = missing_required_variables(data, user_vars)
+        if missing:
+            described = {v.get("name"): v.get("description", "") for v in data.get("variables", []) if isinstance(v, dict)}
+            raise ValueError(
+                "Missing required preset variables; pass them in `variables`: "
+                + "; ".join(f"{name} ({described[name]})" if described.get(name) else name for name in missing)
+            )
 
-    # Parse agents
     agents: list[SwarmAgentSpec] = []
     for agent_data in data.get("agents", []):
         agents.append(SwarmAgentSpec(
@@ -321,7 +297,6 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             max_retries=agent_data.get("max_retries", 2),
         ))
 
-    # Parse tasks, initialize blocked_by from depends_on
     tasks: list[SwarmTask] = []
     for task_data in data.get("tasks", []):
         depends_on = task_data.get("depends_on", [])
@@ -333,10 +308,15 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             depends_on=depends_on,
             blocked_by=list(depends_on),
             input_from=task_data.get("input_from", {}),
+            tools=task_data.get("tools"),
             status=status,
         ))
 
-    # Generate run ID
+    agent_map = {agent.id: agent for agent in agents}
+    for task in tasks:
+        if task.agent_id in agent_map:
+            task.effective_tools(agent_map[task.agent_id])
+
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y%m%d-%H%M%S")
     short_uuid = uuid.uuid4().hex[:8]
@@ -347,6 +327,7 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
         preset_name=preset_name,
         status=RunStatus.pending,
         user_vars=user_vars,
+        prefetch_grounding=data.get("prefetch_grounding", True),
         agents=agents,
         tasks=tasks,
         created_at=now.isoformat(),

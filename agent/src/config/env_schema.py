@@ -396,6 +396,29 @@ class APIConfig(_EnvBase):
     vibe_trading_enable_shell_tools: EnvBool = Field(
         alias="VIBE_TRADING_ENABLE_SHELL_TOOLS", default=False,
     )
+    vibe_trading_sandbox_enabled: EnvBool = Field(
+        alias="VIBE_TRADING_SANDBOX_ENABLED", default=False,
+    )
+    vibe_trading_sandbox_network: EnvBool = Field(
+        alias="VIBE_TRADING_SANDBOX_NETWORK", default=False,
+    )
+    vibe_trading_sandbox_backend: str = Field(
+        alias="VIBE_TRADING_SANDBOX_BACKEND", default="",
+    )
+    # Swarm node shell commands (bash, background_run): auto confines them to the
+    # node's workspace when a backend works on this host and otherwise runs them
+    # there unconfined with a notice; required refuses instead; off is the main
+    # agent's VIBE_TRADING_SANDBOX_ENABLED behaviour. A typo fails config loading.
+    vibe_trading_swarm_shell_sandbox: Annotated[
+        Literal["auto", "required", "off"],
+        BeforeValidator(lambda value: value.strip().lower() if isinstance(value, str) else value),
+    ] = Field(alias="VIBE_TRADING_SWARM_SHELL_SANDBOX", default="auto")
+    vibe_trading_hook_timeout_seconds: float = Field(
+        alias="VIBE_TRADING_HOOK_TIMEOUT_SECONDS", default=10.0, gt=0,
+    )
+    vibe_trading_hooks_file: str = Field(
+        alias="VIBE_TRADING_HOOKS_FILE", default="",
+    )
     vibe_trading_allowed_file_roots: str = Field(
         alias="VIBE_TRADING_ALLOWED_FILE_ROOTS", default="",
     )
@@ -419,8 +442,9 @@ class APIConfig(_EnvBase):
 class SwarmConfig(_EnvBase):
     """Multi-agent swarm execution parameters.
 
-    Sources: ``src/swarm/worker.py``, ``src/tools/swarm_tool.py``,
-    ``src/swarm/runtime.py``, ``src/swarm/grounding.py``.
+    Sources: ``src/swarm/node.py``, ``src/tools/swarm_tool.py``,
+    ``src/swarm/runtime.py``, ``src/swarm/grounding.py``,
+    ``src/swarm/evidence_handoff.py``.
     """
 
     swarm_worker_timeout: int = Field(alias="SWARM_WORKER_TIMEOUT", default=300)
@@ -439,6 +463,10 @@ class SwarmConfig(_EnvBase):
         alias="SWARM_WORKER_RETRY_MAX_DELAY_S", default=30.0, ge=0
     )
     swarm_grounding_max_symbols: int = Field(alias="SWARM_GROUNDING_MAX_SYMBOLS", default=8)
+    # Total bytes of upstream-produced files copied into one consumer's workspace.
+    swarm_handoff_max_file_bytes: int = Field(
+        alias="SWARM_HANDOFF_MAX_FILE_BYTES", default=64 * 1024 * 1024, ge=0
+    )
 
     @model_validator(mode="after")
     def _validate_retry_delays(self) -> SwarmConfig:
@@ -466,18 +494,28 @@ class AgentTuningConfig(_EnvBase):
     Sources: ``src/agent/loop.py``, ``src/providers/content_filter.py``,
     ``src/scheduled_research/executor.py``, ``src/live/order_guard.py``,
     ``src/factors/_backend.py``, ``src/factors/bench_runner.py``,
-    ``src/tools/web_search_tool.py``, ``api_server.py``.
+    ``src/tools/web_search_tool.py``, ``src/tools/spawn_agent_tool.py``,
+    ``api_server.py``.
     """
 
     # Deprecated: counted chars/4 of messages without tool schemas, so no value
     # tuned against it means anything under real-token accounting. Read only to
-    # warn (src/agent/context_budget.py); compaction ignores it.
+    # warn (src/session/context_budget.py); compaction ignores it.
     token_threshold: int = Field(alias="TOKEN_THRESHOLD", default=40000)
     # ReAct loop iteration cap for interactive/web sessions. Heavy pipelines
     # (multi-layer scoring, batch research) legitimately exceed 50 turns.
     vibe_trading_agent_max_iterations: int = Field(
         alias="VIBE_TRADING_AGENT_MAX_ITERATIONS", default=50, ge=1,
     )
+    # spawn_agent child: one focused task in a fresh context, the shape of a
+    # swarm worker, so it gets a swarm worker's budget (SWARM_WORKER_MAX_ITER
+    # and SWARM_WORKER_TIMEOUT; every shipped preset agent declares 50).
+    subagent_max_iter: int = Field(alias="SUBAGENT_MAX_ITER", default=50, ge=1)
+    # Seconds after which the child is cancelled; 0 disables. Cooperative: the
+    # child stops at its next checkpoint, so a tool call it is running finishes
+    # first (a read-only one within VIBE_TRADING_TOOL_TIMEOUT_SECONDS, a write
+    # such as a backtest only when it returns). A parent cancel waits the same.
+    subagent_timeout: float = Field(alias="SUBAGENT_TIMEOUT", default=300.0, ge=0)
     vibe_trading_tool_loading: Literal["eager", "lazy"] = Field(
         alias="VIBE_TRADING_TOOL_LOADING", default="lazy",
     )
@@ -489,6 +527,11 @@ class AgentTuningConfig(_EnvBase):
     # on 2026-09-29 sent 154K real input tokens.
     vibe_trading_context_max_tokens: int = Field(
         alias="VIBE_TRADING_CONTEXT_MAX_TOKENS", default=200_000, gt=0,
+    )
+    # Byte cap per user instruction file (AGENTS.md) injected into the system
+    # prompt; a larger file is truncated with a visible marker.
+    vibe_trading_instructions_max_bytes: int = Field(
+        alias="VIBE_TRADING_INSTRUCTIONS_MAX_BYTES", default=32_768, gt=0,
     )
     vt_heartbeat_interval_s: float = Field(alias="VT_HEARTBEAT_INTERVAL_S", default=3.0)
     vt_reasoning_delta_min_interval_s: float = Field(
@@ -506,6 +549,14 @@ class AgentTuningConfig(_EnvBase):
     )
     vibe_trading_run_stall_timeout_seconds: float = Field(
         alias="VIBE_TRADING_RUN_STALL_TIMEOUT_SECONDS", default=1800.0,
+    )
+    # Pacing nudges are disabled until traces separate healthy and over-long
+    # runs well enough to justify a default threshold.
+    vibe_trading_mid_turn_nudge_rounds: int = Field(
+        alias="VIBE_TRADING_MID_TURN_NUDGE_ROUNDS", default=0, ge=0,
+    )
+    vibe_trading_wrap_up_nudge_remaining: int = Field(
+        alias="VIBE_TRADING_WRAP_UP_NUDGE_REMAINING", default=0, ge=0,
     )
     vibe_trading_goal_max_continuations: int = Field(
         alias="VIBE_TRADING_GOAL_MAX_CONTINUATIONS", default=3,

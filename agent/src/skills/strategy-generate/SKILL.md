@@ -259,3 +259,27 @@ When the user requests a backtest with codes from **different markets** (e.g. `[
 ## Supporting Files
 
 - [examples.md](examples.md) — example call sequence
+
+## Post-backtest attribution
+
+Run this section only when the user requests attribution, robustness analysis, or a comprehensive research report. A request to run a backtest ends with its results, validation warnings, and limitations. Strategy correctness and SignalEngine compliance take priority.
+
+Classify the strategy before selecting layers. An at-risk strategy has Sharpe ≤ 0.5 or MaxDD ≥ 40% and uses Layer 1 plus Layer 4 for failure diagnosis. A sub-optimal strategy has Sharpe ≤ 1.0 or MaxDD ≥ 20% and uses all applicable layers. A healthy strategy uses Layer 1 plus Layer 2 for scalability. If the user explicitly requests full analysis, run all four layers.
+
+### Layer 1 — Trade Attribution
+
+If `artifacts/trades.csv` exists, read exit rows when an `event` column exists. Include zero-PnL exits. Only files without `event` use the legacy `pnl != 0` convention. Report top-five winners and losers with code, side, timestamp, PnL, return, holding days, and reason. Check profitability after removing the top five winners. Break down exit reasons by count, total PnL, average PnL, and win rate. Group holding periods into short (<3 days), medium (3–20 days), and long (>20 days).
+
+### Layer 2 — Beta Regression
+
+For a backtest longer than 60 trading days, fetch the appropriate benchmark with `get_market_data`. Use CSI 300 (`000300.SH`) for A-shares, S&P 500 (`SPY`) for US equities, and BTC (`BTC-USDT`) for crypto. For mixed markets, use the majority market by trade count or an equal-weighted composite when no market exceeds 50%. Compute strategy daily returns from `artifacts/equity.csv` and report annualized alpha, beta, R², and alpha t-statistic. If `|t| < 2`, state that returns are not statistically distinguishable from benchmark exposure. Load `performance-attribution` for comprehensive factor attribution.
+
+### Layer 3 — Regime Analysis
+
+For a backtest longer than one year with benchmark data, load `correlation-analysis` and follow its regime classification rules. Report trades, win rate, total PnL, and average PnL per trade for each regime. Flag when one regime contributes more than 60% of total profit.
+
+### Layer 4 — Monte Carlo Permutation Test
+
+If `artifacts/validation.json` contains `monte_carlo`, report actual Sharpe, its p-value, actual maximum drawdown, and its p-value. When a p-value exceeds 0.05, state that performance is not statistically distinguishable from random trade ordering.
+
+Before output, check that every conclusion is tied to an artifact or tool result, layers do not contradict each other, and the strategy's primary risk is disclosed. Load `backtest-diagnose` for code-level diagnosis when strategy logic bugs are suspected.

@@ -1,5 +1,11 @@
 """A prepared child earns evidence from its own sealed backtest only."""
 
+from src.tools.path_utils import FileRoots
+from src.config.accessor import get_env_config
+
+
+import cli.commands.dispatch as _cmd_dispatch
+
 import json
 import shutil
 from dataclasses import replace
@@ -96,7 +102,7 @@ def test_scoped_refresh_retains_parent_and_reports_childs_own_quality(context):
     root = seal_fixture(result)
     before = context[1].get_rows(strategy_id="sdm:parent")
     validate_adapted_run(result["strategy_id"], root)
-    output = refresh_strategy_evidence_core(runs=[{"strategy_id": result["strategy_id"], "run_dir": str(root)}], scope="strategies")
+    output = refresh_strategy_evidence_core(roots=FileRoots.from_config(get_env_config().api), runs=[{"strategy_id": result["strategy_id"], "run_dir": str(root)}], scope="strategies")
     assert output["rows"] > 0, output
     assert context[1].get_rows(strategy_id="sdm:parent") == before
     rows = context[1].get_rows(strategy_id=result["strategy_id"])
@@ -132,7 +138,7 @@ def test_alternate_or_changed_run_cannot_be_adopted(context, tmp_path, mutation)
         path.rename(other)
         path.symlink_to(other)
     before = context[1].get_rows()
-    output = refresh_strategy_evidence_core(runs=[{"strategy_id": result["strategy_id"], "run_dir": str(root)}], scope="strategies")
+    output = refresh_strategy_evidence_core(roots=FileRoots.from_config(get_env_config().api), runs=[{"strategy_id": result["strategy_id"], "run_dir": str(root)}], scope="strategies")
     assert output["rows"] == 0 and output["skipped"], output
     assert context[1].get_rows() == before
 
@@ -154,7 +160,7 @@ class SignalEngine:
     def generate(self, data_map):
         return {code: pd.Series((np.arange(len(frame)) % 10 < 5).astype(float), index=frame.index) for code, frame in data_map.items()}
 '''
-    written = json.loads(WriteFileTool().execute(path=str(Path(result["run_dir"]) / "code/signal_engine.py"), content=code))
+    written = json.loads(WriteFileTool(roots=FileRoots.from_config(get_env_config().api)).execute(path=str(Path(result["run_dir"]) / "code/signal_engine.py"), content=code))
     assert written["status"] == "ok"
     index = pd.bdate_range(config["start_date"], config["end_date"])
     close = 100 + np.arange(len(index)) * 0.1 + np.sin(np.arange(len(index)) / 5)
@@ -164,9 +170,9 @@ class SignalEngine:
     local_config.parent.mkdir(parents=True, exist_ok=True)
     local_config.write_text(yaml.safe_dump({"sources": [{"symbol": "AAPL.US", "type": "csv", "path": str(data_file)}]}))
     try:
-        backtest = json.loads(run_backtest(result["run_dir"]))
+        backtest = json.loads(run_backtest(result["run_dir"], roots=FileRoots.from_config(get_env_config().api)))
         assert backtest["status"] == "ok", backtest
-        output = refresh_strategy_evidence_core(runs=[{"strategy_id": result["strategy_id"], "run_dir": result["run_dir"]}], scope="strategies")
+        output = refresh_strategy_evidence_core(roots=FileRoots.from_config(get_env_config().api), runs=[{"strategy_id": result["strategy_id"], "run_dir": result["run_dir"]}], scope="strategies")
         assert output["rows"] > 0 and not output["skipped"], output
         assert context[1].get_rows(strategy_id="sdm:parent")[0].provenance == "parent-run"
     finally:
@@ -175,7 +181,7 @@ class SignalEngine:
 
 def test_generated_child_code_records_current_model_without_touching_active_run(context, tmp_path):
     from types import SimpleNamespace
-    from src.agent.write_targets import record_written_target
+    from src.product.write_targets import record_written_target
 
     result = prepare(context)
     path = Path(result["run_dir"]) / "code/signal_engine.py"
@@ -184,7 +190,7 @@ def test_generated_child_code_records_current_model_without_touching_active_run(
     active.mkdir()
     record_written_target({"path": str(path)}, written_files=set(), run_dir=str(active),
                           llm_runtime=SimpleNamespace(provider="test-provider"),
-                          active_model_id="actual-response-model", active_model_source="response")
+                          active_model_id="actual-response-model", active_model_source="response", roots=FileRoots.from_config(get_env_config().api))
     provenance = json.loads((path.parent.parent / "strategy_provenance.json").read_text())
     assert provenance["files"]["code/signal_engine.py"]["model_id"] == "actual-response-model"
     assert not (active / "strategy_provenance.json").exists()
@@ -192,14 +198,13 @@ def test_generated_child_code_records_current_model_without_touching_active_run(
     elsewhere.mkdir(parents=True)
     record_written_target({"path": str(elsewhere / "signal_engine.py")}, written_files=set(), run_dir=str(active),
                           llm_runtime=SimpleNamespace(provider="test-provider"),
-                          active_model_id="actual-response-model", active_model_source="response")
+                          active_model_id="actual-response-model", active_model_source="response", roots=FileRoots.from_config(get_env_config().api))
     assert not (elsewhere.parent / "strategy_provenance.json").exists()
 
 
 def test_api_auth_and_cli_prepare_share_child_contract(context, tmp_path, capsys):
     from fastapi import FastAPI, HTTPException
     from fastapi.testclient import TestClient
-    from cli import _legacy
     from src.api.strategy_adaptation_routes import register_strategy_adaptation_routes
 
     # API and CLI use the actual clock. Keep their parent's evidence non-stale.
@@ -226,7 +231,7 @@ def test_api_auth_and_cli_prepare_share_child_contract(context, tmp_path, capsys
     assert context[0].get_adaptation_binding(child["strategy_id"].removeprefix("sdm:"))["codes"] == config["codes"]
     config_path = tmp_path / "input.json"
     config_path.write_text(json.dumps(config))
-    code = _legacy.main(["strategy-evidence", "adapt", "--strategy-id", "sdm:parent", "--name", "cli child",
+    code = _cmd_dispatch.main(["strategy-evidence", "adapt", "--strategy-id", "sdm:parent", "--name", "cli child",
                          "--universe", "new", "--config", str(config_path)])
     assert code == 0
     output = json.loads(capsys.readouterr().out)

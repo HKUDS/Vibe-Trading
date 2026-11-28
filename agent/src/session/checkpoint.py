@@ -4,18 +4,25 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from src.kernel import events as vocabulary
 from src.session.models import Attempt
 from src.session.store import SessionStore
 
+if TYPE_CHECKING:
+    from src.session.runtime import SessionRuntime
+
 
 class ResponseCheckpoint:
-    """Persist a bounded-frequency snapshot of streamed assistant text.
+    """Persist the first text chunk immediately and coalesce later writes until flush.
 
-    The first text chunk is written immediately. Later chunks are coalesced to
-    avoid an fsync for every provider token, and :meth:`flush` captures the
-    remaining buffer when the run leaves the streaming loop.
+    Args:
+        store: Store used to open the attempt's thread when no runtime is supplied.
+        attempt: Attempt whose response is checkpointed.
+        min_interval_seconds: Minimum seconds between batched writes. The first chunk is written
+            immediately.
+        runtime: Existing runtime for the attempt's session, if available.
     """
 
     def __init__(
@@ -24,16 +31,12 @@ class ResponseCheckpoint:
         attempt: Attempt,
         *,
         min_interval_seconds: float = 0.25,
+        runtime: Optional["SessionRuntime"] = None,
     ) -> None:
-        """Create a response checkpoint.
+        """Create a response checkpoint."""
+        from src.session.runtime import SessionRuntime
 
-        Args:
-            store: Session persistence store.
-            attempt: Attempt whose response is being streamed.
-            min_interval_seconds: Minimum time between snapshot writes.
-        """
-        self._store = store
-        self._session_id = attempt.session_id
+        self._runtime = runtime or SessionRuntime(store.thread_log(attempt.session_id), attempt.session_id)
         self._attempt_id = attempt.attempt_id
         self._min_interval_seconds = max(0.0, min_interval_seconds)
         self._text = ""
@@ -42,17 +45,17 @@ class ResponseCheckpoint:
         self._lock = threading.Lock()
 
     def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Apply an AgentLoop stream event to the durable snapshot.
+        """Apply an AgentRuntime stream event to the durable snapshot.
 
         Args:
             event_type: Agent event name.
-            data: Event payload.
+            data: Event payload. Text deltas append output and text resets clear it.
         """
-        if event_type not in {"text_delta", "stream_reset"}:
+        if event_type != vocabulary.ITEM_DELTA or data.get("kind") not in {vocabulary.TEXT_DELTA, vocabulary.TEXT_RESET}:
             return
 
         with self._lock:
-            if event_type == "stream_reset":
+            if data.get("kind") == vocabulary.TEXT_RESET:
                 self._text = ""
                 self._dirty = True
                 self._flush_locked()
@@ -73,6 +76,16 @@ class ResponseCheckpoint:
             ):
                 self._flush_locked(now)
 
+    @property
+    def text(self) -> str:
+        """Text streamed to the user so far, after any stream resets.
+
+        Returns:
+            The accumulated response since the most recent reset.
+        """
+        with self._lock:
+            return self._text
+
     def flush(self) -> None:
         """Persist any text accumulated since the last snapshot."""
         with self._lock:
@@ -81,10 +94,6 @@ class ResponseCheckpoint:
     def _flush_locked(self, now: float | None = None) -> None:
         if not self._dirty:
             return
-        self._store.save_partial_response(
-            self._session_id,
-            self._attempt_id,
-            self._text,
-        )
+        self._runtime.record_checkpoint(self._attempt_id, self._text)
         self._dirty = False
         self._last_flush = time.monotonic() if now is None else now

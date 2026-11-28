@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import os
+from dataclasses import replace
+
+from src.product.tool_policy import ToolPolicy
+
 
 from fastapi import HTTPException
 
@@ -45,6 +48,7 @@ def _get_session_service():
     import asyncio
 
     from src.session.events import EventBus
+    from src.session.runtime_lock import HTTP_SERVER_OWNER, claim_sessions_dir
     from src.session.service import SessionService
     from src.session.store import SessionStore
 
@@ -53,6 +57,7 @@ def _get_session_service():
     runs_dir = _host_attr("RUNS_DIR", RUNS_DIR)
 
     store = SessionStore(base_dir=sessions_dir)
+    claim_sessions_dir(sessions_dir, HTTP_SERVER_OWNER)
     event_bus = EventBus()
 
     try:
@@ -61,7 +66,13 @@ def _get_session_service():
     except RuntimeError:
         pass
 
+    from src.providers.settings import _ensure_dotenv
+
+    shell_tools_enabled = get_env_config().api.vibe_trading_enable_shell_tools
+    _ensure_dotenv()
+    policy = replace(ToolPolicy.from_config(get_env_config()), shell_tools_enabled=shell_tools_enabled)
     _session_service = SessionService(
+        policy=policy,
         store=store,
         event_bus=event_bus,
         runs_dir=runs_dir,
@@ -73,7 +84,7 @@ def _get_session_service():
 
 #: Terminal attempt events a finished scheduled briefing can follow.
 _DELIVERY_TRIGGER_EVENTS = frozenset(
-    {"attempt.completed", "attempt.failed", "attempt.cancelled"}
+    {"run.completed", "run.failed", "run.cancelled"}
 )
 
 

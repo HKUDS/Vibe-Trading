@@ -155,7 +155,7 @@
 ## ✨ 주요 기능
 
 <div align="center">
-<a href="assets/features/ko/feature-market-research-card.svg"><img src="assets/features/ko/feature-market-research-card.svg" width="50%" alt="🔍 시장 조사 · 시세, 공시, ETF 편입 종목 조회 · DCF와 동종 기업 배수로 기업가치 평가 · 실적 추적 및 개장 전 브리핑 예약"/></a><a href="assets/features/ko/feature-research-teams-card.svg"><img src="assets/features/ko/feature-research-teams-card.svg" width="50%" alt="🐝 리서치 팀 · 주식·퀀트·가상자산·리스크 팀 30종 · 강세·약세 논거와 리스크 검토 과정 확인 · Pixel Office에서 조사 업무 배정"/></a><br/>
+<a href="assets/features/ko/feature-market-research-card.svg"><img src="assets/features/ko/feature-market-research-card.svg" width="50%" alt="🔍 시장 조사 · 시세, 공시, ETF 편입 종목 조회 · DCF와 동종 기업 배수로 기업가치 평가 · 실적 추적 및 개장 전 브리핑 예약"/></a><a href="assets/features/ko/feature-research-teams-card.svg"><img src="assets/features/ko/feature-research-teams-card.svg" width="50%" alt="🐝 리서치 팀 · 주식·퀀트·가상자산·리스크 팀 31종 · 강세·약세 논거와 리스크 검토 과정 확인 · Pixel Office에서 조사 업무 배정"/></a><br/>
 <a href="assets/features/ko/feature-quant-lab-card.svg"><img src="assets/features/ko/feature-quant-lab-card.svg" width="50%" alt="📊 퀀트 랩 · 5개 라이브러리의 알파 478개 비교 · 여러 시장에서 백테스트하고 표본 밖에서 검증 · 옵션 손익·그릭스·포트폴리오 위험 분석"/></a><a href="assets/features/ko/feature-trading-portfolio-card.svg"><img src="assets/features/ko/feature-trading-portfolio-card.svg" width="50%" alt="👥 거래와 포트폴리오 · 브로커 연결 19종의 권한 확인 · 모의 체결 추적 및 지원되는 실거래 한도 설정 · 섀도 계좌에서 내 매매 규칙 재현"/></a>
 </div>
 
