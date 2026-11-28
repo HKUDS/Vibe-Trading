@@ -59,7 +59,6 @@ VALID_SOURCES: set[str] = {
     "pykrx",
     "longbridge",
     "mt5",
-    "tickerall",
     "b3_cotahist",
     "local",
     "auto",
@@ -125,7 +124,6 @@ def _ensure_registered() -> None:
             "backtest.loaders.pykrx_loader",
             "backtest.loaders.longbridge",
             "backtest.loaders.mt5_loader",
-            "backtest.loaders.tickerall_loader",
             "backtest.loaders.b3_cotahist_loader",
             "backtest.loaders.local_loader",
         ]
@@ -146,7 +144,6 @@ def _ensure_registered() -> None:
 # unavailable ``local`` request can degrade into an unrelated network source.
 # An explicit ``local`` request that is unavailable is a config problem the user
 # must see, not something to paper over with a Yahoo/Tencent fetch.
-# ``tickerall`` joins for the same reason (explicit-only, the user's own broker key).
 # ``fmp`` joins because an explicit ``source="fmp"`` request must not silently
 # return data from a different source when the Stable endpoint 403s — the
 # caller asked for FMP provenance, not a Yahoo fallback (issue #1270).
@@ -157,7 +154,7 @@ def _ensure_registered() -> None:
 # as if it were Toman — a caliber error of about six orders of magnitude, not a
 # missing-data error. An unreachable Iranian endpoint must be visible.
 _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset(
-    {"local", "gildata", "tickerall", "fmp", "nobitex", "wallex", "b3_cotahist"}
+    {"local", "gildata", "fmp", "nobitex", "wallex", "b3_cotahist"}
 )
 
 
@@ -673,7 +670,6 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
             "local": "Check your Data Bridge config "
             "(~/.vibe-trading/data-bridge/config.yaml) — it must exist and "
             "list at least one source.",
-            "tickerall": "Set TICKERALL_API_KEY and TICKERALL_ACCOUNT_ID.",
             "fmp": "Set FMP_API_KEY.",
             "gildata": "Enable Gildata market quotes in Settings and configure GILDATA_TOKEN.",
             "nobitex": "Nobitex's public endpoint was unreachable. It quotes in "

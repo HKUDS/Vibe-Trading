@@ -88,6 +88,8 @@ def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
     assert not Path(body["env_path"]).is_absolute()
     assert body["env_path"].endswith(".env")
     assert body["reasoning_effort"] == "max"
+    advertised_providers = {provider["name"] for provider in body["providers"]}
+    assert advertised_providers.isdisjoint({"novita", "spark", "iflytek"})
     assert not (tmp_path / ".env").exists()
 
 
@@ -332,7 +334,7 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
 
 
 @pytest.mark.parametrize("provider,key", [
-    ("deepseek", "DEEPSEEK_API_KEY"), ("opencode", "OPENCODE_API_KEY"), ("novita", "NOVITA_API_KEY"),
+    ("deepseek", "DEEPSEEK_API_KEY"), ("opencode", "OPENCODE_API_KEY"),
 ])
 def test_desktop_secure_mode_never_persists_injected_llm_key(
     client: TestClient,

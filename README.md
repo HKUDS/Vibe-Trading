@@ -73,6 +73,10 @@
 
 ## 📰 News
 
+- **2026-11-27** 🛠️ **NIFTY 100 benchmarks and backtest fixes** — Alpha Zoo can benchmark and compare factors on the NIFTY 100. Historical tests use current constituents, which introduces survivorship bias. [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
+  Web chat can copy user prompts. When several MT5 broker symbols match, the backtest loader uses the configured suffix to pick an exact match. [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
+  Backtest previews show an overflowed annual return as `null`. Research Lab cost-sensitivity studies omit that metric and still report the other results. **Merged into `main`.** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
+
 - **2026-11-26** 🛠️ **Options comparison exports and Research Lab replay fixes** — Options Lab can export a comparison of two saved strategies as JSON or CSV, including both P&L series and the difference from the baseline strategy. [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
   Research Lab preserves saved price precision when replaying the full frozen dataset or a shorter window. A malformed run configuration no longer prevents other runs from appearing in the catalog. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   Batch replay distinguishes incomplete evidence from failed checks and returns a JSON error for malformed `--bindings` files. FRED request errors redact the API key. **Merged into `main`.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
@@ -80,11 +84,11 @@
 - **2026-11-25** 🛠️ **Walk-forward audits and scheduled paper-trade cancellations** — Research Lab can export each walk-forward validation fold and the optional holdout to CSV with the selected parameters and test metrics. In the 5-minute China A-share paper replay, a scheduled cancellation stops the remaining quantity from matching while preserving earlier fills and fees. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   When Gemini reports an input token limit error, the agent can compact its context and retry. Saving a memory preserves unrelated cached reads. Headline scoring recognizes sentiment words next to typographic quotes, em and en dashes, and ellipses. **Merged into `main`.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
-- **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
-  Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-11-24** 🛠️ **Claude CLI compatibility and backtest accuracy** — The Claude CLI provider now reads the final result from verbose JSON output. Yahoo Finance aggregates hourly data into four-hour bars, and OHLC validation flags infinite prices. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray uses the pairs whose correlations can be estimated. Bootstrap, walk-forward and Monte Carlo validation use 0 to indicate an undefined Sharpe ratio when returns have effectively zero dispersion. **On `main`.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
 - **2026-11-23** 🛠️ **Replayable research and broader market coverage** — Research Lab preserves the original external benchmark prices for frozen replays and exports walk-forward out-of-sample equity as CSV. [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   Options Lab compares two saved strategies on the same spot-price and implied-volatility grid. Symbol search and market data now cover equities and ETFs from six European exchanges via Yahoo Finance. [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
@@ -138,7 +142,7 @@
 
 - **2026-11-06** 📈 **Implied-volatility grids and paper-trading fixes** — Build strike-by-expiry IV grids from supplied option observations, with observed/interpolated labels and no extrapolation ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). Extreme numeric inputs now produce finite results or explicit errors. A-share 5m market orders blocked by a price limit are canceled immediately ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)); the matcher also processes symbols chronologically so later proceeds cannot fund earlier orders. **On `main`, for the next pip release; public 5m requests still support one symbol per step.**
 
-- **2026-11-05** 🚀 **v0.1.19 released** ([Release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): research that outlives the chat — save versioned research artifacts with their evidence and revise them, reuse backtests from earlier turns and sessions, and edit a research goal in place. New opt-ins: a five-minute A-share paper simulation, and Gildata financial queries, stock screening and Shannon portfolio diagnosis (QVeris is removed; an existing `GILDATA_TOKEN` alone now enables nothing). Also Argentina (BYMA) backtests, Parallel web search, Codex OAuth model discovery, and both 0.1.18 regressions fixed. 116 merged pull requests plus 21 landed through maintainer commits, from 26 contributors ([CHANGELOG](CHANGELOG.md)).
+- **2026-11-05** 🚀 **v0.1.19 released** ([Release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): research that outlives the chat — save versioned research artifacts with their evidence and revise them, reuse backtests from earlier turns and sessions, and edit a research goal in place. New opt-ins: a five-minute A-share paper simulation, and Gildata financial queries, stock screening and Shannon portfolio diagnosis (QVeris is removed; an existing `GILDATA_TOKEN` alone now enables nothing). Also Argentina (BYMA) backtests, Codex OAuth model discovery, and both 0.1.18 regressions fixed. 116 merged pull requests plus 21 landed through maintainer commits, from 26 contributors ([CHANGELOG](CHANGELOG.md)).
   **Fixed today:** a backtest reports the benchmark it actually evaluated, long/short books get a risk x-ray, GTJA alpha 17 stays missing while its inputs warm up, the Shannon panel speaks all eleven UI languages, and two reviewed contributor fixes that had not landed are in ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) TTM sums across a missing quarter, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) 3:2 split detection). Thanks [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) and [@yufengsika](https://github.com/yufengsika)!
   **On main after the release (next pip release):** backtest benchmarks are bought at the first evaluated open, as the strategy is, instead of from the last warm-up close; excess return no longer includes that move (AAPL 20/60 SMA example: 22.5% → 18.4%).
 
@@ -221,7 +225,7 @@ A missing interior return or non-positive/non-finite model wealth makes the peri
 
 ## 📡 Data Sources & Smart Fallback
 
-The loader supports **28 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries the configured sources in order. A backtest retries only symbols with no bars left after price validation and aggregation. An explicit `local` source or a `local:` symbol never falls back to the network.
+The loader supports **27 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries the configured sources in order. A backtest retries only symbols with no bars left after price validation and aggregation. An explicit `local` source or a `local:` symbol never falls back to the network.
 
 | Market | How a request is filled |
 |---|---|
@@ -506,7 +510,6 @@ Thank you to everyone who has contributed to Vibe-Trading.
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -634,9 +637,7 @@ Thank you to everyone who has contributed to Vibe-Trading.
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
@@ -698,7 +699,6 @@ Thank you to everyone who has contributed to Vibe-Trading.
 - @Marnie0415 — composite sub-engine fallback for unknown symbols (#734) and the frontend `insertBefore` streaming DOM-race fix (#717)
 - @YZY0108 — the look-ahead-bias fix across all five portfolio optimizers (#487)
 - @UNHNQ — the SiliconFlow CN + Global providers (#565)
-- @FenjuFu — the iFlytek Spark provider (#537)
 - @jelech — the native Anthropic Messages API adapter (#695)
 - @octo-patch — MiniMax regional API endpoints (#731)
 - @Thibaultjaigu — the Requesty OpenAI-compatible gateway provider (#474)

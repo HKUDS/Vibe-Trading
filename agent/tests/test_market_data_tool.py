@@ -10,6 +10,7 @@ from src.config.accessor import get_env_config
 import json
 
 import pandas as pd
+import pytest
 
 from src.market_data import fetch_market_data_json
 from src.swarm.models import SwarmAgentSpec
@@ -373,11 +374,12 @@ def test_market_data_tool_rejects_compact_date_form():
     assert out == {"ok": False, "error": "start_date and end_date must be valid YYYY-MM-DD dates"}
 
 
-def test_market_data_tool_rejects_unknown_source():
+@pytest.mark.parametrize("source", ["bogus", "tickerall"])
+def test_market_data_tool_rejects_unknown_source(source):
     from src.tools.market_data_tool import MarketDataTool
     from backtest.loaders.registry import VALID_SOURCES
 
-    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", source="bogus"))
+    out = json.loads(MarketDataTool(roots=FileRoots.from_config(get_env_config().api)).execute(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-01", source=source))
     assert out == {"ok": False, "error": f"source must be one of {sorted(VALID_SOURCES)}"}
 
 
@@ -386,7 +388,7 @@ def test_market_data_tool_accepts_every_registered_source():
 
     Regression (#1185): the source allow-list was a hardcoded subset that
     rejected registered, documented sources (binance, local, futu,
-    india_broker, tickerall). The tool's enum must match VALID_SOURCES so the
+    india_broker). The tool's enum must match VALID_SOURCES so the
     tool can never silently drop a loader the registry serves.
     """
     import src.tools.market_data_tool as mod

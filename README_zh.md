@@ -66,6 +66,10 @@
 
 ## 📰 新闻
 
+- **2026-11-27** 🛠️ **NIFTY 100 基准测试与回测修复** — Alpha Zoo 新增 NIFTY 100 基准测试和因子对比。历史测试使用当前成分股，结果存在幸存者偏差。 [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
+  网页聊天支持复制用户消息。当多个 MT5 券商代码匹配同一标的时，回测会按配置的后缀精确选取代码。 [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
+  年化收益溢出时，回测预览将该指标显示为 `null`。研究实验室的成本敏感性分析会省略该指标，并继续输出其余结果。**已合入 `main`。** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
+
 - **2026-11-26** 🛠️ **期权对比导出与研究回放修复** — 期权实验室可将两个已保存策略的对比结果导出为 JSON 或 CSV，包含两套策略的盈亏及相对基准策略的差值。 [#2349](https://github.com/HKUDS/Vibe-Trading/pull/2349)
   研究实验室在整段或缩短区间的冻结回放中保留原始价格精度，单条损坏的运行配置也不会影响其他运行的显示。 [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   批量回放会区分证据不足和检查失败，格式错误的 `--bindings` 文件会返回 JSON 错误。FRED 请求失败时会遮盖错误信息中的 API 密钥。**已合入 `main`。** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
@@ -73,11 +77,11 @@
 - **2026-11-25** 🛠️ **滚动验证审计与模拟撤单** — 研究实验室支持把每一折滚动验证及可选的独立留出期导出为 CSV，包含选中的参数和测试指标。A 股 5 分钟模拟回放支持定时撤销订单的剩余数量，保留此前的成交和费用。 [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
   收到 Gemini 输入 token 超限错误时，Agent 会尝试压缩上下文并重试。保存记忆时保留无关的只读工具缓存。新闻情绪评分能识别弯引号、长短破折号和省略号旁的情绪词。 **已合入 `main`。** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
-- **2026-11-24** 🛠️ **Claude CLI 兼容性与回测准确性** — Claude CLI 适配器现在能从详细模式的 JSON 消息数组中读取最终结果。Yahoo Finance 将小时线聚合为 4 小时线，OHLC 校验会将无穷价格标为无效。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
-  Risk X-Ray 仅使用可估计的相关性配对。收益率几乎没有波动时，Bootstrap、滚动验证和蒙特卡洛验证统一用 0 表示未定义的夏普比率。**已合入 `main`。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
-
 <details>
 <summary>更早的新闻</summary>
+
+- **2026-11-24** 🛠️ **Claude CLI 兼容性与回测准确性** — Claude CLI 适配器现在能从详细模式的 JSON 消息数组中读取最终结果。Yahoo Finance 将小时线聚合为 4 小时线，OHLC 校验会将无穷价格标为无效。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
+  Risk X-Ray 仅使用可估计的相关性配对。收益率几乎没有波动时，Bootstrap、滚动验证和蒙特卡洛验证统一用 0 表示未定义的夏普比率。**已合入 `main`。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
 
 - **2026-11-23** 🛠️ **研究回放、期权对比与欧洲行情** — 研究实验室会为冻结回放保留原始外部基准价格，并支持将滚动验证的样本外权益曲线导出为 CSV。 [#2342](https://github.com/HKUDS/Vibe-Trading/pull/2342) · [#2335](https://github.com/HKUDS/Vibe-Trading/pull/2335)
   期权实验室可在同一张标的价格与隐含波动率网格上比较两个已保存的策略。Yahoo Finance 覆盖的六个欧洲市场现已支持股票和 ETF 的代码搜索与行情查询。 [#2318](https://github.com/HKUDS/Vibe-Trading/pull/2318) · [#2303](https://github.com/HKUDS/Vibe-Trading/pull/2303)
@@ -129,7 +133,7 @@
 
 - **2026-11-06** 📈 **隐含波动率曲面与模拟交易修复** — 可根据提供的期权观测值构建行权价 × 到期时间的 IV 网格，标注原始观测与插值点，不向数据覆盖范围之外外推（[#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)）。极端数值输入现在返回有限结果或明确错误。A 股五分钟模拟交易中，受涨跌停限制的市价单会立即撤销（[#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)）；撮合引擎也改为按跨标的时间顺序处理，防止用未来卖出款支付早先买单。**已在 `main`，随下一次 pip 版本发布；公开的五分钟入口仍限每步一个标的。**
 
-- **2026-11-05** 🚀 **v0.1.19 发布**（[发布说明](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19)，`pip install -U vibe-trading-ai`）：研究不再随对话结束而消失——带证据的研究记录可按版本保存并修订，之前轮次和会话中的回测可直接复用，研究目标可原地编辑。新增可选功能：A 股五分钟模拟交易，以及聚源综合问数、智能选股与香农持仓诊断（QVeris 已移除；仅有 `GILDATA_TOKEN` 不再开启任何功能）。另有阿根廷（BYMA）回测、Parallel 网页搜索、Codex OAuth 模型发现，并修复了 0.1.18 的两个回归问题。共 116 个合并的 PR，另有 21 个经维护者提交合入，来自 26 位贡献者（[CHANGELOG](CHANGELOG.md)）。
+- **2026-11-05** 🚀 **v0.1.19 发布**（[发布说明](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19)，`pip install -U vibe-trading-ai`）：研究不再随对话结束而消失——带证据的研究记录可按版本保存并修订，之前轮次和会话中的回测可直接复用，研究目标可原地编辑。新增可选功能：A 股五分钟模拟交易，以及聚源综合问数、智能选股与香农持仓诊断（QVeris 已移除；仅有 `GILDATA_TOKEN` 不再开启任何功能）。另有阿根廷（BYMA）回测、Codex OAuth 模型发现，并修复了 0.1.18 的两个回归问题。共 116 个合并的 PR，另有 21 个经维护者提交合入，来自 26 位贡献者（[CHANGELOG](CHANGELOG.md)）。
   **今日修复：** 回测报告其实际评估的基准；多空组合也能生成风险透视（risk x-ray）；GTJA alpha 17 在输入预热期间保持缺失；香农面板支持全部 11 种界面语言；另合入两项已审阅但尚未落地的贡献者修复（[#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) TTM 求和不再跨越缺失季度，[#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) 3:2 拆股识别）。感谢 [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) 和 [@yufengsika](https://github.com/yufengsika)！
   **发版后已在 main 上修复（随下个 pip 版本发布）：** 回测基准改为在评估期第一根 K 线的开盘价买入，与策略的成交方式一致，不再从热身期最后一根收盘价起算；超额收益不再包含这段涨跌（AAPL 20/60 均线例子：22.5% → 18.4%）。
 
@@ -202,7 +206,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 ## 📡 数据源与自动切换
 
-支持 **28 个行情数据源**。`source: "auto"` 会根据代码识别市场，按配置顺序尝试数据源。
+支持 **27 个行情数据源**。`source: "auto"` 会根据代码识别市场，按配置顺序尝试数据源。
 
 | 市场 | 取数顺序 |
 |---|---|
@@ -470,7 +474,6 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 - @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
 - @MetaAviator — invalid journal quantities refused (#2052)
 - @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
-- @RowanAldean — optional Parallel search in `web_search` (#2113)
 - @VectorPeak — voice notes forwarded in four IM adapters (#2106)
 - @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
 - @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
@@ -598,9 +601,7 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 - @honginp — offline USD-M account reconciliation with immutable snapshot contracts and deterministic drift reporting (#1106)
 - @he-yufeng — each monitor's latest verdict parsed server-side and persisted on the job for the Market Watch list (#1152)
 - @sykuang — GitHub Copilot as a provider through the official SDK, with no borrowed client ID and no editor-impersonation headers (#990)
-- @miguelangelo78 — the hosted TickerAll MetaTrader 5 data source, so forex and metals backtests need no local MT5 terminal (#968)
 - @ngoanpv — Vietnam equity (HOSE) support: `.VN` no longer executes under China A-share rules (#1033)
-- @jax-novita — Novita AI registered as a built-in OpenAI-compatible provider (#1059)
 - @daviddaco1 — the Spanish locale and `README_es.md`, the sixth README (#1087)
 - @1psconstructor — German (Deutsch) UI support (#1117)
 - @x-lambda — the tencent loader building its SSL context from the certifi CA bundle, unblocking HK quotes (#1113)
