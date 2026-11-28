@@ -66,6 +66,9 @@
 
 ## 📰 뉴스
 
+- **2026-11-28** 🛠️ **에이전트 커널 재구축과 더 안전한 재생 가능 세션** — Vibe-Trading이 이제 범용 커널 루프와 도구 실행기를 제품 규칙 및 세션 영속성에서 분리합니다. 세션은 하나의 정규 `thread.jsonl`을 사용하고 대기 입력, 압축, 재생, 이전 세션 마이그레이션과 재시작 복구를 지원합니다. Swarm 노드는 자식 에이전트 턴으로 실행되며 CLI는 하위 명령으로 나뉘고 프로바이더 동작은 카탈로그로 정의됩니다. [#2398](https://github.com/HKUDS/Vibe-Trading/pull/2398)
+  Swarm 셸과 백테스트는 운영체제 격리 환경에서 실행됩니다. macOS에서는 Seatbelt, Linux에서는 bwrap 또는 Landlock을 사용하므로 생성된 코드는 런타임 루트, 자격 증명 또는 세션을 읽을 수 없습니다. 잘린 응답은 부분 전달로 기록되고 취소 시 기한에 맞춰 재시도가 중단되며, Swarm 인계에는 모든 후보 작성자가 성공적으로 만든 파일만 전달됩니다. **`main`에 병합되었습니다.** 이전 세션은 처음 열 때 마이그레이션되므로 업그레이드 전에 `~/.vibe-trading/sessions`를 백업하세요.
+
 - **2026-11-27** 🛠️ **NIFTY 100 벤치마크와 백테스트 수정** — Alpha Zoo에서 NIFTY 100을 대상으로 팩터를 검증하고 비교할 수 있습니다. 과거 데이터를 검증할 때 현재 구성 종목을 사용하므로 생존 편향이 생깁니다. [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
   웹 채팅에서 사용자 메시지를 복사할 수 있습니다. 여러 MT5 브로커 종목 코드가 후보인 경우 백테스트는 설정된 접미사와 정확히 일치하는 코드를 선택합니다. [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
   연환산 수익률이 계산 범위를 벗어나면 백테스트 미리보기에는 `null`이 표시됩니다. 리서치 랩의 비용 민감도 분석은 그 지표를 제외하고 나머지 결과를 표시합니다. **`main`에 병합되었습니다.** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
@@ -74,11 +77,12 @@
   리서치 랩은 고정된 데이터의 전체 구간이나 더 짧은 구간을 리플레이할 때 저장된 가격의 정밀도를 유지합니다. 한 실행의 설정이 잘못되어도 다른 실행은 목록에 표시됩니다. [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   일괄 리플레이는 근거 부족과 검증 실패를 구분하고, 잘못된 `--bindings` 파일에는 JSON 오류를 반환합니다. FRED 요청이 실패하면 오류 메시지의 API 키를 가립니다. **`main`에 병합되었습니다.** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
 
-- **2026-11-25** 🛠️ **워크포워드 검증 감사와 모의 주문의 지정 시점 취소** — 리서치 랩에서 워크포워드 검증의 각 폴드와 선택적 홀드아웃 구간을 선택된 파라미터 및 테스트 지표와 함께 CSV로 내보낼 수 있습니다. 중국 A주 5분봉 모의 거래 리플레이는 지정한 시점에 주문의 미체결 수량을 취소하고 앞서 발생한 체결과 수수료를 보존합니다. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
-  Gemini에서 입력 토큰 한도 오류가 발생하면 에이전트가 컨텍스트를 압축하고 재시도할 수 있습니다. 메모리를 저장해도 관련 없는 읽기 결과의 캐시가 유지됩니다. 뉴스 제목의 감성 분석은 곡선형 따옴표, 긴 줄표와 짧은 줄표, 말줄임표 옆의 감성 단어를 인식합니다. **`main`에 병합되었습니다.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
 <details>
 <summary>이전 뉴스</summary>
+
+- **2026-11-25** 🛠️ **워크포워드 검증 감사와 모의 주문의 지정 시점 취소** — 리서치 랩에서 워크포워드 검증의 각 폴드와 선택적 홀드아웃 구간을 선택된 파라미터 및 테스트 지표와 함께 CSV로 내보낼 수 있습니다. 중국 A주 5분봉 모의 거래 리플레이는 지정한 시점에 주문의 미체결 수량을 취소하고 앞서 발생한 체결과 수수료를 보존합니다. [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  Gemini에서 입력 토큰 한도 오류가 발생하면 에이전트가 컨텍스트를 압축하고 재시도할 수 있습니다. 메모리를 저장해도 관련 없는 읽기 결과의 캐시가 유지됩니다. 뉴스 제목의 감성 분석은 곡선형 따옴표, 긴 줄표와 짧은 줄표, 말줄임표 옆의 감성 단어를 인식합니다. **`main`에 병합되었습니다.** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
 - **2026-11-24** 🛠️ **Claude CLI 호환성과 백테스트 정확도 개선** — Claude CLI 프로바이더가 상세 모드의 JSON 출력에서 최종 결과를 읽습니다. Yahoo Finance의 1시간 봉을 4시간 봉으로 집계하고, OHLC 검증에서 무한대 가격을 유효하지 않은 값으로 표시합니다. [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray는 상관관계를 추정할 수 있는 종목 쌍만 집계합니다. 수익률의 산포가 사실상 0이면 부트스트랩, 워크포워드, 몬테카를로 검증 모두 정의할 수 없는 샤프 비율을 기존 규칙에 따라 0으로 표시합니다. **`main`에 반영되었습니다.** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)

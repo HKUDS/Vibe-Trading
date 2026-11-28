@@ -66,6 +66,9 @@
 
 ## 📰 新闻
 
+- **2026-11-28** 🛠️ **重建 Agent 内核，让可回放会话更安全** — Vibe-Trading 现在将通用内核循环和工具运行器，与产品规则及会话持久化分离。会话统一使用一个规范的 `thread.jsonl`，支持排队输入、上下文压缩、回放、旧会话迁移和重启恢复，Swarm 节点则作为子 Agent 轮次运行。CLI 已拆分为多个子命令，Provider 行为改由目录定义。 [#2398](https://github.com/HKUDS/Vibe-Trading/pull/2398)
+  Swarm Shell 和回测运行在操作系统隔离环境中，macOS 使用 Seatbelt，Linux 使用 bwrap 或 Landlock，因此生成的代码无法读取运行时根目录、凭据或会话。被截断的回答会标记为部分交付，取消操作会在截止时间停止重试，Swarm 交接只会传递所有候选写入者都成功写入的文件。**已合并到 `main`。** 旧会话会在首次打开时迁移，升级前请先备份 `~/.vibe-trading/sessions`。
+
 - **2026-11-27** 🛠️ **NIFTY 100 基准测试与回测修复** — Alpha Zoo 新增 NIFTY 100 基准测试和因子对比。历史测试使用当前成分股，结果存在幸存者偏差。 [#2352](https://github.com/HKUDS/Vibe-Trading/pull/2352)
   网页聊天支持复制用户消息。当多个 MT5 券商代码匹配同一标的时，回测会按配置的后缀精确选取代码。 [#2383](https://github.com/HKUDS/Vibe-Trading/pull/2383) · [#2387](https://github.com/HKUDS/Vibe-Trading/pull/2387)
   年化收益溢出时，回测预览将该指标显示为 `null`。研究实验室的成本敏感性分析会省略该指标，并继续输出其余结果。**已合入 `main`。** [#2386](https://github.com/HKUDS/Vibe-Trading/pull/2386) · [#2390](https://github.com/HKUDS/Vibe-Trading/pull/2390)
@@ -74,11 +77,12 @@
   研究实验室在整段或缩短区间的冻结回放中保留原始价格精度，单条损坏的运行配置也不会影响其他运行的显示。 [#2377](https://github.com/HKUDS/Vibe-Trading/pull/2377) · [#2374](https://github.com/HKUDS/Vibe-Trading/pull/2374)
   批量回放会区分证据不足和检查失败，格式错误的 `--bindings` 文件会返回 JSON 错误。FRED 请求失败时会遮盖错误信息中的 API 密钥。**已合入 `main`。** [#2371](https://github.com/HKUDS/Vibe-Trading/pull/2371) · [#2384](https://github.com/HKUDS/Vibe-Trading/pull/2384) · [#2363](https://github.com/HKUDS/Vibe-Trading/pull/2363)
 
-- **2026-11-25** 🛠️ **滚动验证审计与模拟撤单** — 研究实验室支持把每一折滚动验证及可选的独立留出期导出为 CSV，包含选中的参数和测试指标。A 股 5 分钟模拟回放支持定时撤销订单的剩余数量，保留此前的成交和费用。 [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
-  收到 Gemini 输入 token 超限错误时，Agent 会尝试压缩上下文并重试。保存记忆时保留无关的只读工具缓存。新闻情绪评分能识别弯引号、长短破折号和省略号旁的情绪词。 **已合入 `main`。** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
 <details>
 <summary>更早的新闻</summary>
+
+- **2026-11-25** 🛠️ **滚动验证审计与模拟撤单** — 研究实验室支持把每一折滚动验证及可选的独立留出期导出为 CSV，包含选中的参数和测试指标。A 股 5 分钟模拟回放支持定时撤销订单的剩余数量，保留此前的成交和费用。 [#2365](https://github.com/HKUDS/Vibe-Trading/pull/2365) · [#2210](https://github.com/HKUDS/Vibe-Trading/pull/2210)
+  收到 Gemini 输入 token 超限错误时，Agent 会尝试压缩上下文并重试。保存记忆时保留无关的只读工具缓存。新闻情绪评分能识别弯引号、长短破折号和省略号旁的情绪词。 **已合入 `main`。** [#2360](https://github.com/HKUDS/Vibe-Trading/pull/2360) · [#2310](https://github.com/HKUDS/Vibe-Trading/pull/2310) · [#2362](https://github.com/HKUDS/Vibe-Trading/pull/2362)
 
 - **2026-11-24** 🛠️ **Claude CLI 兼容性与回测准确性** — Claude CLI 适配器现在能从详细模式的 JSON 消息数组中读取最终结果。Yahoo Finance 将小时线聚合为 4 小时线，OHLC 校验会将无穷价格标为无效。 [#2324](https://github.com/HKUDS/Vibe-Trading/pull/2324) · [#2344](https://github.com/HKUDS/Vibe-Trading/pull/2344) · [#2332](https://github.com/HKUDS/Vibe-Trading/pull/2332)
   Risk X-Ray 仅使用可估计的相关性配对。收益率几乎没有波动时，Bootstrap、滚动验证和蒙特卡洛验证统一用 0 表示未定义的夏普比率。**已合入 `main`。** [#2343](https://github.com/HKUDS/Vibe-Trading/pull/2343) · [#2333](https://github.com/HKUDS/Vibe-Trading/pull/2333)
