@@ -189,6 +189,12 @@ def _source_for(field: str, metadata: Mapping[str, Any], universe: str) -> str |
     return None
 
 
+def _point_in_time_membership(metadata: Mapping[str, Any]) -> Any:
+    """Read the canonical membership flag, accepting the legacy long-form key."""
+    value = metadata.get("pit_membership")
+    return metadata.get("point_in_time_membership") if value is None else value
+
+
 def _field_status(
     field: str,
     *,
@@ -207,7 +213,7 @@ def _field_status(
     elif field_metadata.get("available_at") or field_metadata.get("availability_timestamp"):
         status = "verified"
     elif policy.get("kind") == "membership":
-        status = "verified" if metadata.get("pit_membership") is True else "unknown"
+        status = "verified" if _point_in_time_membership(metadata) is True else "unknown"
     elif field.startswith("fund:"):
         # A one-bar shift is useful protection, but date-only filings do not
         # prove the exact publication time. Keep this explicitly non-PIT-safe.
@@ -243,9 +249,10 @@ def build_availability_contract(
     metadata = _metadata(panel)
     adapter = _ADAPTERS.get(universe_key, _GENERIC_ADAPTER)
     context = adapter.context(universe_key, metadata)
+    pit_membership = _point_in_time_membership(metadata)
     required = {str(field) for field in (required_fields or ())}
     observed = {str(field) for field in panel if not str(field).startswith("_")}
-    if metadata.get("pit_membership") is not None or metadata.get("survivorship_bias") is not None:
+    if pit_membership is not None or metadata.get("survivorship_bias") is not None:
         observed.add("universe:membership")
     fields = sorted(observed | required)
     window = _panel_window(panel)
@@ -292,7 +299,7 @@ def build_availability_contract(
             "pit_safe": pit_safe,
             "validation": _validation(value) if field != "universe:membership" else {
                 "present": True,
-                "pit_membership": metadata.get("pit_membership"),
+                "pit_membership": pit_membership,
                 "survivorship_bias": metadata.get("survivorship_bias"),
             },
         }

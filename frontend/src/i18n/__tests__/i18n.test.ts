@@ -104,6 +104,20 @@ function collectStrings(
 
 const VAR_RE = /\{\{(\w+)\}\}/g;
 const enStrings = collectStrings(en as unknown as Record<string, unknown>);
+const benchmarkHintKeys = ["alphaZoo.singleAssetHint", "analysis.ready_single_asset"];
+
+describe("benchmark guidance", () => {
+  it.each(benchmarkHintKeys)("%s names NIFTY 100 in every locale", (key) => {
+    const missing = [["en", en] as const, ...Object.entries(locales)]
+      .filter(([, locale]) => {
+        const value = collectStrings(locale as Record<string, unknown>)[key] ?? "";
+        return !/nifty\s*100/i.test(value);
+      })
+      .map(([code]) => code);
+
+    expect(missing).toEqual([]);
+  });
+});
 
 describe("i18n interpolation parity", () => {
   it.each(Object.entries(locales))(

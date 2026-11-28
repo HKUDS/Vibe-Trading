@@ -160,8 +160,8 @@ def run_bench(
 
     Args:
         zoo: Zoo id (e.g. ``gtja191``, ``alpha101``, ``qlib158``).
-        universe: Universe key understood by ``_load_universe_panel``
-            (e.g. ``csi300``, ``sp500``, ``btc-usdt``).
+        universe: Benchmark universe understood by ``_load_universe_panel``
+            (``csi300``, ``sp500``, or ``nifty100``).
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD`` window.
         top: Number of top-IR alphas to keep in ``top5_by_ir`` and
             ``dead_examples`` (capped at ``top``).
