@@ -160,6 +160,21 @@ _BUILTIN: dict[str, ConnectorOnboarding] = {
         install_command='pip install "vibe-trading-ai[mt5]" keyring',
         setup_hint="MetaTrader5 is Windows-only and requires a local terminal session.",
     ),
+    "exness": ConnectorOnboarding(
+        auth_type="api_key",
+        credential_fields=(
+            _field("api_key", "API Key (exnsk-…)"),
+            _field("private_key", "Ed25519 Private Key"),
+            _field("account_id", "Trading Account ID", secret=False),
+            _field("gateway_url", "Gateway URL", secret=False),
+        ),
+        dependency=None,
+        install_command="pip install keyring",
+        setup_hint=(
+            "Create the key in Exness Personal Area → Key Management with the Trading scope set to "
+            "Read-only; copy the Gateway URL from the DNS widget there."
+        ),
+    ),
     "okx": ConnectorOnboarding(
         auth_type="api_key",
         credential_fields=(

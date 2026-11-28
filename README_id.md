@@ -263,6 +263,7 @@ Baca berarti profil khusus hanya baca. Simulasi memakai sandbox broker atau simu
 | binance | ✓ | ✓ | ✓ |
 | dhan | ✓ | ✓ | — |
 | etoro | ✓ | ✓ | ✓ |
+| exness | ✓ | — | ✓ |
 | futu | ✓ | ✓ | ✓ |
 | ibkr | ✓ | — | — |
 | kis | ✓ | ✓ | — |

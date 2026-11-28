@@ -66,6 +66,10 @@ _LIVE_CAPABLE = frozenset(
         # against. Tier settled as bounded live in #1367; the profile that ships
         # today is read-only and exposes no order capability.
         "scalable",
+        # Exness Trader API: no paper environment and no demo/real discriminator,
+        # so the connector ships NO paper profile (Robinhood/Scalable shape) and
+        # every order — demo account or not — routes through the mandate gate.
+        "exness",
     }
 )
 

@@ -215,6 +215,8 @@
     "missingLongbridgeVariables": "Konfigurasi belum lengkap. Atur variabel berikut di agent/.env lalu buat ulang layanan:",
     "missingEtoroVariables": "Konfigurasi belum lengkap. Atur variabel environment berikut atau buat ~/.vibe-trading/etoro.json:",
     "missingEtoroFileHint": "Contoh file: {\"api_key\": \"YOUR_PUBLIC_API_KEY\", \"user_key\": \"YOUR_USER_KEY\", \"profile\": \"live-readonly\"}. Profil: etoro-paper-sdk, etoro-live-sdk-readonly, etoro-paper-trade, etoro-live-trade.",
+    "missingExnessVariables": "Konfigurasi belum lengkap. Atur variabel environment berikut atau buat ~/.vibe-trading/exness.json:",
+    "missingExnessFileHint": "Contoh file: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}. Profil: exness-live-api-readonly, exness-live-api-trade.",
     "missingConnectorVariables": "Konfigurasi belum lengkap. Atur kredensial connector di ~/.vibe-trading/ atau agent/.env, lalu verifikasi koneksi.",
     "pathSeparatedKeyBound": "Path demo/real terpisah (key pair bersama)",
     "sdkConnectorProfile": "Connector SDK langsung · profil read-only",

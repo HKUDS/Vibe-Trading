@@ -175,6 +175,8 @@
     "missingLongbridgeVariables": "Yapılandırma eksik. Bu değişkenleri agent/.env içinde ayarlayıp hizmeti yeniden oluşturun:",
     "missingEtoroVariables": "Yapılandırma eksik. Bu ortam değişkenlerini ayarlayın veya ~/.vibe-trading/etoro.json dosyasını oluşturun:",
     "missingEtoroFileHint": "Örnek dosya: {\"api_key\": \"YOUR_PUBLIC_API_KEY\", \"user_key\": \"YOUR_USER_KEY\", \"profile\": \"live-readonly\"}. Profiller: etoro-paper-sdk, etoro-live-sdk-readonly, etoro-paper-trade, etoro-live-trade.",
+    "missingExnessVariables": "Yapılandırma eksik. Bu ortam değişkenlerini ayarlayın veya ~/.vibe-trading/exness.json dosyasını oluşturun:",
+    "missingExnessFileHint": "Örnek dosya: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}. Profiller: exness-live-api-readonly, exness-live-api-trade.",
     "missingConnectorVariables": "Yapılandırma eksik. Bağlantı kimlik bilgilerini ~/.vibe-trading/ veya agent/.env içinde yapılandırıp bağlantıyı doğrulayın.",
     "pathSeparatedKeyBound": "Deneme/gerçek yolları ayrı (ortak anahtar çifti)",
     "sdkConnectorProfile": "Doğrudan SDK bağlantısı · salt okunur profil",

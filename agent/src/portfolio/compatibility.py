@@ -91,6 +91,12 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "open_positions",
         "Contract-size and non-USD account valuation require verification.",
     ),
+    "exness": PortfolioCompatibility(
+        "experimental",
+        1,
+        "open_positions",
+        "Contract-size and non-USD account valuation require verification.",
+    ),
     "etoro": PortfolioCompatibility(
         "experimental",
         1,

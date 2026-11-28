@@ -5,6 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — 2026-11-27
+
+- **Exness Trader API connector** (hosted REST, no MT5 terminal, any OS):
+  API key plus per-request Ed25519 signing (verified against the portal's
+  published vector), Access Point discovery pinned to https Exness hosts with
+  redirects refused, and account/positions/orders/deals/candles/quote reads.
+  Live-only, like Robinhood: the API has no paper environment or demo flag, so
+  `exness-live-api-trade` routes every order through the mandate gate (lot-aware
+  USD notional hook) and kill switch. Async orders report `pending` instead of
+  being re-sent. Instant-execution accounts request the latest bid/ask within
+  `deviation_points` and refuse stale quotes. The resolved Access Point is cached
+  on disk (host only) to respect the discovery rate limit. Broker connectors:
+  20 → **21**.
+
 ### Changed — 2026-11-14
 
 - Unified provider configuration and discovery across Agent, CLI, API, Swarm

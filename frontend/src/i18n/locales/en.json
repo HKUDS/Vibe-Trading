@@ -215,6 +215,8 @@
     "missingLongbridgeVariables": "Missing configuration. Configure these variables in agent/.env and recreate the service:",
     "missingEtoroVariables": "Missing configuration. Set these environment variables or create ~/.vibe-trading/etoro.json:",
     "missingEtoroFileHint": "Example file: {\"api_key\": \"YOUR_PUBLIC_API_KEY\", \"user_key\": \"YOUR_USER_KEY\", \"profile\": \"live-readonly\"}. Profiles: etoro-paper-sdk, etoro-live-sdk-readonly, etoro-paper-trade, etoro-live-trade.",
+    "missingExnessVariables": "Missing configuration. Set these environment variables or create ~/.vibe-trading/exness.json:",
+    "missingExnessFileHint": "Example file: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}. Profiles: exness-live-api-readonly, exness-live-api-trade.",
     "missingConnectorVariables": "Missing configuration. Configure connector credentials in ~/.vibe-trading/ or agent/.env, then verify the connection.",
     "pathSeparatedKeyBound": "Demo/real path-separated (shared key pair)",
     "sdkConnectorProfile": "Direct SDK connector · read-only profile",

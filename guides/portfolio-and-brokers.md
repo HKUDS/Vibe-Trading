@@ -95,6 +95,8 @@ use a broker sandbox or local simulation. See each profile's notes and the
 | `etoro-live-trade` | etoro | live | broker_sdk | write-enabled | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | `copy.close`, `copy.poll`, `copy.precheck`, `copy.start`, `orders.cancel`, `orders.cancel_close`, `orders.place.requires_mandate`, `positions.close`, `positions.edit` | mandate required |
 | `etoro-paper-sdk` | etoro | paper | broker_sdk | read-only | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | none declared | disabled (read-only) |
 | `etoro-paper-trade` | etoro | paper | broker_sdk | write-enabled | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | `orders.cancel`, `orders.cancel_close`, `orders.place`, `positions.close`, `positions.edit` | no mandate declared |
+| `exness-live-api-readonly` | exness | live | broker_sdk | read-only | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | none declared | disabled (read-only) |
+| `exness-live-api-trade` | exness | live | broker_sdk | write-enabled | `account.read`, `history.read`, `orders.read`, `positions.read`, `quotes.read` | broker_sdk | `orders.place.requires_mandate` | mandate required |
 | `futu-live-sdk-readonly` | futu | live | broker_sdk | read-only | `acc_cash_flow.read`, `account.read`, `capital_distribution.read`, `capital_flow.read`, `earnings_calendar.read`, `financials.read`, `history.read`, `history_deals.read`, `orders.read`, `positions.read`, `quotes.read`, `rehab.read` | broker_sdk | none declared | disabled (read-only) |
 | `futu-live-trade` | futu | live | broker_sdk | write-enabled | `acc_cash_flow.read`, `account.read`, `capital_distribution.read`, `capital_flow.read`, `earnings_calendar.read`, `financials.read`, `history.read`, `history_deals.read`, `orders.read`, `positions.read`, `quotes.read`, `rehab.read` | broker_sdk | `orders.place.requires_mandate` | mandate required |
 | `futu-paper-sdk` | futu | paper | broker_sdk | read-only | `acc_cash_flow.read`, `account.read`, `capital_distribution.read`, `capital_flow.read`, `earnings_calendar.read`, `financials.read`, `history.read`, `history_deals.read`, `orders.read`, `positions.read`, `quotes.read`, `rehab.read` | broker_sdk | none declared | disabled (read-only) |
@@ -206,6 +208,57 @@ vibe-trading connector history EURUSD
 Safety boundary: **"paper" means the broker's own demo account**, re-verified on every call — the terminal reports `account_info().trade_mode` and the logged-in account number, so pointing a paper profile at a real-money account (or the reverse) is refused outright. MT5 sizes orders in **lots** (1 lot EURUSD = 100,000 EUR); the live mandate gate prices lots through the connector's USD hook, and the connector's own `max_order_volume` / `max_order_notional_usd` guards apply on demo as well as live, failing closed when a notional cannot be priced. On hedging accounts (the Exness default), note that an opposing order **opens a hedge position** — close by ticket instead (pass the position ticket to `trading_cancel_order`) so the fill is pinned to that position and can only reduce exposure. Rollback / halt path: the kill switch blocks new live orders, while cancellation stays available and is written to the audit log. Mandate limits are denominated in USD; a non-USD account currency is margined by the broker in its own currency.
 
 The `mt5` market-data loader — the head of the forex fallback chain — shares this same `mt5.json`. With no such file it attaches read-only to the most recently used terminal that is already logged in.
+
+No Windows machine or terminal? Exness accounts can also be reached through the hosted Exness Trader API — see the next section.
+
+### Exness Trader API (hosted, no terminal)
+
+Connects to the [Exness Trader API](https://www.exness-api.com/) over HTTPS with an API key plus a per-request **Ed25519 signature**. It needs no MT5 terminal and runs on any OS, with no extra dependency.
+
+1. In the Exness Personal Area, open **Key Management** and create a key with the **Trading** scope. A **Read-only** key covers up to 10 accounts. A **Full access** key is needed for trading and covers exactly one account. Start with Read-only.
+2. Save the API key (`exnsk-…`), the private signing key and the account id. The private key is either 128 hex characters from Exness, or an unencrypted PKCS#8 PEM if you registered your own key pair.
+3. Copy your **Gateway URL** from the DNS widget in Key Management.
+
+Configure `~/.vibe-trading/exness.json` (create it yourself; `chmod 600` where supported):
+
+```json
+{
+  "api_key": "exnsk-...",
+  "private_key": "<128 hex characters, or PEM>",
+  "account_id": "12345678",
+  "gateway_url": "https://<your gateway host>",
+  "max_order_volume": 1.0,
+  "max_order_notional_usd": 10000,
+  "deviation_points": 10
+}
+```
+
+Instead of the file, you can set `EXNESS_API_KEY`, `EXNESS_PRIVATE_KEY`, `EXNESS_ACCOUNT_ID` and `EXNESS_GATEWAY_URL`, or store the read-only credentials in the OS keyring through `vibe-trading connector setup`. Then:
+
+```bash
+vibe-trading connector use exness-live-api-readonly
+vibe-trading connector check
+vibe-trading connector account
+vibe-trading connector quote EURUSD
+vibe-trading connector history XAUUSD
+```
+
+| Profile | Account | Orders |
+|---------|---------|--------|
+| `exness-live-api-readonly` | any | read-only |
+| `exness-live-api-trade` | any | mandate + kill-switch gated |
+
+Safety boundary:
+- **Live only.** The API has no paper environment and no demo/real flag, so there is no paper profile. Every order is treated as real money and passes the live mandate gate (forex, or an explicit `cfd` allowance for metals and crypto; lot-aware USD caps) and the kill switch, even when the key points at a demo account.
+- **Pinned hosts.** The connector resolves the account's Access Point through your gateway. Both hosts must be `https://` Exness domains, and redirects are refused, so signed requests are never forwarded elsewhere.
+- **No credential overrides.** Credentials, account and hosts can't be overridden by tool arguments.
+- **Async orders.** An order Exness accepted but hasn't confirmed within a few seconds returns `order_state: "pending"` with an `operation_id`. Check it before re-submitting. Orders are never re-sent automatically.
+- **Hedging.** As with MT5, an opposite-side order opens a hedge. Close by passing the position id to `trading_cancel_order`.
+- **Limit orders.** These must use `time_in_force="gtc"`, because Exness pending orders have no expiry.
+- **Instant execution** (e.g. Pro accounts). Market orders request the latest ask (buy) or bid (sell), with up to `deviation_points` of slippage (default 10; set 1–1000 in `exness.json`). Beyond that, Exness requotes instead of filling worse. A missing quote, or one older than 5 minutes, refuses the order. Closes still go through without a price.
+- **Quotes.** These come from the latest M1 candle, since the REST API has no quote endpoint.
+- **Coverage.** Stocks and indices aren't offered by the API.
+- **Backtests.** There is no `exness` backtest data source, because the backtest sandbox never receives broker signing keys. Use the `mt5` / TickerAll sources for forex backtests.
 
 ---
 

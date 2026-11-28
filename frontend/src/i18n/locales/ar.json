@@ -209,6 +209,8 @@
     "missingLongbridgeVariables": "الإعدادات ناقصة. اضبط المتغيرات التالية في agent/.env، ثم أعد إنشاء الخدمة:",
     "missingEtoroVariables": "الإعدادات ناقصة. اضبط متغيرات البيئة التالية أو أنشئ ~/.vibe-trading/etoro.json:",
     "missingEtoroFileHint": "مثال: {\"api_key\": \"YOUR_PUBLIC_API_KEY\", \"user_key\": \"YOUR_USER_KEY\", \"profile\": \"live-readonly\"}. الملفات: etoro-paper-sdk، etoro-live-sdk-readonly، etoro-paper-trade، etoro-live-trade.",
+    "missingExnessVariables": "الإعدادات ناقصة. اضبط متغيرات البيئة التالية أو أنشئ ~/.vibe-trading/exness.json:",
+    "missingExnessFileHint": "مثال: {\"api_key\": \"exnsk-…\", \"private_key\": \"<128-hex or PEM>\", \"account_id\": \"12345678\", \"gateway_url\": \"https://…\", \"profile\": \"live-readonly\"}. الملفات: exness-live-api-readonly, exness-live-api-trade.",
     "missingConnectorVariables": "الإعدادات ناقصة. اضبط بيانات اعتماد الموصل في ~/.vibe-trading/ أو agent/.env ثم تحقق من الاتصال.",
     "pathSeparatedKeyBound": "مسارات منفصلة للتجريبي/الحقيقي (مفتاح مشترك)",
     "sdkConnectorProfile": "اتصال مباشر عبر SDK · ملف تعريف للقراءة فقط",

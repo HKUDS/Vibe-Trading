@@ -437,6 +437,11 @@ const SDK_CONNECTOR_SETUP_HINTS = {
     variables: ["ETORO_API_KEY", "ETORO_USER_KEY"],
     fileHintKey: "runtime.missingEtoroFileHint",
   },
+  exness: {
+    introKey: "runtime.missingExnessVariables",
+    variables: ["EXNESS_API_KEY", "EXNESS_PRIVATE_KEY", "EXNESS_ACCOUNT_ID", "EXNESS_GATEWAY_URL"],
+    fileHintKey: "runtime.missingExnessFileHint",
+  },
 } as const;
 
 function ConnectorMissingSetup({ broker, t }: { broker: string; t: TFunction }) {

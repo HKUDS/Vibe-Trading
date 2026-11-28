@@ -22,6 +22,7 @@ from src.trading.connectors.scalable.profiles import SCALABLE_PROFILES
 from src.trading.connectors.shoonya.profiles import SHOONYA_PROFILES
 from src.trading.connectors.tiger.profiles import TIGER_PROFILES
 from src.trading.connectors.etoro.profiles import ETORO_PROFILES
+from src.trading.connectors.exness.profiles import EXNESS_PROFILES
 from src.trading.connectors.toss.profiles import TOSS_PROFILES
 from src.trading.connectors.trading212.profiles import TRADING212_PROFILES
 from src.trading.connectors.upbit.profiles import UPBIT_PROFILES
@@ -45,6 +46,7 @@ BUILTIN_PROFILES: tuple[TradingProfile, ...] = (
     *TRADING212_PROFILES,
     *MT5_PROFILES,
     *ETORO_PROFILES,
+    *EXNESS_PROFILES,
     *ZERODHA_PROFILES,
     *KIS_PROFILES,
     *UPBIT_PROFILES,

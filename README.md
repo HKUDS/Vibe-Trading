@@ -296,6 +296,7 @@ Yes indicates a declared capability. A dash means no matching profile is declare
 | binance | Yes | Yes | Yes |
 | dhan | Yes | Yes | — |
 | etoro | Yes | Yes | Yes |
+| exness | Yes | — | Yes |
 | futu | Yes | Yes | Yes |
 | ibkr | Yes | — | — |
 | kis | Yes | Yes | — |
