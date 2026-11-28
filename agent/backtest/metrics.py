@@ -683,7 +683,9 @@ def calc_metrics(
         initial_cash: Starting capital.
         bars_per_year: Bars per year for annualisation. None = auto-detect
             from equity curve dates (calendar-day method, for cross-market).
-        bench_ret: Benchmark per-bar return series (optional).
+        bench_ret: Benchmark per-bar return series (optional), aligned to the
+            portfolio dates. Observations outside that window are ignored;
+            missing portfolio dates use the existing zero-return convention.
         positions: Position-weight frame used as a backward-compatible
             turnover fallback when ``turnover_series`` is not supplied.
         turnover_series: Actual per-bar execution turnover (optional). When
@@ -792,9 +794,9 @@ def calc_metrics(
     tracking_error = 0.0
     bench_beta = 0.0
     if bench_ret is not None and len(bench_ret) > 0:
-        bench_return = float((1 + bench_ret).prod() - 1)
-        excess = total_ret - bench_return
         aligned_bench = bench_ret.reindex(port_ret.index).fillna(0.0)
+        bench_return = float((1 + aligned_bench).prod() - 1)
+        excess = total_ret - bench_return
         active_ret = port_ret - aligned_bench
         active_mean = float(active_ret.mean())
         # Same ddof=1 small-sample guard as ``vol`` so the
