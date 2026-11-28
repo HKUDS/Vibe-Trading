@@ -1,5 +1,6 @@
 """Atomic migration of archived sessions, with real-layout display parity."""
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -74,12 +75,16 @@ def test_mixed_archive_keeps_old_and_canonical_turns(tmp_path):
 
 
 def test_real_pre_thread_session_copy(tmp_path):
-    # Owner-authorized read-only source. Nothing from the archive is printed or
-    # committed; CI without the local archive exercises the fixed layout above.
-    root = Path("/Users/wuhaozhe/.vibe-trading/sessions")
+    # Opt-in: point VIBE_TRADING_MIGRATION_SAMPLE_ROOT at a sessions directory of
+    # an older install. It is read only, copied into tmp_path, and nothing from it
+    # is printed; without it the fixed layout above covers the migration.
+    raw = os.environ.get("VIBE_TRADING_MIGRATION_SAMPLE_ROOT", "")  # noqa: env-gate — opt-in local migration sample
+    if not raw:
+        pytest.skip("set VIBE_TRADING_MIGRATION_SAMPLE_ROOT to migrate a real pre-thread session copy")
+    root = Path(raw).expanduser()
     candidates = [p for p in root.glob("*/messages.jsonl") if not (p.parent / "thread.jsonl").exists()]
     if not candidates:
-        pytest.skip("owner's read-only archive unavailable")
+        pytest.skip("no pre-thread session under VIBE_TRADING_MIGRATION_SAMPLE_ROOT")
     source = candidates[0]
     shutil.copytree(source.parent, tmp_path / "session")
     rows = [json.loads(line) for line in source.read_text().splitlines() if line.strip()]
