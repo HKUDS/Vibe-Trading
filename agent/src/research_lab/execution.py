@@ -6,7 +6,6 @@ from src.tools.path_utils import FileRoots
 
 import ast
 import hashlib
-import io
 import json
 import math
 import os
@@ -19,9 +18,13 @@ import pandas as pd
 from backtest.frozen import (
     BENCHMARK_PRICE_ARTIFACT,
     BENCHMARK_PRICE_FILENAME,
+    calendar_timezone,
     frozen_benchmark_entry,
     read_benchmark_prices,
+    read_calendar_csv,
     read_frozen_input,
+    slice_calendar,
+    validate_calendar_groups,
     write_benchmark_prices,
 )
 from src.config.paths import get_runs_dir
@@ -93,6 +96,9 @@ def freeze_run(
     config = json.loads(config_bytes)
     card = json.loads((run / "run_card.json").read_text())
     entries = {row["path"]: row for row in card.get("artifacts", [])}
+    timezones = card.get("calendar_timezones", {})
+    if not isinstance(timezones, dict):
+        raise ValueError("invalid calendar timezone metadata")
     config_hash = hashlib.sha256(config_bytes).hexdigest()
     if entries.get("config.json", {}).get("sha256") != config_hash:
         raise ValueError("source configuration changed since its completed backtest; rerun it before studying it")
@@ -103,6 +109,14 @@ def freeze_run(
     wanted = [symbol.removeprefix("local:") for symbol in config["codes"]]
     if not wanted or len(wanted) != len(set(wanted)):
         raise ValueError("source run must declare distinct instrument codes")
+    groups = validate_calendar_groups(card.get("calendar_timezone_groups"), wanted)
+    unsupported = card.get("unsupported_calendar_timezones", [])
+    if not isinstance(unsupported, list) or any(not isinstance(path, str) for path in unsupported):
+        raise ValueError("invalid unsupported calendar timezone metadata")
+    if any(f"artifacts/ohlcv_{symbol}.csv" in unsupported for symbol in wanted) or (
+        use_evaluation_calendar and "artifacts/equity.csv" in unsupported
+    ):
+        raise ValueError("source run has an unsupported calendar timezone")
     frames = {}
     calendar = None
     snapshot = destination / "snapshot"
@@ -116,17 +130,32 @@ def freeze_run(
         raw = path.read_bytes()
         if hashlib.sha256(raw).hexdigest() != entries[relative]["sha256"]:
             raise ValueError(f"source price snapshot changed: {symbol}")
-        frame = pd.read_csv(io.BytesIO(raw), index_col=0, parse_dates=True)
+        zone = calendar_timezone(timezones, relative)
+        frame = read_calendar_csv(raw, zone)
         if not isinstance(frame.index, pd.DatetimeIndex) or not frame.index.is_unique:
             raise ValueError(f"price snapshot has an invalid calendar: {symbol}")
         frame = frame.sort_index()
         if calendar is None:
             calendar = frame.index
         else:
-            calendar = calendar.union(frame.index)
+            # Match the engine's union policy: shared zones stay local; mixed
+            # zones are represented as naive UTC instants.
+            left, right = calendar.as_unit("ns"), frame.index.as_unit("ns")
+            instants = sorted(set(left.asi8) | set(right.asi8))
+            same_zone = (
+                all(groups[code] == groups[wanted[0]] for code in wanted[:index + 1])
+                if groups is not None
+                else left.tz == right.tz
+            )
+            if left.tz is not None and same_zone:
+                calendar = pd.DatetimeIndex(pd.to_datetime(instants, utc=True).tz_convert(left.tz))
+            else:
+                calendar = pd.DatetimeIndex(instants)
         filename = f"frame-{index}.csv"
         (snapshot / filename).write_bytes(raw)
         frames[symbol] = {"path": filename, "sha256": digest(snapshot / filename), "rows": len(frame)}
+        if zone is not None:
+            frames[symbol]["timezone"] = zone
     strategy_entry = entries.get("code/signal_engine.py")
     strategy_bytes = code.read_bytes()
     strategy_hash = hashlib.sha256(strategy_bytes).hexdigest()
@@ -142,6 +171,8 @@ def freeze_run(
         "strategy_sha256": strategy_hash,
         "config_sha256": config_hash,
     }
+    if groups is not None:
+        manifest["calendar_timezone_groups"] = {code: groups[code] for code in wanted}
     if "benchmark_input" in card:
         reference = card["benchmark_input"]
         if (
@@ -187,7 +218,7 @@ def freeze_run(
             raise ValueError(
                 "source equity changed since its completed backtest; rerun it before studying it"
             )
-        observed = pd.read_csv(io.BytesIO(raw_equity), index_col=0, parse_dates=True).index
+        observed = read_calendar_csv(raw_equity, calendar_timezone(timezones, relative)).index
         if len(observed) < 2:
             raise ValueError("source run needs at least two evaluated bars")
         if (
@@ -239,13 +270,8 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
         if is_benchmark:
             frame = read_benchmark_prices(raw, entry.get("timezone"))
         else:
-            frame = pd.read_csv(
-                io.BytesIO(raw),
-                index_col=0,
-                parse_dates=True,
-                float_precision="round_trip",
-            )
-        visible = frame.loc[settings["start_date"] : settings["end_date"]]
+            frame = read_calendar_csv(raw, calendar_timezone(entry))
+        visible = slice_calendar(frame, settings["start_date"], settings["end_date"])
         if len(visible) == len(frame):
             try:
                 os.link(source, target)
@@ -280,7 +306,12 @@ def trial(study: Path, name: str, config: dict, manifest: Path, *, parameters: d
         if not path.is_file() or digest(path) != entry["sha256"]:
             raise ValueError("sealed prices changed during trial execution")
     card = json.loads((root / "run_card.json").read_text())
-    equity = pd.read_csv(root / "artifacts/equity.csv", index_col=0, parse_dates=True)
+    timezones = card.get("calendar_timezones", {})
+    if not isinstance(timezones, dict):
+        raise ValueError("invalid calendar timezone metadata")
+    equity = read_calendar_csv(
+        (root / "artifacts/equity.csv").read_bytes(), calendar_timezone(timezones, "artifacts/equity.csv")
+    )
     raw_metrics = pd.read_csv(root / "artifacts/metrics.csv").iloc[0]
     metrics = {
         name: float(raw_metrics[name])

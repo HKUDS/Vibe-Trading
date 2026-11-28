@@ -259,6 +259,8 @@ Yahoo `4H`/`4h` requests aggregate hourly OHLCV into four-hour bars aligned to U
 | Portfolio risk | Inspect drawdowns, estimate value at risk and expected shortfall, or use Brinson attribution to separate allocation from stock selection. Risk X-Ray reports each holding's signed contribution to portfolio volatility, including hedges that offset risk. The correlation view shows when markets start moving together. |
 | Strategy tracking | Register a strategy with its evidence and track how its Sharpe ratio or factor information coefficient changes as new results come in. |
 
+Research Lab preserves named price-calendar timezones when replaying new runs, including across daylight-saving changes. Older runs without timezone metadata retain their original offsets where possible; mixed offsets are read as UTC. Ordinary backtests support fixed offsets containing seconds, but those runs cannot be frozen for Research Lab replay.
+
 Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JSON/Markdown reports. Components use `weight × Cov(asset return, portfolio return) / portfolio volatility`, with the same sample and annualization as total volatility. Each `assets` row names its `symbol`; `risk_contribution` is annualized decimal volatility and `contribution_pct` is in percentage points. They add up to total volatility, not portfolio return. A hedge can have a negative risk share, and another holding can exceed 100%; shares are unavailable for zero volatility or an insufficient sample. This is a historical weighted-basket diagnosis, not realized PnL attribution or a forecast.
 
 ### Accounts and trading

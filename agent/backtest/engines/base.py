@@ -249,6 +249,7 @@ def _align(
     signal_map: Dict[str, pd.Series],
     codes: List[str],
     optimizer: Optional[Callable] = None,
+    calendar_groups: dict | None = None,
 ) -> tuple:
     """Build aligned date index, close matrix, target-position matrix, return matrix.
 
@@ -260,6 +261,7 @@ def _align(
         signal_map: code -> signal Series.
         codes: Valid instrument codes.
         optimizer: Optional weight optimiser ``(ret, pos, dates) -> pos``.
+        calendar_groups: Original timezone equality groups for frozen inputs.
 
     Returns:
         (dates, close_df, close_val_df, positions_df, returns_df). ``close_df``
@@ -279,7 +281,12 @@ def _align(
     indexes = [ns_index[c] for c in codes]
     merged = np.unique(np.concatenate([index.asi8 for index in indexes]))
     common_tz = indexes[0].tz
-    if all(index.tz == common_tz for index in indexes) and common_tz is not None:
+    same_zone = (
+        all(calendar_groups[c] == calendar_groups[codes[0]] for c in codes)
+        if calendar_groups is not None
+        else all(index.tz == common_tz for index in indexes)
+    )
+    if same_zone and common_tz is not None:
         dates = pd.DatetimeIndex(pd.to_datetime(merged, utc=True).tz_convert(common_tz))
     else:
         dates = pd.DatetimeIndex(merged)
@@ -1044,8 +1051,12 @@ class BaseEngine(ABC):
 
         # 3. Pre-compute target weights (with optimizer)
         opt_fn = _load_optimizer(config)
+        from backtest.frozen import calendar_timezone_groups, validate_calendar_groups
+        groups = validate_calendar_groups(getattr(loader, "calendar_timezone_groups", None), data_map)
+        if groups is None:
+            groups = calendar_timezone_groups(data_map)
         dates, close_df, close_val_df, target_pos, ret_df = _align(
-            data_map, signal_map, valid_codes, optimizer=opt_fn,
+            data_map, signal_map, valid_codes, optimizer=opt_fn, calendar_groups=groups,
         )
 
         # Sync codes after _align may have dropped all-NaN symbols
@@ -1279,6 +1290,14 @@ class BaseEngine(ABC):
                 benchmark_input["timezone"] = str(prices.index.tz)
 
         # 9. Trust Layer run card
+        from backtest.frozen import serialize_calendar_timezone
+        zones = {
+            f"artifacts/ohlcv_{code}.csv": frame.index.tz
+            for code, frame in data_map.items() if frame.index.tz is not None
+        }
+        if dates.tz is not None:
+            zones["artifacts/equity.csv"] = dates.tz
+        serialized_zones = {path: serialize_calendar_timezone(tz) for path, tz in zones.items()}
         card_warnings = list(config.get("content_filter_warnings") or [])
         if frozen and requested and reference is None:
             card_warnings.append("No frozen benchmark prices were saved; the original benchmark is not verified.")
@@ -1301,6 +1320,13 @@ class BaseEngine(ABC):
             strategy_path=run_dir / "code" / "signal_engine.py",
             warnings=card_warnings or None,
             benchmark_input=benchmark_input,
+            calendar_timezones={
+                path: zone for path, zone in serialized_zones.items() if zone is not None
+            },
+            unsupported_calendar_timezones=[
+                path for path, zone in serialized_zones.items() if zone is None
+            ],
+            calendar_timezone_groups=groups,
             tool_traces=[
                 {
                     "tool": "backtest",
