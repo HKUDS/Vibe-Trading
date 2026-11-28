@@ -126,10 +126,15 @@ def _landlock_confined(cmd: list[str], *, run_dir: Path, sandbox_home: Path | No
     override = os.environ.get("VIBE_TRADING_DATA_CACHE_ROOT", "").strip()  # noqa: env-gate — loader cache root
     if override:
         writable.append(Path(override).expanduser())
+    gateway_override = os.environ.get("VIBE_GATEWAY_CACHE_DIR", "").strip()  # noqa: env-gate — gateway cache root
+    if gateway_override:
+        writable.append(Path(gateway_override).expanduser())
     if sandbox_home is not None:
         writable.append(sandbox_home)
-    if real_home is not None and (real_home / ".cache").is_dir():
-        writable.append(real_home / ".cache")
+    if real_home is not None:
+        # The ephemeral HOME re-exposes the server HOME's loader cache by symlink; with
+        # VIBE_TRADING_HOME elsewhere that cache is not the runtime root's, so grant it too.
+        writable.extend(path for path in (real_home / ".cache", real_home / ".vibe-trading" / "cache") if path.is_dir())
     spec = build_landlock_spec(
         hidden=hidden, writable=[path for path in writable if path.exists()], network=True,
         private_tmp=Path(run_dir) / ".tmp",

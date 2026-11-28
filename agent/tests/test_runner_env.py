@@ -550,6 +550,28 @@ def test_landlock_keeps_the_users_own_data_readable(monkeypatch, tmp_path: Path)
     assert {str(root / "uploads"), str(root / "data-bridge"), str(root / "agent")} <= set(spec["read"])
 
 
+def test_landlock_lets_the_loaders_write_the_cache_the_ephemeral_home_links_to(monkeypatch, tmp_path: Path) -> None:
+    # With VIBE_TRADING_HOME elsewhere, the gateway cache the child reaches through its ephemeral
+    # HOME is the server HOME's cache, not the runtime root's (CI: mkdir cache/gateway was denied).
+    import src.tools.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox, "_probe_landlock", lambda network: None)
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path / "root"))
+    monkeypatch.setenv("VIBE_GATEWAY_CACHE_DIR", str(tmp_path / "gateway-cache"))
+    (tmp_path / "gateway-cache").mkdir()
+    real_home = tmp_path / "home"
+    (real_home / ".vibe-trading" / "cache").mkdir(parents=True)
+    run_dir = tmp_path / "root" / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+
+    argv = runner_mod._landlock_confined(["python", "e.py"], run_dir=run_dir, sandbox_home=None, real_home=real_home)
+
+    spec = json.loads(Path(argv[3]).read_text())
+    Path(argv[3]).unlink()
+    assert str((real_home / ".vibe-trading" / "cache").resolve()) in spec["write"]
+    assert str((tmp_path / "gateway-cache").resolve()) in spec["write"]
+
+
 def test_without_landlock_the_command_is_unchanged(monkeypatch, tmp_path: Path) -> None:
     import src.tools.sandbox as sandbox
 
