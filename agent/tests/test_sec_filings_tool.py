@@ -85,6 +85,29 @@ def test_success_lists_filings_with_document_urls():
     assert "metric" not in payload["data"]
 
 
+def test_filing_limit_pages_through_all_accessions_in_order():
+    expected = _SUBMISSIONS["filings"]["recent"]["accessionNumber"]
+    tool = SecFilingsTool()
+    offset = 0
+    with (
+        patch.object(sft, "cik_for", return_value="0000320193"),
+        patch.object(sft, "get_submissions", return_value=_SUBMISSIONS),
+    ):
+        for index, accession in enumerate(expected):
+            page = json.loads(tool.execute(ticker="AAPL", limit=1, offset=offset))
+            last = index == len(expected) - 1
+            filings = page["data"]["filings"]
+            assert [row["accession_number"] for row in filings] == [accession]
+            assert page["paging"] == {
+                "total": len(expected),
+                "offset": index,
+                "returned": 1,
+                "next_offset": None if last else index + 1,
+                "complete": last,
+            }
+            offset = page["paging"]["next_offset"]
+
+
 def test_form_filter_keeps_only_matching_forms():
     with patch.object(sft, "cik_for", return_value="0000320193"), patch.object(
         sft, "get_submissions", return_value=_SUBMISSIONS

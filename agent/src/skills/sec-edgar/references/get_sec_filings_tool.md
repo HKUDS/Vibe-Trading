@@ -13,7 +13,8 @@ Markets: United States only.
 | `ticker` | string | yes | — | U.S. equity ticker, case-insensitive (`AAPL`, `msft`). Resolved to a CIK via the SEC company-tickers table. |
 | `form` | string | no | all forms | SEC form type filter, case-insensitive (`10-K`, `10-Q`, `8-K`). Omit to return every recent form. |
 | `metric` | string | no | — | XBRL `us-gaap` concept name (`Revenues`, `NetIncomeLoss`, `Assets`). When set, the response also carries that concept's reported series. Case-sensitive. |
-| `limit` | integer | no | `20` | Max number of most-recent filings and metric points to return. Clamped to `1..40`. |
+| `limit` | integer | no | `20` | Maximum filings per page and most-recent metric points. Clamped to `1..40`. |
+| `offset` | integer | no | `0` | Start of the filing page. Pass `paging.next_offset` to read the next page. |
 
 ## Success envelope
 
