@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.tools import alpha_bench_tool
-from src.tools.alpha_bench_tool import AlphaBenchTool, _load_universe_panel
+from src.tools.alpha_bench_tool import AlphaBenchTool, _UNIVERSE_TAG, _load_universe_panel
 from src.tools.alpha_compare_tool import AlphaCompareTool
 
 
@@ -26,7 +26,8 @@ def test_btc_universe_is_rejected_before_cache_or_download(
 def test_tool_schema_describes_actual_universe_limits(tool_class: type) -> None:
     description = tool_class.parameters["properties"]["universe"]["description"]
 
-    assert description.startswith("csi300 | sp500")
+    for universe in _UNIVERSE_TAG:
+        assert universe in description
     assert "btc-usdt is single-asset" in description
     assert "fund:*" in description
 
@@ -38,10 +39,18 @@ def test_alpha_zoo_skill_describes_actual_universe_limits() -> None:
     purpose = skill.split("## Purpose", 1)[1].split("## Tools Available", 1)[0]
     constraints = skill.split("## Constraints", 1)[1].split("## Common Pitfalls", 1)[0]
 
-    assert "(CSI 300, S&P 500)" in purpose
+    assert "CSI 300" in purpose
+    assert "S&P 500" in purpose
+    assert "NIFTY 100" in purpose
     assert "BTC-USDT" not in purpose
+    for universe in _UNIVERSE_TAG:
+        assert f"`{universe}`" in skill
     for expected in (
-        "BTC-USDT cannot be benched",
+        "Benchmark universes are `csi300`, `sp500`, and `nifty100`",
+        "`btc-usdt` is recognized but cannot be benched",
+        "Unknown universe names are rejected",
+        "single-asset",
+        "NIFTY 100 results are survivorship-biased",
         "fund:*",
         "survivorship-biased",
         "requested_instruments",
@@ -49,3 +58,4 @@ def test_alpha_zoo_skill_describes_actual_universe_limits() -> None:
         "missing_instruments",
     ):
         assert expected in constraints
+    assert "not yet implemented" not in constraints

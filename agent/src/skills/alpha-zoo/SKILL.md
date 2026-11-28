@@ -7,7 +7,7 @@ category: research
 
 ## Purpose
 
-When the user asks about prebuilt cross-sectional alphas — Kakushadze 101, GTJA 191, Qlib 158, Fama-French / Carhart — or wants to bench a whole zoo on an investable universe (CSI 300, S&P 500), this skill orients you. The zoo is the curated library; the bench is the evaluator.
+When the user asks about prebuilt cross-sectional alphas — Kakushadze 101, GTJA 191, Qlib 158, Fama-French / Carhart — or wants to bench a whole zoo on an investable universe (CSI 300, S&P 500, NIFTY 100), this skill orients you. The zoo is the curated library; the bench is the evaluator.
 
 ## Tools Available
 
@@ -22,6 +22,7 @@ When the user asks about prebuilt cross-sectional alphas — Kakushadze 101, GTJ
 - "list all momentum alphas" → `alpha_zoo` with `action=list_alphas, theme=momentum`.
 - "show me gtja191_alpha_001" → `alpha_zoo` with `action=get_alpha, alpha_id=gtja191_alpha_001`.
 - "bench all of GTJA 191 on CSI 300 from 2020 to 2024" → `alpha_bench` with `zoo=gtja191, universe=csi300, period=2020-2024`.
+- "bench Alpha101 on NIFTY 100 for 2024" → `alpha_bench` with `zoo=alpha101, universe=nifty100, period=2024-2024`.
 - "is the registry healthy" → `alpha_zoo` with `action=health` — surfaces `loaded`, `failed`, and per-error reasons.
 - User uploads `my_factor.csv` → `factor_analysis` (zoo tools are for prebuilt alphas only).
 
@@ -40,10 +41,9 @@ Counts are nominal; check `alpha_zoo action=health` for the live count currently
 
 - **No per-stock per-date factor values are surfaced to the agent.** IC results are aggregate stats (mean / std / IR / positive-ratio); the HTML report shows top-N by IR plus formulas, never the underlying panel.
 - **Lookahead is banned in the operator set.** `delta(df, d)` requires `d >= 1`; the negative-shift `Ref(df, -n)` form does not exist. See `docs/alpha-zoo/spec.md` for the full operator catalogue.
-- **Universe loaders may not be wired for every market yet.** When `alpha_bench` returns `universe loader for X not yet implemented`, that's the W2 scaffold — the universe is recognised but the data pull lands in W4.
-- **BTC-USDT cannot be benched.** It is single-asset; cross-sectional IC needs at least two instruments. Use `csi300` or `sp500`.
+- **Benchmark universes are `csi300`, `sp500`, and `nifty100`.** Unknown universe names are rejected. `btc-usdt` is recognized but cannot be benched: it is single-asset, and cross-sectional IC needs at least two instruments.
 - **Fundamental factors (`fund:*` columns) need `sp500`.** They use point-in-time SEC US filings. On other universes they are excluded and listed in `universe_excluded`; if every selected alpha needs them, the tool errors before loading data.
-- **S&P 500 results are survivorship-biased** because the universe uses current constituents. Cite `meta.requested_instruments`, `meta.fetched_instruments` and `meta.missing_instruments` with any S&P 500 ranking.
+- **S&P 500 and NIFTY 100 results are survivorship-biased** because both universes use current constituents. Cite `meta.requested_instruments`, `meta.fetched_instruments`, `meta.missing_instruments` and `meta.data_availability` with any S&P 500 or NIFTY 100 ranking.
 - **Do not expose absolute filesystem paths in agent output.** The bench tool writes to `~/.vibe-trading/reports/` by default; refer to it by that shorthand, not by the resolved absolute path.
 - **`alpha_zoo` is read-only.** `alpha_bench` writes a single HTML file per run — no scratch state elsewhere.
 
