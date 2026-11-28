@@ -172,7 +172,7 @@ class SecFilingsTool(BaseTool):
                 "data": data,
             }
 
-        return fit_records(filings, offset, _build)
+        return fit_records(filings, offset, _build, max_records=limit)
 
 
 def _clamp_limit(value: Any) -> int:
