@@ -122,7 +122,7 @@ def main(argv):
     if libc.syscall(_RESTRICT_SELF, ruleset, 0) != 0:
         _fail(f"cannot restrict this process: errno {ctypes.get_errno()}")
     os.close(ruleset)
-    os.environ.update(spec.get("env", {}))
+    os.environ.update(spec.get("env", {}))  # noqa: env-gate — stdlib-only launcher hands its command TMPDIR
     try:
         os.execvp(command[0], command)
     except OSError as exc:
