@@ -1,9 +1,11 @@
 """Alpha bench orchestrator: registry → universe panel → IC/IR → HTML report.
 
-W2 scaffold: implements the orchestration shape and HTML rendering. Universe
-loaders that need network calls return a clean "not yet implemented" envelope —
-the full universe wiring lands in W4. The HTML path is autoescaped via Jinja2,
-with manual ``html.escape`` fallback when Jinja2 is absent, plus a strict CSP
+Benchmarks run on ``csi300``, ``sp500``, or ``nifty100``. The S&P 500 and
+NIFTY 100 loaders use current constituent rosters, so their historical panels
+are survivorship-biased. CSI 300 uses point-in-time Tushare membership when
+available and flags its survivor-selected fallback as degraded. Unknown names
+are rejected before data loading. The HTML path is autoescaped via Jinja2, with
+manual ``html.escape`` fallback when Jinja2 is absent, plus a strict CSP
 ``<meta>`` so the report cannot fetch or execute external resources.
 
 Output contract — JSON envelope:
@@ -92,8 +94,8 @@ _NIFTY100_CONSTITUENT_URLS = (
 _PERIOD_YEAR = re.compile(r"^(\d{4})-(\d{4})$")
 _PERIOD_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})$")
 
-# Universe → (market_key, universe_meta_tag). Only the listed universes have a
-# defined contract; everything else returns "not yet implemented".
+# Benchmark universe → market metadata tag. Unknown names are rejected before
+# cache lookup or data loading.
 _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
@@ -1656,7 +1658,8 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
             ", ".join(universe_excluded[:10]),
         )
 
-    # Load panel — W4 universe loader fetches constituents + OHLCV (+ amount, vwap).
+    # Load panel — the universe loader attaches the membership appropriate to
+    # the market and fetches OHLCV (plus amount and vwap where available).
     try:
         _validate_bench_data_requirements(registry, alpha_ids, universe)
         panel = _load_universe_panel(universe, period)

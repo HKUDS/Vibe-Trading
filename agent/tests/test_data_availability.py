@@ -128,3 +128,25 @@ def test_metadata_without_source_is_explicitly_unknown() -> None:
     assert close["status"] == "unknown"
     assert close["source"] is None
     assert close["pit_safe"] is False
+
+
+def test_long_form_membership_flag_reaches_the_availability_contract() -> None:
+    panel = {
+        "close": pd.DataFrame(
+            {"RELIANCE.NS": [100.0]}, index=pd.DatetimeIndex(["2026-01-02"])
+        ),
+        "_meta": {
+            "point_in_time_membership": False,
+            "survivorship_bias": True,
+            "constituent_source": "niftyindices.com",
+        },
+    }
+
+    membership = _fields(
+        build_availability_contract(panel, universe="nifty100")
+    )["universe:membership"]
+
+    assert membership["status"] == "unknown"
+    assert membership["pit_safe"] is False
+    assert membership["validation"]["pit_membership"] is False
+    assert membership["validation"]["survivorship_bias"] is True

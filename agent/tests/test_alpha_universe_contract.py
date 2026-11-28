@@ -5,8 +5,14 @@ from unittest.mock import Mock
 
 import pytest
 
+from src.factors import bench_runner, bench_runner_strict
+from src.factors.compare_runner import compare_alphas
 from src.tools import alpha_bench_tool
-from src.tools.alpha_bench_tool import AlphaBenchTool, _UNIVERSE_TAG, _load_universe_panel
+from src.tools.alpha_bench_tool import (
+    AlphaBenchTool,
+    _UNIVERSE_TAG,
+    _load_universe_panel,
+)
 from src.tools.alpha_compare_tool import AlphaCompareTool
 
 
@@ -44,9 +50,8 @@ def test_alpha_zoo_skill_describes_actual_universe_limits() -> None:
     assert "NIFTY 100" in purpose
     assert "BTC-USDT" not in purpose
     for universe in _UNIVERSE_TAG:
-        assert f"`{universe}`" in skill
+        assert f"`{universe}`" in constraints
     for expected in (
-        "Benchmark universes are `csi300`, `sp500`, and `nifty100`",
         "`btc-usdt` is recognized but cannot be benched",
         "Unknown universe names are rejected",
         "single-asset",
@@ -59,3 +64,18 @@ def test_alpha_zoo_skill_describes_actual_universe_limits() -> None:
     ):
         assert expected in constraints
     assert "not yet implemented" not in constraints
+
+
+def test_alpha_bench_internal_docs_describe_supported_universes() -> None:
+    docs = (
+        alpha_bench_tool.__doc__ or "",
+        bench_runner.run_bench.__doc__ or "",
+        bench_runner_strict.run_bench_strict.__doc__ or "",
+        compare_alphas.__doc__ or "",
+    )
+
+    for universe in _UNIVERSE_TAG:
+        for doc in docs:
+            assert f"`{universe}`" in doc
+    for stale in ("W2 scaffold", "W4", "not yet implemented"):
+        assert stale not in docs[0]
