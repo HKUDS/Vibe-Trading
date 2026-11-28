@@ -34,6 +34,22 @@ def test_get_sec_filings_wrapper_matches_tool_contract():
     assert not missing, f"MCP wrapper is missing parameters the tool declares: {missing}"
 
 
+def test_sec_document_selectors_reach_the_agent_tool():
+    accession = "0000320193-23-000106"
+    with patch.object(mcp_server, "_get_registry") as registry:
+        _sec(ticker="AAPL", accession_number=accession, item="1A")
+    registry.return_value.execute.assert_called_once_with(
+        "get_sec_filings",
+        {
+            "ticker": "AAPL",
+            "limit": 20,
+            "offset": 0,
+            "accession_number": accession,
+            "item": "1A",
+        },
+    )
+
+
 def test_get_financial_statements_wrapper_matches_tool_contract():
     spec = FinancialStatementsTool.parameters
     sig = inspect.signature(_fin)

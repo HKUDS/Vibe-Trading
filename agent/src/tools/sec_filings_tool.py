@@ -1,4 +1,4 @@
-"""Read-only tool: U.S. SEC EDGAR filing index + XBRL GAAP metric series.
+"""Read-only U.S. SEC filing index, cited document excerpts and XBRL series.
 
 The U.S. SEC publishes free, no-auth JSON for every reporting company: a recent
 filing index (10-K / 10-Q / 8-K and friends) and the full set of XBRL financial
@@ -6,10 +6,11 @@ concepts the company has reported. This tool wraps both behind the project's
 BaseTool contract and the frozen, IP-throttled SEC client so the agent never
 hits ``sec.gov`` un-throttled and never re-implements provider plumbing.
 
-Two answers from one tool:
+The tool can return:
 
 * a list of recent filings (optionally filtered to one ``form`` such as 10-K),
   each with accession number, filing/report dates, and the primary document URL;
+* bounded passages from one indexed HTML document when an accession is selected;
 * when ``metric`` is given, the reported time series for a single us-gaap
   concept (e.g. ``Revenues``, ``NetIncomeLoss``) drawn from XBRL companyfacts.
 
@@ -20,17 +21,20 @@ an error envelope.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from backtest.loaders import sec_frames
 from backtest.loaders.sec_edgar_client import (
     cik_for,
     get_company_facts,
+    get_primary_document,
     get_submissions,
 )
 from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools._result_paging import fit_records
+from src.tools._sec_filing_text import extract_excerpts, item_number
 
 # Hard caps so a long filing history or metric series cannot bloat the payload.
 _MAX_LIMIT = 40
@@ -42,7 +46,7 @@ _DOC_BASE = "https://www.sec.gov/Archives/edgar/data"
 
 
 class SecFilingsTool(BaseTool):
-    """List recent SEC filings and optionally one XBRL us-gaap metric series."""
+    """List filings, read one selected filing, or look up an XBRL metric series."""
 
     name = "get_sec_filings"
     description = (
@@ -50,7 +54,9 @@ class SecFilingsTool(BaseTool):
         "filings (10-K / 10-Q / 8-K, etc.) with accession number, filing and "
         "report dates, and the primary-document URL; or, when 'metric' is given, "
         "the reported XBRL us-gaap financial series for that concept (e.g. "
-        "Revenues, NetIncomeLoss, Assets). Markets: United States only. "
+        "Revenues, NetIncomeLoss, Assets). Pass a listed accession_number to "
+        "read citable excerpts from that filing, optionally scoped to an SEC item. "
+        "Markets: United States only. "
         'Example: {"ticker": "AAPL", "form": "10-K", "limit": 5}.'
     )
     parameters = {
@@ -79,6 +85,14 @@ class SecFilingsTool(BaseTool):
                     "carries the reported time series for that concept."
                 ),
             },
+            "accession_number": {
+                "type": "string",
+                "description": "Read one HTML primary document by its exact accession number from the filing index.",
+            },
+            "item": {
+                "type": "string",
+                "description": "Optional SEC item number within the selected filing, e.g. '1A' or '2.02'.",
+            },
             "offset": {
                 "type": "integer",
                 "description": (
@@ -102,11 +116,13 @@ class SecFilingsTool(BaseTool):
 
     @public_data_read()
     def execute(self, **kwargs: Any) -> str:
-        """Resolve the ticker, fetch filings/facts, and return a JSON envelope.
+        """Resolve the ticker and return indexed filings, facts or a cited excerpt.
 
         Args:
             **kwargs: ``ticker`` (required U.S. symbol), optional ``form`` filter,
-                optional ``metric`` (us-gaap concept), and optional ``limit``.
+                optional ``metric`` (us-gaap concept), ``limit`` and ``offset``.
+                Supply ``accession_number`` for document mode and optionally
+                ``item`` to select a numbered section.
 
         Returns:
             A JSON string envelope. On success:
@@ -114,6 +130,8 @@ class SecFilingsTool(BaseTool):
             "paging": {...}, "data": {"ticker", "cik", "filings": [...],
             "metric": {...}}}`` (``metric`` present only when requested).
             ``filings`` is paged: read ``paging.next_offset`` to continue.
+            Document results carry ``data.filing``, ``data.excerpts`` and
+            ``data.truncated`` for the selected document or item.
             On failure:
             ``{"ok": false, "error": str}``.
         """
@@ -127,6 +145,27 @@ class SecFilingsTool(BaseTool):
 
         metric = kwargs.get("metric")
         metric_name = metric.strip() if isinstance(metric, str) and metric.strip() else None
+
+        accession = kwargs.get("accession_number")
+        item = kwargs.get("item")
+        if accession is not None:
+            if not isinstance(accession, str) or not re.fullmatch(
+                r"[0-9]{10}-[0-9]{2}-[0-9]{6}", accession
+            ):
+                return _error(
+                    "accession_number must be a dashed SEC accession from the filing index"
+                )
+            if metric_name:
+                return _error(
+                    "Request the filing document and XBRL metric in separate calls"
+                )
+        if item is not None:
+            if accession is None:
+                return _error("item requires accession_number")
+            try:
+                item = item_number(item)
+            except ValueError as exc:
+                return _error(str(exc))
 
         limit = _clamp_limit(kwargs.get("limit", _DEFAULT_LIMIT))
 
@@ -142,7 +181,44 @@ class SecFilingsTool(BaseTool):
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
             return _error(f"SEC submissions request failed: {exc}")
 
-        filings = _parse_filings(submissions, form_filter, cik)
+        filings = _parse_filings(
+            submissions, form_filter, cik, accession_number=accession
+        )
+        if accession is not None:
+            if not filings:
+                return _error(
+                    f"Accession {accession} was not found in the matching recent filings for {ticker}"
+                )
+            filing = filings[0]
+            citation = {
+                key: filing[key]
+                for key in ("form", "filing_date", "accession_number", "document_url")
+            }
+            data = {"ticker": ticker, "cik": cik, "filing": citation, "item": item}
+            try:
+                if not citation["document_url"]:
+                    raise ValueError(
+                        "The submissions index has no primary document URL"
+                    )
+                if not citation["filing_date"] or not citation["form"]:
+                    raise ValueError(
+                        "The submissions index lacks the form or filing date required for a citation"
+                    )
+                html = get_primary_document(citation["document_url"])
+                data.update(extract_excerpts(html, item))
+            except Exception as exc:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "source": "sec_edgar",
+                        "error": str(exc),
+                        "data": data,
+                    }
+                )
+            return json.dumps(
+                {"ok": True, "market": "US", "source": "sec_edgar", "data": data},
+                ensure_ascii=False,
+            )
 
         metric_block: Dict[str, Any] | None = None
         if metric_name is not None:
@@ -185,7 +261,11 @@ def _clamp_limit(value: Any) -> int:
 
 
 def _parse_filings(
-    submissions: Any, form_filter: Optional[str], cik: str
+    submissions: Any,
+    form_filter: Optional[str],
+    cik: str,
+    *,
+    accession_number: str | None = None,
 ) -> List[Dict[str, Any]]:
     """Extract recent filings from a submissions payload, newest first.
 
@@ -199,6 +279,7 @@ def _parse_filings(
         submissions: Decoded submissions JSON.
         form_filter: Upper-cased form type to keep, or ``None`` for all forms.
         cik: The company CIK, used to build primary-document URLs.
+        accession_number: Match this exact accession across the recent index, when supplied.
 
     Returns:
         A list of normalized filing dicts (already newest-first from the SEC),
@@ -221,6 +302,8 @@ def _parse_filings(
         if form_filter is not None and form_type.upper() != form_filter:
             continue
         accession = _at(accessions, idx)
+        if accession_number is not None and accession != accession_number:
+            continue
         out.append(
             {
                 "form": form_type or None,
@@ -232,7 +315,7 @@ def _parse_filings(
                 "document_url": _document_url(cik, accession, _at(primary_docs, idx)),
             }
         )
-        if len(out) >= _MAX_LIMIT:
+        if accession_number is not None or len(out) >= _MAX_LIMIT:
             break
     return out
 

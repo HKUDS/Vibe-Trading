@@ -2607,6 +2607,8 @@ def get_sec_filings(
     metric: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    accession_number: str | None = None,
+    item: str | None = None,
 ) -> str:
     """Fetch U.S. SEC EDGAR filings or reported XBRL financials for a company.
 
@@ -2624,12 +2626,18 @@ def get_sec_filings(
             to 0. Results are returned whole and only as many as fit one
             response — read paging.total and paging.next_offset and call
             again with that offset to continue.
+        accession_number: Select one recent filing and read citable HTML excerpts.
+        item: Within the selected filing, read a specific SEC item such as "1A".
     """
     params: dict[str, Any] = {"ticker": ticker, "limit": limit, "offset": offset}
     if form:
         params["form"] = form
     if metric:
         params["metric"] = metric
+    if accession_number is not None:
+        params["accession_number"] = accession_number
+    if item is not None:
+        params["item"] = item
     registry = _get_registry()
     return registry.execute("get_sec_filings", params)
 
