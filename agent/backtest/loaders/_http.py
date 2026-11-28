@@ -166,6 +166,8 @@ def throttled_get(
     params: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = 15.0,
+    allow_redirects: bool = True,
+    stream: bool = False,
 ) -> requests.Response:
     """GET ``url`` after waiting out the per-host minimum interval.
 
@@ -177,6 +179,8 @@ def throttled_get(
         params: Optional query parameters.
         headers: Optional headers merged over the default browser UA.
         timeout: Per-request socket timeout in seconds.
+        allow_redirects: Follow HTTP redirects when the caller permits them.
+        stream: Leave the body for the caller to read and close.
 
     Returns:
         The :class:`requests.Response`; the caller decides how to parse it.
@@ -191,7 +195,14 @@ def throttled_get(
     _THROTTLE.wait(host_key, min_interval)
     timeout = _acquisition_timeout(timeout)
     session = _session_for(host_key)
-    return session.get(url, params=params, headers=merged_headers, timeout=timeout)
+    return session.get(
+        url,
+        params=params,
+        headers=merged_headers,
+        timeout=timeout,
+        allow_redirects=allow_redirects,
+        stream=stream,
+    )
 
 
 # A JSONP envelope is a JS callback identifier followed by a parenthesized body,

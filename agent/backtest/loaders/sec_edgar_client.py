@@ -28,14 +28,18 @@ import logging
 import json
 from copy import deepcopy
 from pathlib import Path
+import re
 import threading
+import time
 from typing import Any, Dict, Optional
 
 from backtest.loaders._http import (
     DEFAULT_USER_AGENT,
     resolve_min_interval,
+    throttled_get,
     throttled_get_json,
 )
+from backtest.loaders.acquisition import source_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +56,11 @@ _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _MARKET_SUFFIXES = frozenset({"US"})
 _SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 _COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+_ARCHIVE_HTML = re.compile(
+    r"https://www\.sec\.gov/Archives/edgar/data/[0-9]+/[0-9]{18}/"
+    r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,249}\.(?i:html?)"
+)
+_MAX_DOCUMENT_BYTES = 12 * 1024 * 1024
 
 _UA_ENV = "VIBE_TRADING_SEC_UA"
 # SEC's fair-access policy wants a real contact in the UA. Override via env to
@@ -97,6 +106,64 @@ def _sec_get_json(url: str) -> Any:
         min_interval=_min_interval(),
         headers={"User-Agent": _user_agent(), "Accept": "application/json"},
     )
+
+
+def get_primary_document(url: str) -> str:
+    """Read one HTML primary document from the official EDGAR Archives.
+
+    Args:
+        url: Primary-document URL resolved from an issuer's submissions index.
+
+    Returns:
+        Decoded HTML, including visible inline XBRL markup.
+
+    Raises:
+        ValueError: The document location, format or size is unsupported.
+        requests.RequestException: The SEC request failed.
+        TimeoutError: The shared source deadline expired while reading the body.
+    """
+    if not _ARCHIVE_HTML.fullmatch(url):
+        raise ValueError(
+            "Expected an HTML primary document in the official SEC Archives"
+        )
+    with throttled_get(
+        url,
+        host_key=_HOST_KEY,
+        min_interval=_min_interval(),
+        headers={
+            "User-Agent": _user_agent(),
+            "Accept": "text/html, application/xhtml+xml",
+        },
+        allow_redirects=False,
+        stream=True,
+    ) as response:
+        if 300 <= response.status_code < 400:
+            raise ValueError(
+                "The SEC Archives returned a redirect for the primary document"
+            )
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "").lower()
+        if content_type.split(";", 1)[0].strip() not in {
+            "text/html",
+            "application/xhtml+xml",
+        }:
+            raise ValueError("The SEC primary document did not return HTML")
+        body = bytearray()
+        deadline = source_deadline.get()
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("SEC primary document exceeded the request deadline")
+            if len(body) + len(chunk) > _MAX_DOCUMENT_BYTES:
+                raise ValueError(
+                    "SEC primary document exceeds the 12 MiB download limit"
+                )
+            body.extend(chunk)
+        if "charset=" in content_type and response.encoding:
+            return body.decode(response.encoding)
+        try:
+            return body.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return body.decode("windows-1252")
 
 
 def _pad_cik(cik: str | int) -> str:

@@ -27,7 +27,7 @@ Preferred path — the `get_sec_filings` tool (read-only, throttled, returns str
 { "ticker": "MSFT", "metric": "Revenues", "limit": 8 }
 ```
 
-The tool resolves the ticker to a CIK, fetches the filing index (optionally filtered by `form`), and — when `metric` is set — also pulls the XBRL series for that us-gaap concept. See `sec-edgar/references/get_sec_filings_tool.md` for the full parameter and envelope contract.
+To quote a filing, pass its exact `accession_number` from the index to `get_sec_filings`. Add `item="1A"` for risk factors in a 10-K. The result includes ordered excerpts and their SEC citation. To look up a financial figure, use `metric` to request the XBRL series. See [the tool reference](references/get_sec_filings_tool.md) for both response formats and a runnable example.
 
 Script path — call the `sec_edgar_client` transport directly when you need raw JSON the tool does not surface (e.g. company address, all units of a concept):
 

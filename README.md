@@ -180,7 +180,7 @@ Vibe-Trading turns finance questions into research reports, runnable backtests a
 
 | Task | Where to start |
 |---|---|
-| Research markets, filings or uploaded documents | Ask in Web chat or [attach a report](guides/research.md#upload--analyze-documents). |
+| Research markets, filings or uploaded documents | Ask Web chat to quote a section of a U.S. SEC filing with its source, or [attach a report](guides/research.md#upload--analyze-documents). |
 | Backtest a strategy or benchmark alphas | Inspect charts and trades in Run Detail, or compare factors in `/alpha-zoo`. |
 | Simulate trading or replay a journal | Track daily fills and NAV in `/paper-trading`. Use `/journal` and `/shadow` in the CLI to review your trades. |
 | Combine accounts or compare allocations | Open `/portfolio` for holdings and proposed allocation changes. [Broker support](#broker-support-at-a-glance) |

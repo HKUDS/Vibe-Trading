@@ -83,6 +83,30 @@ Returned for: missing/blank `ticker`; a ticker absent from the SEC table; or any
 { "ticker": "TSLA", "form": "8-K", "limit": 10 }
 ```
 
+## Read and cite a primary document
+
+Call the tool with `ticker` and an exact dashed `accession_number` from the
+issuer's recent submissions index. An optional `form` must match the selected
+filing. Add `item` to select the first matching SEC item, such as `1A` or
+`2.02`. Use a separate call for XBRL metrics.
+
+The response's `data.filing` holds the form, filing date, accession number
+and original SEC document URL. Each entry in `data.excerpts` contains visible
+body text and the nearest recognized heading. Passages follow document order.
+The tool returns up to four passages of 700 characters each and sets
+`data.truncated` when the selected text exceeds either limit. An unavailable
+item, missing document, unsupported format or failed request returns `ok: false`.
+The reader accepts HTML primary documents of up to 12 MiB from SEC Archives.
+
+For a keyless live example, run the following from the repository's `agent/`
+directory. It lists Apple's latest 10-K and reads Item 1A through the agent tool.
+Set `VIBE_TRADING_SEC_UA` to your descriptive SEC contact User-Agent as needed.
+Pass `--accession` with the printed accession to repeat the same selection.
+
+```sh
+python -m src.skills.sec-edgar.scripts.filing_text_example
+```
+
 ## Notes
 
 - `get_sec_filings` is an agent + CLI tool. For deeper interpretation (reading MD&A, scoring insider/8-K signals), pair it with the `edgar-sec-filings` methodology skill, which delegates here for fetching.
